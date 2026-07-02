@@ -13,10 +13,14 @@ export default defineConfig(() => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Also exclude any stray node_modules_* backup/leftover directories from
+      // troubleshooting sessions (see .gitignore, eslint.config.js) so a
+      // corrupted leftover can never crash the dev server's file watcher.
+      watch: process.env.DISABLE_HMR === 'true' ? null : { ignored: ['**/node_modules_*', '**/node_modules_*/**'] },
+      fs: { deny: ['**/node_modules_*/**'] },
     },
     build: {
       rollupOptions: {
