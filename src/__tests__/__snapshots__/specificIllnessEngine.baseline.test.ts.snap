@@ -1,0 +1,5501 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`specificIllnessEngine.ts matching (regression baseline) > every master illness entry resolves to itself by its own parent name 1`] = `
+[
+  {
+    "id": "piles",
+    "parent_illness": "Haemorrhoids / Piles",
+    "top_match_type": "direct",
+    "top_matched_illness": "Haemorrhoids / Piles",
+  },
+  {
+    "id": "fissure_fistula",
+    "parent_illness": "Fissure / Fistula in Ano",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "id": "pilonidal_sinus",
+    "parent_illness": "Pilonidal sinus",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pilonidal sinus",
+  },
+  {
+    "id": "gallbladder_stone",
+    "parent_illness": "Gallbladder stone / Cholecystitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gallbladder stone / Cholecystitis",
+  },
+  {
+    "id": "pancreatitis",
+    "parent_illness": "Pancreatitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pancreatitis",
+  },
+  {
+    "id": "gastric_ulcer",
+    "parent_illness": "Gastric / Duodenal ulcer",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "id": "gerd",
+    "parent_illness": "GERD",
+    "top_match_type": "direct",
+    "top_matched_illness": "GERD",
+  },
+  {
+    "id": "cirrhosis",
+    "parent_illness": "Cirrhosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Cirrhosis",
+  },
+  {
+    "id": "rectal_prolapse",
+    "parent_illness": "Rectal prolapse",
+    "top_match_type": "direct",
+    "top_matched_illness": "Rectal prolapse",
+  },
+  {
+    "id": "appendicitis",
+    "parent_illness": "Appendicitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Appendicitis",
+  },
+  {
+    "id": "osteoarthritis",
+    "parent_illness": "Osteoarthritis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Osteoarthritis",
+  },
+  {
+    "id": "rheumatoid_arthritis",
+    "parent_illness": "Rheumatoid Arthritis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Rheumatoid Arthritis",
+  },
+  {
+    "id": "gout",
+    "parent_illness": "Gout",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gout",
+  },
+  {
+    "id": "spondylosis",
+    "parent_illness": "Spondylosis / Spondyloarthritis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "id": "knee_derangement",
+    "parent_illness": "Internal derangement of knee",
+    "top_match_type": "direct",
+    "top_matched_illness": "Internal derangement of knee",
+  },
+  {
+    "id": "slipped_disc",
+    "parent_illness": "Prolapsed intervertebral disc",
+    "top_match_type": "direct",
+    "top_matched_illness": "Prolapsed intervertebral disc",
+  },
+  {
+    "id": "osteoporosis",
+    "parent_illness": "Osteoporosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Osteoporosis",
+  },
+  {
+    "id": "joint_replacement",
+    "parent_illness": "Joint replacement surgery",
+    "top_match_type": "direct",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
+    "id": "non_infective_arthritis",
+    "parent_illness": "Non-infective arthritis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Non-infective arthritis",
+  },
+  {
+    "id": "cataract",
+    "parent_illness": "Cataract",
+    "top_match_type": "direct",
+    "top_matched_illness": "Cataract",
+  },
+  {
+    "id": "glaucoma",
+    "parent_illness": "Glaucoma",
+    "top_match_type": "direct",
+    "top_matched_illness": "Glaucoma",
+  },
+  {
+    "id": "refractive_error",
+    "parent_illness": "Refractive error correction",
+    "top_match_type": "direct",
+    "top_matched_illness": "Refractive error correction",
+  },
+  {
+    "id": "retinal_disorders",
+    "parent_illness": "Retinal disorders",
+    "top_match_type": "direct",
+    "top_matched_illness": "Retinal disorders",
+  },
+  {
+    "id": "sinusitis",
+    "parent_illness": "Sinusitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Sinusitis",
+  },
+  {
+    "id": "rhinitis",
+    "parent_illness": "Rhinitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Rhinitis",
+  },
+  {
+    "id": "deviated_nasal_septum",
+    "parent_illness": "Deviated nasal septum",
+    "top_match_type": "direct",
+    "top_matched_illness": "Deviated nasal septum",
+  },
+  {
+    "id": "tonsillitis",
+    "parent_illness": "Tonsillitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Tonsillitis",
+  },
+  {
+    "id": "otitis_media",
+    "parent_illness": "Otitis media",
+    "top_match_type": "direct",
+    "top_matched_illness": "Otitis media",
+  },
+  {
+    "id": "nasal_polyps",
+    "parent_illness": "Nasal polyps",
+    "top_match_type": "direct",
+    "top_matched_illness": "Nasal polyps",
+  },
+  {
+    "id": "fibroids",
+    "parent_illness": "Fibroids / Fibromyoma",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "id": "pcod",
+    "parent_illness": "Polycystic ovarian disease",
+    "top_match_type": "direct",
+    "top_matched_illness": "Polycystic ovarian disease",
+  },
+  {
+    "id": "endometriosis",
+    "parent_illness": "Endometriosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Endometriosis",
+  },
+  {
+    "id": "menorrhagia",
+    "parent_illness": "Menorrhagia / DUB",
+    "top_match_type": "direct",
+    "top_matched_illness": "Menorrhagia / DUB",
+  },
+  {
+    "id": "uterine_prolapse",
+    "parent_illness": "Uterine prolapse",
+    "top_match_type": "direct",
+    "top_matched_illness": "Uterine prolapse",
+  },
+  {
+    "id": "pid_gyn",
+    "parent_illness": "Pelvic inflammatory disease",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pelvic inflammatory disease",
+  },
+  {
+    "id": "breast_lump",
+    "parent_illness": "Breast lumps (benign)",
+    "top_match_type": "direct",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "id": "ovarian_cyst",
+    "parent_illness": "Ovarian cyst / benign tumour",
+    "top_match_type": "direct",
+    "top_matched_illness": "Ovarian cyst / benign tumour",
+  },
+  {
+    "id": "urinary_stone",
+    "parent_illness": "Kidney / Urinary stones",
+    "top_match_type": "direct",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "id": "bph",
+    "parent_illness": "Benign prostatic hypertrophy",
+    "top_match_type": "direct",
+    "top_matched_illness": "Benign prostatic hypertrophy",
+  },
+  {
+    "id": "hernia",
+    "parent_illness": "Hernia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "id": "varicocele",
+    "parent_illness": "Varicocele",
+    "top_match_type": "direct",
+    "top_matched_illness": "Varicocele",
+  },
+  {
+    "id": "skin_tumour",
+    "parent_illness": "Skin tumours (benign)",
+    "top_match_type": "direct",
+    "top_matched_illness": "Skin tumours (benign)",
+  },
+  {
+    "id": "varicose_veins",
+    "parent_illness": "Varicose veins",
+    "top_match_type": "direct",
+    "top_matched_illness": "Varicose veins",
+  },
+  {
+    "id": "all_skin_diseases",
+    "parent_illness": "All skin diseases",
+    "top_match_type": "direct",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "id": "any_cyst",
+    "parent_illness": "Any cyst / nodule / polyp / benign tumour",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+]
+`;
+
+exports[`specificIllnessEngine.ts matching (regression baseline) > produces stable results across the shared smoke-test PED list 1`] = `
+[
+  {
+    "ped": "chest pain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "body pain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "weakness",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fever",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heavy bleeding",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "palpitations",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "shortness of breath",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "loss of appetite",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dizziness",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fatigue",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nausea",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vomiting",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chills",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "malaise",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "swelling",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "smoking",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alcholic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tobacco chewing",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "drinking",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "obesity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "headache",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spine tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bone tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "skeletal tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pott's disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinal tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "brain tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "meningeal tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tb meningitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "neurological tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "intestinal tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "abdominal tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gastrointestinal tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "renal tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kidney tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "urinary tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "genitourinary tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lymph node tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lymph gland tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tb lymphadenitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pulmonary tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lung tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ovarian cyst",
+    "top_match_type": "direct",
+    "top_matched_illness": "Ovarian cyst / benign tumour",
+  },
+  {
+    "ped": "sebaceous cyst",
+    "top_match_type": "alias",
+    "top_matched_illness": "Skin tumours (benign)",
+  },
+  {
+    "ped": "breast cyst",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "kidney cyst",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "liver cyst",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "gastric polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "stomach polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "colon polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "rectal polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "vocal cord polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "nasal polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Nasal polyps",
+  },
+  {
+    "ped": "endometrial polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "cervical polyp",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "melanoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lymphoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leukemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leukaemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "malignancy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "metastasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "oncology",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenocarcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "squamous cell carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lipoma",
+    "top_match_type": "alias",
+    "top_matched_illness": "Skin tumours (benign)",
+  },
+  {
+    "ped": "adenoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "papilloma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fibroid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fibroadenoma",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "myoma",
+    "top_match_type": "alias",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "ped": "fibromyoma",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "ped": "hemangioma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leiomyoma",
+    "top_match_type": "alias",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "ped": "meningioma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "neuroma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "schwannoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "htn",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabeties",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cabg",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pcos",
+    "top_match_type": "direct",
+    "top_matched_illness": "Polycystic ovarian disease",
+  },
+  {
+    "ped": "sugar",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bp high",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ptca",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lscs",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "t2dm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyper cholesterol",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pre diabeties",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "esrd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ckd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cva",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bph",
+    "top_match_type": "direct",
+    "top_matched_illness": "Benign prostatic hypertrophy",
+  },
+  {
+    "ped": "gerd",
+    "top_match_type": "direct",
+    "top_matched_illness": "GERD",
+  },
+  {
+    "ped": "tkr",
+    "top_match_type": "alias",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
+    "ped": "thr",
+    "top_match_type": "alias",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
+    "ped": "ms",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hba1c 6.5",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tmt positive",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "h pylori",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rheumatoid arthritis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Rheumatoid Arthritis",
+  },
+  {
+    "ped": "sle",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lupus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "scleroderma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sjogren syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ankylosing spondylitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "ped": "vasculitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "psoriatic arthritis",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "ped": "myasthenia gravis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sarcoidosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "raynaud's phenomenon",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pilonidal sinus",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pilonidal sinus",
+  },
+  {
+    "ped": "varicose veins",
+    "top_match_type": "direct",
+    "top_matched_illness": "Varicose veins",
+  },
+  {
+    "ped": "c-section",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "routine master health checkup",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pregnant",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lactating mother",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "post-menopausal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "n/a",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nil",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "healthy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vaccination",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "immunization",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dog bite",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cat scratch",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "food allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gynecomastia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "appendectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Appendicitis",
+  },
+  {
+    "ped": "cholecystectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Gallbladder stone / Cholecystitis",
+  },
+  {
+    "ped": "hysterectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "ped": "tonsillectomy",
+    "top_match_type": "direct",
+    "top_matched_illness": "Tonsillitis",
+  },
+  {
+    "ped": "tympanoplasty",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Otitis media",
+  },
+  {
+    "ped": "stitches on forehead",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "laceration on leg",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "burns",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cast on arm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "splint",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alzheimer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dementia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "parkinson",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "epilepsy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fits",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "seizures",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "migraine",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "depression",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "anxiety",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ocd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adhd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "autism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bipolar disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "schizophrenia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ptsd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "panic attack",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bulimia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "anorexia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "insomnia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "obstructive sleep apnea",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "head injury",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "brain haemorrhage",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cerebral palsy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "guillain barre syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "huntington's",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "avascular necrosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "crohn's disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ulcerative colitis",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "ped": "puj obstruction",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thalassemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hemochromatosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sickle cell anemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "von willebrand disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bone marrow failure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hirayama disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "trigeminal neuralgia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "carpal tunnel",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "plantar fasciitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hipertension",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypetension",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabtes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dialisis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cholecystitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gallbladder stone / Cholecystitis",
+  },
+  {
+    "ped": "apendicitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gullian barre",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hemorrhoids",
+    "top_match_type": "direct",
+    "top_matched_illness": "Haemorrhoids / Piles",
+  },
+  {
+    "ped": "fistula",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "ped": "fissure",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "ped": "psorasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "eczem",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vitiligo",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "alopeci",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thyriod",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypothyrodism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "endometriosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Endometriosis",
+  },
+  {
+    "ped": "infertillity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "prostatitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "varicocele",
+    "top_match_type": "direct",
+    "top_matched_illness": "Varicocele",
+  },
+  {
+    "ped": "hydrocele",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "diabetes type 2",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high blood sugar",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetes mellitus type 2",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypertension",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high blood pressure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "asthma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bronchial asthma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "seizure disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cholesterol",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high cholesterol",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperlipidemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dyslipidemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetes type 1",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gdm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gestational diabetes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cholestrerol",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperlipidimia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperlipidmia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dyslipidimia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dyslipidmia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "covid.19",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "congestion",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cold",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "absence seizure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "abscence seizure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gullian barre syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hirayama",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "moderate intellectual disability",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hemmoroids",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "appendicitis surgery",
+    "top_match_type": "direct",
+    "top_matched_illness": "Appendicitis",
+  },
+  {
+    "ped": "gas",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "foos poisoning",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "h. pylori",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pylori",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gall bladder removal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gall bladder stone",
+    "top_match_type": "alias",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "weils disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "shoulder dislocation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leg fracture with implant",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pcl tear",
+    "top_match_type": "alias",
+    "top_matched_illness": "Internal derangement of knee",
+  },
+  {
+    "ped": "kidneystone",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uterus removal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pilodinal sinus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "xanthelasma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cold sores",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "squint surgery",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sinus surgery",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Sinusitis",
+  },
+  {
+    "ped": "tymnoplasty",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenoid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenoids",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Tonsillitis",
+  },
+  {
+    "ped": "thalaseemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "low blood level",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rheumatic fever",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vitamin d def",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vitamin d low",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vitamin defeciency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "calcium",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "headcahe",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "stitches",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "accident",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "c - section",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "premature baby",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "superficial thrombophlebitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "varicosity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "venous insufficiency",
+    "top_match_type": "alias",
+    "top_matched_illness": "Varicose veins",
+  },
+  {
+    "ped": "chronic venous insufficiency",
+    "top_match_type": "alias",
+    "top_matched_illness": "Varicose veins",
+  },
+  {
+    "ped": "spider veins",
+    "top_match_type": "alias",
+    "top_matched_illness": "Varicose veins",
+  },
+  {
+    "ped": "acne",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "smoker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cigarette",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cigarettes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cigar",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chain smoker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nicotine",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vaping",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "e-cigarette",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "beedi",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pan",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "paan",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pan masala",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gutkha",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gutka",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "khaini",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "zarda",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "betel nut",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mawa",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "drinker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "liquor",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "beer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "wine",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "whiskey",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vodka",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rum",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "toddy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alcohol consumption",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "weed",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "marijuana",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gynaecomastia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gynocomastia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gyneacomastia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dust allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "drug allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "allergic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "penicillin allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "peanut allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "latex allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pollen allergy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hay fever",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "meningococcal meningitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leprosy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "brucellosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "whooping cough",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pertussis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diphtheria",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "scarlet fever",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "salmonellosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "listeriosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rabies",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ebola",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "japanese encephalitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "zika virus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cytomegalovirus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cmv",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "epstein barr virus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "infectious mononucleosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "filariasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "amoebiasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "giardiasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hookworm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ascariasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "taeniasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "schistosomiasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leishmaniasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "toxoplasmosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "candidiasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aspergillosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cryptococcosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lung cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "breast cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "colorectal cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "colon cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rectal cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "prostate cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "stomach cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gastric cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "liver cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pancreatic cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "renal cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kidney cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bladder cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ovarian cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uterine cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cervical cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "endometrial cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thyroid cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "basal cell carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osteosarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "liposarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "glioblastoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "astrocytoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acoustic neuroma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "schwanoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "haemangioma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lymphangioma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "teratoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ganglioma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "craniopharyngioma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vocal cord nodule",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "myxoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "atrial myxoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bartholin cyst",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "hasimoto thyroiditis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hashimoto thyroiditis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "graves' disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "graves disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypothyroidism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperthyroidism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "goitre",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "goiter",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pituitary adenoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cushing's syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cushing syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "addison's disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "addison disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pheochromocytoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperaldosteronism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperparathyroidism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "meningitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "encephalitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "brain abscess",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myelitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "subdural empyema",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "neurosyphilis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tabes dorsalis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "general paresis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "skeletal tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "intestinal tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "abdominal tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "renal tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "laryngeal tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pleural tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "miliary tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tuberculous lymphadenitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mitral stenosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mitral regurgitation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mitral valve prolapse",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mvp",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aortic stenosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aortic regurgitation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tricuspid stenosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tricuspid regurgitation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pulmonary stenosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pulmonary regurgitation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heart failure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "congestive heart failure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chf",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "atrial fibrillation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "afib",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "atrial flutter",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ventricular tachycardia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vt",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ventricular fibrillation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vf",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sick sinus syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sss",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heart block",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "av block",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bundle branch block",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lbbb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rbbb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myocarditis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "endocarditis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pericarditis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pericardial effusion",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dilated cardiomyopathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypertrophic cardiomyopathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hcm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "restrictive cardiomyopathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "angina",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "angina pectoris",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "stable angina",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "unstable angina",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myocardial infarction",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mi",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heart attack",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coronary artery disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cad",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ischaemic heart disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ihd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coronary artery bypass",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "angioplasty",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coronary stent",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pacemaker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "defibrillator",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "icd implantation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heart transplant",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rheumatic heart disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rhd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aortic aneurysm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "copd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic obstructive pulmonary disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "emphysema",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic bronchitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bronchiectasis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "interstitial lung disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ild",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pulmonary fibrosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sarcoidosis of lung",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pleural effusion",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pleurisy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pneumothorax",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lung collapse",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lung infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "respiratory failure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sleep apnea",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osa",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "stroke",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ischemic stroke",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hemorrhagic stroke",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "brain hemorrhage",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "transient ischemic attack",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "multiple sclerosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "parkinson disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "parkinsonism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "parkinson's disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alzheimer disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alzheimer's disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "motor neuron disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mnd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "muscular dystrophy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "demyelinating disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "peripheral neuropathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "polyneuropathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gbs",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bell's palsy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "facial paralysis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "essential tremor",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinal cord injury",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sleep disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "narcolepsy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "depressive disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "generalized anxiety disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gad",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "panic disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bipolar",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "psychosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "intellectual disability",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hepatitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hepatitis a",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "jaundice",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "portal hypertension",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ascites",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hepatomegaly",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "splenomegaly",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "liver abscess",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pancreatitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pancreatitis",
+  },
+  {
+    "ped": "acute pancreatitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pancreatitis",
+  },
+  {
+    "ped": "chronic pancreatitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Pancreatitis",
+  },
+  {
+    "ped": "gallbladder stone",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gallbladder stone / Cholecystitis",
+  },
+  {
+    "ped": "gallbladder disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gastric ulcer",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "ped": "duodenal ulcer",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "ped": "peptic ulcer",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "ped": "acid reflux",
+    "top_match_type": "alias",
+    "top_matched_illness": "GERD",
+  },
+  {
+    "ped": "gastritis",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "ped": "irritable bowel syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ibs",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "crohn disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ibd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "celiac disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coeliac disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diverticulitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "anal fissure",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "ped": "anal fistula",
+    "top_match_type": "direct",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "ped": "piles",
+    "top_match_type": "direct",
+    "top_matched_illness": "Haemorrhoids / Piles",
+  },
+  {
+    "ped": "haemorrhoids",
+    "top_match_type": "direct",
+    "top_matched_illness": "Haemorrhoids / Piles",
+  },
+  {
+    "ped": "inguinal hernia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "umbilical hernia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "hiatal hernia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "femoral hernia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "incisional hernia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "appendicitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Appendicitis",
+  },
+  {
+    "ped": "appendix surgery",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Appendicitis",
+  },
+  {
+    "ped": "kidney stones",
+    "top_match_type": "direct",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "renal calculus",
+    "top_match_type": "direct",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "renal calculi",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ureteric stone",
+    "top_match_type": "alias",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "bladder stone",
+    "top_match_type": "alias",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "nephrolithiasis",
+    "top_match_type": "alias",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "chronic kidney disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "end stage renal disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "glomerulonephritis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nephrotic syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "urinary tract infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uti",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cystitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kidney failure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "renal failure",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kidney transplant",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dialysis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "prostate disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "benign prostatic hyperplasia",
+    "top_match_type": "alias",
+    "top_matched_illness": "Benign prostatic hypertrophy",
+  },
+  {
+    "ped": "prostatomegaly",
+    "top_match_type": "alias",
+    "top_matched_illness": "Benign prostatic hypertrophy",
+  },
+  {
+    "ped": "phimosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "testicular cyst",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "epididymitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pcod",
+    "top_match_type": "direct",
+    "top_matched_illness": "Polycystic ovarian disease",
+  },
+  {
+    "ped": "polycystic ovarian syndrome",
+    "top_match_type": "alias",
+    "top_matched_illness": "Polycystic ovarian disease",
+  },
+  {
+    "ped": "polycystic ovary disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uterine fibroid",
+    "top_match_type": "alias",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "ped": "adenomyosis",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Endometriosis",
+  },
+  {
+    "ped": "dysmenorrhea",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "menorrhagia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Menorrhagia / DUB",
+  },
+  {
+    "ped": "female infertility",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "male infertility",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "infertility",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ivf",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gout",
+    "top_match_type": "direct",
+    "top_matched_illness": "Gout",
+  },
+  {
+    "ped": "osteoarthritis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Osteoarthritis",
+  },
+  {
+    "ped": "osteoporosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Osteoporosis",
+  },
+  {
+    "ped": "osteopenia",
+    "top_match_type": "alias",
+    "top_matched_illness": "Osteoporosis",
+  },
+  {
+    "ped": "fibromyalgia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sciatica",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cervical spondylosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "ped": "lumbar spondylosis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "ped": "slipped disc",
+    "top_match_type": "direct",
+    "top_matched_illness": "Prolapsed intervertebral disc",
+  },
+  {
+    "ped": "disc bulge",
+    "top_match_type": "alias",
+    "top_matched_illness": "Prolapsed intervertebral disc",
+  },
+  {
+    "ped": "spine deformity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "scoliosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kyphosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinal stenosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "avn",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osteomyelitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ra",
+    "top_match_type": "alias",
+    "top_matched_illness": "Rheumatoid Arthritis",
+  },
+  {
+    "ped": "thyroid disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thyroid disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "abnormal thyroid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thyrotoxicosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adrenal insufficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "congenital adrenal hyperplasia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cah",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypopituitarism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "panhypopituitarism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acromegaly",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gigantism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "prolactinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetes insipidus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "siadh",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypoparathyroidism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pseudohypoparathyroidism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osteitis fibrosa cystica",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypogonadism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "klinefelter syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "turner syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "noonan syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "marfan syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ehlers danlos syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osteogenesis imperfecta",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "achondroplasia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinal muscular atrophy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "charcot marie tooth disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "friedreich ataxia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "huntington chorea",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinocerebellar ataxia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hereditary spastic paraplegia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "porphyria",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "amyloidosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tuberculous meningitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tuberculous peritonitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "genitourinary tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lymph node tuberculosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "anemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "iron deficiency anemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hemophilia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thrombocytopenia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "polycythemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "polycythemia vera",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aplastic anemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bleeding disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "clotting disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coagulation disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dvt",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "deep vein thrombosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pulmonary embolism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "varicose vein",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lymphedema",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "raynaud disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "raynaud phenomenon",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "psoriasis",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "eczema",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "atopic dermatitis",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "dermatitis",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "urticaria",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "hives",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "alopecia",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "alopecia areata",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "shingles",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "herpes zoster",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "scabies",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ringworm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cellulitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "contact dermatitis",
+    "top_match_type": "alias",
+    "top_matched_illness": "All skin diseases",
+  },
+  {
+    "ped": "keloid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "benign growth",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fibrocystic breast disease",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "breast clinic evaluation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "breast calcification",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "breast lump",
+    "top_match_type": "direct",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "adenofibroma",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "hcc",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rcc",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nsclc",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dcis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lcis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "papillary thyroid cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "follicular thyroid cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "medullary thyroid cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "anaplastic thyroid cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chondrosarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leiomyosarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rhabdomyosarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ewing sarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kaposi sarcoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hodgkin lymphoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "non hodgkin lymphoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nhl",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "multiple myeloma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "plasmacytoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic myeloid leukemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic lymphocytic leukemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acute myeloid leukemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acute lymphocytic leukemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cml",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cll",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aml",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "all",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sinusitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Sinusitis",
+  },
+  {
+    "ped": "dns",
+    "top_match_type": "alias",
+    "top_matched_illness": "Deviated nasal septum",
+  },
+  {
+    "ped": "deviated nasal septum",
+    "top_match_type": "direct",
+    "top_matched_illness": "Deviated nasal septum",
+  },
+  {
+    "ped": "allergic rhinitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Rhinitis",
+  },
+  {
+    "ped": "tonsillitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Tonsillitis",
+  },
+  {
+    "ped": "tonsilitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenoid hypertrophy",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Tonsillitis",
+  },
+  {
+    "ped": "meniere disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vertigo",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "labyrinthitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tinnitus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sensorineural hearing loss",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "otitis media",
+    "top_match_type": "direct",
+    "top_matched_illness": "Otitis media",
+  },
+  {
+    "ped": "pharyngitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "laryngitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic sinusitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Sinusitis",
+  },
+  {
+    "ped": "hearing loss",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "otitis externa",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "retinopathy",
+    "top_match_type": "direct",
+    "top_matched_illness": "Retinal disorders",
+  },
+  {
+    "ped": "diabetic retinopathy",
+    "top_match_type": "direct",
+    "top_matched_illness": "Retinal disorders",
+  },
+  {
+    "ped": "glaucoma",
+    "top_match_type": "direct",
+    "top_matched_illness": "Glaucoma",
+  },
+  {
+    "ped": "cataract",
+    "top_match_type": "direct",
+    "top_matched_illness": "Cataract",
+  },
+  {
+    "ped": "retinal detachment",
+    "top_match_type": "alias",
+    "top_matched_illness": "Retinal disorders",
+  },
+  {
+    "ped": "allergic conjunctivitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "strabismus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "squint",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "macular degeneration",
+    "top_match_type": "alias",
+    "top_matched_illness": "Retinal disorders",
+  },
+  {
+    "ped": "optic neuritis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uveitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "blepharitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dry eye syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "presbyopia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myopia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperopia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "astigmatism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "keratoconus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chalazion",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "stye",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pterygium",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic fatigue syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dengue",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "malaria",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "typhoid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chikungunya",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chickenpox",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "viral fever",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "common cold",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gastroenteritis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "food poisoning",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "accidental injury",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fracture healing with implant",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kidney stone removal",
+    "top_match_type": "alias",
+    "top_matched_illness": "Kidney / Urinary stones",
+  },
+  {
+    "ped": "hysterectomy history",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "ped": "c section history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gastric problem",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gas problem",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acidity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heartburn",
+    "top_match_type": "alias",
+    "top_matched_illness": "GERD",
+  },
+  {
+    "ped": "indigestion",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "constipation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diarrhea",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "breathlessness",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sob",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cough",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "wheezing",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "overweight",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "morbid obesity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uric acid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high uric acid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "creatinine",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high creatinine",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "proteinuria",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "microalbuminuria",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tsh",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high tsh",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vitamin d deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vitamin b12 deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "calcium deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "iron deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hb low",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "low hemoglobin",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leukocytosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leukopenia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "platelet low",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thrombocytosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "eosinophilia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high eosinophils",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "allergic condition",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "smoking tobacco",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "smoker status",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alcohol intake",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "occasional drinker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "social drinker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heavy drinker",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "regular drinking",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "substance use",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "drug abuse",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "recreational drugs",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "regular medication",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "daily tablets",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "annual health checkup",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "full body check",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "preventative screening",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "healthy normal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "routine checkup",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "executive health check",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "normal profile",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "perfect health",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fit and fine",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nil medical history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "no pre-existing disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "none",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "not applicable",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "regular period",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "normal menstruation",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "menopause status",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "post menopause",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pregnancy normal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "childbirth history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "routine physical",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "blood donor",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vaccination done",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fully vaccinated",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "routine ultrasound",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "healthy lifestyle",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "exercise daily",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "regular walking",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fitness center member",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "yoga practitioner",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vegetarian diet",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "well balanced diet",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "normal height weight",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hiv positive",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hiv negative",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aids",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "positive hiv test",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "syphilis infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gonorrhea infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chlamydia infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "genital herpes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "venereal disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "std profile",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hpv infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sarcoidosis systemic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "systemic lupus erythematosus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sle nephritis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lupus diagnosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "scleroderma skin",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dermatomyositis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "polymyositis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mixed connective tissue disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mctd diagnosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "autoimmune disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "autoimmune disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "psoriatic arthritis joint",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "ped": "reactive arthritis joint",
+    "top_match_type": "alias",
+    "top_matched_illness": "Non-infective arthritis",
+  },
+  {
+    "ped": "reiter syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "giant cell arteritis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "systemic vasculitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "polymyalgia rheumatica",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "behcet disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "celiac enteropathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coeliac enteropathy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic fatigue",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myalgic encephalomyelitis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chronic pain syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "somatoform pain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fibrositis tissue",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gord",
+    "top_match_type": "alias",
+    "top_matched_illness": "GERD",
+  },
+  {
+    "ped": "acid peptic disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "apd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gastric erosion",
+    "top_match_type": "alias",
+    "top_matched_illness": "Gastric / Duodenal ulcer",
+  },
+  {
+    "ped": "gastric polyp removal",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "colon polyp removal",
+    "top_match_type": "direct",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "haemorrhoidectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Haemorrhoids / Piles",
+  },
+  {
+    "ped": "fistulectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "ped": "fissurectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
+    "ped": "hernioplasty",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "herniorrhaphy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Hernia",
+  },
+  {
+    "ped": "cholelithiasis surgery",
+    "top_match_type": "alias",
+    "top_matched_illness": "Gallbladder stone / Cholecystitis",
+  },
+  {
+    "ped": "bph surgery",
+    "top_match_type": "direct",
+    "top_matched_illness": "Benign prostatic hypertrophy",
+  },
+  {
+    "ped": "prostatectomy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cystoscopy done",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "nephrectomy history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "renal transplant history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "kidney donor",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dialysis patient",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acute kidney injury",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aki",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lscs delivery",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "c-section delivery",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "postpartum recovery",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lactation stage",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "breastfeeding mother",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "routine mammogram",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "routine pap smear",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high cholesterol level",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypercholesterolemia state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypertriglyceridemia state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dyslipidemia check",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high triglycerides",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lipid profile high",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperlipidemia untreated",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperlipidemia treated",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypertension untreated",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypertension treated",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high bp",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "essential hypertension htn",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "secondary hypertension htn",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pregnancy induced hypertension",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pih",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gestational hypertension",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pre-eclampsia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "preeclampsia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "eclampsia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "high blood sugar state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetic retinopathy eye",
+    "top_match_type": "direct",
+    "top_matched_illness": "Retinal disorders",
+  },
+  {
+    "ped": "diabetic neuropathy nerve",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetic nephropathy kidney",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetic foot ulcer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetic foot infection",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "diabetic ketoacidosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dka history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "type 1 diabetes mellitus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "type 2 diabetes mellitus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "insulin dependent diabetes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "non insulin dependent diabetes",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "niddm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "iddm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pre-diabetic condition",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "impaired fasting glucose",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "impaired glucose tolerance",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "igt",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ifg",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "borderline diabetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hba1c high",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hyperglycemia episode",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypoglycemia episode",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "reactive hypoglycemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "low blood sugar finding",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tmt test positive",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "stress test abnormal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mi history",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coronary artery spasm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "heart murmur systolic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "congenital heart defect",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "asd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "vsd",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "atrial septal defect",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ventricular septal defect",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "tetralogy of fallot",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spina bifida",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cleft lip cleft palate",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "clubfoot deformity",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "down syndrome genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "g6pd deficiency metabolic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "alpha-1 antitrypsin deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "enzyme deficiency metabolic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "cystic fibrosis lungs",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pompe disease genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gaucher disease genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "huntington disease neuro",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "clotting factor deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "coagulation pathway defect",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "factor viii deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "factor ix deficiency",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "aplastic anemia critical",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bone marrow hypoplasia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pancytopenia state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myelodysplastic syndrome",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "mds diagnosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "essential thrombocythemia",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myelofibrosis disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "all cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "myeloma diagnosis",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "benign brain tumor",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "meningioma tumor",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "pituitary adenoma gland",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "craniopharyngioma brain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acoustic neuroma ear",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "glioblastoma multiforme",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gbm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "astrocytoma brain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "oligodendroglioma brain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ependymoma brain",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinal cord tumor",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "bronchogenic carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "small cell lung cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "non small cell lung cancer",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ductal carcinoma in situ",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "dcis breast",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lobular carcinoma in situ",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "lcis breast",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "fibroadenoma breast",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "adenofibroma breast",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "breast cyst benign",
+    "top_match_type": "alias",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "breast lump evaluation",
+    "top_match_type": "direct",
+    "top_matched_illness": "Breast lumps (benign)",
+  },
+  {
+    "ped": "prostate cancer neoplasm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "colorectal cancer neoplasm",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hepatocellular carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hcc liver",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "renal cell carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rcc kidney",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "uropithelial carcinoma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "bladder tumor neoplasm",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "adenocarcinoma colon",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "malignant melanoma skin",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "basal cell carcinoma bcc",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "squamous cell carcinoma scc",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sarcoma bones",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osteosarcoma bones",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "chondrosarcoma joints",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "liposarcoma tissue",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "leiomyosarcoma uterus",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "rhabdomyosarcoma muscle",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ewing sarcoma bones",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenoma thyroid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenoma parathyroid",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "adenoma adrenal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "pheochromocytoma tumor",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "paraganglioma tumor",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Any cyst / nodule / polyp / benign tumour",
+  },
+  {
+    "ped": "hyperaldosteronism adrenal",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypopituitarism state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "acromegaly hormone",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "gigantism hormone",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "prolactinoma pituitary",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "syndrome of inappropriate adh",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypoparathyroidism state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hypogonadism state",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "klinefelter syndrome genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "turner syndrome genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "noonan syndrome genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "marfan syndrome aorta",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ehlers danlos syndrome joints",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "osteogenesis imperfecta bones",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "achondroplasia dwarfism",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinal muscular atrophy sma",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "friedreich ataxia genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "huntington chorea neuro",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "spinocerebellar ataxia genetic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "wilson disease liver",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "hemochromatosis blood",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "porphyria metabolic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "amyloidosis systemic",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "sarcoidosis lungs and lymph",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "potts disease spine tb",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+]
+`;

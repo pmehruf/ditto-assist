@@ -1,0 +1,6 @@
+{
+  "name": "Declaration Assistant",
+  "description": "Medical Underwriting assistant matching pre-existing conditions to insurance questionnaires and specific 2-year exclusion waiting lists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

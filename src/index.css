@@ -1,0 +1,878 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Space+Mono:wght@400;700&family=Oswald:wght@500;700&family=Geist+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+body, * {
+  font-family: "Space Grotesk", sans-serif;
+  font-optical-sizing: auto;
+}
+
+:root {
+  --font-sans: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  /* Theme Colors - Light Mode Default */
+  --color-ditto-dark: #F3F4F6;
+  --color-ditto-card: #FFFFFF;
+  --color-ditto-card-hover: #F9FAFB;
+  --color-ditto-border: #E5E7EB;
+
+  /* Brand / Primary */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-light-bg: #DBEAFE;
+  --color-primary-light-text: #1E40AF;
+
+  /* Semantic / Functional */
+  --color-success-bg: #DCFCE7;
+  --color-success-text: #16A34A;
+  --color-warning-bg: #FEF3C7;
+  --color-warning-text: #D97706;
+  --color-danger-bg: #FEE2E2;
+  --color-danger-text: #DC2626;
+
+  /* Typography Colors */
+  --color-text-body: #1F2937;
+  --color-text-muted: #6B7280;
+
+  /* Backwards compatibility */
+  --color-ditto-border-active: #2563EB;
+  --color-ditto-blue: #2563EB;
+  --color-ditto-blue-light: #60A5FA;
+  --color-ditto-gray: #F3F4F6;
+  --color-ditto-success: #16A34A;
+  --color-ditto-success-bg: rgba(22, 163, 74, 0.1);
+  --color-ditto-warning: #D97706;
+  --color-ditto-warning-bg: rgba(217, 119, 6, 0.1);
+}
+
+.dark {
+  /* Theme Colors - Dark Mode Default (#001322, matching customized SVG background) */
+  --color-ditto-dark: #001322;
+  --color-ditto-card: #07111F;
+  --color-ditto-card-hover: #0A1528;
+  --color-ditto-border: rgba(0, 183, 255, 0.12);
+
+  /* Brand / Primary */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-light-bg: #1E3A8A;
+  --color-primary-light-text: #93C5FD;
+
+  /* Semantic / Functional */
+  --color-success-bg: rgba(22, 163, 74, 0.15);
+  --color-success-text: #4ADE80;
+  --color-warning-bg: rgba(217, 119, 6, 0.15);
+  --color-warning-text: #FCD34D;
+  --color-danger-bg: rgba(220, 38, 38, 0.15);
+  --color-danger-text: #FCA5A5;
+
+  /* Typography Colors */
+  --color-text-body: #E2E8F0;
+  --color-text-muted: #94A3B8;
+
+  /* Backwards compatibility overrides */
+  --color-ditto-border-active: #2563EB;
+  --color-ditto-blue: #2563EB;
+  --color-ditto-blue-light: #3B82F6;
+  --color-ditto-gray: #0A1528;
+  --color-ditto-success: #4ADE80;
+  --color-ditto-success-bg: rgba(22, 163, 74, 0.15);
+  --color-ditto-warning: #FCD34D;
+  --color-ditto-warning-bg: rgba(217, 119, 6, 0.15);
+}
+
+/* Force override classes for dark mode blocks and borders to align exactly with requested scheme */
+.dark .bg-\[\#14161a\],
+.dark .bg-\[\#12151A\],
+.dark .bg-\[\#111622\],
+.dark .bg-\[\#091520\]\/80,
+.dark .bg-\[\#0b1427\],
+.dark .bg-slate-900\/60,
+.dark .bg-black\/25,
+.dark .bg-stone-900,
+.dark .bg-\[\#050b16\]\/95,
+.dark .bg-\[\#050b16\]\/90,
+.dark .bg-\[\#040914\],
+.dark .bg-slate-950\/90 {
+  background-color: #07111F !important;
+}
+
+.dark .bg-\[\#171B22\],
+.dark .bg-\[\#171B22\]\/50,
+.dark .bg-\[\#171B22\]\/40,
+.dark .bg-\[\#111317\],
+.dark .bg-\[\#0b1328\]\/30,
+.dark .bg-\[\#0b1321\]\/50,
+.dark .bg-\[\#060a12\],
+.dark .bg-\[\#060A10\],
+.dark .bg-\[\#14181D\],
+.dark .bg-stone-950\/30,
+.dark .bg-stone-950\/40,
+.dark .bg-\[\#070f1a\],
+.dark .bg-\[\#171B22\]\/50,
+.dark .bg-stone-900\/50 {
+  background-color: #0A1528 !important;
+}
+
+/* Borders */
+.dark .border-stone-800,
+.dark .border-stone-850,
+.dark .border-stone-900,
+.dark .border-stone-900\/80,
+.dark .border-\[\#252A34\],
+.dark .border-\[\#252A34\]\/40,
+.dark .border-white\/\[0\.08\],
+.dark .border-white\/\[0\.06\],
+.dark .border-white\/\[0\.04\],
+.dark .border-white\/\[0\.03\],
+.dark .border-\[\#1c3258\],
+.dark .border-stone-800\/60,
+.dark .border-stone-800\/80,
+.dark .border-\[\#1f242e\],
+.dark .border-stone-150 {
+  border-color: rgba(0, 183, 255, 0.12) !important;
+}
+
+@theme {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  
+  --color-ditto-dark: var(--color-ditto-dark);
+  --color-ditto-card: var(--color-ditto-card);
+  --color-ditto-card-hover: var(--color-ditto-card-hover);
+  --color-ditto-border: var(--color-ditto-border);
+  --color-ditto-border-active: var(--color-ditto-border-active);
+  --color-ditto-blue: var(--color-ditto-blue);
+  --color-ditto-blue-light: var(--color-ditto-blue-light);
+  --color-ditto-gray: var(--color-ditto-gray);
+  --color-ditto-success: var(--color-ditto-success);
+  --color-ditto-success-bg: var(--color-ditto-success-bg);
+  --color-ditto-warning: var(--color-ditto-warning);
+  --color-ditto-warning-bg: var(--color-ditto-warning-bg);
+
+  /* Primary Tokens */
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-light-bg: var(--color-primary-light-bg);
+  --color-primary-light-text: var(--color-primary-light-text);
+
+  /* Semantic Tokens */
+  --color-success-bg-token: var(--color-success-bg);
+  --color-success-text-token: var(--color-success-text);
+  --color-warning-bg-token: var(--color-warning-bg);
+  --color-warning-text-token: var(--color-warning-text);
+  --color-danger-bg-token: var(--color-danger-bg);
+  --color-danger-text-token: var(--color-danger-text);
+
+  /* Typography Tokens */
+  --color-text-body-token: var(--color-text-body);
+  --color-text-muted-token: var(--color-text-muted);
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ditto-border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ditto-blue);
+}
+
+/* ====================================================================
+   ACCESSIBILITY & INTERACTION POLISH  (UI/UX audit pass)
+   Presentation-only. No design tokens modified. Aligns with the
+   accessibility, readability and visibility standards in DESIGN LOCK v1.0.
+   ==================================================================== */
+
+/* 1. KEYBOARD FOCUS VISIBILITY
+   Restores a clear, consistent focus ring for keyboard users across the
+   whole app, overriding the many scattered `focus:outline-none` utilities.
+   Uses the approved cyan/blue focus color (#58A3FF). Mouse/touch interaction
+   is unaffected because this targets :focus-visible only. */
+:focus-visible {
+  outline: 2px solid #58A3FF !important;
+  outline-offset: 2px !important;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 2. REDUCED MOTION
+   Honor the OS "reduce motion" preference for users sensitive to animation. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 3. BRAND-ALIGNED TEXT SELECTION
+   Replaces the default OS selection color with the approved blue family. */
+::selection {
+  background-color: rgba(88, 163, 255, 0.28);
+}
+
+/* 4. CONSISTENT DISABLED AFFORDANCE
+   Communicates non-interactivity uniformly without altering existing dimming. */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+}
+
+/* 5. SKIP-TO-CONTENT LINK
+   Visually hidden until focused; lets keyboard users bypass the header/nav.
+   Uses approved Design Lock colors (primary card #04233F, focus blue #58A3FF). */
+.skip-to-content {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%) translateY(-130%);
+  z-index: 100;
+  padding: 10px 18px;
+  border-radius: 0 0 12px 12px;
+  background-color: #04233F;
+  color: #EFF6FF;
+  font-weight: 700;
+  font-size: 14px;
+  border: 1px solid #58A3FF;
+  transition: transform 0.18s ease;
+}
+.skip-to-content:focus {
+  transform: translateX(-50%) translateY(0);
+  outline: 2px solid #58A3FF;
+  outline-offset: 2px;
+}
+
+/* 6. READABILITY FLOOR
+   Gently raise only the very smallest text (8 / 8.5px) to 9px so micro-labels
+   stay legible. Larger sizes are untouched to avoid disrupting compact layouts. */
+.text-\[8px\],
+.text-\[8\.5px\] {
+  font-size: 9px !important;
+}
+
+/* --- NATURAL ADJUSTING LIGHT THEME --- */
+html {
+  background-color: var(--color-ditto-dark);
+  color: var(--color-text-body);
+  transition: background-color 0.2s ease, border-color 0.2s ease, text-color 0.2s ease;
+  font-size: 15px; /* Mobile base size */
+}
+
+/* Elegant responsive scaling for standard laptop and large screens at 100% zoom */
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  html {
+    font-size: 17px; /* Small laptops */
+  }
+}
+
+@media (min-width: 1280px) {
+  html {
+    font-size: 17.5px; /* Standard laptop screens (e.g. 13-15", 1080p) at 100% zoom */
+  }
+}
+
+@media (min-width: 1440px) {
+  html {
+    font-size: 18px; /* Large high-res laptop and desktop screens */
+  }
+}
+
+html:not(.dark) {
+  --color-ditto-dark: #F1F6FB; /* Premium light off-white sky blue */
+  --color-ditto-card: #FFFFFF; /* High quality card background */
+  --color-ditto-card-hover: #F8FAFD;
+  --color-ditto-border: #D2DFEC; /* Very soft light cool border */
+  
+  --color-primary: #1D63ED;
+  --color-primary-hover: #154EC3;
+  --color-primary-light-bg: #E1EAF7;
+  --color-primary-light-text: #1E3A8A;
+
+  --color-text-body: #1E293B; /* Charcoal Grey text as requested */
+  --color-text-muted: #556070; /* Darkened from #64748B to clear WCAG AA (4.5:1) on the light page & steel-blue surfaces */
+}
+
+/* Light mode card/box background and border overrides for improved contrast */
+html:not(.dark) .bg-white {
+  background-color: #FFFFFF !important; /* Pristine white cards as shown in reference images */
+}
+
+html:not(.dark) .bg-stone-50,
+html:not(.dark) .bg-stone-100,
+html:not(.dark) .bg-stone-200,
+html:not(.dark) .bg-\[\#14161a\],
+html:not(.dark) .bg-\[\#12151A\],
+html:not(.dark) .bg-\[\#111622\],
+html:not(.dark) .bg-\[\#091520\]\/80,
+html:not(.dark) .bg-\[\#0b1427\],
+html:not(.dark) .bg-\[\#14161a\]\/95,
+html:not(.dark) .bg-stone-950\/20,
+html:not(.dark) .bg-stone-900\/50,
+html:not(.dark) .bg-\[rgba\(255\,255\,255\,0\.12\)\] {
+  background-color: #EBF1F7 !important; /* Steel-ish ice-blue background matches Advisor Handbook in the reference image */
+}
+
+/* Sub-items/cards inside the advisor manual or inner widgets should be slightly darker steel blue */
+html:not(.dark) .bg-stone-50,
+html:not(.dark) .bg-stone-100 {
+  background-color: #D9E4F0 !important; /* Slightly darker steel blue as seen in steps 1, 2, 3 of image */
+}
+
+/* Inputs/Selects matches steps 1, 2, 3 background exactly */
+html:not(.dark) input, 
+html:not(.dark) select, 
+html:not(.dark) textarea {
+  background-color: #FFFFFF !important; /* Crisp, readable solid white input backgrounds */
+  border-color: #C3CFDE !important;
+  color: #1E293B !important;
+}
+
+/* Yellow advisory note must preserve its soft warm yellow color instead of becoming steel blue */
+html:not(.dark) .bg-amber-50,
+html:not(.dark) .bg-slate-50\/50,
+html:not(.dark) .bg-yellow-50,
+html:not(.dark) .bg-amber-100,
+html:not(.dark) .bg-amber-950\/15,
+html:not(.dark) [class*="bg-amber"] {
+  background-color: #FEF3C7 !important; /* Warm light yellow */
+  border-color: #FDE047 !important;
+  color: #78350F !important;
+}
+
+/* Ensure borders on light mode cards are perfectly clean and steel gray */
+html:not(.dark) .border-stone-150,
+html:not(.dark) .border-stone-200,
+html:not(.dark) .border-stone-250,
+html:not(.dark) .border-stone-800,
+html:not(.dark) .border-stone-850,
+html:not(.dark) .border-stone-900,
+html:not(.dark) .border-\[\#252A34\],
+html:not(.dark) .border-\[\#1c3258\],
+html:not(.dark) .border-white\/\[0\.08\],
+html:not(.dark) .border-white\/\[0\.06\],
+html:not(.dark) .border-white\/\[0\.04\],
+html:not(.dark) .border-white\/\[0\.03\] {
+  border-color: #C9D5E3 !important; /* Fine matching steel line */
+}
+
+
+/* Custom styles to force white header logo in light/dark mode */
+.logo-white-text {
+  color: #fefefe !important;
+}
+.logo-white-dot {
+  color: #0f4faf !important;
+}
+
+/* 1. Header fill color - Dark sky blue in light mode as requested in feedback, matching the reference glassmorphic border */
+
+/* DESIGN LOCK V1.0 - CRITICAL HEADER TITLE BADGE STYLE LOCK */
+.title-badge-btn,
+html.dark header button.title-badge-btn {
+  background-color: transparent !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.title-badge-btn:hover,
+html.dark header button.title-badge-btn:hover {
+  background-color: transparent !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.title-badge-text,
+header button.title-badge-btn span.title-badge-text {
+  color: #ffffff !important;
+}
+
+.title-badge-icon,
+header button.title-badge-btn svg.title-badge-icon,
+header button.title-badge-btn .title-badge-icon {
+  color: #ffffff !important;
+}
+
+/* 2. Style card titles / card headers to use charcoal grey in light mode as requested */
+html:not(.dark) h1,
+html:not(.dark) h2,
+html:not(.dark) h3,
+html:not(.dark) h4,
+html:not(.dark) h5,
+html:not(.dark) h6,
+html:not(.dark) .card-title,
+html:not(.dark) .card-header {
+  color: #2D3748 !important; /* Solid premium Charcoal Grey color */
+  font-weight: 700 !important;
+}
+
+/* 3. Any blue or teal colour text should have dark font style (heavy black weight) */
+html:not(.dark) .text-blue-400,
+html:not(.dark) .text-blue-500,
+html:not(.dark) .text-blue-600,
+html:not(.dark) .text-blue-700,
+html:not(.dark) .text-sky-400,
+html:not(.dark) .text-sky-500,
+html:not(.dark) .text-sky-600,
+html:not(.dark) .text-cyan-400,
+html:not(.dark) .text-cyan-500,
+html:not(.dark) .text-cyan-600,
+html:not(.dark) .text-\[\#117FDA\],
+html:not(.dark) .text-blue-800,
+html:not(.dark) .text-blue-900,
+html:not(.dark) .text-indigo-600,
+html:not(.dark) .text-indigo-700 {
+  color: #1A365D !important; /* Solid matching royal navy blue */
+  font-weight: 850 !important; /* Heavy black font style */
+}
+
+html:not(.dark) .text-teal-400,
+html:not(.dark) .text-teal-500,
+html:not(.dark) .text-teal-600,
+html:not(.dark) .text-teal-700,
+html:not(.dark) .text-\[\#14B8A6\],
+html:not(.dark) .text-emerald-300,
+html:not(.dark) .text-emerald-400,
+html:not(.dark) .text-emerald-500,
+html:not(.dark) .text-emerald-600,
+html:not(.dark) .text-emerald-700,
+html:not(.dark) .text-emerald-805 {
+  color: #0F766E !important; /* Premium dark teal matches advisor handbook */
+  font-weight: 850 !important; /* Heavy black font style */
+}
+
+/* Specific text color mapping to prevent light gray/white text on sky backgrounds */
+html:not(.dark) .text-slate-100,
+html:not(.dark) .text-zinc-100,
+html:not(.dark) .text-stone-100,
+html:not(.dark) .text-stone-200,
+html:not(.dark) .text-stone-250,
+html:not(.dark) .text-stone-300,
+html:not(.dark) .text-stone-500,
+html:not(.dark) .text-stone-550,
+html:not(.dark) .text-zinc-400,
+html:not(.dark) .text-zinc-440,
+html:not(.dark) .text-zinc-500,
+html:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-500,
+html:not(.dark) .text-slate-600,
+html:not(.dark) .text-slate-700,
+html:not(.dark) .text-gray-400,
+html:not(.dark) .text-gray-500,
+html:not(.dark) .text-gray-650 {
+  color: #2D3748 !important; /* Solid Slate-800 matches Advisor handbook rules text */
+  font-weight: 500 !important;
+}
+
+html:not(.dark) .text-slate-300,
+html:not(.dark) .text-zinc-300,
+html:not(.dark) .text-stone-205,
+html:not(.dark) .text-stone-700,
+html:not(.dark) .text-stone-750,
+html:not(.dark) .text-stone-800,
+html:not(.dark) .text-stone-850,
+html:not(.dark) .text-stone-900 {
+  color: #1A202C !important; /* Solid Slate-900 / premium dark charcoal gray text */
+}
+
+/* Natural Input adjustments */
+html:not(.dark) input, 
+html:not(.dark) select, 
+html:not(.dark) textarea {
+  background-color: #DDE5F0 !important;
+  border-color: #C3CFDE !important;
+  color: #1E293B !important;
+}
+
+html:not(.dark) select option {
+  background-color: #D5E2F0 !important;
+  color: #1E293B !important;
+}
+
+@keyframes custom-notification-glow {
+  0%, 100% {
+    border-color: rgba(245, 158, 11, 0.35);
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.2), inset 0 0 2px rgba(245, 158, 11, 0.05);
+  }
+  50% {
+    border-color: rgba(245, 158, 11, 1);
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.7), inset 0 0 4px rgba(245, 158, 11, 0.3);
+  }
+}
+
+.animate-notification-glow {
+  animation: custom-notification-glow 1.8s infinite ease-in-out;
+}
+
+/* Base calendar widget adjustments */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(100) !important;
+  cursor: pointer;
+}
+
+input[type="date"] {
+  color-scheme: dark !important;
+}
+
+html:not(.dark) .text-home-blue {
+  color: #1447e6 !important;
+}
+
+/* ====================================================================
+   DESIGN LOCK v1.0 COMPLIANCE — decorative accent migration
+   Purple / violet / fuchsia are forbidden by DESIGN LOCK and carry no
+   semantic meaning in this app, so they are remapped to the approved
+   blue family. Functional status colors (success-green, warning-amber,
+   danger-red) and the approved teal accents are intentionally kept.
+   This is a reversible presentation-only override — no JSX was changed.
+   ==================================================================== */
+
+/* Text — dark mode: readable approved blue; light mode: match the
+   existing heavy navy treatment used for all blue/teal text. */
+[class*="text-purple-"],
+[class*="text-violet-"],
+[class*="text-fuchsia-"] {
+  color: #3B82F6 !important;
+}
+html:not(.dark) [class*="text-purple-"],
+html:not(.dark) [class*="text-violet-"],
+html:not(.dark) [class*="text-fuchsia-"] {
+  color: #1A365D !important;
+  font-weight: 850 !important;
+}
+
+/* Tinted backgrounds → uniform approved blue tint */
+[class*="bg-purple-"],
+[class*="bg-violet-"],
+[class*="bg-fuchsia-"] {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+
+/* Accent borders → approved focus/border blue */
+[class*="border-purple-"],
+[class*="border-violet-"],
+[class*="border-fuchsia-"] {
+  border-color: #58A3FF !important;
+}
+
+/* Focus rings */
+[class*="ring-purple-"],
+[class*="ring-violet-"],
+[class*="ring-fuchsia-"] {
+  --tw-ring-color: #58A3FF !important;
+}
+
+/* Gradient stops */
+[class*="from-purple-"],
+[class*="from-violet-"] {
+  --tw-gradient-from: #2563EB !important;
+}
+[class*="via-purple-"],
+[class*="via-violet-"] {
+  --tw-gradient-via: #3B82F6 !important;
+}
+[class*="to-purple-"],
+[class*="to-violet-"] {
+  --tw-gradient-to: #58A3FF !important;
+}
+
+/* Systematic Layout design variation */
+.design-bg {
+  background-color: #0c0c0e !important;
+  color: #FFFFFF !important;
+  font-family: 'Geist Mono', monospace !important;
+}
+
+.design-sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 0;
+  gap: 0px;
+  background-color: #0c0c0e;
+}
+
+.design-icon-circle {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+
+.design-icon-circle:hover {
+  color: #00D3F3;
+  background: rgba(255,255,255,0.05);
+}
+
+.design-alert-btn {
+  position: relative;
+  color: #ff4f6b;
+}
+
+.design-notif-dot {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 6px;
+  height: 6px;
+  background: #ff4f6b;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #ff4f6b;
+}
+
+.design-dp-block {
+  margin-top: auto;
+  width: 32px;
+  height: 32px;
+  background: #00D3F3;
+  color: #000;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+/* Workspace Navigation Grid */
+.design-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.design-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+}
+
+.design-status-pill {
+  font-size: 0.65rem;
+  border: 1px solid #00D3F3;
+  color: #00D3F3;
+  padding: 2px 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.design-grid-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+html:not(.dark) .design-grid-content {
+  background-image:
+    linear-gradient(rgba(70, 115, 169, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(70, 115, 169, 0.18) 1px, transparent 1px);
+}
+
+@media (min-width: 1024px) {
+  .design-grid-content {
+    grid-template-columns: 1fr 420px;
+  }
+}
+
+.design-hero-panel {
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .design-hero-panel {
+    padding: 60px;
+  }
+}
+
+.design-meta-tag {
+  font-size: 0.7rem;
+  color: #00D3F3;
+  letter-spacing: 0.25em;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.design-meta-tag::before {
+  content: "";
+  width: 24px;
+  height: 1px;
+  background: #00D3F3;
+}
+
+.design-h1 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 3rem;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+}
+
+@media (min-width: 640px) {
+  .design-h1 {
+    font-size: 5rem;
+  }
+}
+
+.design-h1 span {
+  color: #00D3F3;
+}
+
+.design-desc {
+  font-size: 0.95rem;
+  color: rgba(255,255,255,0.4);
+  max-width: 520px;
+  line-height: 1.7;
+  margin-bottom: 3rem;
+}
+
+.design-alert-box {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 20px;
+  display: flex;
+  gap: 20px;
+  max-width: 600px;
+  margin-bottom: 3rem;
+}
+
+.design-alert-box svg {
+  color: #ff9f43;
+  opacity: 0.8;
+}
+
+.design-alert-box p {
+  font-size: 0.75rem;
+  color: #ff9f43;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.design-run-btn {
+  background: transparent;
+  color: #FFFFFF;
+  border: 1.5px solid #FFFFFF;
+  padding: 20px 40px;
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.75rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  align-self: flex-start;
+  transition: all 0.3s ease;
+}
+
+.design-run-btn:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 15px rgba(0, 211, 243, 0.3);
+}
+
+.design-run-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  background: #00D3F3;
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+}
+
+/* Sidebar Instructions */
+.design-info-pane {
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+.design-pane-title {
+  padding: 20px 32px;
+  font-family: 'Space Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(255,255,255,0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.design-inst-item {
+  padding: 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.design-inst-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.design-inst-num {
+  color: #00D3F3;
+  font-size: 0.65rem;
+}
+
+.design-inst-item h4 {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.design-inst-item p {
+  font-size: 0.75rem;
+  color: rgba(255,255,255,0.4);
+  line-height: 1.6;
+}
+
+.design-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 0.1em;
+  height: 40px;
+}

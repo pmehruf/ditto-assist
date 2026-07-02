@@ -1,0 +1,106 @@
+{
+  "Optima Secure": {
+    "questions": [
+      "Are you having any disability/ deformity including accidental or congenital?",
+      "Hypertension / High blood pressure?",
+      "Diabetes / High blood sugar / Sugar in urine?",
+      "Cancer, Tumour, Growth or Cyst of any kind?",
+      "Chest Pain / Heart Attack or any other Heart Disease / Problem?",
+      "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
+      "Kidney ailment or Diseases of Reproductive organs?",
+      "Tuberculosis / Asthma or any other Lung disorder?",
+      "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+      "Any Blood disorder (example Anaemia, Haemophilia, Thalassaemia) or any genetic disorder?",
+      "HIV Infection / AIDS or Positive test for HIV?",
+      "Nervous, Psychiatric or Mental or Sleep disorder?",
+      "Stroke/ Paralysis / Epilepsy (Fits) or any other Nervous disorder (Brain / Spinal Cord etc.)?",
+      "Abnormal Thyroid Function / Goiter or any Endocrine organ disorders?",
+      "Eye or vision disorers/ Ear / Nose or Throat diseases?",
+      "Arthritis, Spondylitis, Fracture or any other disorder of Muscle Bone/Joint/Ligament/Cartilage?",
+      "Any other disease/condition not mentioned above?"
+    ],
+    "anyOther": "Any other disease/condition not mentioned above?",
+    "hasUmbrella": true,
+    "umbrellaQuestions": [
+      "Has the insured member(s) undergone any tests or medical investigation?",
+      "Is there any hospitalisation history of the insured member(s)?",
+      "Is the insured member(s) on any regular medication?",
+      "Is there any surgery had happened to the insured member(s)?"
+    ]
+  },
+  "Care Supreme": {
+    "questions": [
+      "HIV/ AIDS/ STD?",
+      "Cancer",
+      "Diabetes Mellitus type 1 or Diabetes on insulin or Diabetes associated with blindness or chronic foot ulcer",
+      "Any disorders of the endocrine system (including but not limited to Pituitary / Parathyroid / adrenal gland disorders)",
+      "Any disorders of Blood and / or Immunity (including but not limited to bleeding or clotting disorders, Systemic Lupus Erythematosus, Rheumatoid Arthritis, Crohn's disease, Ulcerative Colitis)",
+      "Any Neuromuscular (muscles or nervous system) disorder or Psychiatric disorders (including but not limited to Motor Neuron Disease, Muscular dystrophies, Epilepsy, Paralysis, Parkinsonism, multiple sclerosis, stroke, mental illness)",
+      "Any Respiratory disease / Disease of Lungs, Pleura and airway (including but not limited to Asthma / Tuberculosis / Pleural effusion / Bronchitis / Emphysema)?",
+      "Hypertension / High Blood Pressure",
+      "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Willson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
+      "Any Kidney / urinary track / reproductive organ Disease",
+      "Any cardiovascular/Heart Disease (including but not limited to Coronary artery disease / Rheumatic heart disease / Heart Attack or Myocardial infarction / Heart failure / Bypass Grafting or CABG / Angioplasty or PTCA / Heart valve diseases / Pacemaker implantation)",
+      "Congenital Disorder?",
+      "Any other diseases or ailments not mentioned above ?"
+    ],
+    "anyOther": "Any other diseases or ailments not mentioned above ?",
+    "hasUmbrella": true,
+    "umbrellaQuestions": [
+      "Has any of the Proposed to be Insured consulted/taken treatment or recommended to take investigations/medication/surgery other than for childbirth/minor injuries?",
+      "Has any of the Proposed to be Insured been hospitalized or has been under any prolonged treatment for any illness/injury or has undergone surgery other than for childbirth/minor injuries?"
+    ]
+  },
+  "Activ One Max": {
+    "questions": [
+      "Cancer, tumor, polyp or cyst",
+      "Any heart disease or disorder, chest pain or discomfort, irregular heartbeats, palpitations or heart murmur",
+      "Hypertension / High Blood Pressure(BP)/ High Cholesterol/Any other Lipid disorders",
+      "Asthma / Tuberculosis (TB) / COPD/ Pleural effusion / Bronchitis / Emphysema or any other disease of Lungs, Pleura and airway or Respiratory disease?",
+      "Thyroid disease/ Cushing's disease/ Parathyroid Disease/ Addison's disease / Pituitary tumor/ disease or any other disorder of Endocrine system?",
+      "Diabetes Mellitus / High Blood Sugar / Diabetes on Insulin or medication",
+      "Motor Neuron Disease/ Muscular dystrophies/ Myasthenia Gravis/ Demyelinating disease or any other disease of Neuromuscular system (muscles and/or nervous system)",
+      "Stroke/Paralysis/Transient Ischemic Attack/Multiple Sclerosis/Epilepsy/Mental-Psychiatric illness/ Parkinsonism/Alzheimer's/Depression /Dementia or any other disease of Brain and Nervous System?",
+      "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis /Inflammatory Bowel Diseases/ Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder,Stomach or Intestines or any other part of Digestive system",
+      "Kidney Stones/ Renal Failure/ Dialysis/ Chronic Kidney Disease/ Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
+      "HIV/SLE/ Rheumatoid Arthiritis / Scleroderma / Sarcoidosis/ Psoriasis/ bleeding or clotting disorders or any other diseases of Blood, Bonemarrow/ Immunity or Skin",
+      "Disease or disorder of eye, ear, nose or throat (except any sight related problems corrected by prescription lenses)?",
+      "Disease of the musculoskeletal system / Orthopedic disorders/Degeneration, Fracture or dislocation of bones or joints/ avascular necrosis of joints or any other disorder related to it?",
+      "Has any of the Proposed to be Insured have been suffering/ suffered from Covid-19 disease? If yes, confirm if any complications arise due to covid-19",
+      "Any other disease / health adversity / injury/ condition / treatment not mentioned above."
+    ],
+    "anyOther": "Any other disease / health adversity / injury/ condition / treatment not mentioned above.",
+    "hasUmbrella": true,
+    "umbrellaQuestions": [
+      "Has any of the Proposed to be Insured been hospitalized/ recommended to take investigations/medication or has been under any prolonged treatment/ undergone surgery for any illness/injury other than for childbirth/minor injuries?"
+    ]
+  },
+  "Activ Fit Preferred": {
+    "questions": [
+      "Any form of Heart Disease, Peripheral Vascular Disease, procedures like Angioplasty/PTCA/By Pass Surgery, valve replacement etc",
+      "Diabetes, High blood pressure, High Cholesterol, Anaemia / Blood disorder (whether treated or not).",
+      "Tuberculosis (TB), Asthma, any Respiratory / Lung disease.",
+      "Disease of Eye, Ear, Nose, Throat, Thyroid.",
+      "Cancer, tumor, lump,cyst,ulcer",
+      "Disease of Kidney, Digestive tract, Liver / Gall bladder, Pancreas, Breast, Reproductive / urinary system or any past complication of pregnancy.",
+      "Paralysis, Polio, Joints / Arthitis / prolonged back pain",
+      "Mental illness, Psychiatric / Psychological disorder",
+      "Disease of the Brain / Spine / Nervous System / Epilepsy",
+      "Neurological or Skeletal disorders",
+      "Congenital / Birth defect / Genetic Disease / Physical deformity / Disability / Polio / Obstructive sleep apnea / Peripheral vascular disease",
+      "HIV / AIDS, other sexually transmitted diseases or accidental injury",
+      "Other Medical conditions",
+      "Nephropathy",
+      "Retinopathy, Neuropathy",
+      "Diabetic Foot",
+      "Stroke",
+      "Malignant Hypertension",
+      "History of Renal Artery Stenosis",
+      "History of Pheochromocytoma",
+      "History of Aneurysm"
+    ],
+    "anyOther": "Other Medical conditions",
+    "hasUmbrella": false,
+    "umbrellaQuestions": []
+  }
+}
