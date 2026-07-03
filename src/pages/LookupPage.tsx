@@ -217,9 +217,9 @@ export function LookupPage({
                         width: "105px",
                         fontSize: "10px",
                         lineHeight: "12px",
-                        color: "#00d2f1",
-                        backgroundColor: "#03283a",
-                        borderColor: "#00567e",
+                        color: "var(--accent)",
+                        backgroundColor: "var(--accent-subtle-bg)",
+                        borderColor: "var(--accent-border)",
                         borderWidth: "1.5px"
                       }}
                       className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border flex items-center justify-center gap-1.5 shrink-0 select-none"
@@ -569,11 +569,11 @@ export function LookupPage({
                 <button
                   type="button"
                   onClick={handleClearLookupFields}
-                  style={{
-                    backgroundColor: "#1c2c3d",
-                    borderColor: "#3b4a5a",
-                    color: "#a3b2c2"
-                  }}
+                  style={
+                    theme === "dark"
+                      ? { backgroundColor: "#1C2C3D", borderColor: "#3B4A5A", color: "#A3B2C2" }
+                      : { backgroundColor: "var(--surface-elevated)", borderColor: "var(--border-strong)", color: "var(--text-secondary)" }
+                  }
                   className="w-full sm:w-auto sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide border duration-200 transition-all hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer select-none shadow-sm"
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-current" />
@@ -1174,7 +1174,7 @@ export function LookupPage({
                           style={{
                             width: "28px",
                             height: "28px",
-                            backgroundColor: "#071f36"
+                            backgroundColor: theme === "dark" ? "var(--surface-tint)" : "var(--accent-subtle-bg)"
                           }}
                           className={`hover:scale-[1.03] active:scale-[0.97] rounded-lg transition-all cursor-pointer flex items-center justify-center border ${
                             theme === "dark"
@@ -1183,7 +1183,7 @@ export function LookupPage({
                           }`}
                           title="Previous Announcement"
                         >
-                          <ChevronLeft className="w-[18px] h-[18px]" style={{ color: "#02d3f3" }} />
+                          <ChevronLeft className="w-[18px] h-[18px]" style={{ color: "var(--accent)" }} />
                         </button>
                         <button
                           onClick={() => {
@@ -1193,7 +1193,7 @@ export function LookupPage({
                           style={{
                             width: "28px",
                             height: "28px",
-                            backgroundColor: "#071f36"
+                            backgroundColor: theme === "dark" ? "var(--surface-tint)" : "var(--accent-subtle-bg)"
                           }}
                           className={`hover:scale-[1.03] active:scale-[0.97] rounded-lg transition-all cursor-pointer flex items-center justify-center border ${
                             theme === "dark"
@@ -1202,7 +1202,7 @@ export function LookupPage({
                           }`}
                           title="Next Announcement"
                         >
-                          <ChevronRight className="w-[18px] h-[18px]" style={{ color: "#02d3f3" }} />
+                          <ChevronRight className="w-[18px] h-[18px]" style={{ color: "var(--accent)" }} />
                         </button>
                       </div>
                     </div>

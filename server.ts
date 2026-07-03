@@ -6,6 +6,8 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
+import cookieParser from "cookie-parser";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -13,11 +15,16 @@ import dotenv from "dotenv";
 // Import types & engine logic
 import { getPlanConfig, MatchOutput } from "./src/types.js";
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanQuestion } from "./src/engine.js";
+import { getGoogleAuthUrl, exchangeCodeForIdentity } from "./src/server/auth/googleOAuth.js";
+import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
+import { attachUser } from "./src/server/auth/middleware.js";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
+app.use(attachUser);
 app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -419,6 +426,76 @@ app.post("/api/ai-plan-workflow", async (req, res) => {
     console.error("AI workflow API execution error:", err);
     return res.status(500).json({ error: `Internal AI workflow error: ${err.message}` });
   }
+});
+
+// --- Google Workspace OAuth (Phase 4b) ---
+// Restricted to @joinditto.in accounts; see src/server/auth/googleOAuth.ts for
+// the server-side domain enforcement (the `hd` URL param alone is not a
+// security boundary).
+const OAUTH_STATE_COOKIE = "ditto_oauth_state";
+const isProdEnv = () => process.env.NODE_ENV === "production";
+
+app.get("/api/auth/google/login", (req, res) => {
+  try {
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000, // 5 minutes: just long enough to complete the redirect round-trip
+    });
+    res.redirect(getGoogleAuthUrl(state));
+  } catch (err: any) {
+    console.error("Failed to start Google OAuth flow:", err);
+    res
+      .status(500)
+      .send(
+        "Sign-in is not configured yet. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example."
+      );
+  }
+});
+
+app.get("/api/auth/google/callback", async (req, res) => {
+  const expectedState = req.cookies?.[OAUTH_STATE_COOKIE];
+  res.clearCookie(OAUTH_STATE_COOKIE);
+
+  try {
+    const { code, state } = req.query;
+    if (!code || typeof code !== "string" || !state || state !== expectedState) {
+      res.status(400).send("Invalid or expired sign-in attempt. Please try signing in again.");
+      return;
+    }
+
+    const identity = await exchangeCodeForIdentity(code);
+    const token = createSessionToken(identity);
+    res.cookie(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: SESSION_MAX_AGE_MS,
+    });
+    res.redirect("/");
+  } catch (err: any) {
+    console.error("Google OAuth callback failed:", err);
+    res
+      .status(401)
+      .send(
+        `Sign-in failed: ${err.message || "unknown error"}. Please try again with a @joinditto.in Google Workspace account.`
+      );
+  }
+});
+
+app.get("/api/auth/session", (req, res) => {
+  if (!req.user) {
+    res.status(401).json({ user: null });
+    return;
+  }
+  res.json({ user: req.user });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie(SESSION_COOKIE_NAME);
+  res.json({ ok: true });
 });
 
 // Helper function to safely serve files only if they exist on disk, preventing ENOENT stat crashes

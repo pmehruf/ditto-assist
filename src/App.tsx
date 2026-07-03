@@ -276,14 +276,13 @@ export default function App() {
   const [myActivityEndDate, setMyActivityEndDate] = useState<string>("");
   const [expandedLogIndex, setExpandedLogIndex] = useState<string | null>(null);
 
-  // Active Login State
-  const [currentUser, setCurrentUser] = useState<LoggedUser | null>(() => {
-    try {
-      const savedUser = localStorage.getItem("ditto_crm_active_user");
-      if (savedUser) return JSON.parse(savedUser);
-    } catch (_) {}
-    return null;
-  });
+  // Active Login State — the source of truth is the real server session (an
+  // httpOnly cookie set by /api/auth/google/callback after a verified
+  // @joinditto.in Google sign-in), checked on mount via GET /api/auth/session
+  // below. There is no localStorage fallback anymore: an expired/missing
+  // server session always means logged out.
+  const [currentUser, setCurrentUser] = useState<LoggedUser | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
 
   // Users Database (mocking production directory)
   const [usersList, setUsersList] = usePersistentState<UserProfile[]>("ditto_users_list", () => {
@@ -304,9 +303,6 @@ export default function App() {
         if (match.name !== currentUser.name || match.tactId !== currentUser.tactId || match.tier !== currentUser.tier) {
           const updatedUser = { ...currentUser, name: match.name, tactId: match.tactId, tier: match.tier };
           setCurrentUser(updatedUser);
-          try {
-            localStorage.setItem("ditto_crm_active_user", JSON.stringify(updatedUser));
-          } catch (_) {}
         }
       }
     }
@@ -634,11 +630,8 @@ export default function App() {
 
     const updatedUser = { ...currentUser, tier: nextTier };
     setCurrentUser(updatedUser);
-    try {
-      localStorage.setItem("ditto_crm_active_user", JSON.stringify(updatedUser));
-      // Sync list
-      setUsersList(prev => prev.map(u => u.email === currentUser.email ? { ...u, tier: nextTier } : u));
-    } catch (_) {}
+    // Sync list
+    setUsersList(prev => prev.map(u => u.email === currentUser.email ? { ...u, tier: nextTier } : u));
   };
 
   // Plan Configurations dynamically expanded with promoted and draft plans!
@@ -775,6 +768,48 @@ export default function App() {
   const [tempSsoName, setTempSsoName] = useState<string>("");
   const [tempTactId, setTempTactId] = useState<string>("");
 
+  // Verify the real Google session on mount and hydrate currentUser. Tier
+  // still comes from the local usersList lookup for now (Google Groups RBAC
+  // lands in Phase 4c) — this only replaces the *identity* check (who is
+  // this) with the real, server-verified @joinditto.in login.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (!res.ok) return;
+        const data = await res.json();
+        const identity = data?.user as { email: string; name: string; picture?: string } | null;
+        if (!identity || cancelled) return;
+
+        const existingUser = usersList.find(u => u.email.toLowerCase() === identity.email.toLowerCase());
+        if (existingUser && existingUser.status === "Active") {
+          setCurrentUser({
+            email: existingUser.email,
+            name: existingUser.name,
+            tactId: existingUser.tactId,
+            tier: existingUser.tier,
+            avatarUrl: identity.picture
+          });
+          setShowIntro(true);
+          setActiveTab("lookup");
+        } else {
+          setTempSsoEmail(identity.email);
+          setTempSsoName(identity.name);
+          setTempTactId("");
+          setIsFirstTimeSetup(true);
+        }
+      } catch (_) {
+        // Network/parse error reaching the session endpoint: fall back to the login screen.
+      } finally {
+        if (!cancelled) setAuthChecking(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // Runs once on mount only; deliberately reads usersList's initial value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Enforce role permission constraints dynamically using active permissions matrix
   useEffect(() => {
     if (currentUser) {
@@ -788,11 +823,8 @@ export default function App() {
   }, [currentUser, activeTab, featurePermissions, effectiveTier]);
 
   // Authentication State
-  const [loginEmail, setLoginEmail] = useState<string>("");
-  const [loginPassword, setLoginPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
-  const [ssoModalOpen, setSsoModalOpen] = useState<boolean>(false);
 
   // Search History tracking (as requested by user)
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
@@ -1276,85 +1308,12 @@ export default function App() {
     }
   };
 
-  // Check login restrictions explicitly
-  const validateEmailDomain = (email: string): boolean => {
-    const trimmed = email.trim().toLowerCase();
-    return trimmed.endsWith("@joinditto.in");
-  };
-
+  // Redirects to the real, server-side Google OAuth flow (src/server/auth/).
+  // Domain restriction to @joinditto.in is enforced server-side on the
+  // callback -- this client only kicks off the redirect.
   const handleGoogleSSO = () => {
     setLoginError(null);
-    setSsoModalOpen(true);
-  };
-
-  const selectSSOAccount = (email: string, name: string) => {
-    setLoginLoading(true);
-    setSsoModalOpen(false);
-
-    setTimeout(() => {
-      const existingUser = usersList.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (existingUser && existingUser.status === "Active") {
-        // Returning user: go directly to application, no re-entry of fields!
-        const sessionUser: LoggedUser = {
-          email: existingUser.email,
-          name: existingUser.name,
-          tactId: existingUser.tactId,
-          tier: existingUser.tier
-        };
-        setCurrentUser(sessionUser);
-        setShowIntro(true);
-        setActiveTab("lookup");
-        try {
-          localStorage.setItem("ditto_crm_active_user", JSON.stringify(sessionUser));
-        } catch (_) {}
-        setLoginLoading(false);
-      } else {
-        // First time or pending: direct to Profile Setup screen
-        setTempSsoEmail(email);
-        setTempSsoName(name);
-        setTempTactId("");
-        setIsFirstTimeSetup(true);
-        setLoginLoading(false);
-      }
-    }, 700);
-  };
-
-  const handleCustomSSOSubmit = (email: string) => {
-    if (!validateEmailDomain(email)) {
-      setLoginError("SSO Interrupted: Selecting account outside 'joinditto.in' Workspace contains unauthorized privileges.");
-      setSsoModalOpen(false);
-      return;
-    }
-
-    setLoginLoading(true);
-    setSsoModalOpen(false);
-    setTimeout(() => {
-      const parts = email.split("@")[0].split(".");
-      const name = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
-      
-      const existingUser = usersList.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (existingUser && existingUser.status === "Active") {
-        const sessionUser: LoggedUser = {
-          email: existingUser.email,
-          name: existingUser.name,
-          tactId: existingUser.tactId,
-          tier: existingUser.tier
-        };
-        setCurrentUser(sessionUser);
-        setShowIntro(true);
-        setActiveTab("lookup");
-        try {
-          localStorage.setItem("ditto_crm_active_user", JSON.stringify(sessionUser));
-        } catch (_) {}
-        setLoginLoading(false);
-      } else {
-        setTempSsoEmail(email);
-        setTempSsoName(name);
-        setTempTactId("");
-        setIsFirstTimeSetup(true);
-        setLoginLoading(false);
-      }
-    }, 600);
+    window.location.href = "/api/auth/google/login";
   };
 
   const handleProfileCompletion = (e: React.FormEvent) => {
@@ -1370,54 +1329,53 @@ export default function App() {
     }
 
     setLoginLoading(true);
-    setTimeout(() => {
-      // Find existing user tier, default to 'General' (Advisor)
-      const existingUser = usersList.find(u => u.email.toLowerCase() === tempSsoEmail.toLowerCase());
-      const assignedTier = existingUser ? existingUser.tier : "General";
 
-      const newUserProfile: UserProfile = {
-        email: tempSsoEmail.toLowerCase().trim(),
-        name: nameClean,
-        tactId: tactClean,
-        tier: assignedTier,
-        status: "Active"
-      };
+    // Identity (email/name) is already server-verified via the real Google
+    // session; this only records the internal TACT ID and (for now) assigns
+    // tier from the local usersList lookup -- Google Groups RBAC replaces
+    // this tier assignment in Phase 4c.
+    const existingUser = usersList.find(u => u.email.toLowerCase() === tempSsoEmail.toLowerCase());
+    const assignedTier = existingUser ? existingUser.tier : "General";
 
-      setUsersList(prev => {
-        // Exclude previous pending records
-        const filtered = prev.filter(u => u.email.toLowerCase() !== tempSsoEmail.toLowerCase());
-        return [...filtered, newUserProfile];
-      });
+    const newUserProfile: UserProfile = {
+      email: tempSsoEmail.toLowerCase().trim(),
+      name: nameClean,
+      tactId: tactClean,
+      tier: assignedTier,
+      status: "Active"
+    };
 
-      const sessionUser: LoggedUser = {
-        email: tempSsoEmail.toLowerCase().trim(),
-        name: nameClean,
-        tactId: tactClean,
-        tier: assignedTier
-      };
+    setUsersList(prev => {
+      // Exclude previous pending records
+      const filtered = prev.filter(u => u.email.toLowerCase() !== tempSsoEmail.toLowerCase());
+      return [...filtered, newUserProfile];
+    });
 
-      setCurrentUser(sessionUser);
-      setShowIntro(true);
-      setActiveTab("lookup");
-      try {
-        localStorage.setItem("ditto_crm_active_user", JSON.stringify(sessionUser));
-      } catch (_) {}
+    const sessionUser: LoggedUser = {
+      email: tempSsoEmail.toLowerCase().trim(),
+      name: nameClean,
+      tactId: tactClean,
+      tier: assignedTier
+    };
 
-      // Clear setup
-      setIsFirstTimeSetup(false);
-      setTempSsoEmail("");
-      setTempSsoName("");
-      setTempTactId("");
-      setLoginLoading(false);
-    }, 600);
+    setCurrentUser(sessionUser);
+    setShowIntro(true);
+    setActiveTab("lookup");
+
+    // Clear setup
+    setIsFirstTimeSetup(false);
+    setTempSsoEmail("");
+    setTempSsoName("");
+    setTempTactId("");
+    setLoginLoading(false);
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     setShowIntro(true);
-    try {
-      localStorage.removeItem("ditto_crm_active_user");
-    } catch (_) {}
+    // Clear the real server session cookie too. Fire-and-forget: even if
+    // this fails, the client-side state is already cleared.
+    fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
   };
 
   // Daily 12 AM auto-logout — schedules a timeout to fire at the next midnight
@@ -1613,6 +1571,18 @@ export default function App() {
     });
   };
 
+  // Verifying the real Google session with the server — avoid flashing the
+  // login screen (or the app) before we know the answer.
+  if (authChecking) {
+    return (
+      <div className={`h-screen w-full flex items-center justify-center ${
+        isDark ? "bg-[#001322] text-[#F5F7FA]" : "bg-[#F1F6FB] text-stone-900"
+      }`}>
+        <RefreshCw className={`w-6 h-6 animate-spin ${isDark ? "text-cyan-400" : "text-blue-600"}`} />
+      </div>
+    );
+  }
+
   // Render Login state if not authenticated
   if (!currentUser) {
     return (
@@ -1679,8 +1649,8 @@ export default function App() {
           <div className="z-10 my-auto max-w-[1000px] space-y-8 relative">
             <div className="space-y-4">
               <div className="flex items-center gap-2 select-none">
-                <div className="w-8 h-0.5" style={{ backgroundColor: isDark ? "#00D3F3" : "#4673a9" }} />
-                <span className="font-black uppercase tracking-widest" style={{ color: isDark ? "#00D3F3" : "#4673a9", fontSize: "15px" }}>
+                <div className="w-8 h-0.5" style={{ backgroundColor: "var(--accent)" }} />
+                <span className="font-black uppercase tracking-widest" style={{ color: "var(--accent)", fontSize: "15px" }}>
                   DECLARATION ENGINE ACTIVE
                 </span>
               </div>
@@ -1694,9 +1664,7 @@ export default function App() {
                     maxWidth: "100%",
                     fontSize: "60px",
                     display: "block",
-                    backgroundImage: isDark
-                      ? "linear-gradient(to right, #ffffff, #94a3b8)"
-                      : "linear-gradient(to right, #192030, #3a4a6e)"
+                    backgroundImage: "var(--gradient-heading)"
                   }}
                 >
                   PAYMENT GUIDANCE
@@ -1708,9 +1676,7 @@ export default function App() {
                     maxWidth: "100%",
                     fontSize: "60px",
                     display: "block",
-                    backgroundImage: isDark
-                      ? "linear-gradient(to right, #00D3F3, #3b82f6)"
-                      : "linear-gradient(to right, #094fa9, #3b82f6)"
+                    backgroundImage: "var(--gradient-accent)"
                   }}
                 >
                   DELIVERED INTELLIGENTLY
@@ -1731,25 +1697,25 @@ export default function App() {
             <div className={`grid grid-cols-4 gap-2 lg:gap-4 pt-4 border-t ${isDark ? "border-slate-800" : "border-stone-300"}`}>
               <div className="space-y-1">
                 <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Accuracy</span>
-                <span className="text-base lg:text-xl font-black font-mono flex items-center gap-1" style={{ color: isDark ? "#00D3F3" : "#0b458d" }}>
+                <span className="text-base lg:text-xl font-black font-mono flex items-center gap-1" style={{ color: "var(--accent)" }}>
                   99.94%
                 </span>
               </div>
               <div className="space-y-1">
                 <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Avg Lookup</span>
-                <span className="text-base lg:text-xl font-black font-mono" style={{ color: isDark ? "#00D3F3" : "#0b458d" }}>
+                <span className="text-base lg:text-xl font-black font-mono" style={{ color: "var(--accent)" }}>
                   &lt;350ms
                 </span>
               </div>
               <div className="space-y-1">
                 <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Plans Covered</span>
-                <span className="text-base lg:text-xl font-black font-mono" style={{ color: isDark ? "#00D3F3" : "#0b458d" }}>
+                <span className="text-base lg:text-xl font-black font-mono" style={{ color: "var(--accent)" }}>
                   4 Active
                 </span>
               </div>
               <div className="space-y-1">
                 <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Conditions</span>
-                <span className="text-base lg:text-xl font-black font-mono" style={{ color: isDark ? "#00D3F3" : "#0b458d" }}>
+                <span className="text-base lg:text-xl font-black font-mono" style={{ color: "var(--accent)" }}>
                   900+
                 </span>
               </div>
@@ -1929,8 +1895,8 @@ export default function App() {
                     />
                     
                     <div className="flex items-center gap-2 mb-2 select-none">
-                      <div className="w-6 h-0.5" style={{ backgroundColor: "#00D3F3" }} />
-                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: "#00D3F3" }}>
+                      <div className="w-6 h-0.5" style={{ backgroundColor: "var(--accent)" }} />
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: "var(--accent)" }}>
                         PORTAL ACCESS
                       </span>
                     </div>
@@ -2000,106 +1966,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Realistic Simulated Google SSO Popup Modal */}
-        <AnimatePresence>
-          {ssoModalOpen && (
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
-            >
-              <motion.div 
-                initial={{ scale: 0.95 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.95 }}
-                className={`w-full max-w-sm rounded-2xl border p-6 shadow-2xl ${
-                  theme === "dark" ? "bg-[#03101a]/95 border-white/[0.08] text-white" : "bg-white border-stone-200 text-stone-850"
-                }`}
-              >
-                {/* Simulated Google SSO header */}
-                <div className="flex flex-col items-center text-center mb-5">
-                  <svg className="w-8 h-8 mb-2" viewBox="0 0 24 24">
-                    <path
-                      fill="#ea4335"
-                      d="M5.266 9.765A7.077 7.077 0 0112 4.909c1.69 0 3.218.6 4.418 1.582l3.51-3.51C17.642 1.09 14.974 0 12 0 7.354 0 3.307 2.67 1.242 6.551l4.024 3.214z"
-                    />
-                    <path
-                      fill="#4285f4"
-                      d="M23.49 12.273c0-.818-.073-1.609-.208-2.373H12v4.5h6.464a5.534 5.534 0 01-2.4 3.627l3.75 2.91c2.19-2.023 3.476-5 3.476-8.664z"
-                    />
-                  </svg>
-                  <h3 className="text-base font-bold text-stone-900 dark:text-white">Choose an account</h3>
-                  <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">to continue to Ditto Declaration Mapping Assistant</p>
-                </div>
-
-                <div className="space-y-2 mt-4">
-                  {/* Whitelisted emails */}
-                  {[
-                    { email: "mehruf.p@joinditto.in", name: "Mehruf P" },
-                    { email: "rebecca.s@joinditto.in", name: "Rebecca S" },
-                    { email: "shashank@joinditto.in", name: "Shashank J" }
-                  ].map((user) => (
-                    <button
-                      key={user.email}
-                      onClick={() => selectSSOAccount(user.email, user.name)}
-                      className={`w-full p-3 rounded-xl border flex items-center gap-3 text-left hover:border-blue-500 transition-all cursor-pointer ${
-                        theme === "dark" 
-                          ? "bg-[#102236] border-[#1e3e5c] hover:bg-[#1a3654] text-white" 
-                          : "bg-stone-50 border-stone-200 hover:bg-blue-500/5"
-                      }`}
-                    >
-                      <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs shrink-0 select-none">
-                        {user.name.charAt(0)}
-                      </div>
-                      <div className="truncate">
-                        <p className="text-xs font-bold text-stone-900 dark:text-white leading-tight">{user.name}</p>
-                        <p className="text-[10px] text-stone-400 font-medium">{user.email}</p>
-                      </div>
-                    </button>
-                  ))}
-                  
-                  {/* Custom SSO login */}
-                  <div className="pt-2 border-t border-stone-200 dark:border-stone-800 mt-3">
-                    <p className="text-[11px] font-bold text-stone-500 dark:text-stone-400 mb-1.5 uppercase tracking-wider">Use another GSuite account</p>
-                    <form 
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleCustomSSOSubmit(loginEmail);
-                      }} 
-                      className="flex gap-2"
-                    >
-                      <input
-                        type="email"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
-                        placeholder="username@joinditto.in"
-                        className="flex-1 text-xs px-3.5 py-2.5 rounded-xl border outline-none dark:bg-stone-950 dark:border-stone-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-stone-900 dark:text-white"
-                        required
-                      />
-                      <button
-                        type="submit"
-                        className="px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-sm select-none active:scale-[0.97]"
-                      >
-                        Verify
-                      </button>
-                    </form>
-                    <span className="text-[9px] text-stone-400 dark:text-stone-500 mt-1.5 block">Domain verification will be strictly enforced upon entry.</span>
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 mt-5">
-                  <button
-                    onClick={() => setSsoModalOpen(false)}
-                    className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-white font-semibold cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     );
   }
@@ -2403,7 +2269,7 @@ export default function App() {
                         ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                         : "hover:bg-white/5"
                     }`}
-                    style={{ color: activeTab === "lookup" && showIntro ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                    style={{ color: activeTab === "lookup" && showIntro ? "var(--accent)" : "var(--text-muted)" }}
                     title="Home"
                   >
                     <Home style={{ width: "18px", height: "18px" }} />
@@ -2419,7 +2285,7 @@ export default function App() {
                         ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                         : "hover:bg-white/5"
                     }`}
-                    style={{ color: activeTab === "lookup" && !showIntro ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                    style={{ color: activeTab === "lookup" && !showIntro ? "var(--accent)" : "var(--text-muted)" }}
                     title="Declaration Assistant"
                   >
                     <Sparkles style={{ width: "18px", height: "18px" }} />
@@ -2435,7 +2301,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "resources" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "resources" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Declaration Map"
                 >
                   <Layers style={{ width: "18px", height: "18px" }} />
@@ -2450,7 +2316,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "my_activity" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "my_activity" ? "var(--accent)" : "var(--text-muted)" }}
                   title="My Activity"
                 >
                   <History style={{ width: "18px", height: "18px" }} />
@@ -2465,7 +2331,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "qa_announcement_log" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "qa_announcement_log" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Announcement Manager"
                 >
                   <Megaphone style={{ width: "18px", height: "18px" }} />
@@ -2480,7 +2346,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "audit" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "audit" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Activity Log"
                 >
                   <Clock style={{ width: "18px", height: "18px" }} />
@@ -2495,7 +2361,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "plan_scope" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "plan_scope" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Specific Illness Ledger"
                 >
                   <ClipboardPlus style={{ width: "18px", height: "18px" }} />
@@ -2510,7 +2376,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "profile_access" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "profile_access" ? "var(--accent)" : "var(--text-muted)" }}
                   title="User Management"
                 >
                   <User style={{ width: "18px", height: "18px" }} />
@@ -2525,7 +2391,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "flagged_responses" ? (isDark ? "#00D3F3" : "#0754b7") : (isDark ? "#9a9c9e" : "#3a3f48") }}
+                  style={{ color: activeTab === "flagged_responses" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Flagged Responses"
                 >
                   <AlertCircle style={{ width: "18px", height: "18px" }} />
@@ -2669,7 +2535,7 @@ export default function App() {
             ? "border-white/[0.08] bg-[#03101a] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)] hover:border-white/[0.12]" 
             : "border-slate-200 bg-[#163c62] text-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.05)] hover:border-slate-300/80"
         }`}>
-          <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: theme === "dark" ? "#03101a" : "#163c62", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
+          <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: "var(--header-bg)", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
           
           {/* Back Arrow navigation replacing the sandwich menu icon */}
           <div className="flex items-center gap-3.5 shrink-0 z-10">
@@ -2795,6 +2661,746 @@ export default function App() {
                     aria-label="View flagged mismatches"
                   >
                     <Bell className="w-4 h-4 text-[#eff6ff] hover:text-[#00D3F3] transition-colors" style={{ width: "20px", height: "20px" }} />
+                    {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
+                      <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                      </span>
+                    )}
+                  </button>
+                )}
+
+                {/* Dark / Light theme toggle */}
+                <button
+                  onClick={toggleTheme}
+                  className="p-1.5 rounded transition-all cursor-pointer"
+                  title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={theme === "dark"}
+                >
+                  {theme === "dark"
+                    ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffa000" }} />
+                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#4171ba" }} />
+                  }
+                </button>
+
+                {/* Direct Logout (Request 2) */}
+                <button
+                  onClick={handleLogout}
+                  className="p-1.5 rounded transition-all cursor-pointer text-red-500 hover:text-red-400"
+                  title="Direct Logout"
+                  aria-label="Direct logout"
+                >
+                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#c63b3d" }} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+    </div>
+
+      {/* Persistent simulation banner */}
+      {simulatedRole && (
+        <div className="bg-amber-500 text-stone-950 px-4 py-2 text-xs font-black flex items-center justify-between gap-4 shadow-md sticky top-[61px] z-30 select-none animate-slide-down shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="bg-stone-950 text-amber-400 px-1.5 py-0.5 rounded text-[9.5px] uppercase font-mono tracking-widest leading-none">Simulation mode</span>
+            <span>Viewing as: <b className="uppercase">{simulatedRole === "General" ? "Advisor" : simulatedRole}</b> — your <b className="uppercase">{currentUser?.tier === "General" ? "Advisor" : currentUser?.tier}</b> permissions are still active.</span>
+          </div>
+          <button
+            onClick={() => setSimulatedRole(null)}
+            className="px-3 py-1 bg-stone-950 text-white rounded-lg text-[10px] uppercase font-black tracking-wider hover:bg-stone-900 leading-none transition-all duration-150 cursor-pointer"
+          >
+            Exit view
+          </button>
+        </div>
+      )}
+
+      {/* RIGHT CONTROLS DRAWER PANEL */}
+      <AnimatePresence>
+        {isRightSidebarOpen && (
+          <>
+            {/* Backdrop overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsRightSidebarOpen(false)}
+              className="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs cursor-pointer"
+            />
+
+            {/* Drawer Container */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 220 }}
+              id="right-controls-drawer" role="dialog" aria-modal="true" aria-label="Workspace controls" className={`fixed top-0 right-0 h-full w-80 border-l z-54 shadow-2xl flex flex-col font-sans p-6 text-left ${
+                theme === "dark" 
+                  ? "bg-[#12151A] border-[#252A34] text-white" 
+                  : "bg-white border-stone-300 text-stone-900"
+              }`}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b pb-4 mb-6 border-dashed border-stone-700/50 dark:border-stone-200/50">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-[#3B82F6]" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Workspace Controls</span>
+                </div>
+                <button
+                  onClick={() => setIsRightSidebarOpen(false)}
+                  className={`p-1 rounded-lg transition-all cursor-pointer ${
+                    theme === "dark" 
+                      ? "hover:bg-stone-800/50 text-[#9CA3AF] hover:text-[#F5F7FA]" 
+                      : "hover:bg-stone-100 text-stone-650 hover:text-stone-900"
+                  }`}
+                  title="Close Controls Panel"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Controls Stack in the requested order: Tier, View As, Theme Switch */}
+              <div className="space-y-6 flex-grow overflow-y-auto">
+                
+                {/* 1. Tier (User Access Switcher) */}
+                {currentUser?.tier === "Owner" && (
+                  <div className="space-y-2">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                      App Access Tier
+                    </label>
+                    <div className={`p-4 rounded-lg border flex flex-col gap-3 ${
+                      theme === "dark" ? "bg-[#171B22] border-[#252A34]" : "bg-stone-50 border-stone-200"
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">Current Tier</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          currentUser?.tier === "Owner"
+                            ? "bg-red-500/10 text-red-500 border border-red-500/10"
+                            : "bg-blue-500/10 text-sky-500 border border-blue-500/10"
+                        }`}>
+                          {currentUser?.tier || "General"}
+                        </span>
+                      </div>
+                      <button
+                        onClick={toggleUserRole}
+                        className={`w-full py-2 px-3 text-xs font-semibold rounded-md border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                          theme === "dark"
+                            ? "bg-[#12151A] border-[#252A34] text-white hover:border-stone-700 hover:bg-stone-800/30"
+                            : "bg-white border-stone-250 text-stone-800 hover:bg-stone-100 font-medium shadow-xs"
+                        }`}
+                        title="Toggle app access role instantly"
+                      >
+                        <User className="w-3.5 h-3.5 text-[#3B82F6]" />
+                        <span>Switch Credentials Tier</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. View As (Simulated Role Switcher) */}
+                {currentUser?.tier === "Owner" && (
+                  <div className="space-y-2">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                      Simulation View As
+                    </label>
+                    <div className={`p-4 rounded-lg border flex flex-col gap-2 ${
+                      theme === "dark" ? "bg-[#171B22] border-[#252A34]" : "bg-stone-50 border-stone-200"
+                    }`}>
+                      <span className="text-xs font-medium">Select Preview Profile</span>
+                      <select
+                        value={simulatedRole || ""}
+                        onChange={(e) => {
+                          const val = (e.target.value as "General" | "Admin" | "Owner" | "") || null;
+                          setSimulatedRole(val);
+                        }}
+                        className={`w-full text-xs font-semibold p-2 rounded-md border outline-none cursor-pointer ${
+                          theme === "dark" 
+                            ? "bg-[#12151A] border-[#252A34] text-white focus:border-stone-700" 
+                            : "bg-white border-stone-250 text-stone-850 focus:border-blue-500 shadow-xs"
+                        }`}
+                      >
+                        <option value="">Default Profile</option>
+                        <option value="Admin">Admin View</option>
+                        <option value="General">Advisor View</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+
+              </div>
+
+              {/* Drawer Footer info */}
+              <div className="pt-4 border-t border-dashed border-stone-700/50 dark:border-stone-200/50 text-[10px] text-stone-500 dark:text-stone-400 font-medium">
+                Adjust rules, security scopes and test setups dynamically.
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* SCROLLABLE BODY AREA */}
+      <div 
+        id="main-scrollable-body" 
+        className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
+          showIntro && activeTab === "lookup" ? "lg:overflow-hidden overflow-y-auto" : "overflow-y-auto"
+        }`}
+      >
+        {/* BODY WRAPPER with centering content constraint */}
+        <main 
+          id="main-content" 
+          tabIndex={-1} 
+          style={{ color: "#000000", marginTop: showIntro && activeTab === "lookup" ? "2px" : "6px", marginBottom: showIntro && activeTab === "lookup" ? "2px" : "12px" }} 
+          className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
+            showIntro && activeTab === "lookup" ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-center" : "lg:p-5 pt-1.5 sm:pt-2"
+          }`}
+        >
+          {/* Expanded premium layout container, reducing margin distance to human-optimal minimums */}
+          <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[1550px] mx-auto ${showIntro && activeTab === "lookup" ? "flex-grow flex flex-col" : ""}`}>
+        <AnimatePresence mode="wait">
+          {/* TAB 1: INTRO PAGE / ONBOARDING */}
+          {activeTab === "lookup" && showIntro && (
+            <motion.div
+              key="intro"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              style={{ width: "100%", maxWidth: "100%", marginTop: "2px", marginBottom: "2px" }}
+              className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-between"
+            >
+              <ErrorBoundary theme={theme} label="Declaration Assistant">
+                <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+                  <LookupIntroPage theme={theme} isDark={isDark} setShowIntro={setShowIntro} />
+                </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+          {/* TAB 1: DECLARATION ASSISTANT (ACTIVE SCREEN) */}
+          {activeTab === "lookup" && !showIntro && (
+            <motion.div
+              key="lookup"
+              initial={{ opacity: 0, x: "100vw" }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: "100vw" }}
+              transition={{ 
+                type: "tween", 
+                duration: 0.55, 
+                ease: [0.25, 1, 0.5, 1] // Fluid high-speed deceleration
+              }}
+              style={{
+                width: "100%",
+                maxWidth: "1400px",
+                paddingLeft: "30px",
+                paddingRight: "30px",
+                paddingTop: "0px",
+                paddingBottom: "0px",
+                marginLeft: "auto",
+                marginRight: "auto",
+                marginTop: "0px",
+                marginBottom: "10px"
+              }}
+              className="flex flex-col gap-4"
+            >
+              <ErrorBoundary theme={theme} label="Declaration Assistant">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <LookupPage
+                theme={theme}
+                isResultsActive={isResultsActive}
+                selectedPlan={selectedPlan}
+                setSelectedPlan={setSelectedPlan}
+                productionPlans={productionPlans}
+                pedInput={pedInput}
+                setPedInput={setPedInput}
+                pedInputRef={pedInputRef}
+                activeSuggestionIndex={activeSuggestionIndex}
+                setActiveSuggestionIndex={setActiveSuggestionIndex}
+                dynamicSuggestions={dynamicSuggestions}
+                lookupPeds={lookupPeds}
+                setLookupPeds={setLookupPeds}
+                handleAddLookupPed={handleAddLookupPed}
+                isLookupLoading={isLookupLoading}
+                lookupResults={lookupResults}
+                executeLookupAll={executeLookupAll}
+                handleClearLookupFields={handleClearLookupFields}
+                handleMapAnotherPed={handleMapAnotherPed}
+                setReportingItem={setReportingItem}
+                setReportingNotes={setReportingNotes}
+                setReportingPriority={setReportingPriority}
+                mappingResultCardRef={mappingResultCardRef}
+                resultsRef={resultsRef}
+                sidebarRef={sidebarRef}
+                rightHeaderRef={rightHeaderRef}
+                illnessSearchQuery={illnessSearchQuery}
+                setIllnessSearchQuery={setIllnessSearchQuery}
+                specificIllnessesDict={SPECIFIC_ILLNESSES}
+                planConfigs={planConfigs}
+                checkIllnessInPlanSpecificList={checkIllnessInPlanSpecificList}
+                setActiveTab={setActiveTab}
+                userAdvisoryToggle={userAdvisoryToggle}
+                setUserAdvisoryToggle={setUserAdvisoryToggle}
+                advisoryHasBeenExpanded={advisoryHasBeenExpanded}
+                setAdvisoryHasBeenExpanded={setAdvisoryHasBeenExpanded}
+                qaAnnouncements={qaAnnouncements}
+                activeAnnouncements={activeAnnouncements}
+                noticeIndex={noticeIndex}
+                setNoticeIndex={setNoticeIndex}
+                slideDirection={slideDirection}
+                setSlideDirection={setSlideDirection}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB 1B: ADVISOR QUERY AUDIT TRAIL VIEW (content extracted to src/pages/AuditPage.tsx, Phase 1.3) */}
+          {activeTab === "audit" && (
+            <motion.div
+              key="audit"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Activity Log">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <AuditPage
+                theme={theme}
+                auditSubTab={auditSubTab}
+                setAuditSubTab={setAuditSubTab}
+                auditLogs={auditLogs}
+                auditSearch={auditSearch}
+                setAuditSearch={setAuditSearch}
+                auditPlanFilter={auditPlanFilter}
+                setAuditPlanFilter={setAuditPlanFilter}
+                auditTypeFilter={auditTypeFilter}
+                setAuditTypeFilter={setAuditTypeFilter}
+                auditStartDate={auditStartDate}
+                setAuditStartDate={setAuditStartDate}
+                auditEndDate={auditEndDate}
+                setAuditEndDate={setAuditEndDate}
+                downloadCSV={downloadCSV}
+                historySearch={historySearch}
+                setHistorySearch={setHistorySearch}
+                historyActionFilter={historyActionFilter}
+                setHistoryActionFilter={setHistoryActionFilter}
+                changeLogs={changeLogs}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+
+          {/* TAB 1D: MY ACTIVITY INTERACTIVE VIEW (content extracted to src/pages/MyActivityPage.tsx, Phase 1.3) */}
+          {activeTab === "my_activity" && (
+            <motion.div
+              key="my_activity"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ErrorBoundary theme={theme} label="My Activity">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <MyActivityPage
+                auditLogs={auditLogs}
+                currentUser={currentUser}
+                theme={theme}
+                myActivitySearch={myActivitySearch}
+                setMyActivitySearch={setMyActivitySearch}
+                myActivityPlanFilter={myActivityPlanFilter}
+                setMyActivityPlanFilter={setMyActivityPlanFilter}
+                myActivityStartDate={myActivityStartDate}
+                setMyActivityStartDate={setMyActivityStartDate}
+                myActivityEndDate={myActivityEndDate}
+                setMyActivityEndDate={setMyActivityEndDate}
+                expandedLogIndex={expandedLogIndex}
+                setExpandedLogIndex={setExpandedLogIndex}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+
+          {/* TAB 1C: DECLARATION MAP INTERACTIVE VIEW (content extracted to src/pages/ResourcesPage.tsx, Phase 1.3) */}
+          {activeTab === "resources" && (
+            <motion.div
+              key="resources"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Declaration Map">
+                <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+                  <ResourcesPage theme={theme} />
+                </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB 4: PROFILE & ACCESS MANAGEMENT (content extracted to src/pages/ProfileAccessPage.tsx, Phase 1.3) */}
+          {activeTab === "profile_access" && currentUser && (
+            <motion.div
+              key="profile_access"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ErrorBoundary theme={theme} label="Profile & Access Management">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <ProfileAccessPage
+                currentUser={currentUser}
+                effectiveTier={effectiveTier}
+                usersList={usersList}
+                setUsersList={setUsersList}
+                ownerPasscode={ownerPasscode}
+                setOwnerPasscode={setOwnerPasscode}
+                featurePermissions={featurePermissions}
+                setFeaturePermissions={setFeaturePermissions}
+                hasAccess={hasAccess}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB 5: SPECIFIC ILLNESS LEDGER (content extracted to src/pages/PlanScopePage.tsx, Phase 1.3) */}
+          {activeTab === "plan_scope" && currentUser && (
+            <motion.div
+              key="plan_scope"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ErrorBoundary theme={theme} label="Specific Illness Ledger">
+                <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+                  <PlanScopePage
+                    productionPlans={productionPlans}
+                    theme={theme}
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB 6: QA ANNOUNCEMENT LOG PANEL (content extracted to src/pages/AnnouncementLogPage.tsx, Phase 1.3) */}
+          {activeTab === "qa_announcement_log" && (
+            <motion.div
+              key="qa_announcement_log"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="QA Announcement Log">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <AnnouncementLogPage
+                theme={theme}
+                qaAnnouncements={qaAnnouncements}
+                setQaAnnouncements={setQaAnnouncements}
+                currentUser={currentUser}
+                setChangeLogs={setChangeLogs}
+                editingAnnouncementId={editingAnnouncementId}
+                setEditingAnnouncementId={setEditingAnnouncementId}
+                deletingAnnouncementId={deletingAnnouncementId}
+                setDeletingAnnouncementId={setDeletingAnnouncementId}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+
+          {/* TAB 7: FLAGGED RESPONSES (MAPPING MISMATCHES) PANEL (content extracted to src/pages/FlaggedResponsesPage.tsx, Phase 1.3) */}
+          {activeTab === "flagged_responses" && (
+            <motion.div
+              key="flagged_responses"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="Flagged Responses">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <FlaggedResponsesPage
+                theme={theme}
+                reportedIssues={reportedIssues}
+                setReportedIssues={setReportedIssues}
+                reportedIssuesFilter={reportedIssuesFilter}
+                setReportedIssuesFilter={setReportedIssuesFilter}
+                ownerResolutionNotes={ownerResolutionNotes}
+                setOwnerResolutionNotes={setOwnerResolutionNotes}
+                effectiveTier={effectiveTier}
+                requestOwnerPasscode={requestOwnerPasscode}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+
+        </AnimatePresence>
+          </div> {/* CLOSES centering wrapper */}
+        </main>
+      </div> {/* CLOSES flex-grow flex flex-col min-w-0 overflow-y-auto */}
+
+      {/* Global Mismatch Reporting Modal */}
+      <AnimatePresence>
+        {reportingItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-55 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl text-left ${
+                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-white border-stone-200 text-stone-900"
+              }`}
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">
+                <div className="flex items-center gap-2">
+                  <Flag className="w-4 h-4 text-red-500 animate-pulse" />
+                  <h3 className="text-xs font-black uppercase tracking-wider">Report Mapping Discrepancy</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReportingItem(null)}
+                  className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <XCircle className="w-5 h-5 font-bold" />
+                </button>
+              </div>
+
+              <div className="space-y-4 py-4 text-left max-h-[400px] overflow-y-auto pr-1">
+                <div className="p-3.5 rounded-xl bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 space-y-1.5 text-xs">
+                  <div className="flex justify-between font-mono text-[10px] text-red-400 font-extrabold">
+                    <span>PLAN: {reportingItem.planName}</span>
+                    <span>PED: {reportingItem.pedInput}</span>
+                  </div>
+                  <div className="font-bold text-stone-750 dark:text-stone-200 leading-normal">
+                    Mapped Question: <span className="font-semibold text-stone-600 dark:text-stone-300 italic">"{reportingItem.mappedQuestion}"</span>
+                  </div>
+                  <div className="text-[11px] text-[#A1A1AA] dark:text-stone-400 font-semibold">
+                    Assigned Match Category: <span className="font-bold text-red-400 uppercase">{translateMatchTypeToLayman(reportingItem.matchType)}</span>
+                  </div>
+                </div>
+
+                {/* Input form */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans">
+                    Select Feedback Priority
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 font-mono">
+                    <button
+                      type="button"
+                      onClick={() => setReportingPriority("Urgent")}
+                      className={`py-2 px-3.5 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
+                        reportingPriority === "Urgent"
+                          ? "bg-red-500 border-red-500 text-white font-extrabold shadow-sm"
+                          : "border-stone-200 dark:border-stone-800 text-stone-400 hover:text-white hover:bg-stone-900/50"
+                      }`}
+                    >
+                      🔥 Urgent Escalation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportingPriority("Pending")}
+                      className={`py-2 px-3.5 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
+                        reportingPriority === "Pending"
+                          ? "bg-amber-500 border-amber-500 text-stone-950 font-extrabold shadow-sm"
+                          : "border-stone-200 dark:border-stone-800 text-stone-400 hover:text-white hover:bg-stone-900/50"
+                      }`}
+                    >
+                      ⏳ Under Review
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans">
+                    Describe the Discrepancy / Advice Change <span className="text-red-500 font-bold">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={3}
+                    value={reportingNotes}
+                    placeholder="Explain what the mismatch is. For example, specify if it should have matched a different policy section."
+                    onChange={(e) => setReportingNotes(e.target.value)}
+                    className="w-full text-xs p-3 rounded-xl border outline-none bg-stone-50 border-stone-250 dark:bg-stone-950 dark:border-stone-800 focus:border-red-500 focus:ring-1 focus:ring-red-500 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-stone-200 dark:border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportingItem(null);
+                    setReportingNotes("");
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-[#111827] dark:hover:text-white cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!reportingNotes.trim()}
+                  onClick={() => {
+                    if (!reportingNotes.trim()) return;
+                    const newIssue: ReportedIssue = {
+                      id: "issue-" + Date.now(),
+                      timestamp: new Date().toISOString(),
+                      userEmail: currentUser?.email || "unknown@joinditto.in",
+                      userName: currentUser?.name || "Advisor",
+                      userTactId: currentUser?.tactId || "TACT-000",
+                      planName: reportingItem.planName,
+                      pedInput: reportingItem.pedInput,
+                      matchedQuestion: reportingItem.mappedQuestion,
+                      matchType: reportingItem.matchType,
+                      source: reportingItem.source,
+                      explanation: reportingItem.explanation,
+                      issueNotes: reportingNotes,
+                      status: reportingPriority,
+                    };
+                    setReportedIssues(prev => [newIssue, ...prev]);
+                    setReportingItem(null);
+                    setReportingNotes("");
+                  }}
+                  className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
+                >
+                  Submit Report
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Owner Passcode Verification Modal — gates destructive actions like permanent record deletion */}
+      <AnimatePresence>
+        {isPasscodeModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-55 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className={`w-full max-w-sm p-6 rounded-2xl border shadow-2xl text-left ${
+                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-white border-stone-200 text-stone-900"
+              }`}
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">
+                <div className="flex items-center gap-2">
+                  <LockKeyhole className="w-4 h-4 text-red-500" />
+                  <h3 className="text-xs font-black uppercase tracking-wider">Owner Verification Required</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasscodeModalOpen(false);
+                    setPasscodeAttempt("");
+                    setPasscodeError(null);
+                  }}
+                  className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <XCircle className="w-5 h-5 font-bold" />
+                </button>
+              </div>
+
+              <div className="space-y-4 py-4 text-left">
+                <p className="text-xs font-semibold text-stone-500 dark:text-stone-400 leading-relaxed">
+                  {passcodeActionLabel || "This is a destructive action."} Enter the owner passcode to confirm.
+                </p>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans">
+                    Owner Passcode
+                  </label>
+                  <input
+                    type="password"
+                    autoFocus
+                    value={passcodeAttempt}
+                    onChange={(e) => {
+                      setPasscodeAttempt(e.target.value);
+                      if (passcodeError) setPasscodeError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleVerifyPasscode();
+                      }
+                    }}
+                    placeholder="Enter passcode"
+                    className={`w-full text-xs font-semibold p-2.5 rounded-lg border outline-none ${
+                      theme === "dark"
+                        ? "bg-[#12151A] border-[#252A34] text-white focus:border-red-500"
+                        : "bg-white border-stone-250 text-stone-850 focus:border-red-500 shadow-sm"
+                    }`}
+                  />
+                  {passcodeError && (
+                    <p className="text-[11px] font-bold text-red-500">{passcodeError}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-stone-200 dark:border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPasscodeModalOpen(false);
+                    setPasscodeAttempt("");
+                    setPasscodeError(null);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-[#111827] dark:hover:text-white cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!passcodeAttempt}
+                  onClick={handleVerifyPasscode}
+                  className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
+                >
+                  Verify & Continue
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+            >
+                {/* Flagged Mismatches Notification Icon (Request 3) */}
+                {hasAccess("flagged_responses", "Viewer") && (
+                  <button
+                    onClick={() => {
+                      setActiveTab("flagged_responses");
+                      setShowIntro(false);
+                    }}
+                    className="p-1.5 rounded transition-all cursor-pointer relative flex items-center justify-center mr-1"
+                    title="Flagged Mismatches"
+                    aria-label="View flagged mismatches"
+                  >
+                    <Bell className="w-4 h-4 text-[#eff6ff] hover:text-[#D97706] transition-colors" style={{ width: "20px", height: "20px" }} />
                     {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
                       <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>

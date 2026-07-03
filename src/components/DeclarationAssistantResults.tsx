@@ -196,16 +196,16 @@ export const DeclarationAssistantResults: React.FC<
           <div
             ref={mappingResultCardRef}
             style={{
-              backgroundColor: theme === "dark" ? "#09223C" : "#ffffff",
-              borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
+              backgroundColor: theme === "dark" ? "var(--surface-tint)" : "var(--surface)",
+              borderColor: "var(--panel-border)",
             }}
             className="rounded-2xl overflow-hidden flex flex-col border transition-all shadow-[0_0_40px_rgba(59,130,246,0.08)]"
           >
             {/* Header with actions */}
             <div
               style={{
-                borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
-                backgroundColor: theme === "dark" ? "#041629" : "#ffffff"
+                borderColor: "var(--panel-border)",
+                backgroundColor: "var(--surface)"
               }}
               className="px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3 shrink-0"
             >
@@ -213,7 +213,7 @@ export const DeclarationAssistantResults: React.FC<
                 className="text-xs font-black uppercase tracking-wider flex items-center gap-2 select-none bg-gradient-to-r from-[#00D3F3] to-[#58A3FF] bg-clip-text text-transparent"
               >
                 <CheckCircle2
-                  style={{ color: "#00D3F3" }}
+                  style={{ color: "var(--accent)" }}
                   className="w-4 h-4 shrink-0"
                 />
                 Mapping Results
@@ -249,7 +249,7 @@ export const DeclarationAssistantResults: React.FC<
             {/* Caution banner */}
             <div
               style={{
-                borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
+                borderColor: "var(--panel-border)",
                 backgroundColor: "rgba(245, 158, 11, 0.12)"
               }}
               className="px-5 py-2 border-b flex items-center gap-2"
@@ -296,26 +296,26 @@ export const DeclarationAssistantResults: React.FC<
                       <div
                         key={idx}
                         style={{
-                          backgroundColor: theme === "dark" ? "#11365A" : "#C7CFD6",
-                          borderColor: theme === "dark" ? "#1F4A7A" : "#C7CFD6"
+                          backgroundColor: "var(--panel-bg)",
+                          borderColor: "var(--panel-border)"
                         }}
                         className={`rounded-xl border border-l-4 overflow-hidden ${accentBorder} shadow-xs transition-colors duration-150`}
                       >
                         {/* PED Name Header */}
                         <div
                           style={{
-                            borderColor: theme === "dark" ? "#1F4A7A" : "#E2E8F0",
-                            backgroundColor: "#000000"
+                            borderColor: "var(--panel-border)",
+                            backgroundColor: theme === "dark" ? "#000000" : "var(--panel-bg-strong)"
                           }}
                           className="px-5 py-1 border-b flex flex-wrap justify-between items-center gap-3"
                         >
                           <div className="flex items-center gap-2.5">
                             <div
-                              style={{ backgroundColor: "#00D3F3" }}
+                              style={{ backgroundColor: "var(--accent)" }}
                               className="w-2 h-2 rounded-full shrink-0 animate-pulse"
                             />
                             <span
-                              style={{ color: theme === "dark" ? "#ffffff" : "#04233F" }}
+                              style={{ color: theme === "dark" ? "#FFFFFF" : "var(--text-heading)" }}
                               className="text-sm font-black tracking-wide"
                             >
                               {ped}
@@ -336,15 +336,15 @@ export const DeclarationAssistantResults: React.FC<
                         </div>
 
                         {/* Content Area */}
-                        <div style={{ backgroundColor: "#43687a" }} className="p-5 space-y-4">
+                        <div style={{ backgroundColor: "var(--panel-body)" }} className="p-5 space-y-4">
                           {/* Simplified Mapped Question - Placeless Border Card direct on PED card */}
                           {isFallback ? (
                             <>
                               {/* Umbrella Questions header & accordion */}
                               <div
                                 style={{
-                                  backgroundColor: theme === "dark" ? "#1E4D7E" : "rgba(59, 130, 246, 0.12)",
-                                  borderColor: idx === 4 ? "#1c76cb" : (theme === "dark" ? "#2D67A4" : "#3b82f6")
+                                  backgroundColor: theme === "dark" ? "var(--panel-bg-strong)" : "var(--accent-subtle-bg)",
+                                  borderColor: idx === 4 ? "#1c76cb" : (theme === "dark" ? "var(--panel-border-strong)" : "var(--accent-2)")
                                 }}
                                 className="rounded-xl border overflow-hidden"
                               >
@@ -356,12 +356,12 @@ export const DeclarationAssistantResults: React.FC<
                                       [idx]: !prev[idx],
                                     }));
                                   }}
-                                  style={{ backgroundColor: "#030e21" }}
+                                  style={{ backgroundColor: theme === "dark" ? "#030E21" : "var(--panel-bg-strong)" }}
                                   className="w-full p-4 text-left flex items-center justify-between transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
                                 >
                                   <div>
                                     <p
-                                      style={{ color: theme === "dark" ? "#58A3FF" : "#04233F" }}
+                                      style={{ color: "var(--accent)" }}
                                       className="text-[9.5px] font-black uppercase tracking-widest mb-1"
                                     >
                                       ① Umbrella Questions — Check First
@@ -377,7 +377,7 @@ export const DeclarationAssistantResults: React.FC<
                                   </div>
                                   <ChevronDown
                                     className={`w-4 h-4 shrink-0 transition-transform ${expandedUmbrellas[idx] ? "rotate-180" : ""}`}
-                                    style={{ color: theme === "dark" ? "#cbd5e1" : "#04233F" }}
+                                    style={{ color: "var(--text-secondary)" }}
                                   />
                                 </button>
                                 {expandedUmbrellas[idx] && (
@@ -389,9 +389,9 @@ export const DeclarationAssistantResults: React.FC<
                                           <div
                                             key={k}
                                             style={{
-                                              backgroundColor: theme === "dark" ? "#2A5F96" : "#FFFFFF",
-                                              borderColor: theme === "dark" ? "#3B7DBF" : "#B0BCC8",
-                                              color: theme === "dark" ? "#ffffff" : "#2d3748"
+                                              backgroundColor: "var(--panel-bg-strong)",
+                                              borderColor: "var(--panel-border-strong)",
+                                              color: theme === "dark" ? "#FFFFFF" : "var(--text-primary)"
                                             }}
                                             className="p-3 rounded-lg border flex items-start gap-2 text-xs font-semibold leading-relaxed"
                                           >
@@ -405,9 +405,9 @@ export const DeclarationAssistantResults: React.FC<
                                     ) : (
                                       <div
                                         style={{
-                                          backgroundColor: theme === "dark" ? "#2A5F96" : "#FFFFFF",
-                                          borderColor: theme === "dark" ? "#3B7DBF" : "#B0BCC8",
-                                          color: theme === "dark" ? "#cbd5e1" : "#2d3748"
+                                          backgroundColor: "var(--panel-bg-strong)",
+                                          borderColor: "var(--panel-border-strong)",
+                                          color: "var(--text-secondary)"
                                         }}
                                         className="p-3 rounded-lg border text-xs font-semibold leading-relaxed"
                                       >
@@ -422,7 +422,7 @@ export const DeclarationAssistantResults: React.FC<
 
                               <p
                                 style={{
-                                  color: theme === "dark" ? "#e2e8f0" : "#2d3748"
+                                  color: "var(--text-primary)"
                                 }}
                                 className="text-[11px] font-semibold leading-relaxed px-1"
                               >
@@ -432,19 +432,19 @@ export const DeclarationAssistantResults: React.FC<
                               {/* Others fallback sub-section */}
                               <div
                                 style={{
-                                  backgroundColor: "#030e21",
-                                  borderColor: idx === 4 ? "#247855" : (theme === "dark" ? "#2D67A4" : "#B0BCC8")
+                                  backgroundColor: theme === "dark" ? "#030E21" : "var(--panel-bg-strong)",
+                                  borderColor: idx === 4 ? "#247855" : ("var(--panel-border-strong)")
                                 }}
                                 className="p-4 rounded-xl border"
                               >
                                 <p
-                                  style={{ color: theme === "dark" ? "#58A3FF" : "#04233F" }}
+                                  style={{ color: "var(--accent)" }}
                                   className="text-[9.5px] font-black uppercase tracking-widest mb-2"
                                 >
                                   ② Others Section (Last Option)
                                 </p>
                                 <p
-                                  style={{ color: theme === "dark" ? "#ffffff" : "#1F1F1F" }}
+                                  style={{ color: theme === "dark" ? "#FFFFFF" : "var(--text-primary)" }}
                                   className="text-xs font-bold leading-relaxed"
                                 >
                                   {result.matched_question ||
@@ -464,7 +464,7 @@ export const DeclarationAssistantResults: React.FC<
                                     }`}
                                 />
                                 <span
-                                  style={{ color: theme === "dark" ? "#58A3FF" : "#04233F" }}
+                                  style={{ color: "var(--accent)" }}
                                   className="text-[9.5px] font-black uppercase tracking-widest"
                                 >
                                   Mapped Declaration Question
@@ -481,12 +481,12 @@ export const DeclarationAssistantResults: React.FC<
 
                           {/* Mapping Logic + Flag Mismatch Accordion link */}
                           <div 
-                            style={idx === 4 ? { borderColor: "#b6aaff" } : undefined}
+                            style={idx === 4 ? { borderColor: "var(--accent-2)" } : undefined}
                             className="flex items-center gap-2.5 w-full"
                           >
                             <div
                               style={{
-                                borderColor: idx === 4 ? "#b6aaff" : (theme === "dark" ? "#1F4A7A" : "#B0BCC8")
+                                borderColor: idx === 4 ? "var(--accent-2)" : ("var(--panel-border-strong)")
                               }}
                               className="flex-grow border rounded-xl overflow-hidden"
                             >
@@ -494,7 +494,7 @@ export const DeclarationAssistantResults: React.FC<
                                 type="button"
                                 onClick={() => toggleLogicExpanded(idx)}
                                 style={{
-                                  backgroundColor: "#000000"
+                                  backgroundColor: theme === "dark" ? "#000000" : "var(--panel-bg-strong)"
                                 }}
                                 className="w-full p-2.5 px-3.5 flex items-center justify-between text-left select-none transition-all cursor-pointer"
                               >
@@ -506,7 +506,7 @@ export const DeclarationAssistantResults: React.FC<
                                       }`}
                                   />
                                   <span
-                                    style={{ color: theme === "dark" ? "#ffffff" : "#04233F" }}
+                                    style={{ color: theme === "dark" ? "#FFFFFF" : "var(--text-heading)" }}
                                     className="text-[10px] font-black uppercase tracking-wider"
                                   >
                                     Mapping Logic
@@ -519,9 +519,9 @@ export const DeclarationAssistantResults: React.FC<
                               {isLogicExpanded && (
                                 <div
                                   style={{
-                                    borderColor: theme === "dark" ? "#1F4A7A" : "#B0BCC8",
-                                    backgroundColor: theme === "dark" ? "#1E4D7E" : "#FFFFFF",
-                                    color: theme === "dark" ? "#e2e8f0" : "#2d3748"
+                                    borderColor: "var(--panel-border-strong)",
+                                    backgroundColor: "var(--panel-bg-strong)",
+                                    color: "var(--text-primary)"
                                   }}
                                   className="p-4 border-t"
                                 >
@@ -544,7 +544,7 @@ export const DeclarationAssistantResults: React.FC<
                                           PED listed under specific illness list
                                         </div>
                                         <p
-                                          style={{ color: theme === "dark" ? "#cbd5e1" : "#1F1F1F" }}
+                                          style={{ color: "var(--text-secondary)" }}
                                           className="text-[10.5px] leading-relaxed font-semibold font-sans"
                                         >
                                           "{ped.toLowerCase()}" maps to{" "}
@@ -617,8 +617,8 @@ export const DeclarationAssistantResults: React.FC<
             ref={sidebarRef}
             id="payment-journey-questions-view"
             style={{
-              backgroundColor: theme === "dark" ? "#09223C" : "#FFFFFF",
-              borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
+              backgroundColor: theme === "dark" ? "var(--surface-tint)" : "var(--surface)",
+              borderColor: "var(--panel-border)",
             }}
             className="rounded-2xl border overflow-hidden flex flex-col transition-all shadow-[0_0_40px_rgba(59,130,246,0.08)]"
           >
@@ -626,8 +626,8 @@ export const DeclarationAssistantResults: React.FC<
             <div
               ref={rightHeaderRef}
               style={{
-                borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
-                backgroundColor: theme === "dark" ? "#041629" : "#EFF6FF"
+                borderColor: "var(--panel-border)",
+                backgroundColor: theme === "dark" ? "var(--surface)" : "var(--panel-bg)"
               }}
               className="px-5 py-3 border-b flex items-center justify-between shrink-0 animate-fadeIn"
             >
@@ -639,13 +639,13 @@ export const DeclarationAssistantResults: React.FC<
                 }`}
               >
                 <Layers
-                  style={{ color: theme === "dark" ? "#00D3F3" : "#04233F" }}
+                  style={{ color: "var(--accent)" }}
                   className="w-4 h-4 shrink-0"
                 />
                 Payment Journey Questions
               </span>
               <span
-                style={{ color: theme === "dark" ? "#00D3F3" : "#04233F" }}
+                style={{ color: "var(--accent)" }}
                 className="text-[9.5px] font-black uppercase tracking-widest"
               >
                 {selectedPlan}
@@ -658,15 +658,15 @@ export const DeclarationAssistantResults: React.FC<
                 <thead>
                   <tr
                     style={{
-                      backgroundColor: theme === "dark" ? "#11365A" : "#EFF6FF",
-                      borderColor: theme === "dark" ? "#1F4A7A" : "#C7CFD6"
+                      backgroundColor: "var(--panel-bg)",
+                      borderColor: "var(--panel-border)"
                     }}
                     className="border-b"
                   >
                     <th
                       style={{
-                        borderColor: theme === "dark" ? "#1F4A7A" : "#C7CFD6",
-                        color: theme === "dark" ? "#ffffff" : "#04233F"
+                        borderColor: "var(--panel-border)",
+                        color: theme === "dark" ? "#FFFFFF" : "var(--text-heading)"
                       }}
                       className="py-2.5 px-4 text-center font-black tracking-wider text-[9.5px] uppercase border-r w-16"
                     >
@@ -674,7 +674,7 @@ export const DeclarationAssistantResults: React.FC<
                     </th>
                     <th
                       style={{
-                        color: theme === "dark" ? "#ffffff" : "#04233F"
+                        color: theme === "dark" ? "#FFFFFF" : "var(--text-heading)"
                       }}
                       className="py-2.5 px-5 font-black tracking-wider text-[9.5px] uppercase"
                     >
@@ -790,8 +790,8 @@ export const DeclarationAssistantResults: React.FC<
                         >
                           <td
                             style={{
-                              borderColor: theme === "dark" ? "#1F4A7A" : "#E2E8F0",
-                              color: theme === "dark" ? "#ffffff" : "#04233F"
+                              borderColor: "var(--panel-border)",
+                              color: theme === "dark" ? "#FFFFFF" : "var(--text-heading)"
                             }}
                             className={`py-3 px-4 text-center border-r border-l-4 font-mono text-[10px] whitespace-nowrap ${borderLeftStyle}`}
                           >
@@ -832,16 +832,16 @@ export const DeclarationAssistantResults: React.FC<
         <div className="flex flex-col min-h-0 w-full animate-fadeIn">
           <div
             style={{
-              backgroundColor: theme === "dark" ? "#09223C" : "#FFFFFF",
-              borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
+              backgroundColor: theme === "dark" ? "var(--surface-tint)" : "var(--surface)",
+              borderColor: "var(--panel-border)",
             }}
             className="rounded-2xl border overflow-hidden flex flex-col shadow-[0_0_40px_rgba(59,130,246,0.08)]"
           >
             {/* Header */}
             <div
               style={{
-                borderColor: theme === "dark" ? "#1A3B62" : "#C7CFD6",
-                backgroundColor: theme === "dark" ? "#041629" : "#EFF6FF"
+                borderColor: "var(--panel-border)",
+                backgroundColor: theme === "dark" ? "var(--surface)" : "var(--panel-bg)"
               }}
               className="px-5 py-3 border-b flex items-center justify-between shrink-0"
             >
@@ -853,7 +853,7 @@ export const DeclarationAssistantResults: React.FC<
                 }`}
               >
                 <Activity
-                  style={{ color: theme === "dark" ? "#00D3F3" : "#04233F" }}
+                  style={{ color: "var(--accent)" }}
                   className="w-4 h-4 shrink-0"
                 />
                 Specific Illness List
@@ -881,7 +881,7 @@ export const DeclarationAssistantResults: React.FC<
           {/* Section label — sits directly on page background */}
           <div className="flex items-center gap-2.5 px-1 select-none">
             <Layers
-              style={{ color: theme === "dark" ? "#00D3F3" : "#04233F" }}
+              style={{ color: "var(--accent)" }}
               className="w-4 h-4 shrink-0"
             />
             <span

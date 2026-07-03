@@ -64,7 +64,7 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
             className="flex flex-col justify-center h-full w-full relative z-10 py-1"
           >
             <div className="flex items-center gap-2 select-none mb-2">
-              <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
+              <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: "var(--accent)" }} />
               <span
                 style={{ fontSize: "11px" }}
                 className={`font-mono tracking-[0.4em] uppercase ${
@@ -122,9 +122,9 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
                 marginTop: "clamp(6px, 1.5vh, 14px)",
                 paddingTop: "clamp(8px, 1.2vh, 12px)",
                 paddingBottom: "clamp(8px, 1.2vh, 12px)",
-                backgroundColor: theme !== "dark" ? "#0754b7" : undefined,
-                color: theme !== "dark" ? "#ffffff" : undefined,
-                borderColor: theme !== "dark" ? "#0754b7" : undefined
+                backgroundColor: theme !== "dark" ? "var(--accent-solid)" : undefined,
+                color: theme !== "dark" ? "var(--on-accent)" : undefined,
+                borderColor: theme !== "dark" ? "var(--accent-solid)" : undefined
               }}
             >
               LETS PUT THEM IN THEIR PLACE
@@ -160,9 +160,9 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
             theme === "dark" ? "border-white/[0.08]" : "border-[#6a787f]"
           }`}>
             <div className="flex items-center gap-2 select-none">
-              <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
+              <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: "var(--accent)" }} />
               <span
-                style={{ color: theme === "dark" ? "#00afce" : "#407ac0" }}
+                style={{ color: "var(--accent)" }}
                 className="font-mono uppercase tracking-[0.2em] text-[10px] font-bold"
               >
                 Mapping Engine

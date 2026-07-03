@@ -107,31 +107,31 @@ export function MyActivityPage({
       {/* QUICK STATS CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div
-          style={{ backgroundColor: "#13487a" }}
+          style={{ backgroundColor: theme === "dark" ? "var(--panel-bg)" : "var(--surface)" }}
           className={`p-4 rounded-xl border ${
             theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-xs"
           }`}
         >
-          <p style={{ color: "#dcedf8" }} className="text-[10px] font-bold uppercase tracking-wider">Total Lookups</p>
-          <p style={{ color: "#00caff" }} className="text-xl font-black mt-1">{myLogs.length}</p>
+          <p style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Total Lookups</p>
+          <p style={{ color: "var(--accent)" }} className="text-xl font-black mt-1">{myLogs.length}</p>
         </div>
         <div
-          style={{ backgroundColor: "#13487a" }}
+          style={{ backgroundColor: theme === "dark" ? "var(--panel-bg)" : "var(--surface)" }}
           className={`p-4 rounded-xl border ${
             theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-xs"
           }`}
         >
-          <p style={{ color: "#dcedf8" }} className="text-[10px] font-bold uppercase tracking-wider">Filtered Matches</p>
-          <p style={{ color: "#00caff" }} className="text-xl font-black mt-1">{filteredMyLogs.length}</p>
+          <p style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Filtered Matches</p>
+          <p style={{ color: "var(--accent)" }} className="text-xl font-black mt-1">{filteredMyLogs.length}</p>
         </div>
         <div
-          style={{ backgroundColor: "#13487a" }}
+          style={{ backgroundColor: theme === "dark" ? "var(--panel-bg)" : "var(--surface)" }}
           className={`p-4 rounded-xl border ${
             theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-xs"
           }`}
         >
-          <p style={{ color: "#dcedf8" }} className="text-[10px] font-bold uppercase tracking-wider">Advisor Profile</p>
-          <p style={{ color: "#00caff" }} className={`text-xs font-bold mt-2 truncate`}>
+          <p style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Advisor Profile</p>
+          <p style={{ color: "var(--accent)" }} className={`text-xs font-bold mt-2 truncate`}>
             {currentUser?.email || "advisor@joinditto.in"}
           </p>
         </div>
@@ -139,7 +139,7 @@ export function MyActivityPage({
 
       {/* SEARCH AND FILTERS */}
       <div
-        style={{ backgroundColor: "#50697e" }}
+        style={{ backgroundColor: theme === "dark" ? "var(--panel-body)" : "var(--surface-elevated)" }}
         className={`p-4 rounded-xl border flex flex-col md:flex-row gap-4 items-center justify-between ${
           theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-sm"
         }`}
@@ -170,10 +170,10 @@ export function MyActivityPage({
         </div>
 
         {/* Filter Dropdowns container */}
-        <div style={{ color: "#de7c44" }} className="w-full flex flex-col sm:flex-row gap-3 items-center md:justify-end">
+        <div style={{ color: "var(--text-primary)" }} className="w-full flex flex-col sm:flex-row gap-3 items-center md:justify-end">
           {/* Plan Filter */}
           <div className="flex items-center gap-2">
-            <span style={{ color: "#dcedf8" }} className="text-[10px] font-bold uppercase tracking-wider">Plan:</span>
+            <span style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Plan:</span>
             <select
               value={myActivityPlanFilter}
               onChange={(e) => setMyActivityPlanFilter(e.target.value)}
@@ -193,7 +193,7 @@ export function MyActivityPage({
           {/* Date Range Filter */}
           <div className="flex flex-col sm:flex-row gap-2.5 items-start sm:items-center">
             <div className="flex items-center gap-1.5">
-              <span style={{ color: "#dcedf8" }} className="text-[10px] font-bold uppercase tracking-wider">From:</span>
+              <span style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">From:</span>
               <div className="relative">
                 <input
                   type="date"
@@ -223,7 +223,7 @@ export function MyActivityPage({
               </div>
             </div>
             <div className="flex items-center gap-1.5">
-              <span style={{ color: "#dcedf8" }} className="text-[10px] font-bold uppercase tracking-wider">To:</span>
+              <span style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">To:</span>
               <div className="relative">
                 <input
                   type="date"

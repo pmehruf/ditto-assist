@@ -1,142 +1,265 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Space+Mono:wght@400;700&family=Oswald:wght@500;700&family=Geist+Mono:wght@400;700&display=swap');
+/* ====================================================================
+   DECLARATION ASSISTANT — DESIGN SYSTEM v2.0
+   --------------------------------------------------------------------
+   Architecture:
+     1. Design tokens        — :root (Light) and .dark (Dark). Nothing else.
+     2. Tailwind @theme      — exposes tokens as utilities (bg-surface, …).
+     3. Base styles          — element-level defaults, a11y, scrollbars.
+     4. Compatibility layer  — maps legacy utility classes used in the JSX
+                               onto semantic tokens so every component
+                               consumes ONE palette. Organized by role.
+   Brand rule:
+     • Dark theme  — the ONLY foreground accent is Aqua  (--accent).
+     • Light theme — the ONLY foreground accent is Brand Blue (--accent).
+   ==================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
-body, * {
-  font-family: "Space Grotesk", sans-serif;
-  font-optical-sizing: auto;
-}
+/* The app toggles theme with a `.dark` class on <html>. Make every
+   `dark:` utility follow that toggle instead of the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ====================================================================
+   1. DESIGN TOKENS
+   ==================================================================== */
 
 :root {
+  /* ---------- Typography ---------- */
   --font-sans: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  
-  /* Theme Colors - Light Mode Default */
-  --color-ditto-dark: #F3F4F6;
-  --color-ditto-card: #FFFFFF;
-  --color-ditto-card-hover: #F9FAFB;
-  --color-ditto-border: #E5E7EB;
 
-  /* Brand / Primary */
-  --color-primary: #2563EB;
-  --color-primary-hover: #1D4ED8;
-  --color-primary-light-bg: #DBEAFE;
-  --color-primary-light-text: #1E40AF;
+  --weight-body: 500;
+  --weight-heading: 700;
 
-  /* Semantic / Functional */
-  --color-success-bg: #DCFCE7;
-  --color-success-text: #16A34A;
-  --color-warning-bg: #FEF3C7;
-  --color-warning-text: #D97706;
-  --color-danger-bg: #FEE2E2;
-  --color-danger-text: #DC2626;
+  /* ---------- Radius ----------
+     NOTE: names must not collide with Tailwind's --radius-sm/md/lg/xl/2xl,
+     which power the rounded-* utilities used across the app. */
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-card-sm: 12px;
+  --radius-card: 16px;
+  --radius-modal: 24px;
 
-  /* Typography Colors */
-  --color-text-body: #1F2937;
-  --color-text-muted: #6B7280;
+  /* ---------- Spacing ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
 
-  /* Backwards compatibility */
-  --color-ditto-border-active: #2563EB;
-  --color-ditto-blue: #2563EB;
-  --color-ditto-blue-light: #60A5FA;
-  --color-ditto-gray: #F3F4F6;
-  --color-ditto-success: #16A34A;
-  --color-ditto-success-bg: rgba(22, 163, 74, 0.1);
-  --color-ditto-warning: #D97706;
-  --color-ditto-warning-bg: rgba(217, 119, 6, 0.1);
+  /* ================= LIGHT THEME (default) ================= */
+
+  /* Backgrounds & surfaces */
+  --bg: #F1F6FB;                    /* page background            */
+  --surface: #FFFFFF;               /* cards / panels             */
+  --surface-elevated: #EBF1F7;      /* inset steel-blue panels    */
+  --surface-inset: #D9E4F0;         /* step cards / inner widgets */
+  --surface-tint: #E1EAF7;          /* accent-tinted panels       */
+  --surface-hover: #F8FAFD;
+
+  /* Borders */
+  --border: #D2DFEC;
+  --border-strong: #C3CFDE;
+
+  /* PRIMARY ACCENT — Dark Brand Blue (hero title / top nav family) */
+  --accent: #0754B7;
+  --accent-hover: #06469C;
+  --accent-2: #3B82F6;              /* gradient end stop           */
+  --accent-solid: #0754B7;          /* solid button / badge bg     */
+  --accent-solid-hover: #06469C;
+  --on-accent: #FFFFFF;             /* text on solid accent        */
+  --accent-subtle-bg: #E1EAF7;      /* tinted chip / pill bg       */
+  --accent-border: #B9D2F2;
+  --gradient-accent: linear-gradient(to right, #0754B7, #3B82F6);
+  --gradient-heading: linear-gradient(to right, #192030, #3A4A6E);
+
+  /* Secondary accent (approved teal, functional only) */
+  --teal: #0F766E;
+
+  /* Mapping / AI result card panels */
+  --panel-bg: #EFF6FF;
+  --panel-bg-strong: #FFFFFF;
+  --panel-body: #EBF1F7;
+  --panel-border: #C7CFD6;
+  --panel-border-strong: #B0BCC8;
+
+  /* Status */
+  --success-bg: #DCFCE7;
+  --success-text: #16A34A;
+  --warning-bg: #FEF3C7;
+  --warning-border: #FDE047;
+  --warning-text: #D97706;
+  --warning-strong: #78350F;
+  --danger-bg: #FEE2E2;
+  --danger-text: #DC2626;
+
+  /* Text */
+  --text-heading: #2D3748;
+  --text-primary: #1E293B;
+  --text-secondary: #2D3748;
+  --text-muted: #556070;            /* WCAG AA on --bg and --surface-* */
+  --text-disabled: #94A3B8;
+
+  /* Focus ring */
+  --focus-ring: #0754B7;
+
+  /* Selection */
+  --selection-bg: rgba(7, 84, 183, 0.22);
+
+  /* Inputs */
+  --input-bg: #DDE5F0;
+  --input-border: #C3CFDE;
+  --input-text: #1E293B;
+  --option-bg: #D5E2F0;
+
+  /* Tables */
+  --table-header-bg: #EBF1F7;
+  --table-row-hover: #F8FAFD;
+
+  /* Header / Sidebar (brand navy is part of the light identity) */
+  --header-bg: #163C62;
+  --header-text: #F1F5F9;
+  --sidebar-bg: #FFFFFF;
+
+  /* Shadows */
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --shadow-overlay: 0 12px 32px rgba(15, 23, 42, 0.10);
+
+  /* Scanline / texture overlays used on hero panels */
+  --texture-line: rgba(70, 115, 169, 0.14);
+
+  /* -------- Legacy variable names (kept for @theme utilities) ------- */
+  --color-ditto-dark: var(--bg);
+  --color-ditto-card: var(--surface);
+  --color-ditto-card-hover: var(--surface-hover);
+  --color-ditto-border: var(--border);
+  --color-ditto-border-active: var(--accent);
+  --color-ditto-blue: var(--accent-solid);
+  --color-ditto-blue-light: var(--accent-2);
+  --color-ditto-gray: var(--surface-elevated);
+  --color-ditto-success: var(--success-text);
+  --color-ditto-success-bg: var(--success-bg);
+  --color-ditto-warning: var(--warning-text);
+  --color-ditto-warning-bg: var(--warning-bg);
 }
 
+/* ================= DARK THEME ================= */
 .dark {
-  /* Theme Colors - Dark Mode Default (#001322, matching customized SVG background) */
-  --color-ditto-dark: #001322;
-  --color-ditto-card: #07111F;
-  --color-ditto-card-hover: #0A1528;
-  --color-ditto-border: rgba(0, 183, 255, 0.12);
+  /* Backgrounds & surfaces */
+  --bg: #001322;
+  --surface: #07111F;
+  --surface-elevated: #0A1528;
+  --surface-inset: #0A1528;
+  --surface-tint: #0E2236;
+  --surface-hover: #0A1528;
 
-  /* Brand / Primary */
-  --color-primary: #2563EB;
-  --color-primary-hover: #1D4ED8;
-  --color-primary-light-bg: #1E3A8A;
-  --color-primary-light-text: #93C5FD;
+  /* Borders */
+  --border: rgba(0, 183, 255, 0.12);
+  --border-strong: rgba(0, 183, 255, 0.22);
 
-  /* Semantic / Functional */
-  --color-success-bg: rgba(22, 163, 74, 0.15);
-  --color-success-text: #4ADE80;
-  --color-warning-bg: rgba(217, 119, 6, 0.15);
-  --color-warning-text: #FCD34D;
-  --color-danger-bg: rgba(220, 38, 38, 0.15);
-  --color-danger-text: #FCA5A5;
+  /* PRIMARY ACCENT — Aqua / Cyan Blue */
+  --accent: #00D3F3;
+  --accent-hover: #5EE4FA;
+  --accent-2: #58A3FF;              /* gradient end stop           */
+  --accent-solid: #0891B2;          /* solid button / badge bg     */
+  --accent-solid-hover: #0E7490;
+  --on-accent: #FFFFFF;
+  --accent-subtle-bg: rgba(0, 211, 243, 0.10);
+  --accent-border: rgba(0, 211, 243, 0.35);
+  --gradient-accent: linear-gradient(to right, #00D3F3, #58A3FF);
+  --gradient-heading: linear-gradient(to right, #FFFFFF, #94A3B8);
 
-  /* Typography Colors */
-  --color-text-body: #E2E8F0;
-  --color-text-muted: #94A3B8;
+  --teal: #2DD4BF;
 
-  /* Backwards compatibility overrides */
-  --color-ditto-border-active: #2563EB;
-  --color-ditto-blue: #2563EB;
-  --color-ditto-blue-light: #3B82F6;
-  --color-ditto-gray: #0A1528;
-  --color-ditto-success: #4ADE80;
-  --color-ditto-success-bg: rgba(22, 163, 74, 0.15);
-  --color-ditto-warning: #FCD34D;
-  --color-ditto-warning-bg: rgba(217, 119, 6, 0.15);
+  /* Mapping / AI result card panels */
+  --panel-bg: #11365A;
+  --panel-bg-strong: #1E4D7E;
+  --panel-body: #43687A;
+  --panel-border: #1A3B62;
+  --panel-border-strong: #2D67A4;
+
+  /* Status */
+  --success-bg: rgba(22, 163, 74, 0.15);
+  --success-text: #4ADE80;
+  --warning-bg: rgba(217, 119, 6, 0.15);
+  --warning-border: rgba(245, 158, 11, 0.45);
+  --warning-text: #FCD34D;
+  --warning-strong: #FCD34D;
+  --danger-bg: rgba(220, 38, 38, 0.15);
+  --danger-text: #FCA5A5;
+
+  /* Text */
+  --text-heading: #F5F7FA;
+  --text-primary: #F5F7FA;
+  --text-secondary: #CFE0F5;
+  --text-muted: #90A6C4;
+  --text-disabled: #64748B;
+
+  /* Focus ring */
+  --focus-ring: #58A3FF;
+
+  --selection-bg: rgba(0, 211, 243, 0.28);
+
+  /* Inputs */
+  --input-bg: #0A1528;
+  --input-border: rgba(0, 183, 255, 0.18);
+  --input-text: #E2E8F0;
+  --option-bg: #0A1528;
+
+  /* Tables */
+  --table-header-bg: #0A1528;
+  --table-row-hover: #0A1528;
+
+  /* Header / Sidebar */
+  --header-bg: #03101A;
+  --header-text: #F5F7FA;
+  --sidebar-bg: #03101A;
+
+  /* Shadows */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.55);
+
+  --texture-line: rgba(0, 0, 0, 0.15);
 }
 
-/* Force override classes for dark mode blocks and borders to align exactly with requested scheme */
-.dark .bg-\[\#14161a\],
-.dark .bg-\[\#12151A\],
-.dark .bg-\[\#111622\],
-.dark .bg-\[\#091520\]\/80,
-.dark .bg-\[\#0b1427\],
-.dark .bg-slate-900\/60,
-.dark .bg-black\/25,
-.dark .bg-stone-900,
-.dark .bg-\[\#050b16\]\/95,
-.dark .bg-\[\#050b16\]\/90,
-.dark .bg-\[\#040914\],
-.dark .bg-slate-950\/90 {
-  background-color: #07111F !important;
-}
-
-.dark .bg-\[\#171B22\],
-.dark .bg-\[\#171B22\]\/50,
-.dark .bg-\[\#171B22\]\/40,
-.dark .bg-\[\#111317\],
-.dark .bg-\[\#0b1328\]\/30,
-.dark .bg-\[\#0b1321\]\/50,
-.dark .bg-\[\#060a12\],
-.dark .bg-\[\#060A10\],
-.dark .bg-\[\#14181D\],
-.dark .bg-stone-950\/30,
-.dark .bg-stone-950\/40,
-.dark .bg-\[\#070f1a\],
-.dark .bg-\[\#171B22\]\/50,
-.dark .bg-stone-900\/50 {
-  background-color: #0A1528 !important;
-}
-
-/* Borders */
-.dark .border-stone-800,
-.dark .border-stone-850,
-.dark .border-stone-900,
-.dark .border-stone-900\/80,
-.dark .border-\[\#252A34\],
-.dark .border-\[\#252A34\]\/40,
-.dark .border-white\/\[0\.08\],
-.dark .border-white\/\[0\.06\],
-.dark .border-white\/\[0\.04\],
-.dark .border-white\/\[0\.03\],
-.dark .border-\[\#1c3258\],
-.dark .border-stone-800\/60,
-.dark .border-stone-800\/80,
-.dark .border-\[\#1f242e\],
-.dark .border-stone-150 {
-  border-color: rgba(0, 183, 255, 0.12) !important;
-}
-
-@theme {
+/* ====================================================================
+   2. TAILWIND THEME — semantic utilities (bg-surface, text-accent, …)
+   ==================================================================== */
+@theme inline {
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  
+
+  /* Semantic tokens */
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-inset: var(--surface-inset);
+  --color-surface-tint: var(--surface-tint);
+  --color-surface-hover: var(--surface-hover);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-2: var(--accent-2);
+  --color-accent-solid: var(--accent-solid);
+  --color-on-accent: var(--on-accent);
+  --color-accent-subtle: var(--accent-subtle-bg);
+  --color-success: var(--success-text);
+  --color-success-subtle: var(--success-bg);
+  --color-warning: var(--warning-text);
+  --color-warning-subtle: var(--warning-bg);
+  --color-danger: var(--danger-text);
+  --color-danger-subtle: var(--danger-bg);
+  --color-content: var(--text-primary);
+  --color-content-secondary: var(--text-secondary);
+  --color-content-muted: var(--text-muted);
+  --color-content-disabled: var(--text-disabled);
+
+  /* Legacy names used across the JSX (bg-ditto-card, border-ditto-border…) */
   --color-ditto-dark: var(--color-ditto-dark);
   --color-ditto-card: var(--color-ditto-card);
   --color-ditto-card-hover: var(--color-ditto-card-hover);
@@ -149,63 +272,44 @@ body, * {
   --color-ditto-success-bg: var(--color-ditto-success-bg);
   --color-ditto-warning: var(--color-ditto-warning);
   --color-ditto-warning-bg: var(--color-ditto-warning-bg);
-
-  /* Primary Tokens */
-  --color-primary: var(--color-primary);
-  --color-primary-hover: var(--color-primary-hover);
-  --color-primary-light-bg: var(--color-primary-light-bg);
-  --color-primary-light-text: var(--color-primary-light-text);
-
-  /* Semantic Tokens */
-  --color-success-bg-token: var(--color-success-bg);
-  --color-success-text-token: var(--color-success-text);
-  --color-warning-bg-token: var(--color-warning-bg);
-  --color-warning-text-token: var(--color-warning-text);
-  --color-danger-bg-token: var(--color-danger-bg);
-  --color-danger-text-token: var(--color-danger-text);
-
-  /* Typography Tokens */
-  --color-text-body-token: var(--color-text-body);
-  --color-text-muted-token: var(--color-text-muted);
-}
-
-/* Custom Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-ditto-border);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-ditto-blue);
 }
 
 /* ====================================================================
-   ACCESSIBILITY & INTERACTION POLISH  (UI/UX audit pass)
-   Presentation-only. No design tokens modified. Aligns with the
-   accessibility, readability and visibility standards in DESIGN LOCK v1.0.
+   3. BASE STYLES
    ==================================================================== */
 
-/* 1. KEYBOARD FOCUS VISIBILITY
-   Restores a clear, consistent focus ring for keyboard users across the
-   whole app, overriding the many scattered `focus:outline-none` utilities.
-   Uses the approved cyan/blue focus color (#58A3FF). Mouse/touch interaction
-   is unaffected because this targets :focus-visible only. */
-:focus-visible {
-  outline: 2px solid #58A3FF !important;
-  outline-offset: 2px !important;
-}
-:focus:not(:focus-visible) {
-  outline: none;
+body, * {
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
 }
 
-/* 2. REDUCED MOTION
-   Honor the OS "reduce motion" preference for users sensitive to animation. */
+html {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  font-size: 15px; /* Mobile base size */
+}
+
+/* Fluid scaling for laptop / desktop at 100% zoom */
+@media (min-width: 768px)  { html { font-size: 16px; } }
+@media (min-width: 1024px) { html { font-size: 17px; } }
+@media (min-width: 1280px) { html { font-size: 17.5px; } }
+@media (min-width: 1440px) { html { font-size: 18px; } }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* Keyboard focus visibility — one ring, themed */
+:focus-visible {
+  outline: 2px solid var(--focus-ring) !important; /* beats scattered focus:outline-none utilities */
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -215,24 +319,13 @@ body, * {
   }
 }
 
-/* 3. BRAND-ALIGNED TEXT SELECTION
-   Replaces the default OS selection color with the approved blue family. */
-::selection {
-  background-color: rgba(88, 163, 255, 0.28);
-}
+/* Brand-aligned text selection */
+::selection { background-color: var(--selection-bg); }
 
-/* 4. CONSISTENT DISABLED AFFORDANCE
-   Communicates non-interactivity uniformly without altering existing dimming. */
-button:disabled,
-input:disabled,
-select:disabled,
-textarea:disabled {
-  cursor: not-allowed;
-}
+/* Disabled affordance */
+button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
 
-/* 5. SKIP-TO-CONTENT LINK
-   Visually hidden until focused; lets keyboard users bypass the header/nav.
-   Uses approved Design Lock colors (primary card #04233F, focus blue #58A3FF). */
+/* Skip-to-content (visually hidden until focused) */
 .skip-to-content {
   position: absolute;
   left: 50%;
@@ -240,274 +333,26 @@ textarea:disabled {
   transform: translateX(-50%) translateY(-130%);
   z-index: 100;
   padding: 10px 18px;
-  border-radius: 0 0 12px 12px;
-  background-color: #04233F;
-  color: #EFF6FF;
-  font-weight: 700;
+  border-radius: 0 0 var(--radius-card-sm) var(--radius-card-sm);
+  background-color: var(--header-bg);
+  color: var(--header-text);
+  font-weight: var(--weight-heading);
   font-size: 14px;
-  border: 1px solid #58A3FF;
+  border: 1px solid var(--focus-ring);
   transition: transform 0.18s ease;
 }
-.skip-to-content:focus {
-  transform: translateX(-50%) translateY(0);
-  outline: 2px solid #58A3FF;
-  outline-offset: 2px;
-}
+.skip-to-content:focus { transform: translateX(-50%) translateY(0); }
 
-/* 6. READABILITY FLOOR
-   Gently raise only the very smallest text (8 / 8.5px) to 9px so micro-labels
-   stay legible. Larger sizes are untouched to avoid disrupting compact layouts. */
-.text-\[8px\],
-.text-\[8\.5px\] {
-  font-size: 9px !important;
-}
+/* Readability floor — raise 8/8.5px micro-labels to 9px */
+.text-\[8px\], .text-\[8\.5px\] { font-size: 9px !important; }
 
-/* --- NATURAL ADJUSTING LIGHT THEME --- */
-html {
-  background-color: var(--color-ditto-dark);
-  color: var(--color-text-body);
-  transition: background-color 0.2s ease, border-color 0.2s ease, text-color 0.2s ease;
-  font-size: 15px; /* Mobile base size */
-}
+/* Native date picker follows the active theme (was forced dark globally) */
+.dark input[type="date"] { color-scheme: dark; }
+.dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+html:not(.dark) input[type="date"] { color-scheme: light; }
+input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
 
-/* Elegant responsive scaling for standard laptop and large screens at 100% zoom */
-@media (min-width: 768px) {
-  html {
-    font-size: 16px;
-  }
-}
-
-@media (min-width: 1024px) {
-  html {
-    font-size: 17px; /* Small laptops */
-  }
-}
-
-@media (min-width: 1280px) {
-  html {
-    font-size: 17.5px; /* Standard laptop screens (e.g. 13-15", 1080p) at 100% zoom */
-  }
-}
-
-@media (min-width: 1440px) {
-  html {
-    font-size: 18px; /* Large high-res laptop and desktop screens */
-  }
-}
-
-html:not(.dark) {
-  --color-ditto-dark: #F1F6FB; /* Premium light off-white sky blue */
-  --color-ditto-card: #FFFFFF; /* High quality card background */
-  --color-ditto-card-hover: #F8FAFD;
-  --color-ditto-border: #D2DFEC; /* Very soft light cool border */
-  
-  --color-primary: #1D63ED;
-  --color-primary-hover: #154EC3;
-  --color-primary-light-bg: #E1EAF7;
-  --color-primary-light-text: #1E3A8A;
-
-  --color-text-body: #1E293B; /* Charcoal Grey text as requested */
-  --color-text-muted: #556070; /* Darkened from #64748B to clear WCAG AA (4.5:1) on the light page & steel-blue surfaces */
-}
-
-/* Light mode card/box background and border overrides for improved contrast */
-html:not(.dark) .bg-white {
-  background-color: #FFFFFF !important; /* Pristine white cards as shown in reference images */
-}
-
-html:not(.dark) .bg-stone-50,
-html:not(.dark) .bg-stone-100,
-html:not(.dark) .bg-stone-200,
-html:not(.dark) .bg-\[\#14161a\],
-html:not(.dark) .bg-\[\#12151A\],
-html:not(.dark) .bg-\[\#111622\],
-html:not(.dark) .bg-\[\#091520\]\/80,
-html:not(.dark) .bg-\[\#0b1427\],
-html:not(.dark) .bg-\[\#14161a\]\/95,
-html:not(.dark) .bg-stone-950\/20,
-html:not(.dark) .bg-stone-900\/50,
-html:not(.dark) .bg-\[rgba\(255\,255\,255\,0\.12\)\] {
-  background-color: #EBF1F7 !important; /* Steel-ish ice-blue background matches Advisor Handbook in the reference image */
-}
-
-/* Sub-items/cards inside the advisor manual or inner widgets should be slightly darker steel blue */
-html:not(.dark) .bg-stone-50,
-html:not(.dark) .bg-stone-100 {
-  background-color: #D9E4F0 !important; /* Slightly darker steel blue as seen in steps 1, 2, 3 of image */
-}
-
-/* Inputs/Selects matches steps 1, 2, 3 background exactly */
-html:not(.dark) input, 
-html:not(.dark) select, 
-html:not(.dark) textarea {
-  background-color: #FFFFFF !important; /* Crisp, readable solid white input backgrounds */
-  border-color: #C3CFDE !important;
-  color: #1E293B !important;
-}
-
-/* Yellow advisory note must preserve its soft warm yellow color instead of becoming steel blue */
-html:not(.dark) .bg-amber-50,
-html:not(.dark) .bg-slate-50\/50,
-html:not(.dark) .bg-yellow-50,
-html:not(.dark) .bg-amber-100,
-html:not(.dark) .bg-amber-950\/15,
-html:not(.dark) [class*="bg-amber"] {
-  background-color: #FEF3C7 !important; /* Warm light yellow */
-  border-color: #FDE047 !important;
-  color: #78350F !important;
-}
-
-/* Ensure borders on light mode cards are perfectly clean and steel gray */
-html:not(.dark) .border-stone-150,
-html:not(.dark) .border-stone-200,
-html:not(.dark) .border-stone-250,
-html:not(.dark) .border-stone-800,
-html:not(.dark) .border-stone-850,
-html:not(.dark) .border-stone-900,
-html:not(.dark) .border-\[\#252A34\],
-html:not(.dark) .border-\[\#1c3258\],
-html:not(.dark) .border-white\/\[0\.08\],
-html:not(.dark) .border-white\/\[0\.06\],
-html:not(.dark) .border-white\/\[0\.04\],
-html:not(.dark) .border-white\/\[0\.03\] {
-  border-color: #C9D5E3 !important; /* Fine matching steel line */
-}
-
-
-/* Custom styles to force white header logo in light/dark mode */
-.logo-white-text {
-  color: #fefefe !important;
-}
-.logo-white-dot {
-  color: #0f4faf !important;
-}
-
-/* 1. Header fill color - Dark sky blue in light mode as requested in feedback, matching the reference glassmorphic border */
-
-/* DESIGN LOCK V1.0 - CRITICAL HEADER TITLE BADGE STYLE LOCK */
-.title-badge-btn,
-html.dark header button.title-badge-btn {
-  background-color: transparent !important;
-  color: #ffffff !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.title-badge-btn:hover,
-html.dark header button.title-badge-btn:hover {
-  background-color: transparent !important;
-  color: #ffffff !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.title-badge-text,
-header button.title-badge-btn span.title-badge-text {
-  color: #ffffff !important;
-}
-
-.title-badge-icon,
-header button.title-badge-btn svg.title-badge-icon,
-header button.title-badge-btn .title-badge-icon {
-  color: #ffffff !important;
-}
-
-/* 2. Style card titles / card headers to use charcoal grey in light mode as requested */
-html:not(.dark) h1,
-html:not(.dark) h2,
-html:not(.dark) h3,
-html:not(.dark) h4,
-html:not(.dark) h5,
-html:not(.dark) h6,
-html:not(.dark) .card-title,
-html:not(.dark) .card-header {
-  color: #2D3748 !important; /* Solid premium Charcoal Grey color */
-  font-weight: 700 !important;
-}
-
-/* 3. Any blue or teal colour text should have dark font style (heavy black weight) */
-html:not(.dark) .text-blue-400,
-html:not(.dark) .text-blue-500,
-html:not(.dark) .text-blue-600,
-html:not(.dark) .text-blue-700,
-html:not(.dark) .text-sky-400,
-html:not(.dark) .text-sky-500,
-html:not(.dark) .text-sky-600,
-html:not(.dark) .text-cyan-400,
-html:not(.dark) .text-cyan-500,
-html:not(.dark) .text-cyan-600,
-html:not(.dark) .text-\[\#117FDA\],
-html:not(.dark) .text-blue-800,
-html:not(.dark) .text-blue-900,
-html:not(.dark) .text-indigo-600,
-html:not(.dark) .text-indigo-700 {
-  color: #1A365D !important; /* Solid matching royal navy blue */
-  font-weight: 850 !important; /* Heavy black font style */
-}
-
-html:not(.dark) .text-teal-400,
-html:not(.dark) .text-teal-500,
-html:not(.dark) .text-teal-600,
-html:not(.dark) .text-teal-700,
-html:not(.dark) .text-\[\#14B8A6\],
-html:not(.dark) .text-emerald-300,
-html:not(.dark) .text-emerald-400,
-html:not(.dark) .text-emerald-500,
-html:not(.dark) .text-emerald-600,
-html:not(.dark) .text-emerald-700,
-html:not(.dark) .text-emerald-805 {
-  color: #0F766E !important; /* Premium dark teal matches advisor handbook */
-  font-weight: 850 !important; /* Heavy black font style */
-}
-
-/* Specific text color mapping to prevent light gray/white text on sky backgrounds */
-html:not(.dark) .text-slate-100,
-html:not(.dark) .text-zinc-100,
-html:not(.dark) .text-stone-100,
-html:not(.dark) .text-stone-200,
-html:not(.dark) .text-stone-250,
-html:not(.dark) .text-stone-300,
-html:not(.dark) .text-stone-500,
-html:not(.dark) .text-stone-550,
-html:not(.dark) .text-zinc-400,
-html:not(.dark) .text-zinc-440,
-html:not(.dark) .text-zinc-500,
-html:not(.dark) .text-slate-400,
-html:not(.dark) .text-slate-500,
-html:not(.dark) .text-slate-600,
-html:not(.dark) .text-slate-700,
-html:not(.dark) .text-gray-400,
-html:not(.dark) .text-gray-500,
-html:not(.dark) .text-gray-650 {
-  color: #2D3748 !important; /* Solid Slate-800 matches Advisor handbook rules text */
-  font-weight: 500 !important;
-}
-
-html:not(.dark) .text-slate-300,
-html:not(.dark) .text-zinc-300,
-html:not(.dark) .text-stone-205,
-html:not(.dark) .text-stone-700,
-html:not(.dark) .text-stone-750,
-html:not(.dark) .text-stone-800,
-html:not(.dark) .text-stone-850,
-html:not(.dark) .text-stone-900 {
-  color: #1A202C !important; /* Solid Slate-900 / premium dark charcoal gray text */
-}
-
-/* Natural Input adjustments */
-html:not(.dark) input, 
-html:not(.dark) select, 
-html:not(.dark) textarea {
-  background-color: #DDE5F0 !important;
-  border-color: #C3CFDE !important;
-  color: #1E293B !important;
-}
-
-html:not(.dark) select option {
-  background-color: #D5E2F0 !important;
-  color: #1E293B !important;
-}
-
+/* Notification glow (flag alert chip) */
 @keyframes custom-notification-glow {
   0%, 100% {
     border-color: rgba(245, 158, 11, 0.35);
@@ -518,361 +363,282 @@ html:not(.dark) select option {
     box-shadow: 0 0 16px rgba(245, 158, 11, 0.7), inset 0 0 4px rgba(245, 158, 11, 0.3);
   }
 }
+.animate-notification-glow { animation: custom-notification-glow 1.8s infinite ease-in-out; }
 
-.animate-notification-glow {
-  animation: custom-notification-glow 1.8s infinite ease-in-out;
-}
-
-/* Base calendar widget adjustments */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(100) !important;
-  cursor: pointer;
-}
-
-input[type="date"] {
-  color-scheme: dark !important;
-}
-
-html:not(.dark) .text-home-blue {
-  color: #1447e6 !important;
-}
-
-/* ====================================================================
-   DESIGN LOCK v1.0 COMPLIANCE — decorative accent migration
-   Purple / violet / fuchsia are forbidden by DESIGN LOCK and carry no
-   semantic meaning in this app, so they are remapped to the approved
-   blue family. Functional status colors (success-green, warning-amber,
-   danger-red) and the approved teal accents are intentionally kept.
-   This is a reversible presentation-only override — no JSX was changed.
-   ==================================================================== */
-
-/* Text — dark mode: readable approved blue; light mode: match the
-   existing heavy navy treatment used for all blue/teal text. */
-[class*="text-purple-"],
-[class*="text-violet-"],
-[class*="text-fuchsia-"] {
-  color: #3B82F6 !important;
-}
-html:not(.dark) [class*="text-purple-"],
-html:not(.dark) [class*="text-violet-"],
-html:not(.dark) [class*="text-fuchsia-"] {
-  color: #1A365D !important;
-  font-weight: 850 !important;
-}
-
-/* Tinted backgrounds → uniform approved blue tint */
-[class*="bg-purple-"],
-[class*="bg-violet-"],
-[class*="bg-fuchsia-"] {
-  background-color: rgba(59, 130, 246, 0.12) !important;
-}
-
-/* Accent borders → approved focus/border blue */
-[class*="border-purple-"],
-[class*="border-violet-"],
-[class*="border-fuchsia-"] {
-  border-color: #58A3FF !important;
-}
-
-/* Focus rings */
-[class*="ring-purple-"],
-[class*="ring-violet-"],
-[class*="ring-fuchsia-"] {
-  --tw-ring-color: #58A3FF !important;
-}
-
-/* Gradient stops */
-[class*="from-purple-"],
-[class*="from-violet-"] {
-  --tw-gradient-from: #2563EB !important;
-}
-[class*="via-purple-"],
-[class*="via-violet-"] {
-  --tw-gradient-via: #3B82F6 !important;
-}
-[class*="to-purple-"],
-[class*="to-violet-"] {
-  --tw-gradient-to: #58A3FF !important;
-}
-
-/* Systematic Layout design variation */
-.design-bg {
-  background-color: #0c0c0e !important;
-  color: #FFFFFF !important;
-  font-family: 'Geist Mono', monospace !important;
-}
-
-.design-sidebar {
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 32px 0;
-  gap: 0px;
-  background-color: #0c0c0e;
-}
-
-.design-icon-circle {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: rgba(255,255,255,0.4);
-  margin-bottom: 8px;
-  border-radius: 8px;
-}
-
-.design-icon-circle:hover {
-  color: #00D3F3;
-  background: rgba(255,255,255,0.05);
-}
-
-.design-alert-btn {
-  position: relative;
-  color: #ff4f6b;
-}
-
+/* Header alert dot (only survivor of the old design-* set) */
 .design-notif-dot {
   position: absolute;
   top: 14px;
   right: 14px;
   width: 6px;
   height: 6px;
-  background: #ff4f6b;
+  background: var(--danger-text);
   border-radius: 50%;
-  box-shadow: 0 0 8px #ff4f6b;
+  box-shadow: 0 0 8px var(--danger-text);
 }
 
-.design-dp-block {
-  margin-top: auto;
-  width: 32px;
-  height: 32px;
-  background: #00D3F3;
-  color: #000;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-}
-
-/* Workspace Navigation Grid */
-.design-workspace {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-.design-header {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 60px;
-}
-
-.design-status-pill {
-  font-size: 0.65rem;
-  border: 1px solid #00D3F3;
-  color: #00D3F3;
-  padding: 2px 10px;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-
-.design-grid-content {
-  display: grid;
-  grid-template-columns: 1fr;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
-  background-size: 32px 32px;
-}
-
-html:not(.dark) .design-grid-content {
-  background-image:
-    linear-gradient(rgba(70, 115, 169, 0.18) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(70, 115, 169, 0.18) 1px, transparent 1px);
-}
-
-@media (min-width: 1024px) {
-  .design-grid-content {
-    grid-template-columns: 1fr 420px;
-  }
-}
-
-.design-hero-panel {
-  padding: 40px 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-@media (min-width: 640px) {
-  .design-hero-panel {
-    padding: 60px;
-  }
-}
-
-.design-meta-tag {
-  font-size: 0.7rem;
-  color: #00D3F3;
-  letter-spacing: 0.25em;
-  margin-bottom: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.design-meta-tag::before {
-  content: "";
-  width: 24px;
-  height: 1px;
-  background: #00D3F3;
-}
-
-.design-h1 {
-  font-family: 'Oswald', sans-serif;
-  font-size: 3rem;
-  line-height: 0.9;
-  letter-spacing: -0.02em;
-  text-transform: uppercase;
-  margin-bottom: 2rem;
-}
-
-@media (min-width: 640px) {
-  .design-h1 {
-    font-size: 5rem;
-  }
-}
-
-.design-h1 span {
-  color: #00D3F3;
-}
-
-.design-desc {
-  font-size: 0.95rem;
-  color: rgba(255,255,255,0.4);
-  max-width: 520px;
-  line-height: 1.7;
-  margin-bottom: 3rem;
-}
-
-.design-alert-box {
-  background: #000;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 20px;
-  display: flex;
-  gap: 20px;
-  max-width: 600px;
-  margin-bottom: 3rem;
-}
-
-.design-alert-box svg {
-  color: #ff9f43;
-  opacity: 0.8;
-}
-
-.design-alert-box p {
-  font-size: 0.75rem;
-  color: #ff9f43;
-  line-height: 1.5;
-  text-transform: uppercase;
-}
-
-.design-run-btn {
-  background: transparent;
+/* Header title badge — always light-on-navy, both themes */
+.title-badge-btn,
+.title-badge-btn:hover {
+  background-color: transparent;
   color: #FFFFFF;
-  border: 1.5px solid #FFFFFF;
-  padding: 20px 40px;
-  font-family: 'Space Mono', monospace;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-size: 0.75rem;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  align-self: flex-start;
-  transition: all 0.3s ease;
+  border: none;
+  box-shadow: none;
+}
+.title-badge-text, .title-badge-icon { color: #FFFFFF; }
+
+/* ====================================================================
+   4. COMPATIBILITY LAYER
+   --------------------------------------------------------------------
+   Maps the legacy utility classes present in the JSX onto tokens.
+   These rules are UNLAYERED, so they win over Tailwind's @layer
+   utilities without needing !important.
+   ==================================================================== */
+
+/* --------------------------------------------------------------
+   4a. PRIMARY ACCENT — one list, the token switches per theme.
+   Aqua in dark, Brand Blue in light. Covers titles, labels,
+   pills, links, stats, icons, active states, pagination.
+   -------------------------------------------------------------- */
+.text-cyan-400, .text-cyan-500,
+.text-sky-400, .text-sky-500, .text-sky-600, .text-sky-350,
+.text-blue-400, .text-blue-500, .text-blue-600, .text-blue-700,
+.text-blue-800, .text-blue-900,
+.text-indigo-600, .text-indigo-700,
+.text-\[\#00D3F3\], .text-\[\#00d2f1\], .text-\[\#3b9eff\],
+.text-\[\#117FDA\], .text-\[\#58A3FF\], .text-\[\#3B82F6\],
+.text-\[\#1D63ED\], .text-\[\#60a5fa\],
+.text-\[\#054496\], .text-\[\#0754b7\], .text-\[\#0b458d\],
+.text-\[\#1A365D\], .text-\[\#04233F\],
+.text-sky-305, .text-sky-455, .text-sky-700, .text-cyan-800,
+.text-indigo-500, .text-indigo-305, .text-indigo-205 {
+  color: var(--accent);
 }
 
-.design-run-btn:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 0 15px rgba(0, 211, 243, 0.3);
+/* Hover accent variants */
+.hover\:text-cyan-400:hover, .hover\:text-blue-400:hover,
+.hover\:text-blue-500:hover, .hover\:text-blue-600:hover,
+.hover\:text-\[\#00D3F3\]:hover {
+  color: var(--accent-hover);
 }
 
-.design-run-btn::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 10px;
-  height: 10px;
-  background: #00D3F3;
-  clip-path: polygon(100% 0, 0 0, 100% 100%);
+/* Accent gradient stops (hero highlights, brand text gradients) */
+.from-cyan-400, .from-cyan-605, .from-\[\#00D3F3\] { --tw-gradient-from: var(--accent); }
+.to-\[\#58A3FF\], .to-blue-500, .to-blue-400 { --tw-gradient-to: var(--accent-2); }
+.from-blue-600, .from-blue-500 { --tw-gradient-from: var(--accent-solid); }
+.to-indigo-600, .to-indigo-500 { --tw-gradient-to: var(--accent-2); }
+
+/* Accent borders (active tabs, focused cards, primary outlines) */
+.border-cyan-500, .border-blue-500, .border-blue-400,
+.border-\[\#117FDA\], .border-\[\#3B82F6\] {
+  border-color: var(--accent);
+}
+.border-cyan-500\/10, .border-blue-500\/10, .border-sky-500\/10 { border-color: color-mix(in srgb, var(--accent) 10%, transparent); }
+.border-cyan-500\/25, .border-blue-500\/20, .border-sky-500\/20,
+.border-indigo-500\/15, .border-indigo-500\/20, .border-indigo-500\/25,
+.border-indigo-505\/25, .border-indigo-505\/30 { border-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+.border-blue-500\/30, .border-blue-500\/40, .border-sky-500\/30,
+.border-indigo-500\/30, .border-indigo-500\/35 { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.border-sky-200, .border-sky-205, .border-sky-400, .border-blue-200, .border-blue-100 { border-color: var(--accent-border); }
+
+/* Accent rings */
+.ring-blue-500, .ring-cyan-500 { --tw-ring-color: var(--accent); }
+
+/* Subtle accent fills (chips, pills, highlight rows) */
+.bg-cyan-500\/5, .bg-blue-500\/5, .bg-blue-500\/6 { background-color: color-mix(in srgb, var(--accent) 5%, transparent); }
+.bg-cyan-500\/10, .bg-blue-500\/10, .bg-blue-600\/10, .bg-blue-600\/12,
+.bg-sky-500\/10, .bg-indigo-500\/10 { background-color: var(--accent-subtle-bg); }
+.bg-cyan-500\/20, .bg-blue-500\/20, .bg-blue-500\/15, .bg-blue-600\/15, .bg-blue-600\/20,
+.bg-sky-500\/15, .bg-indigo-500\/15, .bg-blue-955\/20 { background-color: color-mix(in srgb, var(--accent) 16%, transparent); }
+.bg-blue-50, .bg-blue-50\/50, .bg-blue-50\/70, .bg-blue-55,
+.bg-sky-50, .bg-sky-100, .bg-sky-50\/60,
+.bg-indigo-50\/50, .bg-indigo-50\/60, .bg-indigo-50\/65 { background-color: var(--accent-subtle-bg); }
+
+/* Solid accent surfaces (primary buttons, primary badges) */
+.bg-blue-600, .bg-blue-500, .bg-blue-700, .bg-cyan-400, .bg-\[\#117FDA\] {
+  background-color: var(--accent-solid);
+  color: var(--on-accent);
+}
+.hover\:bg-blue-700:hover, .hover\:bg-blue-600:hover, .hover\:bg-blue-500:hover {
+  background-color: var(--accent-solid-hover);
+  color: var(--on-accent);
 }
 
-/* Sidebar Instructions */
-.design-info-pane {
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  flex-direction: column;
+/* --------------------------------------------------------------
+   4b. SECONDARY ACCENT — approved teal (functional highlights).
+   Heavy navy hack (font-weight 850) removed; weight comes from markup.
+   -------------------------------------------------------------- */
+html:not(.dark) .text-teal-400, html:not(.dark) .text-teal-500,
+html:not(.dark) .text-teal-600, html:not(.dark) .text-teal-700,
+html:not(.dark) .text-\[\#14B8A6\],
+html:not(.dark) .text-emerald-300, html:not(.dark) .text-emerald-400,
+html:not(.dark) .text-emerald-500, html:not(.dark) .text-emerald-600,
+html:not(.dark) .text-emerald-700, html:not(.dark) .text-emerald-805 {
+  color: var(--teal);
 }
 
-.design-pane-title {
-  padding: 20px 32px;
-  font-family: 'Space Mono', monospace;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: rgba(255,255,255,0.3);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+/* --------------------------------------------------------------
+   4c. DECORATIVE PURPLE/VIOLET/FUCHSIA → brand accent family
+   (forbidden decorative hues carried no semantic meaning)
+   -------------------------------------------------------------- */
+[class*="text-purple-"], [class*="text-violet-"], [class*="text-fuchsia-"],
+.text-\[\#7C3AED\], .text-\[\#b07cff\] {
+  color: var(--accent);
+}
+[class*="bg-purple-"], [class*="bg-violet-"], [class*="bg-fuchsia-"] {
+  background-color: var(--accent-subtle-bg);
+}
+[class*="border-purple-"], [class*="border-violet-"], [class*="border-fuchsia-"] {
+  border-color: var(--accent-border);
+}
+[class*="ring-purple-"], [class*="ring-violet-"], [class*="ring-fuchsia-"] {
+  --tw-ring-color: var(--accent-border);
+}
+[class*="from-purple-"], [class*="from-violet-"] { --tw-gradient-from: var(--accent-solid); }
+[class*="via-purple-"],  [class*="via-violet-"]  { --tw-gradient-via: var(--accent-2); }
+[class*="to-purple-"],   [class*="to-violet-"]   { --tw-gradient-to: var(--accent-2); }
+
+/* --------------------------------------------------------------
+   4d. DARK THEME — surface & border consolidation.
+   Every ad-hoc dark hex used in the JSX collapses onto 3 surfaces.
+   -------------------------------------------------------------- */
+.dark .bg-\[\#14161a\], .dark .bg-\[\#12151A\], .dark .bg-\[\#111622\],
+.dark .bg-\[\#091520\]\/80, .dark .bg-\[\#0b1427\], .dark .bg-slate-900\/60,
+.dark .bg-black\/25, .dark .bg-stone-900, .dark .bg-\[\#050b16\]\/95,
+.dark .bg-\[\#050b16\]\/90, .dark .bg-\[\#040914\], .dark .bg-slate-950\/90 {
+  background-color: var(--surface);
 }
 
-.design-inst-item {
-  padding: 32px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+.dark .bg-\[\#171B22\], .dark .bg-\[\#171B22\]\/50, .dark .bg-\[\#171B22\]\/40,
+.dark .bg-\[\#111317\], .dark .bg-\[\#0b1328\]\/30, .dark .bg-\[\#0b1321\]\/50,
+.dark .bg-\[\#060a12\], .dark .bg-\[\#060A10\], .dark .bg-\[\#14181D\],
+.dark .bg-stone-950\/30, .dark .bg-stone-950\/40, .dark .bg-\[\#070f1a\],
+.dark .bg-stone-900\/50, .dark .bg-stone-850\/40, .dark .bg-stone-800\/15 {
+  background-color: var(--surface-elevated);
 }
 
-.design-inst-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
+/* Blue-tinted info panels keep their subtle tint, via one token */
+.dark .bg-\[\#10233a\], .dark .bg-\[\#102236\] {
+  background-color: var(--surface-tint);
 }
 
-.design-inst-num {
-  color: #00D3F3;
-  font-size: 0.65rem;
+.dark .border-stone-800, .dark .border-stone-850, .dark .border-stone-900,
+.dark .border-stone-900\/80, .dark .border-\[\#252A34\], .dark .border-\[\#252A34\]\/40,
+.dark .border-white\/\[0\.08\], .dark .border-white\/\[0\.06\],
+.dark .border-white\/\[0\.04\], .dark .border-white\/\[0\.03\],
+.dark .border-\[\#1c3258\], .dark .border-\[\#1e3e5c\],
+.dark .border-stone-800\/60, .dark .border-stone-800\/80,
+.dark .border-\[\#1f242e\], .dark .border-stone-150, .dark .border-stone-250 {
+  border-color: var(--border);
 }
 
-.design-inst-item h4 {
-  font-family: 'Oswald', sans-serif;
-  text-transform: uppercase;
-  font-size: 1rem;
-  letter-spacing: 0.05em;
-  margin-bottom: 8px;
+/* --------------------------------------------------------------
+   4e. LIGHT THEME — surface & border consolidation.
+   -------------------------------------------------------------- */
+html:not(.dark) .bg-white { background-color: var(--surface); }
+
+html:not(.dark) .bg-\[\#14161a\], html:not(.dark) .bg-\[\#12151A\],
+html:not(.dark) .bg-\[\#111622\], html:not(.dark) .bg-\[\#091520\]\/80,
+html:not(.dark) .bg-\[\#0b1427\], html:not(.dark) .bg-\[\#14161a\]\/95,
+html:not(.dark) .bg-stone-950\/20, html:not(.dark) .bg-stone-900\/50,
+html:not(.dark) .bg-\[\#10233a\], html:not(.dark) .bg-\[\#102236\],
+html:not(.dark) .bg-\[rgba\(255\,255\,255\,0\.12\)\],
+html:not(.dark) .bg-stone-200 {
+  background-color: var(--surface-elevated);
 }
 
-.design-inst-item p {
-  font-size: 0.75rem;
-  color: rgba(255,255,255,0.4);
-  line-height: 1.6;
+/* Inner step cards / widgets — slightly deeper steel blue */
+html:not(.dark) .bg-stone-50, html:not(.dark) .bg-stone-100 {
+  background-color: var(--surface-inset);
 }
 
-.design-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0 32px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.6rem;
-  color: rgba(255,255,255,0.3);
-  letter-spacing: 0.1em;
-  height: 40px;
+/* Nav drawer / sidebar panel — align the old gray-green slab with the
+   steel-blue light palette */
+html:not(.dark) .bg-\[\#9ea9b1\] { background-color: var(--surface-inset); }
+
+html:not(.dark) .border-stone-150, html:not(.dark) .border-stone-200,
+html:not(.dark) .border-stone-250, html:not(.dark) .border-stone-800,
+html:not(.dark) .border-stone-850, html:not(.dark) .border-stone-900,
+html:not(.dark) .border-\[\#252A34\], html:not(.dark) .border-\[\#1c3258\],
+html:not(.dark) .border-\[\#1e3e5c\],
+html:not(.dark) .border-white\/\[0\.08\], html:not(.dark) .border-white\/\[0\.06\],
+html:not(.dark) .border-white\/\[0\.04\], html:not(.dark) .border-white\/\[0\.03\] {
+  border-color: var(--border-strong);
+}
+
+/* --------------------------------------------------------------
+   4f. LIGHT THEME — text visibility. No pale/dark-theme text may
+   remain unreadable after switching to light.
+   -------------------------------------------------------------- */
+html:not(.dark) h1, html:not(.dark) h2, html:not(.dark) h3,
+html:not(.dark) h4, html:not(.dark) h5, html:not(.dark) h6,
+html:not(.dark) .card-title, html:not(.dark) .card-header {
+  color: var(--text-heading);
+  font-weight: var(--weight-heading);
+}
+
+/* Dark-panel body text (pale blues/grays) → readable slate */
+html:not(.dark) .text-slate-100, html:not(.dark) .text-zinc-100,
+html:not(.dark) .text-stone-100, html:not(.dark) .text-stone-200,
+html:not(.dark) .text-stone-250, html:not(.dark) .text-stone-300,
+html:not(.dark) .text-stone-500, html:not(.dark) .text-stone-550,
+html:not(.dark) .text-zinc-400, html:not(.dark) .text-zinc-440,
+html:not(.dark) .text-zinc-500, html:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-500, html:not(.dark) .text-slate-600,
+html:not(.dark) .text-slate-700, html:not(.dark) .text-gray-400,
+html:not(.dark) .text-gray-500, html:not(.dark) .text-gray-650,
+html:not(.dark) .text-\[\#90a6c4\], html:not(.dark) .text-\[\#9CA3AF\],
+html:not(.dark) .text-\[\#6b82a3\], html:not(.dark) .text-sky-200,
+html:not(.dark) .text-indigo-200, html:not(.dark) .text-indigo-300 {
+  color: var(--text-secondary);
+  font-weight: var(--weight-body);
+}
+
+html:not(.dark) .text-slate-300, html:not(.dark) .text-zinc-300,
+html:not(.dark) .text-stone-205, html:not(.dark) .text-stone-700,
+html:not(.dark) .text-stone-750, html:not(.dark) .text-stone-800,
+html:not(.dark) .text-stone-850, html:not(.dark) .text-stone-900,
+html:not(.dark) .text-\[\#F5F7FA\], html:not(.dark) .text-\[\#e9f1fb\],
+html:not(.dark) .text-\[\#cfe0f5\], html:not(.dark) .text-\[\#9fcbff\],
+html:not(.dark) .text-\[\#bfe0ff\], html:not(.dark) .text-\[\#D7E5FF\],
+html:not(.dark) .text-\[\#eff6ff\] {
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------
+   4g. GHOST/NONSTANDARD utility shades get real, readable values
+   (they compile to nothing in Tailwind).
+   -------------------------------------------------------------- */
+.dark .text-stone-605, .dark .text-stone-550, .dark .text-stone-450 { color: var(--text-muted); }
+.dark .text-stone-705, .dark .text-stone-750 { color: var(--text-secondary); }
+.dark .text-stone-850 { color: var(--text-primary); }
+.dark .text-amber-850 { color: var(--warning-text); }
+
+html:not(.dark) .text-stone-605, html:not(.dark) .text-stone-550,
+html:not(.dark) .text-stone-450 { color: var(--text-muted); }
+html:not(.dark) .text-stone-705 { color: var(--text-secondary); }
+html:not(.dark) .text-amber-850 { color: var(--warning-strong); }
+
+/* --------------------------------------------------------------
+   4h. INPUTS — one definition per theme (was defined twice).
+   -------------------------------------------------------------- */
+html:not(.dark) input, html:not(.dark) select, html:not(.dark) textarea {
+  background-color: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--input-text);
+}
+html:not(.dark) select option {
+  background-color: var(--option-bg);
+  color: var(--input-text);
+}
+
+/* --------------------------------------------------------------
+   4i. WARNING / ADVISORY — amber keeps its semantic warmth in light
+   -------------------------------------------------------------- */
+html:not(.dark) .bg-amber-50, html:not(.dark) .bg-yellow-50,
+html:not(.dark) .bg-amber-100, html:not(.dark) .bg-amber-950\/15,
+html:not(.dark) .bg-slate-50\/50, html:not(.dark) [class*="bg-amber"] {
+  background-color: var(--warning-bg);
+  border-color: var(--warning-border);
+  color: var(--warning-strong);
 }

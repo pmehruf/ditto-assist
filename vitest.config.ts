@@ -7,6 +7,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
+    // PGlite (WASM Postgres) doesn't work reliably when tests are run
+    // in worker threads; run tests in the main process to avoid timeouts.
+    threads: false,
     include: ['src/**/*.test.ts'],
   },
 });

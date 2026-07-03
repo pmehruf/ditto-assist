@@ -115,10 +115,10 @@ export const SpecificIllnessLedgerCard: React.FC<SpecificIllnessLedgerCardProps>
                            }`}
                         >
                           <span 
-                            style={{ backgroundColor: "#00D3F3" }} 
+                            style={{ backgroundColor: "var(--accent)" }}
                             className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 animate-pulse" 
                           />
-                          <span style={{ color: theme === "dark" ? "#ffffff" : "#1F1F1F" }}>{ill}</span>
+                          <span style={{ color: theme === "dark" ? "#FFFFFF" : "var(--text-primary)" }}>{ill}</span>
                         </div>
                       ))}
                     </div>
