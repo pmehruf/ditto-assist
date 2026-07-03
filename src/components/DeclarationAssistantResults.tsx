@@ -16,7 +16,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { SpecificIllnessLedgerCard } from "./SpecificIllnessLedgerCard";
-import { PlanConfig } from "../types.js";
+import { MatchOutput, PlanConfig } from "../types.js";
 import { ReportingItem } from "../types/lookup";
 
 // ─────────────────────────────────────────────
@@ -24,18 +24,7 @@ import { ReportingItem } from "../types/lookup";
 // ─────────────────────────────────────────────
 interface ResultItem {
   ped: string;
-  result: {
-    ped_input: string;
-    match_type:
-    | "STANDARD_EXCLUSION"
-    | "STANDARD_QUESTION"
-    | "SPECIFIC_ILLNESS"
-    | "UMBRELLA_EXCLUSION"
-    | "OTHERS_EXCLUSION"
-    | "FALLBACK";
-    matched_question: string;
-    explanation: string;
-  };
+  result: MatchOutput;
   source: string;
 }
 
@@ -273,16 +262,18 @@ export const DeclarationAssistantResults: React.FC<
                 <div className="space-y-5 animate-fadeIn">
                   {lookupResults.map(({ ped, result, source }, idx) => {
                     let accentBorder = "";
-                    if (result.match_type === "STANDARD_EXCLUSION")
+                    if (result.match_type === "P0")
                       accentBorder = "border-l-red-500/80";
-                    else if (result.match_type === "STANDARD_QUESTION")
+                    else if (result.match_type === "P1")
                       accentBorder = "border-l-emerald-500/80";
-                    else if (result.match_type === "SPECIFIC_ILLNESS")
+                    else if (result.match_type === "P2")
                       accentBorder = "border-l-cyan-400/80";
-                    else if (result.match_type === "UMBRELLA_EXCLUSION")
+                    else if (result.match_type === "NON_AILMENT")
                       accentBorder = "border-l-purple-500/80";
-                    else if (result.match_type === "OTHERS_EXCLUSION")
+                    else if (result.match_type === "FALLBACK")
                       accentBorder = "border-l-amber-500/80";
+                    else if (result.match_type === "ESCALATE")
+                      accentBorder = "border-l-red-500/80";
                     else
                       accentBorder = "border-l-slate-400/80";
 

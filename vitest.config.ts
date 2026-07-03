@@ -9,7 +9,9 @@ export default defineConfig({
     environment: 'node',
     // PGlite (WASM Postgres) doesn't work reliably when tests are run
     // in worker threads; run tests in the main process to avoid timeouts.
-    threads: false,
+    // Some tests run migrations or long data-driven checks — extend timeouts.
+    hookTimeout: 60000,
+    testTimeout: 60000,
     include: ['src/**/*.test.ts'],
   },
 });

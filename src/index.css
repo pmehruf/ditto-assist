@@ -100,7 +100,7 @@
   --text-heading: #2D3748;
   --text-primary: #1E293B;
   --text-secondary: #2D3748;
-  --text-muted: #556070;            /* WCAG AA on --bg and --surface-* */
+  --text-muted: #0E1016;            /* WCAG AA on --bg and --surface-* */
   --text-disabled: #94A3B8;
 
   /* Focus ring */
