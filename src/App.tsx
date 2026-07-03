@@ -2222,7 +2222,7 @@ export default function App() {
               }`}
               title="Expand Navigation Menu"
             >
-              <PanelLeftOpen className="w-5 h-5" style={{ color: !isDark ? "#3a3f48" : "#9a9c9e" }} />
+              <PanelLeftOpen className="w-5 h-5" style={{ color: !isDark ? "#0e1016" : "#9a9c9e" }} />
             </button>
 
             <div className={`w-10 border-b ${isDark ? "border-white/[0.08]" : "border-stone-200/50"} my-1`} />
@@ -2370,9 +2370,6 @@ export default function App() {
                   title="Flagged Responses"
                 >
                   <AlertCircle style={{ width: "18px", height: "18px" }} />
-                  {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
-                    <div className="design-notif-dot" />
-                  )}
                 </button>
               )}
             </div>
@@ -2635,7 +2632,7 @@ export default function App() {
                     title="Flagged Mismatches"
                     aria-label="View flagged mismatches"
                   >
-                    <Bell className="w-4 h-4 text-[#eff6ff] hover:text-[#D97706] transition-colors" style={{ width: "20px", height: "20px" }} />
+                    <Bell className="w-4 h-4 text-[#ba8528] hover:text-[#ba8528] transition-colors" style={{ width: "20px", height: "20px" }} />
                     {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
                       <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>

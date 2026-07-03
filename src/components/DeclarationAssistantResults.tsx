@@ -156,7 +156,7 @@ export const DeclarationAssistantResults: React.FC<
           Back
         </button>
         <span
-          className={`text-[10px] font-medium leading-none ${theme === "dark" ? "text-stone-400" : "text-slate-400"}`}
+          className={`text-[10px] font-medium leading-none ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}
         >
           {selectedPlan && (
             <>

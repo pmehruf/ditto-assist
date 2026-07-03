@@ -435,12 +435,12 @@ export function LookupPage({
                                       <Stethoscope className={`w-3.5 h-3.5 shrink-0 ${
                                         isActive
                                           ? "text-blue-400"
-                                          : "text-stone-400"
+                                          : "text-stone-500"
                                       }`} />
                                       <span className="truncate">{sug}</span>
                                     </div>
                                     <Plus className={`w-3.5 h-3.5 shrink-0 transition-transform ${
-                                      isActive ? "scale-110 text-current animate-pulse" : "text-stone-400"
+                                      isActive ? "scale-110 text-current animate-pulse" : "text-stone-500"
                                     }`} />
                                   </button>
                                 );
@@ -471,7 +471,7 @@ export function LookupPage({
                         }`}
                       >
                         No conditions added to the lookup queue. <br />
-                        <span className={`text-[10px] not-italic leading-relaxed block mt-1 ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>Search or type a condition on the left to start.</span>
+                        <span className={`text-[10px] not-italic leading-relaxed block mt-1 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>Search or type a condition on the left to start.</span>
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-1.5 w-full content-start max-h-[110px] overflow-y-auto pr-1">

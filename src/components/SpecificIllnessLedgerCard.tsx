@@ -73,7 +73,7 @@ export const SpecificIllnessLedgerCard: React.FC<SpecificIllnessLedgerCardProps>
               return (
                 <div className="text-center py-6 flex-grow flex flex-col justify-center font-sans">
                   <p className={`text-[10px] font-bold ${theme === "dark" ? "text-slate-400" : "text-slate-600"}`}>No matching illnesses</p>
-                  <p className={`text-[9.5px] mt-1 italic ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>Try a different search keyword</p>
+                  <p className={`text-[9.5px] mt-1 italic ${theme === "dark" ? "text-slate-500" : "text-stone-500"}`}>Try a different search keyword</p>
                 </div>
               );
             }
@@ -129,7 +129,7 @@ export const SpecificIllnessLedgerCard: React.FC<SpecificIllnessLedgerCardProps>
           })()
         ) : (
           <div className="text-center py-8 flex-grow flex items-center justify-center font-sans">
-            <span className={`text-[10px] select-none italic font-medium ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>
+            <span className={`text-[10px] select-none italic font-medium ${theme === "dark" ? "text-slate-500" : "text-stone-500"}`}>
               Select a plan to list details
             </span>
           </div>

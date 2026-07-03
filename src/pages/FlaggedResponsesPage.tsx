@@ -267,7 +267,7 @@ export function FlaggedResponsesPage({
                                   ownerNotes: note
                                 } : item));
                               }}
-                              className="px-3.5 py-1.5 bg-stone-700 hover:bg-stone-600 text-stone-200 text-[10.5px] font-extrabold uppercase tracking-widest rounded-lg cursor-pointer transition-all active:scale-95 select-none"
+                              className="px-3.5 py-1.5 bg-stone-700 hover:bg-stone-600 text-stone-50 text-[10.5px] font-extrabold uppercase tracking-widest rounded-lg cursor-pointer transition-all active:scale-95 select-none"
                             >
                               <span>Ignore</span>
                             </button>
