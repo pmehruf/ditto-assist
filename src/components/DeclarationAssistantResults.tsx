@@ -10,7 +10,6 @@ import {
   Flag,
   FileText,
   Activity,
-  ChevronLeft,
   RotateCcw,
   Edit3,
   ChevronDown,
@@ -114,47 +113,6 @@ export const DeclarationAssistantResults: React.FC<
     >
       {/* Back navigation row */}
       <div className="flex items-center gap-3 select-none">
-        <style>{`
-          #back-btn-focused {
-            width: 77.8px !important;
-            font-weight: normal !important;
-            font-size: 13.5px !important;
-            padding-right: 6px !important;
-            padding-left: 21px !important;
-            height: 27.6px !important;
-            color: #000000 !important;
-            background-color: #e9aa21 !important;
-          }
-          #back-btn-focused svg {
-            margin-left: -15px !important;
-            margin-right: -9px !important;
-            border-color: #a3a3a8 !important;
-          }
-          #back-btn-focused svg path {
-            font-size: 11.5px !important;
-            width: auto !important;
-            padding-top: -9px !important;
-            padding-bottom: 5px !important;
-            margin-top: -1px !important;
-            margin-bottom: 17px !important;
-          }
-        `}</style>
-        <button
-          id="back-btn-focused"
-          type="button"
-          onClick={onMapAnotherPed}
-          style={{
-            backgroundColor: "#e9aa21",
-            borderColor: "#000000",
-            color: "#000000",
-            marginBottom: "0px"
-          }}
-          className="group flex items-center gap-2 text-xs font-black uppercase tracking-wider px-4 py-2 rounded-xl border transition-all duration-200 cursor-pointer opacity-80 hover:opacity-100 hover:scale-[1.01] active:scale-95 shadow-md active:opacity-100 hover:brightness-110 active:brightness-90"
-          title="Go back"
-        >
-          <ChevronLeft className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-1" />
-          Back
-        </button>
         <span
           className={`text-[10px] font-medium leading-none ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}
         >

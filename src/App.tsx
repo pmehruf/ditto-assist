@@ -2218,7 +2218,7 @@ export default function App() {
             <button 
               onClick={() => setIsMenuOpen(true)}
               className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                isDark ? "hover:bg-white/5" : "hover:bg-stone-100"
+                isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
               }`}
               title="Expand Navigation Menu"
             >
@@ -2241,8 +2241,8 @@ export default function App() {
                     }}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && showIntro
-                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                        : "hover:bg-white/5"
+                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                        : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                     }`}
                     style={{ color: activeTab === "lookup" && showIntro ? "var(--accent)" : "var(--text-muted)" }}
                     title="Home"
@@ -2257,8 +2257,8 @@ export default function App() {
                     }}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && !showIntro
-                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                        : "hover:bg-white/5"
+                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                        : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                     }`}
                     style={{ color: activeTab === "lookup" && !showIntro ? "var(--accent)" : "var(--text-muted)" }}
                     title="Declaration Assistant"
@@ -2273,8 +2273,8 @@ export default function App() {
                   onClick={() => setActiveTab("resources")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "resources" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "resources" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Declaration Map"
@@ -2288,8 +2288,8 @@ export default function App() {
                   onClick={() => setActiveTab("my_activity")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "my_activity" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "my_activity" ? "var(--accent)" : "var(--text-muted)" }}
                   title="My Activity"
@@ -2303,8 +2303,8 @@ export default function App() {
                   onClick={() => setActiveTab("qa_announcement_log")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "qa_announcement_log" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "qa_announcement_log" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Announcement Manager"
@@ -2318,8 +2318,8 @@ export default function App() {
                   onClick={() => setActiveTab("audit")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "audit" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "audit" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Activity Log"
@@ -2333,8 +2333,8 @@ export default function App() {
                   onClick={() => setActiveTab("plan_scope")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "plan_scope" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "plan_scope" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Specific Illness Ledger"
@@ -2348,8 +2348,8 @@ export default function App() {
                   onClick={() => setActiveTab("profile_access")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "profile_access" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "profile_access" ? "var(--accent)" : "var(--text-muted)" }}
                   title="User Management"
@@ -2363,8 +2363,8 @@ export default function App() {
                   onClick={() => setActiveTab("flagged_responses")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "flagged_responses" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30" 
-                      : "hover:bg-white/5"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
                   style={{ color: activeTab === "flagged_responses" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Flagged Responses"

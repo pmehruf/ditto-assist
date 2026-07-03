@@ -206,7 +206,7 @@ export function LookupPage({
                   marginTop: "0px"
                 }}
                 className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-5 border-b ${
-                  theme === "dark" ? "border-white/[0.08]" : "border-stone-200"
+                  theme === "dark" ? "border-white/[0.08]" : "border-stone-400/60"
                 }`}
               >
                 <div className="space-y-1">
@@ -245,11 +245,7 @@ export function LookupPage({
                 className="grid grid-cols-1 md:grid-cols-2 gap-4"
               >
                 {/* BOX A: Health Insurance Plan */}
-                <div
-                  className={`rounded-2xl border p-4 sm:p-5 flex flex-col gap-3 ${
-                    theme === "dark" ? "border-white/[0.12] bg-transparent" : "border-stone-250 bg-transparent"
-                  }`}
-                >
+                <div className="rounded-2xl p-4 sm:p-5 flex flex-col gap-3">
                   <label
                     className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 select-none font-sans ${
                       theme === "dark" ? "text-stone-400" : "text-stone-500"
@@ -289,11 +285,7 @@ export function LookupPage({
                 </div>
 
                 {/* BOX B: Search & Map Condition */}
-                <div
-                  className={`rounded-2xl border p-4 sm:p-5 flex flex-col gap-3 relative ${
-                    theme === "dark" ? "border-white/[0.12] bg-transparent" : "border-stone-250 bg-transparent"
-                  }`}
-                >
+                <div className="rounded-2xl p-4 sm:p-5 flex flex-col gap-3 relative">
                   <label
                     className={`text-[10px] font-black uppercase tracking-widest font-sans flex items-center gap-1.5 select-none ${
                       theme === "dark" ? "text-stone-400" : "text-stone-500"
@@ -305,7 +297,7 @@ export function LookupPage({
                   <div className="relative w-full">
                     <div className="flex items-center gap-2 w-full">
                       <div
-                        style={{ borderRadius: "12px" }}
+                        style={{ borderRadius: "12px", height: "40.5px" }}
                         className={`flex items-center border transition-all duration-200 shadow-sm focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/25 flex-grow ${
                           theme === "dark" ? "bg-[#102236] border-[#1e3e5c]" : "bg-white border-stone-250"
                         }`}
@@ -362,7 +354,7 @@ export function LookupPage({
                             style={{ borderRadius: "12px", fontFamily: "system-ui" }}
                             className={`w-full pl-3 pr-3 py-2 bg-transparent border-0 outline-none font-bold text-xs ${
                               theme === "dark"
-                                ? "text-[#eff6ff] placeholder:text-[#52708b] placeholder:font-medium"
+                                ? "text-[#eff6ff] placeholder:text-slate-400 placeholder:font-medium"
                                 : "text-stone-850 placeholder:text-stone-400 placeholder:font-medium"
                             }`}
                             id="ped-input"
@@ -454,16 +446,16 @@ export function LookupPage({
                 </div>
               </div>
 
-              {/* QUEUE BOX — full width below the two boxes (plain outlined box, no card fill) */}
+              {/* QUEUE BOX — full width below the two boxes */}
               <div
                 style={{ borderWidth: "1.5px" }}
                 className={`mt-4 p-4 rounded-2xl relative min-h-[90px] flex flex-col justify-between border overflow-hidden ${
-                  theme === "dark" ? "border-white/[0.12] bg-transparent" : "border-stone-300 bg-transparent"
+                  theme === "dark" ? "border-white/[0.12] bg-white/[0.04]" : "border-stone-300 bg-stone-100/60"
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
                   {/* Selected condition list / empty text */}
-                  <div className="flex-grow text-left relative z-10 min-h-[46px] pr-20">
+                  <div className="flex-grow text-left relative z-10 min-h-[46px] pl-20 pr-2">
                     {lookupPeds.length === 0 ? (
                       <div
                         className={`text-xs italic text-left select-none font-medium font-sans py-1 ${
@@ -507,10 +499,10 @@ export function LookupPage({
                     }`}>{lookupPeds.length}</span>
                   </div>
 
-                  {/* Doctor Mascot */}
+                  {/* Doctor Mascot — left end of queue card */}
                   <div
                     style={{ height: "90px", width: "84px" }}
-                    className="absolute right-16 bottom-0 pointer-events-none select-none overflow-hidden z-0 opacity-90 hidden sm:block"
+                    className="absolute left-0 bottom-0 pointer-events-none select-none overflow-hidden z-0 opacity-90 hidden sm:block"
                   >
                     <MascotWithFallback
                       src="/assets/.aistudio/doctor-mascot.png"
@@ -533,7 +525,7 @@ export function LookupPage({
                 Enter one or multiple conditions to map them sequentially against the selected plan wording.
               </p>
 
-              {/* Action row: Find a Match / Reset Fields / Declaration Map */}
+              {/* Action row: Find a Match / Reset Fields */}
               <div
                 style={{ marginTop: "12px" }}
                 className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
@@ -579,17 +571,19 @@ export function LookupPage({
                   <RotateCcw className="w-3.5 h-3.5 text-current" />
                   Reset Fields
                 </button>
+              </div>
 
+              {/* Secondary helper action — Declaration Map */}
+              <div className="flex justify-end mt-1.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveTab("resources");
-                  }}
-                  style={{ backgroundColor: "#448b9a", color: "#ffffff" }}
-                  className="w-full sm:w-auto sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide border border-[#448b9a] transition-all hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer select-none shadow-sm"
+                  onClick={() => setActiveTab("resources")}
                   id="open-resources-btn"
+                  className={`flex items-center gap-1.5 text-[11px] font-semibold tracking-wide transition-all cursor-pointer select-none opacity-70 hover:opacity-100 ${
+                    theme === "dark" ? "text-[#00D3F3]" : "text-[#448b9a]"
+                  }`}
                 >
-                  <Layers className="w-3.5 h-3.5 text-current" />
+                  <Layers className="w-3 h-3" />
                   Declaration Map
                 </button>
               </div>
@@ -640,7 +634,7 @@ export function LookupPage({
                         borderColor: theme === "dark" ? "rgba(245, 158, 11, 0.3)" : "rgba(234, 179, 8, 0.4)",
                         fontWeight: "bold"
                       }}
-                      className={`mt-4 w-full flex items-center justify-between gap-4 p-4 rounded-xl border text-xs transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md ${
+                      className={`mt-8 w-full flex items-center justify-between gap-4 p-4 rounded-xl border text-xs transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md ${
                       shouldGlow
                         ? theme === "dark"
                           ? "text-amber-300 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.25)] animate-notification-glow"
@@ -674,7 +668,7 @@ export function LookupPage({
 
                 return (
                   <div
-                    className={`mt-4 w-full p-4.5 rounded-xl border transition-all duration-300 relative overflow-hidden shadow-md ${
+                    className={`mt-8 w-full p-4.5 rounded-xl border transition-all duration-300 relative overflow-hidden shadow-md ${
                       theme === "dark"
                         ? "bg-slate-900 border-slate-700 text-slate-100"
                         : "bg-white border-slate-300 text-slate-900"
@@ -742,10 +736,6 @@ export function LookupPage({
               })()}
             </div>
 
-            {/* SECTION DIVIDER (Separating Left Inputs & Right Announcement) */}
-            <div className={`w-full h-[1px] lg:w-[1px] lg:h-auto shrink-0 self-stretch ${
-              theme === "dark" ? "bg-white/[0.08]" : "bg-stone-200"
-            }`} />
 
             {/* QA Announcement Horizontal Card spanning full content width */}
             {(() => {
@@ -898,16 +888,20 @@ export function LookupPage({
               const typeConfig = (() => {
                 if (annType === "General Announcement") {
                   return {
-                    containerClass: "bg-gradient-to-br from-emerald-500/10 via-blue-500/[0.03] to-blue-500/[0.06] dark:from-emerald-500/15 dark:via-[#0f172a] dark:to-[#0f172a] border-emerald-500/25 dark:border-emerald-500/30 shadow-xs",
-                    headerSubColor: "text-emerald-600 dark:text-emerald-450 font-extrabold",
-                    titleColor: "text-emerald-700 dark:text-emerald-350 font-bold",
+                    containerClass: theme === "dark"
+                      ? "bg-[#061a2b] border-white/[0.09] shadow-xs"
+                      : "bg-white border-stone-200 shadow-xs",
+                    headerSubColor: theme === "dark" ? "text-emerald-400 font-extrabold" : "text-emerald-600 font-extrabold",
+                    titleColor: theme === "dark" ? "text-emerald-300 font-bold" : "text-emerald-700 font-bold",
                   };
                 } else {
                   // QA Announcement
                   return {
-                    containerClass: "bg-gradient-to-br from-rose-500/10 via-blue-500/[0.03] to-blue-500/[0.06] dark:from-rose-500/15 dark:via-[#0f172a] dark:to-[#0f172a] border-rose-500/25 dark:border-rose-500/30 shadow-xs",
-                    headerSubColor: "text-rose-600 dark:text-rose-400 font-extrabold",
-                    titleColor: "text-rose-700 dark:text-rose-300 font-bold",
+                    containerClass: theme === "dark"
+                      ? "bg-[#061a2b] border-white/[0.09] shadow-xs"
+                      : "bg-white border-stone-200 shadow-xs",
+                    headerSubColor: theme === "dark" ? "text-rose-400 font-extrabold" : "text-rose-600 font-extrabold",
+                    titleColor: theme === "dark" ? "text-rose-300 font-bold" : "text-rose-700 font-bold",
                   };
                 }
               })();
@@ -998,10 +992,10 @@ export function LookupPage({
                   {/* HORIZONTAL SHARP DIVIDER */}
                   <div className="border-t border-stone-200 dark:border-white/[0.08] w-full"></div>
 
-                  {/* BODY CONTENT (Row 2 of Layout) */}
+                  {/* BODY CONTENT (Row 2 of Layout) — secondary card */}
                   <div
                     style={{
-                      backgroundColor: "#c7cfd6",
+                      backgroundColor: theme === "dark" ? "#0a1f33" : "#f1f5f9",
                       paddingTop: "12px",
                       paddingBottom: "12px",
                       paddingLeft: "12px",
@@ -1010,7 +1004,8 @@ export function LookupPage({
                       marginBottom: "-5px",
                       borderRadius: "16px",
                       height: "calc(100% - 40px)",
-                      position: "relative"
+                      position: "relative",
+                      border: theme === "dark" ? "1px solid rgba(255,255,255,0.06)" : "1px solid #e2e8f0"
                     }}
                     className="flex flex-row items-start justify-between gap-3 md:gap-4 self-stretch w-full min-w-0"
                   >
@@ -1019,7 +1014,7 @@ export function LookupPage({
                     <div className="flex-grow flex-1 min-w-0 text-left flex flex-col justify-start h-full">
                       {/* Announcement Title */}
                       <span
-                        style={{ fontFamily: "system-ui", color: "#420606", marginTop: "0px", marginBottom: "0px" }}
+                        style={{ fontFamily: "system-ui", color: theme === "dark" ? "#94a3b8" : "#420606", marginTop: "0px", marginBottom: "0px" }}
                         className="text-xs md:text-[13px] font-bold tracking-tight uppercase mb-2 block"
                       >
                         {item.category || "General Announcement"}
