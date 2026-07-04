@@ -38,8 +38,7 @@ import {
   LockKeyhole,
   Eye,
   Home,
-  Megaphone,
-  ClipboardPlus
+  Megaphone
 } from "lucide-react";
 
 import {
@@ -100,12 +99,6 @@ const LookupPage = lazy(() =>
 const ResourcesPage = lazy(() =>
   import("./pages/ResourcesPage").then((m) => ({ default: m.ResourcesPage }))
 );
-const ProfileAccessPage = lazy(() =>
-  import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
-);
-const PlanScopePage = lazy(() =>
-  import("./pages/PlanScopePage").then((m) => ({ default: m.PlanScopePage }))
-);
 const MyActivityPage = lazy(() =>
   import("./pages/MyActivityPage").then((m) => ({ default: m.MyActivityPage }))
 );
@@ -120,7 +113,7 @@ const FlaggedResponsesPage = lazy(() =>
 );
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "plan_scope" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses">("lookup");
   const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>(() => {
     try {
       const saved = localStorage.getItem("ditto_qa_announcements");
@@ -816,7 +809,7 @@ export default function App() {
     if (currentUser) {
       if (!hasAccess(activeTab, "Viewer")) {
         // Fallback sequentially to ensure user isn't stuck on a forbidden tab
-        const priorityTabs = ["lookup", "my_activity", "resources", "audit", "profile_access", "plan_scope", "flagged_responses"] as const;
+        const priorityTabs = ["lookup", "my_activity", "resources", "audit", "flagged_responses"] as const;
         const available = priorityTabs.find(tab => hasAccess(tab, "Viewer")) || "lookup";
         setActiveTab(available);
       }
@@ -2041,13 +2034,13 @@ export default function App() {
   const renderSidebarContent = (isMobile: boolean = false) => {
     return (
       <div className={`h-full flex flex-col ${
-        theme === "dark" ? "bg-[#03101a] text-[#F5F7FA]" : "bg-[#9ea9b1] text-stone-950"
+        theme === "dark" ? "bg-[#03101a] text-[#F5F7FA]" : "bg-[var(--sidebar-bg)] text-stone-950"
       }`}>
         {/* Header */}
-        <div 
+        <div
           style={{ borderColor: theme === "dark" ? "" : "#2f384b" }}
           className={`p-5 border-b flex items-center justify-between ${
-            theme === "dark" ? "border-white/[0.08] bg-[#03101a]" : "bg-[#9ea9b1]"
+            theme === "dark" ? "border-white/[0.08] bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
           }`}
         >
           <div className="flex flex-col">
@@ -2057,9 +2050,9 @@ export default function App() {
           <button
             onClick={() => setIsMenuOpen(false)}
             className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-              theme === "dark" 
-                ? "hover:bg-white/5 text-[#9CA3AF] hover:text-[#F5F7FA]" 
-                : "hover:bg-black/10 text-stone-900 hover:text-stone-950"
+              theme === "dark"
+                ? "hover:bg-white/5 text-[#9CA3AF] hover:text-[#F5F7FA]"
+                : "hover:bg-black/10 text-[#061f3f] hover:text-[#061f3f]"
             }`}
             title="Collapse Menu"
           >
@@ -2091,7 +2084,7 @@ export default function App() {
                       : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
-                <Home className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+                <Home className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
                 <span>Home</span>
               </button>
 
@@ -2111,7 +2104,7 @@ export default function App() {
                       : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
-                <Sparkles className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+                <Sparkles className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
                 <span>Declaration Assistant</span>
               </button>
             </>
@@ -2133,7 +2126,7 @@ export default function App() {
                     : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <DeclarationMapIcon width={16} height={16} color="currentColor" className={`shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+              <DeclarationMapIcon width={16} height={16} color="currentColor" className={`shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
               <span>Declaration Map</span>
             </button>
           )}
@@ -2154,16 +2147,19 @@ export default function App() {
                     : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <History className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+              <History className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
               <span>My Activity</span>
             </button>
           )}
 
-          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("plan_scope", "Viewer")) && (
+          {(hasAccess("audit", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
             <>
-              <div 
-                style={{ borderColor: theme === "dark" ? "" : "#2f384b" }}
-                className={`border-t my-3.5 ${theme === "dark" ? "border-white/[0.06]" : ""}`} 
+              {/* Clear separation between Advisor Zone and Admin Zone — a
+                  visibly distinct rule (not just a faint hairline) so the two
+                  sections of the workspace read as separate groups. */}
+              <div
+                style={{ borderColor: theme === "dark" ? "rgba(255,255,255,0.12)" : "#1e293b" }}
+                className="border-t-2 my-4 opacity-70"
               />
 
               <span className={`block text-[10px] font-bold tracking-wider px-2 mb-2 ${theme === "dark" ? "text-[#9CA3AF]" : "text-[#03101a] font-extrabold"}`}>
@@ -2186,7 +2182,7 @@ export default function App() {
                         : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
-                  <Megaphone className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+                  <Megaphone className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
                   <span>Announcement Manager</span>
                 </button>
               )}
@@ -2207,50 +2203,8 @@ export default function App() {
                         : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
-                  <Clock className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+                  <Clock className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
                   <span>Activity Log</span>
-                </button>
-              )}
-
-              {hasAccess("plan_scope", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("plan_scope");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "plan_scope" 
-                      ? theme === "dark"
-                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                      : theme === "dark"
-                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <ClipboardPlus className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
-                  <span>Specific Illness Ledger</span>
-                </button>
-              )}
-
-              {hasAccess("profile_access", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("profile_access");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "profile_access" 
-                      ? theme === "dark"
-                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                      : theme === "dark"
-                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <User className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
-                  <span>User Management</span>
                 </button>
               )}
 
@@ -2270,7 +2224,7 @@ export default function App() {
                         : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
-                  <AlertCircle className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+                  <AlertCircle className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
                   <span>Flagged Responses</span>
                 </button>
               )}
@@ -2295,7 +2249,7 @@ export default function App() {
         animate={{ width: isMenuOpen ? 260 : (isMobileWindow ? 0 : 60) }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
         className={`${isMobileWindow ? "absolute left-0 top-0 h-full shadow-2xl" : "relative h-full"} flex flex-col shrink-0 z-50 overflow-hidden ${
-          isDark ? "bg-[#03101a] border-r border-white/[0.08]" : "bg-[#9ea9b1] border-r border-stone-300"
+          isDark ? "bg-[#03101a] border-r border-white/[0.08]" : "bg-[var(--sidebar-bg)] border-r border-stone-300"
         }`}
       >
         {isMenuOpen ? (
@@ -2303,8 +2257,8 @@ export default function App() {
             {renderSidebarContent(false)}
           </div>
         ) : (
-          <div 
-            style={{ borderRadius: "0px", backgroundColor: !isDark ? "#9ea9b1" : undefined }}
+          <div
+            style={{ borderRadius: "0px", backgroundColor: !isDark ? "var(--sidebar-bg)" : undefined }}
             className="w-full h-full flex flex-col items-center py-6 gap-3 overflow-hidden"
           >
             {/* Click to expand button */}
@@ -2315,14 +2269,14 @@ export default function App() {
               }`}
               title="Expand Navigation Menu"
             >
-              <PanelLeftOpen className="w-5 h-5" style={{ color: !isDark ? "#0e1016" : "#9a9c9e" }} />
+              <PanelLeftOpen className="w-5 h-5" style={{ color: !isDark ? "#061f3f" : "#9a9c9e" }} />
             </button>
 
             <div className={`w-10 border-b ${isDark ? "border-white/[0.08]" : "border-stone-200/50"} my-1`} />
 
             {/* Collapsed Menu Items of Active Tools */}
             <div 
-              style={{ paddingLeft: "5px", paddingRight: "5px", borderRadius: "0px", backgroundColor: !isDark ? "#9ea9b1" : undefined }}
+              style={{ paddingLeft: "5px", paddingRight: "5px", borderRadius: "0px", backgroundColor: !isDark ? "var(--sidebar-bg)" : undefined }}
               className="flex flex-col gap-2 w-full flex-grow overflow-y-auto py-2 items-center no-scrollbar"
             >
               {hasAccess("lookup", "Viewer") && (
@@ -2337,7 +2291,7 @@ export default function App() {
                         ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                         : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                     }`}
-                    style={{ color: activeTab === "lookup" && showIntro ? "var(--accent)" : "var(--text-muted)" }}
+                    style={{ color: activeTab === "lookup" && showIntro ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                     title="Home"
                   >
                     <Home style={{ width: "18px", height: "18px" }} />
@@ -2353,7 +2307,7 @@ export default function App() {
                         ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                         : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                     }`}
-                    style={{ color: activeTab === "lookup" && !showIntro ? "var(--accent)" : "var(--text-muted)" }}
+                    style={{ color: activeTab === "lookup" && !showIntro ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                     title="Declaration Assistant"
                   >
                     <Sparkles style={{ width: "18px", height: "18px" }} />
@@ -2369,7 +2323,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
-                  style={{ color: activeTab === "resources" ? "var(--accent)" : "var(--text-muted)" }}
+                  style={{ color: activeTab === "resources" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                   title="Declaration Map"
                 >
                   <DeclarationMapIcon width={18} height={18} color="currentColor" />
@@ -2384,7 +2338,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
-                  style={{ color: activeTab === "my_activity" ? "var(--accent)" : "var(--text-muted)" }}
+                  style={{ color: activeTab === "my_activity" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                   title="My Activity"
                 >
                   <History style={{ width: "18px", height: "18px" }} />
@@ -2399,7 +2353,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
-                  style={{ color: activeTab === "qa_announcement_log" ? "var(--accent)" : "var(--text-muted)" }}
+                  style={{ color: activeTab === "qa_announcement_log" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                   title="Announcement Manager"
                 >
                   <Megaphone style={{ width: "18px", height: "18px" }} />
@@ -2414,40 +2368,10 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
-                  style={{ color: activeTab === "audit" ? "var(--accent)" : "var(--text-muted)" }}
+                  style={{ color: activeTab === "audit" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                   title="Activity Log"
                 >
                   <Clock style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("plan_scope", "Viewer") && (
-                <button 
-                  onClick={() => setActiveTab("plan_scope")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "plan_scope" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
-                  }`}
-                  style={{ color: activeTab === "plan_scope" ? "var(--accent)" : "var(--text-muted)" }}
-                  title="Specific Illness Ledger"
-                >
-                  <ClipboardPlus style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("profile_access", "Viewer") && (
-                <button 
-                  onClick={() => setActiveTab("profile_access")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "profile_access" 
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
-                  }`}
-                  style={{ color: activeTab === "profile_access" ? "var(--accent)" : "var(--text-muted)" }}
-                  title="User Management"
-                >
-                  <User style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -2459,7 +2383,7 @@ export default function App() {
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
-                  style={{ color: activeTab === "flagged_responses" ? "var(--accent)" : "var(--text-muted)" }}
+                  style={{ color: activeTab === "flagged_responses" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
                   title="Flagged Responses"
                 >
                   <AlertCircle style={{ width: "18px", height: "18px" }} />
@@ -2608,12 +2532,21 @@ export default function App() {
         }`} style={{ animationDuration: "20s" }} />
       </div>
 
+      {/* Sitewide grid/scanline texture — sits behind ALL tab content (z-0),
+          edge-to-edge with the app shell, so every page reads consistently
+          with the Login/Home grid identity without needing a separate boxed
+          instance per section (a bounded overlay reads as a "card" the moment
+          it's clipped). Opaque cards (Announcement, Mapping Results, etc.)
+          naturally occlude it since they paint on top; transparent areas
+          (like the Mapping Engine's input section) show it as their backdrop. */}
+      <GridTexture theme={theme} zIndexClassName="z-0" />
+
       <a href="#main-content" className="skip-to-content">Skip to main content</a> {/* HEADER BAR: Frosted floating glass compliance console bar */}
       <div className="p-4 pb-0 shrink-0 select-none relative z-40 w-full lg:w-[99%] xl:w-[98%] max-w-[1850px] mx-auto">
         <header className={`rounded-2xl border transition-all duration-300 ${
-          theme === "dark" 
-            ? "border-white/[0.08] bg-[#03101a] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)] hover:border-white/[0.12]" 
-            : "border-slate-200 bg-[#163c62] text-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.05)] hover:border-slate-300/80"
+          theme === "dark"
+            ? "border-white/[0.08] bg-[#03101a] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)] hover:border-white/[0.12]"
+            : "border-black/10 bg-[var(--header-bg)] text-[#061f3f] shadow-[0_4px_20px_rgba(11,18,32,0.12)] hover:border-black/15"
         }`}>
           <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: "var(--header-bg)", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
           
@@ -2632,12 +2565,12 @@ export default function App() {
               style={{
                 backgroundColor: "transparent",
                 borderColor: "transparent",
-                color: "#94a3b8",
+                color: theme === "dark" ? "#94a3b8" : "#061f3f",
                 borderRadius: "6px"
               }}
               title="Go Back" aria-label="Go back"
             >
-              <ArrowLeft className="w-4 h-4" aria-hidden="true" style={{ fontSize: "18px", width: "25px", height: "20px", marginRight: "-5px", marginLeft: "-14px", color: "#ffffff", borderColor: "#ffffff" }} />
+              <ArrowLeft className="w-4 h-4" aria-hidden="true" style={{ fontSize: "18px", width: "25px", height: "20px", marginRight: "-5px", marginLeft: "-14px", color: theme === "dark" ? "#ffffff" : "#061f3f", borderColor: theme === "dark" ? "#ffffff" : "#061f3f" }} />
             </button>
 
             <button
@@ -2649,7 +2582,7 @@ export default function App() {
               title="Home (Go to Compliance & Policy Mapping Engine)" aria-label="Go to home — Declaration Assistant"
             >
               <div className="flex items-center gap-2">
-                <DittoWordmark className="text-lg" isWhite={true} style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} firstSpanStyle={{ color: "#fefefe" }} secondSpanStyle={{ color: "#1e7af5" }} />
+                <DittoWordmark className="text-lg" isWhite={theme === "dark"} style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} firstSpanStyle={{ color: theme === "dark" ? "#fefefe" : "#061f3f" }} secondSpanStyle={{ color: "#1e7af5" }} />
               </div>
             </button>
           </div>
@@ -2661,10 +2594,10 @@ export default function App() {
                 return (
                   <button
                     onClick={() => setIsMenuOpen(prev => !prev)}
-                    style={{ 
+                    style={{
                       backgroundColor: "transparent",
                       borderColor: "transparent",
-                      color: "#ffffff",
+                      color: theme === "dark" ? "#ffffff" : "#061f3f",
                       borderWidth: "0px",
                       boxShadow: "none",
                       borderRadius: "12px"
@@ -2672,8 +2605,8 @@ export default function App() {
                     className="title-badge-btn px-6 py-2 justify-center text-xs sm:text-sm font-black uppercase tracking-widest border-0 duration-300 transition-all flex items-center gap-2.5 cursor-pointer whitespace-nowrap active:scale-95 hover:scale-[1.02]"
                     title="Current workspace tab view"
                   >
-                    <Home className="title-badge-icon w-4 h-4 shrink-0 text-cyan-400" style={{ color: theme !== "dark" ? "#ffffff" : "#fafafa", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }} />
-                    <span style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }} className="title-badge-text font-sans font-black uppercase tracking-wider">
+                    <Home className="title-badge-icon w-4 h-4 shrink-0 text-cyan-400" style={{ color: theme === "dark" ? "#fafafa" : "#061f3f", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }} />
+                    <span style={{ fontSize: "13px", color: theme === "dark" ? "#f9f9fc" : "#061f3f", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }} className="title-badge-text font-sans font-black uppercase tracking-wider">
                       Advisor Home
                     </span>
                   </button>
@@ -2684,8 +2617,6 @@ export default function App() {
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                profile_access: { label: "User Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                plan_scope: { label: "Specific Illness Ledger", icon: <ClipboardPlus className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 flagged_responses: { label: "Flagged Responses", icon: <AlertCircle className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
@@ -2694,22 +2625,22 @@ export default function App() {
               return (
                 <button
                   onClick={() => setIsMenuOpen(prev => !prev)}
-                  style={{ 
+                  style={{
                     backgroundColor: "transparent",
                     borderColor: "transparent",
-                    color: "#ffffff",
+                    color: theme === "dark" ? "#ffffff" : "#061f3f",
                     borderWidth: "0px",
                     boxShadow: "none"
                   }}
                   className="title-badge-btn px-6 py-2 justify-center text-xs sm:text-sm font-black uppercase tracking-widest border-0 duration-300 transition-all flex items-center gap-2.5 cursor-pointer whitespace-nowrap active:scale-95 hover:scale-[1.02]"
                   title="Current workspace tab view"
                 >
-                  {React.cloneElement(meta.icon, { 
+                  {React.cloneElement(meta.icon, {
                     className: "title-badge-icon w-4.5 h-4.5 shrink-0 text-cyan-400",
-                    style: { color: theme !== "dark" ? "#ffffff" : "#fafafa", borderColor: "transparent", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" } 
+                    style: { color: theme === "dark" ? "#fafafa" : "#061f3f", borderColor: "transparent", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }
                   })}
-                  <span 
-                    style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }}
+                  <span
+                    style={{ fontSize: "13px", color: theme === "dark" ? "#f9f9fc" : "#061f3f", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }}
                     className="title-badge-text font-sans font-black uppercase tracking-wider"
                   >
                     {meta.label}
@@ -2740,7 +2671,7 @@ export default function App() {
                     title="Flagged Mismatches"
                     aria-label="View flagged mismatches"
                   >
-                    <Bell className="w-2 h-4 text-[#5dc0b4] hover:text-[#5dc0b4] transition-colors" style={{ width: "20px", height: "20px" }} />
+                    <Bell className={`w-2 h-4 transition-colors ${theme === "dark" ? "text-[#5dc0b4] hover:text-[#5dc0b4]" : "text-[#0e7490] hover:text-[#0e7490]"}`} style={{ width: "20px", height: "20px" }} />
                     {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
                       <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
@@ -2758,7 +2689,7 @@ export default function App() {
                 >
                   {theme === "dark"
                     ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffb700" }} />
-                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#a089c8" }} />
+                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#3730a3" }} />
                   }
                 </button>
 
@@ -2769,7 +2700,7 @@ export default function App() {
                   title="Direct Logout"
                   aria-label="Direct logout"
                 >
-                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#9a9c9e" }} />
+                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: theme === "dark" ? "#9a9c9e" : "#334155" }} />
                 </button>
               </div>
             </div>
@@ -3115,53 +3046,6 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Declaration Map">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
                   <ResourcesPage theme={theme} />
-                </Suspense>
-              </ErrorBoundary>
-            </motion.div>
-          )}
-
-          {/* TAB 4: PROFILE & ACCESS MANAGEMENT (content extracted to src/pages/ProfileAccessPage.tsx, Phase 1.3) */}
-          {activeTab === "profile_access" && currentUser && (
-            <motion.div
-              key="profile_access"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.2 }}
-            >
-              <ErrorBoundary theme={theme} label="Profile & Access Management">
-              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <ProfileAccessPage
-                currentUser={currentUser}
-                effectiveTier={effectiveTier}
-                usersList={usersList}
-                setUsersList={setUsersList}
-                ownerPasscode={ownerPasscode}
-                setOwnerPasscode={setOwnerPasscode}
-                featurePermissions={featurePermissions}
-                setFeaturePermissions={setFeaturePermissions}
-                hasAccess={hasAccess}
-              />
-              </Suspense>
-              </ErrorBoundary>
-            </motion.div>
-          )}
-
-          {/* TAB 5: SPECIFIC ILLNESS LEDGER (content extracted to src/pages/PlanScopePage.tsx, Phase 1.3) */}
-          {activeTab === "plan_scope" && currentUser && (
-            <motion.div
-              key="plan_scope"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.2 }}
-            >
-              <ErrorBoundary theme={theme} label="Specific Illness Ledger">
-                <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-                  <PlanScopePage
-                    productionPlans={productionPlans}
-                    theme={theme}
-                  />
                 </Suspense>
               </ErrorBoundary>
             </motion.div>

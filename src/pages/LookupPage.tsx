@@ -21,7 +21,6 @@ import {
   ChevronRight
 } from "lucide-react";
 import { DeclarationMapIcon } from "../components/icons";
-import { GridTexture } from "../components/GridTexture";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
 import { DeclarationAssistantResults } from "../components/DeclarationAssistantResults";
@@ -197,22 +196,13 @@ export function LookupPage({
             }`}
           >
             {/* SECTION 1: PED MAPPING ENGINE INPUTS */}
-            <div className="flex-1 min-w-0 flex flex-col justify-start relative z-10 overflow-hidden">
-              {/* Ambient hero glow — same atmosphere as the Login page, so the
-                  Mapping Engine (the core of the app) carries equal visual weight. */}
-              <div
-                className={`absolute top-[-15%] left-[-10%] w-[55%] h-[65%] rounded-full blur-[100px] -z-10 pointer-events-none select-none animate-pulse ${
-                  theme === "dark" ? "bg-blue-500/12" : "bg-blue-400/20"
-                }`}
-                style={{ animationDuration: "10s" }}
-              />
-              <div
-                className={`absolute bottom-[-20%] right-[5%] w-[45%] h-[60%] rounded-full blur-[110px] -z-10 pointer-events-none select-none animate-pulse ${
-                  theme === "dark" ? "bg-cyan-400/8" : "bg-sky-400/15"
-                }`}
-                style={{ animationDuration: "14s" }}
-              />
-              <GridTexture theme={theme} />
+            {/* No local background/texture/glow here on purpose — a bounded
+                overlay box (even a borderless one) reads as a "card" the
+                moment it's clipped by overflow-hidden. This section now sits
+                directly on the shared app-shell background (grid + ambient
+                glow blobs already rendered behind every tab in App.tsx), so
+                it blends into the page instead of looking like its own panel. */}
+            <div className="flex-1 min-w-0 flex flex-col justify-start relative z-10">
 
               {/* Title mapping section */}
               <div
@@ -1035,7 +1025,7 @@ export function LookupPage({
                   {/* BODY CONTENT (Row 2 of Layout) — secondary card */}
                   <div
                     style={{
-                      backgroundColor: theme === "dark" ? "#0a1f33" : "#f1f5f9",
+                      backgroundColor: theme === "dark" ? "#0a1f33" : "#92a5b573",
                       paddingTop: "12px",
                       paddingBottom: "12px",
                       paddingLeft: "12px",

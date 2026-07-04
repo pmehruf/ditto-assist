@@ -119,10 +119,16 @@
   --table-header-bg: #EBF1F7;
   --table-row-hover: #F8FAFD;
 
-  /* Header / Sidebar (brand navy is part of the light identity) */
-  --header-bg: #163C62;
-  --header-text: #F1F5F9;
-  --sidebar-bg: #FFFFFF;
+  /* Header / Sidebar — unified steel-blue chrome for the light theme.
+     LOCKED VALUE: this is the single source of truth for both the header
+     and sidebar background in light mode. Every element that needs this
+     color should reference var(--header-bg) / var(--sidebar-bg) directly
+     rather than a separate hardcoded bg-[#hex] Tailwind class — two
+     independent declarations of the "same" color is exactly what caused
+     them to silently drift out of sync before. */
+  --header-bg: #748A9D;
+  --header-text: #061F3F;
+  --sidebar-bg: #748A9D;
 
   /* Shadows */
   --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
@@ -551,10 +557,6 @@ html:not(.dark) .bg-stone-200 {
 html:not(.dark) .bg-stone-50, html:not(.dark) .bg-stone-100 {
   background-color: var(--surface-inset);
 }
-
-/* Nav drawer / sidebar panel — align the old gray-green slab with the
-   steel-blue light palette */
-html:not(.dark) .bg-\[\#9ea9b1\] { background-color: var(--surface-inset); }
 
 html:not(.dark) .border-stone-150, html:not(.dark) .border-stone-200,
 html:not(.dark) .border-stone-250, html:not(.dark) .border-stone-800,
