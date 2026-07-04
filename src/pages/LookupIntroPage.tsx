@@ -5,6 +5,8 @@
 
 import { motion } from "motion/react";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
+import { GridTexture } from "../components/GridTexture";
+import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 
 interface LookupIntroPageProps {
   theme: "light" | "dark";
@@ -29,23 +31,7 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
       }`}
     >
       {/* Optimized grid / texture overlay based on theme to prevent moire and maintain premium feel */}
-      {theme === "dark" ? (
-        <div
-          className="absolute inset-0 pointer-events-none z-20 opacity-80"
-          style={{
-            backgroundImage: `linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.15) 50%), linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.01), rgba(0,0,255,0.03))`,
-            backgroundSize: "100% 3px, 3px 100%"
-          }}
-        />
-      ) : (
-        <div
-          className="absolute inset-0 pointer-events-none z-20 opacity-50"
-          style={{
-            backgroundImage: `linear-gradient(rgba(70,115,169,0) 50%, rgba(70,115,169,0.14) 50%), linear-gradient(90deg, rgba(70,115,169,0.07), rgba(255,255,255,0), rgba(70,115,169,0.07))`,
-            backgroundSize: "100% 3px, 3px 100%"
-          }}
-        />
-      )}
+      <GridTexture theme={theme} />
 
       {/* Workspace grid: 2 columns */}
       <div className="grid grid-cols-1 lg:grid-cols-10 w-full relative z-10 h-full">
@@ -110,26 +96,14 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
               </p>
             </div>
 
-            <button
+            <PrimaryCtaButton
+              theme={theme}
               onClick={() => setShowIntro(false)}
-              className={`px-6 border-[1.5px] text-xs font-mono uppercase font-bold tracking-[0.2em] transition-all cursor-pointer select-none self-start relative overflow-hidden ${
-                theme === "dark"
-                  ? "bg-[#00afce] text-[#0a0a0c] border-[#00afce] hover:bg-[#009cb8] hover:border-[#009cb8] hover:shadow-[0_0_40px_rgba(0,175,206,0.15)]"
-                  : "hover:bg-[#06469c] hover:border-[#06469c]"
-              }`}
-              style={{
-                clipPath: "polygon(100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 0)",
-                marginTop: "clamp(6px, 1.5vh, 14px)",
-                paddingTop: "clamp(8px, 1.2vh, 12px)",
-                paddingBottom: "clamp(8px, 1.2vh, 12px)",
-                backgroundColor: theme !== "dark" ? "var(--accent-solid)" : undefined,
-                color: theme !== "dark" ? "var(--on-accent)" : undefined,
-                borderColor: theme !== "dark" ? "var(--accent-solid)" : undefined
-              }}
+              className="self-start"
+              style={{ marginTop: "clamp(6px, 1.5vh, 14px)" }}
             >
               LETS PUT THEM IN THEIR PLACE
-              <span className="absolute top-0 right-0 w-2.5 h-2.5 transform rotate-45 translate-x-1 -translate-y-1" style={{ backgroundColor: theme !== "dark" ? "#021426" : "#0a0a0c" }}></span>
-            </button>
+            </PrimaryCtaButton>
           </div>
 
           {/* Absolute positioned floating mascot, vertically center aligned with body text */}

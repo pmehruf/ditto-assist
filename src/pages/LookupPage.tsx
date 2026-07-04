@@ -14,13 +14,15 @@ import {
   Info,
   RefreshCw,
   RotateCcw,
-  Layers,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
+import { DeclarationMapIcon } from "../components/icons";
+import { GridTexture } from "../components/GridTexture";
+import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
 import { DeclarationAssistantResults } from "../components/DeclarationAssistantResults";
 import { MatchOutput, PlanConfig } from "../types.js";
@@ -67,7 +69,6 @@ interface LookupPageProps {
   // Reporting a mismatch from within results
   setReportingItem: (value: ReportingItem | null) => void;
   setReportingNotes: (value: string) => void;
-  setReportingPriority: (value: "Pending" | "Urgent" | "Resolved" | "Ignored") => void;
 
   // Layout refs (measured heights for the results split view)
   mappingResultCardRef: RefObject<HTMLDivElement>;
@@ -136,7 +137,6 @@ export function LookupPage({
   handleMapAnotherPed,
   setReportingItem,
   setReportingNotes,
-  setReportingPriority,
   mappingResultCardRef,
   resultsRef,
   sidebarRef,
@@ -172,7 +172,6 @@ export function LookupPage({
             onMapAnotherPed={handleMapAnotherPed}
             setReportingItem={setReportingItem}
             setReportingNotes={setReportingNotes}
-            setReportingPriority={setReportingPriority}
             mappingResultCardRef={mappingResultCardRef}
             resultsRef={resultsRef}
             sidebarRef={sidebarRef}
@@ -188,14 +187,32 @@ export function LookupPage({
         <>
           <div className="mb-2" />
 
-          {/* TWO SECTIONS PLACED DIRECTLY ON THE PAGE BACKGROUND (no card/box wrapper) */}
+          {/* No card/border on this section (per design feedback) — only the
+              QA Announcement panel below keeps its own bordered card. The
+              grid texture is scoped to the input area only so it doesn't
+              bleed into the announcement card. */}
           <div
-            className={`w-full relative flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 animate-fade-in ${
+            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
             {/* SECTION 1: PED MAPPING ENGINE INPUTS */}
-            <div className="flex-1 min-w-0 flex flex-col justify-start relative z-10">
+            <div className="flex-1 min-w-0 flex flex-col justify-start relative z-10 overflow-hidden">
+              {/* Ambient hero glow — same atmosphere as the Login page, so the
+                  Mapping Engine (the core of the app) carries equal visual weight. */}
+              <div
+                className={`absolute top-[-15%] left-[-10%] w-[55%] h-[65%] rounded-full blur-[100px] -z-10 pointer-events-none select-none animate-pulse ${
+                  theme === "dark" ? "bg-blue-500/12" : "bg-blue-400/20"
+                }`}
+                style={{ animationDuration: "10s" }}
+              />
+              <div
+                className={`absolute bottom-[-20%] right-[5%] w-[45%] h-[60%] rounded-full blur-[110px] -z-10 pointer-events-none select-none animate-pulse ${
+                  theme === "dark" ? "bg-cyan-400/8" : "bg-sky-400/15"
+                }`}
+                style={{ animationDuration: "14s" }}
+              />
+              <GridTexture theme={theme} />
 
               {/* Title mapping section */}
               <div
@@ -226,13 +243,24 @@ export function LookupPage({
                       + AI POWERED
                     </span>
                   </div>
-                  <span
-                    style={{ fontSize: "clamp(22px, 3.2vh, 38px)", lineHeight: "1", display: "block", marginTop: "clamp(4px, 0.8vh, 10px)" }}
-                    className="font-black tracking-wider uppercase select-none font-sans bg-clip-text text-transparent bg-gradient-to-r from-[#00D3F3] to-[#58A3FF]"
+                  <h1
+                    className="font-black tracking-wider leading-[1.0] uppercase select-none font-sans flex flex-col"
+                    style={{ marginTop: "clamp(4px, 0.8vh, 10px)" }}
                   >
-                    PED DECLARATION MAPPING ENGINE
-                  </span>
-                  <span className={`text-xs font-medium select-none block mt-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                    <span
+                      style={{ fontSize: "clamp(24px, 4.4vh, 46px)", display: "block", backgroundImage: "var(--gradient-heading)" }}
+                      className="bg-clip-text text-transparent bg-gradient-to-r"
+                    >
+                      PED DECLARATION
+                    </span>
+                    <span
+                      style={{ fontSize: "clamp(24px, 4.4vh, 46px)", display: "block", backgroundImage: "var(--gradient-accent)" }}
+                      className="bg-clip-text text-transparent bg-gradient-to-r"
+                    >
+                      MAPPING ENGINE
+                    </span>
+                  </h1>
+                  <span className={`text-xs font-medium select-none block mt-1.5 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
                     Search and map conditions to find the perfect match for your declaration.
                   </span>
                 </div>
@@ -249,7 +277,7 @@ export function LookupPage({
                   }}
                   className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide transition-all cursor-pointer select-none shrink-0 mt-1 px-3 py-1.5 rounded-lg border hover:opacity-90 active:scale-95"
                 >
-                  <Layers className="w-3.5 h-3.5" />
+                  <DeclarationMapIcon width={14} height={14} color="currentColor" className="shrink-0" />
                   Declaration Map
                 </button>
               </div>
@@ -278,9 +306,9 @@ export function LookupPage({
                         height: "40.5px",
                         paddingTop: "8.5px",
                         paddingBottom: "8.5px",
-                        paddingRight: "30px"
+                        paddingRight: "44px"
                       }}
-                      className={`w-full pl-3 pr-9 py-3 rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
+                      className={`w-full pl-3 pr-11 py-3 rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
                         theme === "dark"
                           ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]"
                           : "bg-white border-stone-250 text-stone-850"
@@ -367,13 +395,19 @@ export function LookupPage({
                             }}
                             placeholder="Enter PED"
                             style={{ borderRadius: "12px", fontFamily: "system-ui" }}
-                            className={`w-full pl-3 pr-3 py-2 bg-transparent border-0 outline-none font-bold text-xs ${
+                            className={`w-full pl-3 pr-8 py-2 bg-transparent border-0 outline-none font-bold text-xs ${
                               theme === "dark"
                                 ? "text-[#eff6ff] placeholder:text-slate-400 placeholder:font-medium"
                                 : "text-stone-850 placeholder:text-stone-400 placeholder:font-medium"
                             }`}
                             id="ped-input"
                           />
+                          {/* Decorative dropdown affordance — signals this field also offers
+                              a pick-from-list suggestion dropdown, matching the Plan select,
+                              even though free text entry is still allowed. */}
+                          <ChevronDown className={`w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none shrink-0 ${
+                            theme === "dark" ? "text-slate-400" : "text-stone-400"
+                          }`} />
                         </div>
                       </div>
                       <button
@@ -538,11 +572,10 @@ export function LookupPage({
 
               {/* Helper text */}
               <p
-                style={{ marginTop: "clamp(6px, 1vh, 14px)" }}
+                style={{ marginTop: "clamp(14px, 2.4vh, 26px)", fontWeight: "bold", fontSize: "11px" }}
                 className={`opacity-80 select-none font-sans flex items-center gap-1.5 text-left ${
                   theme === "dark" ? "text-stone-400" : "text-stone-500"
                 }`}
-                style={{ fontWeight: "bold", fontSize: "11px" }}
               >
                 <Info className="w-3.5 h-3.5 shrink-0" />
                 Enter one or multiple conditions to map them sequentially against the selected plan wording.
@@ -554,32 +587,29 @@ export function LookupPage({
                 className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
                 title={(!selectedPlan || lookupPeds.length === 0) ? "Select a plan and add at least one condition to proceed" : ""}
               >
-                <button
+                <PrimaryCtaButton
+                  theme={theme}
                   onClick={() => {
                     if (!selectedPlan) return;
                     executeLookupAll(lookupPeds, selectedPlan);
                   }}
                   disabled={isLookupLoading || lookupPeds.length === 0 || !selectedPlan}
-                  style={{
-                    backgroundColor: (isLookupLoading || lookupPeds.length === 0 || !selectedPlan) ? undefined : "#009dff",
-                    borderColor: (isLookupLoading || lookupPeds.length === 0 || !selectedPlan) ? undefined : "#56ffd7"
-                  }}
-                  className="w-full sm:w-auto sm:flex-1 py-2.5 px-5 border rounded-xl font-semibold text-xs tracking-wide transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.98] bg-blue-600 hover:bg-blue-700 text-white disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto sm:flex-1 !flex items-center justify-center gap-2"
                   id="match-disclosure-button"
                   title={(!selectedPlan || lookupPeds.length === 0) ? "Select a plan and add at least one condition to proceed" : ""}
                 >
                   {isLookupLoading ? (
                     <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-current" />
+                      <RefreshCw className="w-4 h-4 animate-spin text-current inline -mt-0.5 mr-2" />
                       Analyzing conditions...
                     </>
                   ) : (
                     <>
-                      <Search className="w-4 h-4 text-current" />
+                      <Search className="w-4 h-4 text-current inline -mt-0.5 mr-2" />
                       Find a Match
                     </>
                   )}
-                </button>
+                </PrimaryCtaButton>
 
                 <button
                   type="button"

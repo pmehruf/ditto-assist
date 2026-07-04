@@ -4,11 +4,10 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
-  Map,
-  Layers,
   CheckCircle2,
   AlertTriangle,
   XCircle,
@@ -70,6 +69,9 @@ import { LoggedUser, UserProfile } from "./types/user";
 import { DraftPlan } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
+import { DeclarationMapIcon } from "./components/icons";
+import { GridTexture } from "./components/GridTexture";
+import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
 import { DittoMascot } from "./components/mascots/DittoMascot";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
@@ -265,6 +267,8 @@ export default function App() {
 
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState<boolean>(false);
   const [profileOpen, setProfileOpen] = useState<boolean>(false);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
+  const [profileMenuPos, setProfileMenuPos] = useState<{ bottom: number; left: number } | null>(null);
 
   // My Activity Section Navigation View States
   const [myActivitySearch, setMyActivitySearch] = useState<string>("");
@@ -1038,13 +1042,34 @@ export default function App() {
   const [pedInput, setPedInput] = useState<string>("");
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(-1);
   const [dynamicSuggestions, setDynamicSuggestions] = useState<string[]>(() => {
-    const combined = [
-      ...SCRIPT_DICTIONARY,
-      ...Object.keys(TOP_PED_DICTIONARY),
-      "gynecomastia",
+    // Categories that exist in TOP_PED_DICTIONARY purely so the deterministic
+    // engine can special-case them (see engine.ts categoryKey handling for
+    // "lifestyle" / "natural_life_stage") — they are habits or administrative
+    // "no disease" entries, not PEDs, so they should never show up as
+    // selectable suggestions even though they must stay in the dictionary
+    // for classification to keep working.
+    const NON_SUGGESTIBLE_CATEGORIES = new Set(["lifestyle", "natural_life_stage"]);
+
+    // A handful of terms that are pure alternate spellings of one single
+    // clinical word (not distinct colloquial phrasings worth keeping, unlike
+    // e.g. "high bp" vs "hypertension" vs "hyperlipidimia" which are genuinely
+    // different ways an advisor might search and stay in the list). Only the
+    // single canonical spelling is kept in the dropdown; the dictionary
+    // entries for the others are untouched so the engine still matches them
+    // if an advisor types the variant spelling directly.
+    const SUGGESTION_EXCLUSIONS = new Set([
       "gynaecomastia",
       "gynocomastia",
       "gyneacomastia",
+    ]);
+
+    const pedDictionarySuggestible = Object.entries(TOP_PED_DICTIONARY)
+      .filter(([, category]) => !NON_SUGGESTIBLE_CATEGORIES.has(category))
+      .map(([term]) => term);
+
+    const combined = [
+      ...SCRIPT_DICTIONARY,
+      ...pedDictionarySuggestible,
       "dvt",
       "deep vein thrombosis",
       "pulmonary embolism",
@@ -1059,7 +1084,91 @@ export default function App() {
       "carpal tunnel",
       "plantar fasciitis"
     ];
-    return Array.from(new Set(combined.map(item => item.trim()))).filter(Boolean).sort();
+
+    // Case-insensitive de-dupe (first occurrence wins) — this is what
+    // collapses things like "COPD" (scriptDictionary.ts) and "copd"
+    // (TOP_PED_DICTIONARY) down to a single entry, before case-correction
+    // below decides the final display form.
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+    for (const raw of combined) {
+      const item = raw.trim();
+      if (!item) continue;
+      const key = item.toLowerCase();
+      if (seen.has(key) || SUGGESTION_EXCLUSIONS.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+
+    // A handful of terms whose punctuation/format doesn't fit clean word-by-word
+    // capitalization — corrected as exact overrides rather than parsed.
+    const EXACT_OVERRIDES: Record<string, string> = {
+      "covid.19": "COVID-19",
+    };
+
+    // Standard medical acronyms/abbreviations that should always render in
+    // full capitals (or their conventional mixed case) no matter where they
+    // fall in the term — this is what turns "pcod" / "cad" into "PCOD" / "CAD".
+    const ACRONYM_MAP: Record<string, string> = {
+      gdm: "GDM", pcl: "PCL", lscs: "LSCS", tkr: "TKR", thr: "THR", cmv: "CMV",
+      mvp: "MVP", chf: "CHF", afib: "AFib", vt: "VT", vf: "VF", sss: "SSS",
+      av: "AV", lbbb: "LBBB", rbbb: "RBBB", hcm: "HCM", mi: "MI", cad: "CAD",
+      ihd: "IHD", cabg: "CABG", ptca: "PTCA", icd: "ICD", rhd: "RHD",
+      copd: "COPD", ild: "ILD", osa: "OSA", cva: "CVA", tia: "TIA", ms: "MS",
+      mnd: "MND", gbs: "GBS", gad: "GAD", ocd: "OCD", adhd: "ADHD",
+      ptsd: "PTSD", ibs: "IBS", ibd: "IBD", gerd: "GERD", gord: "GORD",
+      apd: "APD", ckd: "CKD", esrd: "ESRD", uti: "UTI", aki: "AKI",
+      bph: "BPH", pcos: "PCOS", pcod: "PCOD", ivf: "IVF", ra: "RA",
+      avn: "AVN", cah: "CAH", siadh: "SIADH", hcc: "HCC", rcc: "RCC",
+      nsclc: "NSCLC", dcis: "DCIS", lcis: "LCIS", cml: "CML", cll: "CLL",
+      aml: "AML", all: "ALL", nhl: "NHL", dns: "DNS", sob: "SOB",
+      tsh: "TSH", hb: "Hb", gbm: "GBM", asd: "ASD", vsd: "VSD",
+      g6pd: "G6PD", dka: "DKA", niddm: "NIDDM", iddm: "IDDM", igt: "IGT",
+      ifg: "IFG", hba1c: "HbA1c", tmt: "TMT", pih: "PIH", dvt: "DVT",
+      std: "STD", hpv: "HPV", hiv: "HIV", aids: "AIDS", mctd: "MCTD",
+      sma: "SMA", "h.": "H.",
+    };
+
+    // Named ("eponymous") conditions — capitalized regardless of position in
+    // the phrase, since these are proper nouns (e.g. "non hodgkin lymphoma").
+    // Note: eponyms that are always the first word of their term (Parkinson's,
+    // Alzheimer's, Cushing's, Raynaud, Marfan, etc.) don't need an entry here —
+    // the sentence-case rule below already capitalizes the first word.
+    const EPONYM_MAP: Record<string, string> = {
+      hodgkin: "Hodgkin", barre: "Barre", marie: "Marie", tooth: "Tooth",
+      danlos: "Danlos", willebrand: "Willebrand",
+    };
+
+    const toDisplayCase = (term: string): string => {
+      const lowerWhole = term.toLowerCase();
+      if (EXACT_OVERRIDES[lowerWhole]) return EXACT_OVERRIDES[lowerWhole];
+
+      return term
+        .split(" ")
+        .map((word, idx) => {
+          if (!word) return word;
+          const lower = word.toLowerCase();
+          const bare = lower.replace(/[^a-z0-9']/g, "");
+          if (ACRONYM_MAP[lower]) return ACRONYM_MAP[lower];
+          if (ACRONYM_MAP[bare]) return ACRONYM_MAP[bare];
+          if (EPONYM_MAP[lower]) return EPONYM_MAP[lower];
+          if (idx === 0) return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+          return word.toLowerCase();
+        })
+        .join(" ");
+    };
+
+    // Final safety pass: case-correction can occasionally make two distinct
+    // source strings converge on the same display text — de-dupe once more.
+    const finalSeen = new Set<string>();
+    const final: string[] = [];
+    for (const item of deduped.map(toDisplayCase)) {
+      const key = item.toLowerCase();
+      if (finalSeen.has(key)) continue;
+      finalSeen.add(key);
+      final.push(item);
+    }
+    return final.sort();
   });
   const [mappingUpdateStatus, setMappingUpdateStatus] = useState<Record<string, { status: "idle" | "loading" | "success" | "error"; error?: string }>>({});
   const [userAdvisoryToggle, setUserAdvisoryToggle] = useState<boolean | null>(null);
@@ -1109,7 +1218,6 @@ export default function App() {
   } | null>(null);
 
   const [reportingNotes, setReportingNotes] = useState<string>("");
-  const [reportingPriority, setReportingPriority] = useState<"Pending" | "Urgent" | "Resolved" | "Ignored">("Urgent");
   const [reportedIssuesFilter, setReportedIssuesFilter] = useState<string>("All Open"); // All Open, Pending, Urgent, Resolved, Ignored, All
   const [ownerResolutionNotes, setOwnerResolutionNotes] = useState<Record<string, string>>({});
   
@@ -1582,23 +1690,7 @@ export default function App() {
         />
 
         {/* Optimized grid / texture overlay based on theme to prevent moire and maintain premium feel */}
-        {theme === "dark" ? (
-          <div
-            className="absolute inset-0 pointer-events-none z-20 opacity-80"
-            style={{
-              backgroundImage: `linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.15) 50%), linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.01), rgba(0,0,255,0.03))`,
-              backgroundSize: "100% 3px, 3px 100%"
-            }}
-          />
-        ) : (
-          <div
-            className="absolute inset-0 pointer-events-none z-20 opacity-50"
-            style={{
-              backgroundImage: `linear-gradient(rgba(70,115,169,0) 50%, rgba(70,115,169,0.14) 50%), linear-gradient(90deg, rgba(70,115,169,0.07), rgba(255,255,255,0), rgba(70,115,169,0.07))`,
-              backgroundSize: "100% 3px, 3px 100%"
-            }}
-          />
-        )}
+        <GridTexture theme={theme} />
 
         {/* LEFT SIDE: Neural Policy Network Graphic & Atmosphere */}
         <div className="hidden md:flex md:w-3/5 relative overflow-hidden bg-transparent p-8 lg:p-12 flex-col justify-between transition-colors duration-500">
@@ -1820,17 +1912,18 @@ export default function App() {
                       />
                     </div>
 
-                    <button
+                    <PrimaryCtaButton
+                      theme={theme}
                       type="submit"
                       disabled={loginLoading}
-                      className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl text-xs uppercase tracking-widest hover:shadow-md transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer mt-3 select-none active:scale-[0.97] active:bg-blue-800"
+                      className="w-full !flex items-center justify-center gap-2 mt-3"
                     >
                       {loginLoading ? (
-                        <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                        <RefreshCw className="w-4 h-4 animate-spin text-current" />
                       ) : (
                         <span>ACTIVATE PROFILE & LOG IN</span>
                       )}
-                    </button>
+                    </PrimaryCtaButton>
                   </form>
 
                   <button
@@ -2040,7 +2133,7 @@ export default function App() {
                     : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <Layers className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
+              <DeclarationMapIcon width={16} height={16} color="currentColor" className={`shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#054496]"}`} />
               <span>Declaration Map</span>
             </button>
           )}
@@ -2279,7 +2372,7 @@ export default function App() {
                   style={{ color: activeTab === "resources" ? "var(--accent)" : "var(--text-muted)" }}
                   title="Declaration Map"
                 >
-                  <Layers style={{ width: "18px", height: "18px" }} />
+                  <DeclarationMapIcon width={18} height={18} color="currentColor" />
                 </button>
               )}
 
@@ -2379,17 +2472,28 @@ export default function App() {
               style={{ borderWidth: "0px", paddingTop: "0px" }}
               className="relative mt-auto pt-4 border-t border-white/[0.05] w-full flex justify-center"
             >
-              <button 
-                onClick={() => setProfileOpen(!profileOpen)}
+              <button
+                ref={profileButtonRef}
+                onClick={() => {
+                  if (!profileOpen && profileButtonRef.current) {
+                    const rect = profileButtonRef.current.getBoundingClientRect();
+                    // Anchor the card's bottom edge to the button's bottom edge so it
+                    // grows upward — the button sits at the very bottom of the sidebar,
+                    // so growing downward (from rect.top) pushed the card off-screen.
+                    const bottom = Math.max(12, window.innerHeight - rect.bottom);
+                    setProfileMenuPos({ bottom, left: rect.right + 8 });
+                  }
+                  setProfileOpen(!profileOpen);
+                }}
                 className="rounded-full flex items-center justify-center cursor-pointer transition-all shrink-0 overflow-hidden bg-[#20C4C7]"
                 style={{ width: "35px", height: "35px", backgroundColor: "#206147", borderColor: "#b9b97a", borderStyle: "solid", borderWidth: "1px" }}
                 title="View user credentials & active profile details"
               >
                 {currentUser?.avatarUrl || currentUser?.photoUrl ? (
-                  <img 
-                    src={currentUser.avatarUrl || currentUser.photoUrl} 
-                    alt={currentUser.name} 
-                    className="w-full h-full object-cover" 
+                  <img
+                    src={currentUser.avatarUrl || currentUser.photoUrl}
+                    alt={currentUser.name}
+                    className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
@@ -2398,25 +2502,32 @@ export default function App() {
                   </div>
                 )}
               </button>
-              
-              <AnimatePresence>
-                {profileOpen && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-40 cursor-default" 
-                      onClick={() => setProfileOpen(false)} 
-                    />
-                    <motion.div
-                      initial={{ opacity: 0, x: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                      exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      className={`absolute bottom-0 left-14 w-64 rounded-lg border shadow-xl z-50 p-4 font-sans text-left ${
-                        theme === "dark"
-                          ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
-                          : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
-                      }`}
-                    >
+
+              {createPortal(
+                <AnimatePresence>
+                  {profileOpen && profileMenuPos && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-[9998] cursor-default"
+                        onClick={() => setProfileOpen(false)}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, x: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: 10, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        style={{
+                          bottom: profileMenuPos.bottom,
+                          left: profileMenuPos.left,
+                          maxHeight: "calc(100vh - 24px)",
+                          overflowY: "auto",
+                        }}
+                        className={`fixed w-64 rounded-lg border shadow-xl z-[9999] p-4 font-sans text-left ${
+                          theme === "dark"
+                            ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
+                            : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
+                        }`}
+                      >
                       <div className="space-y-3">
                         <div className="border-b pb-2 border-dashed border-stone-700/50 dark:border-stone-200/50">
                           <p className="text-xs font-bold leading-tight">
@@ -2425,11 +2536,6 @@ export default function App() {
                         </div>
 
                         <div className="space-y-2 text-xs">
-                          <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                            <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Tact ID:</span>
-                            <span className="font-mono font-bold">{currentUser?.tactId || "TACT-000"}</span>
-                          </div>
-                          
                           <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
                             <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Email ID:</span>
                             <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.email || "advisor@joinditto.in"}</span>
@@ -2462,10 +2568,12 @@ export default function App() {
                           </button>
                         </div>
                       </div>
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>,
+                document.body
+              )}
             </div>
           </div>
         )}
@@ -2574,7 +2682,7 @@ export default function App() {
               const tabMeta = {
                 lookup: { label: "Declaration Assistant", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                resources: { label: "Declaration Map", icon: <Map className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 profile_access: { label: "User Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 plan_scope: { label: "Specific Illness Ledger", icon: <ClipboardPlus className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -2632,7 +2740,7 @@ export default function App() {
                     title="Flagged Mismatches"
                     aria-label="View flagged mismatches"
                   >
-                    <Bell className="w-4 h-4 text-[#ba8528] hover:text-[#ba8528] transition-colors" style={{ width: "20px", height: "20px" }} />
+                    <Bell className="w-4 h-4 text-[#5dc0b4] hover:text-[#5dc0b4] transition-colors" style={{ width: "20px", height: "20px" }} />
                     {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
                       <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -2650,7 +2758,7 @@ export default function App() {
                 >
                   {theme === "dark"
                     ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffa000" }} />
-                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#4171ba" }} />
+                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#a089c8" }} />
                   }
                 </button>
 
@@ -2837,7 +2945,7 @@ export default function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
               style={{ width: "100%", maxWidth: "100%", marginTop: "2px", marginBottom: "2px" }}
-              className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-between"
+              className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-center"
             >
               <ErrorBoundary theme={theme} label="Declaration Assistant">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
@@ -2896,7 +3004,6 @@ export default function App() {
                 handleMapAnotherPed={handleMapAnotherPed}
                 setReportingItem={setReportingItem}
                 setReportingNotes={setReportingNotes}
-                setReportingPriority={setReportingPriority}
                 mappingResultCardRef={mappingResultCardRef}
                 resultsRef={resultsRef}
                 sidebarRef={sidebarRef}
@@ -3141,77 +3248,34 @@ export default function App() {
               }`}
             >
               <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">
-                <div className="flex items-center gap-2">
-                  <Flag className="w-4 h-4 text-red-500 animate-pulse" />
-                  <h3 className="text-xs font-black uppercase tracking-wider">Report Mapping Discrepancy</h3>
+                <div className="flex items-center gap-2 min-w-0">
+                  <Flag className="w-4 h-4 text-red-500 animate-pulse shrink-0" />
+                  <h3 className="text-xs font-black uppercase tracking-wider truncate">
+                    Flag "{reportingItem.pedInput}"
+                  </h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setReportingItem(null)}
-                  className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
+                  className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer shrink-0"
                 >
                   <XCircle className="w-5 h-5 font-bold" />
                 </button>
               </div>
 
-              <div className="space-y-4 py-4 text-left max-h-[400px] overflow-y-auto pr-1">
-                <div className="p-3.5 rounded-xl bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 space-y-1.5 text-xs">
-                  <div className="flex justify-between font-mono text-[10px] text-red-400 font-extrabold">
-                    <span>PLAN: {reportingItem.planName}</span>
-                    <span>PED: {reportingItem.pedInput}</span>
-                  </div>
-                  <div className="font-bold text-stone-750 dark:text-stone-200 leading-normal">
-                    Mapped Question: <span className="font-semibold text-stone-600 dark:text-stone-300 italic">"{reportingItem.mappedQuestion}"</span>
-                  </div>
-                  <div className="text-[11px] text-[#A1A1AA] dark:text-stone-400 font-semibold">
-                    Assigned Match Category: <span className="font-bold text-red-400 uppercase">{translateMatchTypeToLayman(reportingItem.matchType)}</span>
-                  </div>
-                </div>
-
-                {/* Input form */}
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans">
-                    Select Feedback Priority
-                  </label>
-                  <div className="grid grid-cols-2 gap-2 font-mono">
-                    <button
-                      type="button"
-                      onClick={() => setReportingPriority("Urgent")}
-                      className={`py-2 px-3.5 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                        reportingPriority === "Urgent"
-                          ? "bg-red-500 border-red-500 text-white font-extrabold shadow-sm"
-                          : "border-stone-200 dark:border-stone-800 text-stone-400 hover:text-white hover:bg-stone-900/50"
-                      }`}
-                    >
-                      🔥 Urgent Escalation
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReportingPriority("Pending")}
-                      className={`py-2 px-3.5 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                        reportingPriority === "Pending"
-                          ? "bg-amber-500 border-amber-500 text-stone-950 font-extrabold shadow-sm"
-                          : "border-stone-200 dark:border-stone-800 text-stone-400 hover:text-white hover:bg-stone-900/50"
-                      }`}
-                    >
-                      ⏳ Under Review
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans">
-                    Describe the Discrepancy / Advice Change <span className="text-red-500 font-bold">*</span>
-                  </label>
-                  <textarea
-                    required
-                    rows={3}
-                    value={reportingNotes}
-                    placeholder="Explain what the mismatch is. For example, specify if it should have matched a different policy section."
-                    onChange={(e) => setReportingNotes(e.target.value)}
-                    className="w-full text-xs p-3 rounded-xl border outline-none bg-stone-50 border-stone-250 dark:bg-stone-950 dark:border-stone-800 focus:border-red-500 focus:ring-1 focus:ring-red-500 font-semibold"
-                  />
-                </div>
+              <div className="py-4 text-left">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans mb-1.5">
+                  Reason for Flagging <span className="text-red-500 font-bold">*</span>
+                </label>
+                <textarea
+                  required
+                  autoFocus
+                  rows={4}
+                  value={reportingNotes}
+                  placeholder="Explain what's wrong with this mapping..."
+                  onChange={(e) => setReportingNotes(e.target.value)}
+                  className="w-full text-xs p-3 rounded-xl border outline-none bg-stone-50 border-stone-250 dark:bg-stone-950 dark:border-stone-800 focus:border-red-500 focus:ring-1 focus:ring-red-500 font-semibold"
+                />
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-stone-200 dark:border-stone-800">
@@ -3225,8 +3289,9 @@ export default function App() {
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
+                <PrimaryCtaButton
+                  theme={theme}
+                  variant="danger"
                   disabled={!reportingNotes.trim()}
                   onClick={() => {
                     if (!reportingNotes.trim()) return;
@@ -3243,16 +3308,15 @@ export default function App() {
                       source: reportingItem.source,
                       explanation: reportingItem.explanation,
                       issueNotes: reportingNotes,
-                      status: reportingPriority,
+                      status: "Pending",
                     };
                     setReportedIssues(prev => [newIssue, ...prev]);
                     setReportingItem(null);
                     setReportingNotes("");
                   }}
-                  className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
                 >
                   Submit Report
-                </button>
+                </PrimaryCtaButton>
               </div>
             </motion.div>
           </motion.div>

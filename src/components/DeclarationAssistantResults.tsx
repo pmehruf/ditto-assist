@@ -17,6 +17,7 @@ import {
   List,
 } from "lucide-react";
 import { SpecificIllnessLedgerCard } from "./SpecificIllnessLedgerCard";
+import { GridTexture } from "./GridTexture";
 import { MatchOutput, PlanConfig } from "../types.js";
 import { ReportingItem } from "../types/lookup";
 
@@ -39,7 +40,6 @@ interface DeclarationAssistantResultsProps {
   onMapAnotherPed: () => void;
   setReportingItem: (item: ReportingItem | null) => void;
   setReportingNotes: (notes: string) => void;
-  setReportingPriority: (prio: string) => void;
   mappingResultCardRef: React.RefObject<HTMLDivElement | null>;
   resultsRef: React.RefObject<HTMLDivElement | null>;
   sidebarRef: React.RefObject<HTMLDivElement | null>;
@@ -171,7 +171,6 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
   onMapAnotherPed,
   setReportingItem,
   setReportingNotes,
-  setReportingPriority,
   mappingResultCardRef,
   resultsRef,
   sidebarRef,
@@ -247,8 +246,23 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
       initial={{ opacity: 0, y: 50 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 100, damping: 15 }}
-      className="flex flex-col gap-3 w-full box-border font-sans"
+      className="flex flex-col gap-3 w-full box-border font-sans relative"
     >
+      {/* Ambient hero glow — same atmosphere as the Login page. The Mapping
+          Results view is the other core screen of the app, so it should read
+          with the same visual weight as the Mapping Engine / Login. */}
+      <div
+        className={`absolute top-[-8%] left-[-6%] w-[40%] h-[50%] rounded-full blur-[110px] -z-10 pointer-events-none select-none animate-pulse ${
+          dark ? "bg-blue-500/10" : "bg-blue-400/18"
+        }`}
+        style={{ animationDuration: "12s" }}
+      />
+      <div
+        className={`absolute top-[10%] right-[-8%] w-[35%] h-[45%] rounded-full blur-[100px] -z-10 pointer-events-none select-none animate-pulse ${
+          dark ? "bg-cyan-400/8" : "bg-sky-400/14"
+        }`}
+        style={{ animationDuration: "16s" }}
+      />
 
       {/* ═══════════════════════════════════════
           TOP CONTEXT BAR
@@ -316,157 +330,17 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
 
       {/* ═══════════════════════════════════════
           MAIN RESULTS AREA + SLIDE-IN DRAWER
+          (overlap cards live below, as a full-width row — see OVERLAP RULES ROW)
       ═══════════════════════════════════════ */}
       <div
-        ref={resultsRef}
-        className="flex gap-3 w-full min-h-0 overflow-hidden"
+        className="flex flex-col gap-3 w-full min-h-0"
         style={{ maxHeight: "calc(100vh - 195px)", minHeight: "360px" }}
       >
-
-        {/* ── LEFT SIDEBAR: OVERLAP CARDS ── */}
-        <div
-          className="w-[208px] shrink-0 flex flex-col gap-2 overflow-y-auto custom-scrollbar pb-1"
-          style={{ scrollbarGutter: "stable" }}
-        >
-          {/* Sidebar label */}
-          <div className="flex items-center gap-1.5 px-1 py-1 shrink-0">
-            <Layers style={{ color: "var(--accent)" }} className="w-3 h-3 shrink-0" />
-            <span className={`text-[9px] font-black uppercase tracking-widest select-none ${dark ? "text-stone-500" : "text-stone-400"}`}>
-              Overlap Rules
-            </span>
-          </div>
-
-          {/* CARD: PED × Medication */}
-          <div
-            className={`border rounded-xl overflow-hidden transition-all duration-200 shrink-0 ${
-              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
-            } ${
-              expandedOverlaps.medication
-                ? "border-[#3b9eff]/45"
-                : dark ? "border-white/8" : "border-stone-200"
-            } ${isFocused && !expandedOverlaps.medication ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
-          >
-            <button onClick={() => toggleOverlap("medication")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#3b9eff] border-[#3b9eff]/28" : "bg-[#E1EAF7] text-[#1D63ED] border-[#3b9eff]/40"}`}>💊</div>
-              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Medication</span>
-              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.medication ? "rotate-180 text-[#3b9eff]" : ""}`} />
-            </button>
-            {expandedOverlaps.medication && (
-              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`}>
-                <div className="mt-2.5 pl-3 border-l-2 border-[#3b9eff] space-y-2">
-                  <p className={dark ? "text-stone-300" : "text-stone-700"}><strong>Declare both</strong> PED + medication. Format: "Medications of [condition] going on" — drug name not required.</p>
-                  <ol className={`list-decimal pl-3.5 space-y-0.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}>
-                    <li>PED Q + Meds in same question</li>
-                    <li>PED Q + Meds in umbrella Meds Q</li>
-                    <li>PED Q + Meds in Others</li>
-                  </ol>
-                  <span className={`inline-block text-[10px] font-semibold border rounded-lg px-2 py-1 ${dark ? "bg-white/4 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
-                    <span className="text-[#3b9eff] font-bold">Care:</span> PED Q = Yes + meds in <strong>Others</strong>
-                  </span>
-                  <p className={`text-[10px] ${dark ? "text-stone-400" : "text-stone-600"}`}>Missing-medication flag raised for <strong>Diabetes · Cholesterol · HTN · Thyroid</strong> if no medication declared.</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* CARD: PED × Hospitalization */}
-          <div
-            className={`border rounded-xl overflow-hidden transition-all duration-200 shrink-0 ${
-              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
-            } ${
-              expandedOverlaps.hospitalization
-                ? "border-[#2ed573]/45"
-                : dark ? "border-white/8" : "border-stone-200"
-            } ${isFocused && !expandedOverlaps.hospitalization ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
-          >
-            <button onClick={() => toggleOverlap("hospitalization")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#2ed573] border-[#2ed573]/28" : "bg-[#E1F7E8] text-[#0F766E] border-[#2ed573]/40"}`}>🛏️</div>
-              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Hospitalization</span>
-              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.hospitalization ? "rotate-180 text-[#2ed573]" : ""}`} />
-            </button>
-            {expandedOverlaps.hospitalization && (
-              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`}>
-                <div className="mt-2.5 pl-3 border-l-2 border-[#2ed573] space-y-3">
-                  <div><strong className="block mb-1">Non-active PED (Dengue, COVID, Viral fever):</strong>
-                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}><li>Hospitalization Q only</li></ol>
-                    <span className={`inline-block mt-1 text-[10px] font-semibold border rounded-lg px-2 py-1 ${dark ? "bg-white/4 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}><span className="text-[#3b9eff] font-bold">Care:</span> Hosp Q = Yes + details in Others</span>
-                  </div>
-                  <div><strong className="block mb-1">Active-PED-linked hospitalization:</strong>
-                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}>
-                      <li>PED in PED/Organ/System Q is <span className="text-red-500 font-extrabold">mandatory</span></li>
-                      <li>Hospitalization in same Q / umbrella Hosp Q / Others</li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* CARD: PED × Investigative Tests */}
-          <div
-            className={`border rounded-xl overflow-hidden transition-all duration-200 shrink-0 ${
-              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
-            } ${
-              expandedOverlaps.investigation
-                ? "border-[#b07cff]/45"
-                : dark ? "border-white/8" : "border-stone-200"
-            } ${isFocused && !expandedOverlaps.investigation ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
-          >
-            <button onClick={() => toggleOverlap("investigation")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#b07cff] border-[#b07cff]/28" : "bg-[#EBE1F7] text-[#7C3AED] border-[#b07cff]/40"}`}>🔬</div>
-              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Investigative Tests</span>
-              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.investigation ? "rotate-180 text-[#b07cff]" : ""}`} />
-            </button>
-            {expandedOverlaps.investigation && (
-              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`}>
-                <div className="mt-2.5 pl-3 border-l-2 border-[#b07cff] space-y-2">
-                  <div className={`p-2 rounded-lg border font-semibold ${dark ? "bg-[#ff5a6e]/8 border-[#ff5a6e]/40 text-[#ffd9df]" : "bg-red-50 border-red-200 text-red-800"}`}>
-                    ⚠ Mandatory: disclose <strong>with or without</strong> diagnosis, findings, or reports.
-                  </div>
-                  <p className={dark ? "text-stone-300" : "text-stone-700"}><strong>Exception:</strong> test done only to diagnose an already-declared PED need not be named.</p>
-                  <div className={`p-2 rounded-lg border ${dark ? "bg-stone-950/20 border-white/5" : "bg-white border-stone-200"}`}>
-                    <strong className="block mb-0.5">7 critical tests — name exactly:</strong>
-                    <p className="font-mono text-[9px] text-indigo-500 dark:text-blue-300 font-extrabold">Angiography · TRT · ECG · MRI · Endoscopy · Colonoscopy · USG</p>
-                  </div>
-                  <p className={dark ? "text-stone-400" : "text-stone-600"}>Any other test → <strong>"Medical tests were done."</strong></p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* CARD: PED × Surgery */}
-          <div
-            className={`border rounded-xl overflow-hidden transition-all duration-200 shrink-0 ${
-              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
-            } ${
-              expandedOverlaps.surgery
-                ? "border-[#ff9f43]/45"
-                : dark ? "border-white/8" : "border-stone-200"
-            } ${isFocused && !expandedOverlaps.surgery ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
-          >
-            <button onClick={() => toggleOverlap("surgery")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#ff9f43] border-[#ff9f43]/28" : "bg-[#FEF3C7] text-[#D97706] border-[#ff9f43]/40"}`}>🔪</div>
-              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Surgery</span>
-              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.surgery ? "rotate-180 text-[#ff9f43]" : ""}`} />
-            </button>
-            {expandedOverlaps.surgery && (
-              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`}>
-                <div className="mt-2.5 pl-3 border-l-2 border-[#ff9f43] space-y-3">
-                  <div><strong className="block mb-1">Cured/one-time (Cataract, Kidney stones):</strong>
-                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}><li>Surgeries Q or Organ/System Q <span className="text-emerald-500 font-extrabold">(PED Q optional)</span></li></ol>
-                    <span className={`inline-block mt-1 text-[10px] font-semibold border rounded-lg px-2 py-1 ${dark ? "bg-white/4 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}><span className="text-[#3b9eff] font-bold">Care:</span> Surgery Q = Yes + name in Others</span>
-                  </div>
-                  <div><strong className="block mb-1">Linked to active PED (Angioplasty + heart):</strong>
-                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}>
-                      <li>PED in PED/Organ/System Q is <span className="text-red-500 font-black">mandatory</span></li>
-                      <li>Surgery in same Q / umbrella Surgery Q / Others</li>
-                    </ol>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>{/* end overlap sidebar */}
+      <div
+        ref={resultsRef}
+        className="flex gap-3 w-full min-h-0 flex-1 overflow-hidden"
+        style={{ minHeight: "260px" }}
+      >
 
         {/* ── MAPPING RESULTS CARD ── */}
         <div
@@ -482,15 +356,19 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
           }}
           className="flex-1 min-w-0 rounded-2xl overflow-hidden flex flex-col border relative transition-all"
         >
-          {/* Ambient glow — Declaration Map style */}
+          {/* Ambient glow — Declaration Map style, boosted to match the Login
+              page's atmosphere strength since this card is the payoff screen
+              of the whole app. */}
           <div
-            className="absolute top-0 right-0 w-80 h-56 rounded-full blur-3xl pointer-events-none"
-            style={{ background: dark ? "rgba(0,211,243,0.05)" : "rgba(7,84,183,0.04)" }}
+            className="absolute top-0 right-0 w-80 h-56 rounded-full blur-3xl pointer-events-none animate-pulse"
+            style={{ background: dark ? "rgba(0,211,243,0.14)" : "rgba(7,84,183,0.10)", animationDuration: "10s" }}
           />
           <div
-            className="absolute bottom-0 left-0 w-64 h-40 rounded-full blur-3xl pointer-events-none"
-            style={{ background: dark ? "rgba(88,163,255,0.04)" : "rgba(7,84,183,0.03)" }}
+            className="absolute bottom-0 left-0 w-64 h-40 rounded-full blur-3xl pointer-events-none animate-pulse"
+            style={{ background: dark ? "rgba(88,163,255,0.11)" : "rgba(7,84,183,0.08)", animationDuration: "14s" }}
           />
+          {/* Grid texture — matches Login/Home page visual identity */}
+          <GridTexture theme={theme} />
 
           {/* Card header */}
           <div
@@ -500,15 +378,12 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                 ? "linear-gradient(90deg, rgba(0,211,243,0.09) 0%, transparent 70%)"
                 : "linear-gradient(90deg, rgba(7,84,183,0.06) 0%, transparent 70%)",
             }}
-            className="px-5 py-3 border-b flex items-center gap-2.5 shrink-0 relative"
+            className="px-5 py-3.5 border-b flex items-center gap-2.5 shrink-0 relative"
           >
             <CheckCircle2 style={{ color: "var(--accent)" }} className="w-4 h-4 shrink-0" />
             <span
-              className={`text-xs font-black uppercase tracking-widest flex-1 ${
-                dark
-                  ? "bg-gradient-to-r from-[#00D3F3] via-[#58A3FF] to-[#00D3F3] bg-clip-text text-transparent"
-                  : "text-[#04233F]"
-              }`}
+              style={{ backgroundImage: "var(--gradient-accent)" }}
+              className="text-sm font-black uppercase tracking-widest flex-1 bg-clip-text text-transparent bg-gradient-to-r"
             >
               Mapping Results
             </span>
@@ -826,7 +701,6 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                                   explanation: result.explanation,
                                 });
                                 setReportingNotes("");
-                                setReportingPriority("Urgent");
                               }}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide bg-red-600 hover:bg-red-700 text-white transition-all cursor-pointer select-none active:scale-95 shadow-sm"
                             >
@@ -1195,9 +1069,158 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
           )}
         </AnimatePresence>
 
-      </div>{/* end results area + drawer */}
+      </div>{/* end results area + drawer (row 1) */}
 
-      {/* overlap cards moved to left sidebar ↑ */}
+      {/* ═══════════════════════════════════════
+          OVERLAP RULES ROW — full width, 4 equal columns, below Mapping Results.
+          Expanding a card grows it in place; since row 1 above is flex-1 within
+          the shared max-height budget, it shrinks (scrolls internally) to make room.
+      ═══════════════════════════════════════ */}
+      <div className="shrink-0">
+        <div className="flex items-center gap-1.5 px-1 pb-1.5">
+          <Layers style={{ color: "var(--accent)" }} className="w-3 h-3 shrink-0" />
+          <span className={`text-[9px] font-black uppercase tracking-widest select-none ${dark ? "text-stone-500" : "text-stone-400"}`}>
+            Overlap Rules
+          </span>
+        </div>
+
+        <div className="grid grid-cols-4 gap-3">
+          {/* CARD: PED × Medication */}
+          <div
+            className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
+            } ${
+              expandedOverlaps.medication
+                ? "border-[#3b9eff]/45"
+                : dark ? "border-white/8" : "border-stone-200"
+            } ${isFocused && !expandedOverlaps.medication ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
+          >
+            <button onClick={() => toggleOverlap("medication")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#3b9eff] border-[#3b9eff]/28" : "bg-[#E1EAF7] text-[#1D63ED] border-[#3b9eff]/40"}`}>💊</div>
+              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Medication</span>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.medication ? "rotate-180 text-[#3b9eff]" : ""}`} />
+            </button>
+            {expandedOverlaps.medication && (
+              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed overflow-y-auto custom-scrollbar ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`} style={{ maxHeight: "260px" }}>
+                <div className="mt-2.5 pl-3 border-l-2 border-[#3b9eff] space-y-2">
+                  <p className={dark ? "text-stone-300" : "text-stone-700"}><strong>Declare both</strong> PED + medication. Format: "Medications of [condition] going on" — drug name not required.</p>
+                  <ol className={`list-decimal pl-3.5 space-y-0.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}>
+                    <li>PED Q + Meds in same question</li>
+                    <li>PED Q + Meds in umbrella Meds Q</li>
+                    <li>PED Q + Meds in Others</li>
+                  </ol>
+                  <span className={`inline-block text-[10px] font-semibold border rounded-lg px-2 py-1 ${dark ? "bg-white/4 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
+                    <span className="text-[#3b9eff] font-bold">Care:</span> PED Q = Yes + meds in <strong>Others</strong>
+                  </span>
+                  <p className={`text-[10px] ${dark ? "text-stone-400" : "text-stone-600"}`}>Missing-medication flag raised for <strong>Diabetes · Cholesterol · HTN · Thyroid</strong> if no medication declared.</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CARD: PED × Hospitalization */}
+          <div
+            className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
+            } ${
+              expandedOverlaps.hospitalization
+                ? "border-[#2ed573]/45"
+                : dark ? "border-white/8" : "border-stone-200"
+            } ${isFocused && !expandedOverlaps.hospitalization ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
+          >
+            <button onClick={() => toggleOverlap("hospitalization")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#2ed573] border-[#2ed573]/28" : "bg-[#E1F7E8] text-[#0F766E] border-[#2ed573]/40"}`}>🛏️</div>
+              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Hospitalization</span>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.hospitalization ? "rotate-180 text-[#2ed573]" : ""}`} />
+            </button>
+            {expandedOverlaps.hospitalization && (
+              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed overflow-y-auto custom-scrollbar ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`} style={{ maxHeight: "260px" }}>
+                <div className="mt-2.5 pl-3 border-l-2 border-[#2ed573] space-y-3">
+                  <div><strong className="block mb-1">Non-active PED (Dengue, COVID, Viral fever):</strong>
+                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}><li>Hospitalization Q only</li></ol>
+                    <span className={`inline-block mt-1 text-[10px] font-semibold border rounded-lg px-2 py-1 ${dark ? "bg-white/4 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}><span className="text-[#3b9eff] font-bold">Care:</span> Hosp Q = Yes + details in Others</span>
+                  </div>
+                  <div><strong className="block mb-1">Active-PED-linked hospitalization:</strong>
+                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}>
+                      <li>PED in PED/Organ/System Q is <span className="text-red-500 font-extrabold">mandatory</span></li>
+                      <li>Hospitalization in same Q / umbrella Hosp Q / Others</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CARD: PED × Investigative Tests */}
+          <div
+            className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
+            } ${
+              expandedOverlaps.investigation
+                ? "border-[#b07cff]/45"
+                : dark ? "border-white/8" : "border-stone-200"
+            } ${isFocused && !expandedOverlaps.investigation ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
+          >
+            <button onClick={() => toggleOverlap("investigation")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#b07cff] border-[#b07cff]/28" : "bg-[#EBE1F7] text-[#7C3AED] border-[#b07cff]/40"}`}>🔬</div>
+              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Investigative Tests</span>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.investigation ? "rotate-180 text-[#b07cff]" : ""}`} />
+            </button>
+            {expandedOverlaps.investigation && (
+              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed overflow-y-auto custom-scrollbar ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`} style={{ maxHeight: "260px" }}>
+                <div className="mt-2.5 pl-3 border-l-2 border-[#b07cff] space-y-2">
+                  <div className={`p-2 rounded-lg border font-semibold ${dark ? "bg-[#ff5a6e]/8 border-[#ff5a6e]/40 text-[#ffd9df]" : "bg-red-50 border-red-200 text-red-800"}`}>
+                    ⚠ Mandatory: disclose <strong>with or without</strong> diagnosis, findings, or reports.
+                  </div>
+                  <p className={dark ? "text-stone-300" : "text-stone-700"}><strong>Exception:</strong> test done only to diagnose an already-declared PED need not be named.</p>
+                  <div className={`p-2 rounded-lg border ${dark ? "bg-stone-950/20 border-white/5" : "bg-white border-stone-200"}`}>
+                    <strong className="block mb-0.5">7 critical tests — name exactly:</strong>
+                    <p className="font-mono text-[9px] text-indigo-500 dark:text-blue-300 font-extrabold">Angiography · TRT · ECG · MRI · Endoscopy · Colonoscopy · USG</p>
+                  </div>
+                  <p className={dark ? "text-stone-400" : "text-stone-600"}>Any other test → <strong>"Medical tests were done."</strong></p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CARD: PED × Surgery */}
+          <div
+            className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+              dark ? "bg-[#0f1f35]" : "bg-white shadow-xs"
+            } ${
+              expandedOverlaps.surgery
+                ? "border-[#ff9f43]/45"
+                : dark ? "border-white/8" : "border-stone-200"
+            } ${isFocused && !expandedOverlaps.surgery ? "opacity-30 hover:opacity-70" : "opacity-100"}`}
+          >
+            <button onClick={() => toggleOverlap("surgery")} className="w-full text-left p-3 flex gap-2 items-center bg-transparent focus:outline-none cursor-pointer">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border ${dark ? "bg-white/5 text-[#ff9f43] border-[#ff9f43]/28" : "bg-[#FEF3C7] text-[#D97706] border-[#ff9f43]/40"}`}>🔪</div>
+              <span className={`text-[11px] font-black flex-1 truncate ${dark ? "text-[#daeeff]" : "text-stone-800"}`}>PED × Surgery</span>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform text-stone-400 ${expandedOverlaps.surgery ? "rotate-180 text-[#ff9f43]" : ""}`} />
+            </button>
+            {expandedOverlaps.surgery && (
+              <div className={`px-3 pb-3 border-t text-[10px] leading-relaxed overflow-y-auto custom-scrollbar ${dark ? "border-white/5" : "border-stone-100 bg-[#f8fafd]"}`} style={{ maxHeight: "260px" }}>
+                <div className="mt-2.5 pl-3 border-l-2 border-[#ff9f43] space-y-3">
+                  <div><strong className="block mb-1">Cured/one-time (Cataract, Kidney stones):</strong>
+                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}><li>Surgeries Q or Organ/System Q <span className="text-emerald-500 font-extrabold">(PED Q optional)</span></li></ol>
+                    <span className={`inline-block mt-1 text-[10px] font-semibold border rounded-lg px-2 py-1 ${dark ? "bg-white/4 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}><span className="text-[#3b9eff] font-bold">Care:</span> Surgery Q = Yes + name in Others</span>
+                  </div>
+                  <div><strong className="block mb-1">Linked to active PED (Angioplasty + heart):</strong>
+                    <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-400" : "text-stone-600"}`}>
+                      <li>PED in PED/Organ/System Q is <span className="text-red-500 font-black">mandatory</span></li>
+                      <li>Surgery in same Q / umbrella Surgery Q / Others</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>{/* end grid-cols-4 */}
+      </div>{/* end overlap rules row */}
+
+      </div>{/* end outer flex-col: mapping row + overlap rules row */}
+
+      {/* ─── dead code retained for reference, never rendered ─── */}
       {false && (<div>
       <div className="flex flex-col gap-4">
 

@@ -8,6 +8,7 @@ import {
   Lightbulb,
   ArrowRight
 } from "lucide-react";
+import { DeclarationMapIcon } from "./icons";
 
 interface DisclosureMapProps {
   theme: "light" | "dark";
@@ -46,13 +47,18 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
               <span className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-extrabold tracking-widest uppercase ${
                 theme === "dark" ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" : "bg-teal-100 text-teal-800 border border-teal-200"
               }`}>
-                <ShieldCheck className="w-3 h-3 text-teal-500" /> Ditto · Advisor Disclosure Logic
+                <DeclarationMapIcon width={14} height={14} color={theme === "dark" ? "#14b8a6" : "#0d9488"} /> Ditto · Advisor Disclosure Logic
               </span>
-              <h2 className={`text-xl md:text-3xl font-black tracking-tight leading-tight ${
+              <h2 className={`text-xl md:text-3xl font-black tracking-tight leading-tight flex items-center gap-3 ${
                 theme === "dark" 
                   ? "bg-gradient-to-r from-cyan-400 via-sky-450 to-teal-400 bg-clip-text text-transparent"
                   : "text-[#1E293B]"
               }`}>
+                <DeclarationMapIcon 
+                  width={40} 
+                  height={40} 
+                  color={theme === "dark" ? "#06b6d4" : "#0284c7"}
+                />
                 Declaration Framework — The Complete Map
               </h2>
               <p className={`text-xs md:text-sm leading-relaxed font-semibold max-w-3xl ${

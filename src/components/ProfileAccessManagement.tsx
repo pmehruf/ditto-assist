@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { UserProfile } from "../types/user";
 import { FeaturePermission } from "../types/permissions";
+import { PrimaryCtaButton } from "./PrimaryCtaButton";
 
 interface ProfileAccessManagementProps {
   usersList: UserProfile[];
@@ -687,13 +688,14 @@ export default function ProfileAccessManagement({
                   >
                     Discard
                   </button>
-                  <button
+                  <PrimaryCtaButton
+                    theme="dark"
                     type="submit"
-                    className="flex-1 py-2 text-[10px] uppercase font-extrabold tracking-widest text-white bg-emerald-600 rounded-xl hover:bg-emerald-500 cursor-pointer text-center flex items-center justify-center gap-1.5 shadow-sm border-none"
+                    className="flex-1 !flex items-center justify-center gap-1.5"
                   >
-                    <Check className="w-3.5 h-3.5" />
+                    <Check className="w-3.5 h-3.5 inline -mt-0.5 mr-1.5" />
                     <span>Invite</span>
-                  </button>
+                  </PrimaryCtaButton>
                 </div>
               </form>
             </motion.div>

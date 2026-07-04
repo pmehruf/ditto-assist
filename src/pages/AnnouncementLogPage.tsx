@@ -10,6 +10,7 @@ import { renderFormattedAnnouncement } from "../utils/renderFormattedAnnouncemen
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
+import { GridTexture } from "../components/GridTexture";
 
 interface AnnouncementLogPageProps {
   theme: "light" | "dark";
@@ -43,10 +44,11 @@ export function AnnouncementLogPage({
   return (
     <div className="space-y-6 text-left">
       {/* Header Box */}
-      <div className={`p-6 rounded-2xl border transition-all ${
+      <div className={`relative overflow-hidden p-6 rounded-2xl border transition-all ${
         theme === "dark" ? "bg-[#091520]/80 border-white/[0.08]" : "bg-white border-stone-200"
       }`}>
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <GridTexture theme={theme} />
+        <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="space-y-1">
             <h2 className={`text-xl font-extrabold tracking-tight font-sans ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
               Announcement Manager
