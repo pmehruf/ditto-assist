@@ -2740,11 +2740,11 @@ export default function App() {
                     title="Flagged Mismatches"
                     aria-label="View flagged mismatches"
                   >
-                    <Bell className="w-4 h-4 text-[#5dc0b4] hover:text-[#5dc0b4] transition-colors" style={{ width: "20px", height: "20px" }} />
+                    <Bell className="w-2 h-4 text-[#5dc0b4] hover:text-[#5dc0b4] transition-colors" style={{ width: "20px", height: "20px" }} />
                     {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
                       <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500"></span>
                       </span>
                     )}
                   </button>
@@ -2757,7 +2757,7 @@ export default function App() {
                   title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={theme === "dark"}
                 >
                   {theme === "dark"
-                    ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ff7b00" }} />
+                    ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffb700" }} />
                     : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#a089c8" }} />
                   }
                 </button>
