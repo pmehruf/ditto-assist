@@ -190,8 +190,7 @@ export function LookupPage({
 
           {/* TWO SECTIONS PLACED DIRECTLY ON THE PAGE BACKGROUND (no card/box wrapper) */}
           <div
-            style={{ minHeight: "520px" }}
-            className={`w-full relative flex flex-col lg:flex-row items-stretch gap-8 lg:gap-10 animate-fade-in ${
+            className={`w-full relative flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
@@ -201,15 +200,15 @@ export function LookupPage({
               {/* Title mapping section */}
               <div
                 style={{
-                  paddingBottom: "18px",
+                  paddingBottom: "clamp(10px, 1.5vh, 20px)",
                   marginBottom: "0px",
                   marginTop: "0px"
                 }}
-                className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-5 border-b ${
+                className={`flex flex-row justify-between items-start gap-4 pb-5 border-b ${
                   theme === "dark" ? "border-white/[0.08]" : "border-stone-400/60"
                 }`}
               >
-                <div className="space-y-1">
+                <div className="space-y-1 flex-1 min-w-0">
                   <div className="flex items-center gap-2 select-none mb-1">
                     <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
                     <span
@@ -228,8 +227,8 @@ export function LookupPage({
                     </span>
                   </div>
                   <span
-                    style={{ fontSize: "20px", lineHeight: "21px", display: "block", marginTop: "8px" }}
-                    className="text-lg font-black tracking-wider uppercase select-none font-sans bg-clip-text text-transparent bg-gradient-to-r from-[#00D3F3] to-[#58A3FF]"
+                    style={{ fontSize: "clamp(22px, 3.2vh, 38px)", lineHeight: "1", display: "block", marginTop: "clamp(4px, 0.8vh, 10px)" }}
+                    className="font-black tracking-wider uppercase select-none font-sans bg-clip-text text-transparent bg-gradient-to-r from-[#00D3F3] to-[#58A3FF]"
                   >
                     PED DECLARATION MAPPING ENGINE
                   </span>
@@ -237,6 +236,22 @@ export function LookupPage({
                     Search and map conditions to find the perfect match for your declaration.
                   </span>
                 </div>
+
+                {/* Declaration Map — helper action, top-right of title section */}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("resources")}
+                  id="open-resources-btn"
+                  style={{
+                    color: theme === "dark" ? "#00D3F3" : "#0754b7",
+                    borderColor: theme === "dark" ? "rgba(0,211,243,0.25)" : "rgba(7,84,183,0.2)",
+                    backgroundColor: theme === "dark" ? "rgba(0,211,243,0.07)" : "rgba(7,84,183,0.06)"
+                  }}
+                  className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide transition-all cursor-pointer select-none shrink-0 mt-1 px-3 py-1.5 rounded-lg border hover:opacity-90 active:scale-95"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Declaration Map
+                </button>
               </div>
 
               {/* Two boxed input sections, side by side — outlined only, no filled card background */}
@@ -245,7 +260,7 @@ export function LookupPage({
                 className="grid grid-cols-1 md:grid-cols-2 gap-4"
               >
                 {/* BOX A: Health Insurance Plan */}
-                <div className="rounded-2xl p-4 sm:p-5 flex flex-col gap-3">
+                <div className="rounded-2xl px-1 py-3 flex flex-col gap-3">
                   <label
                     className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 select-none font-sans ${
                       theme === "dark" ? "text-stone-400" : "text-stone-500"
@@ -285,7 +300,7 @@ export function LookupPage({
                 </div>
 
                 {/* BOX B: Search & Map Condition */}
-                <div className="rounded-2xl p-4 sm:p-5 flex flex-col gap-3 relative">
+                <div className="rounded-2xl px-1 py-3 flex flex-col gap-3 relative">
                   <label
                     className={`text-[10px] font-black uppercase tracking-widest font-sans flex items-center gap-1.5 select-none ${
                       theme === "dark" ? "text-stone-400" : "text-stone-500"
@@ -448,8 +463,13 @@ export function LookupPage({
 
               {/* QUEUE BOX — full width below the two boxes */}
               <div
-                style={{ borderWidth: "1.5px" }}
-                className={`mt-4 p-4 rounded-2xl relative min-h-[90px] flex flex-col justify-between border overflow-hidden ${
+                style={{
+                  borderWidth: "1.5px",
+                  minHeight: "clamp(130px, 28vh, 300px)",
+                  marginTop: "clamp(10px, 1.5vh, 22px)",
+                  padding: "clamp(10px, 1.5vh, 16px)"
+                }}
+                className={`rounded-2xl relative flex flex-col justify-between border overflow-hidden ${
                   theme === "dark" ? "border-white/[0.12] bg-white/[0.04]" : "border-stone-300 bg-stone-100/60"
                 }`}
               >
@@ -457,13 +477,15 @@ export function LookupPage({
                   {/* Selected condition list / empty text */}
                   <div className="flex-grow text-left relative z-10 min-h-[46px] pl-20 pr-2">
                     {lookupPeds.length === 0 ? (
-                      <div
-                        className={`text-xs italic text-left select-none font-medium font-sans py-1 ${
-                          theme === "dark" ? "text-stone-400" : "text-stone-500"
-                        }`}
-                      >
-                        No conditions added to the lookup queue. <br />
-                        <span className={`text-[10px] not-italic leading-relaxed block mt-1 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>Search or type a condition on the left to start.</span>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none pointer-events-none">
+                        <div
+                          className={`text-xs italic font-medium font-sans ${
+                            theme === "dark" ? "text-stone-400" : "text-stone-500"
+                          }`}
+                        >
+                          No conditions added to the lookup queue.
+                        </div>
+                        <span className={`text-[10px] not-italic leading-relaxed mt-1 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>Search or type a condition on the left to start.</span>
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-1.5 w-full content-start max-h-[110px] overflow-y-auto pr-1">
@@ -501,7 +523,7 @@ export function LookupPage({
 
                   {/* Doctor Mascot — left end of queue card */}
                   <div
-                    style={{ height: "90px", width: "84px" }}
+                    style={{ height: "clamp(100px, 18vh, 175px)", width: "clamp(90px, 16vh, 155px)" }}
                     className="absolute left-0 bottom-0 pointer-events-none select-none overflow-hidden z-0 opacity-90 hidden sm:block"
                   >
                     <MascotWithFallback
@@ -516,7 +538,8 @@ export function LookupPage({
 
               {/* Helper text */}
               <p
-                className={`opacity-80 select-none font-sans flex items-center gap-1.5 text-left mt-2 ${
+                style={{ marginTop: "clamp(6px, 1vh, 14px)" }}
+                className={`opacity-80 select-none font-sans flex items-center gap-1.5 text-left ${
                   theme === "dark" ? "text-stone-400" : "text-stone-500"
                 }`}
                 style={{ fontWeight: "bold", fontSize: "11px" }}
@@ -527,7 +550,7 @@ export function LookupPage({
 
               {/* Action row: Find a Match / Reset Fields */}
               <div
-                style={{ marginTop: "12px" }}
+                style={{ marginTop: "clamp(8px, 1.2vh, 18px)" }}
                 className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
                 title={(!selectedPlan || lookupPeds.length === 0) ? "Select a plan and add at least one condition to proceed" : ""}
               >
@@ -573,20 +596,6 @@ export function LookupPage({
                 </button>
               </div>
 
-              {/* Secondary helper action — Declaration Map */}
-              <div className="flex justify-end mt-1.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("resources")}
-                  id="open-resources-btn"
-                  className={`flex items-center gap-1.5 text-[11px] font-semibold tracking-wide transition-all cursor-pointer select-none opacity-70 hover:opacity-100 ${
-                    theme === "dark" ? "text-[#00D3F3]" : "text-[#448b9a]"
-                  }`}
-                >
-                  <Layers className="w-3 h-3" />
-                  Declaration Map
-                </button>
-              </div>
 
               {/* Reusable / Universal Special Instruction block for PEDs (Collapsible Intelligent Layout) */}
               {(() => {
@@ -926,9 +935,10 @@ export function LookupPage({
               return (
                 <div
                   style={{
-                    minHeight: "500px",
+                    minHeight: "clamp(380px, 55vh, 650px)",
+                    paddingBottom: "8px",
                   }}
-                  className={`p-6 sm:p-8 flex flex-col gap-4 select-none transition-all duration-300 w-full lg:w-80 xl:w-96 flex-shrink-0 overflow-hidden relative rounded-2xl border ${containerStyle}`}
+                  className={`p-6 sm:p-8 flex flex-col gap-4 select-none transition-all duration-300 w-full lg:w-96 xl:w-[28rem] flex-shrink-0 overflow-hidden relative rounded-2xl border ${containerStyle}`}
                 >
 
                   {/* UPPER HEADER BAR (Row 1 of Layout) */}
@@ -1000,12 +1010,13 @@ export function LookupPage({
                       paddingBottom: "12px",
                       paddingLeft: "12px",
                       paddingRight: "10px",
-                      marginTop: "-7px",
-                      marginBottom: "-5px",
+                      marginTop: "0px",
+                      marginBottom: "0px",
                       borderRadius: "16px",
-                      height: "calc(100% - 40px)",
                       position: "relative",
-                      border: theme === "dark" ? "1px solid rgba(255,255,255,0.06)" : "1px solid #e2e8f0"
+                      border: theme === "dark" ? "1px solid rgba(255,255,255,0.06)" : "1px solid #e2e8f0",
+                      flexGrow: 1,
+                      minHeight: "220px"
                     }}
                     className="flex flex-row items-start justify-between gap-3 md:gap-4 self-stretch w-full min-w-0"
                   >
@@ -1115,25 +1126,21 @@ export function LookupPage({
                   </div>
 
                   {/* PAGE INDICATOR & ARROWS (Row 3 of Layout) */}
-                  {sorted.length > 1 && (
+                  {sorted.length >= 1 && (
                     <div
                       style={{
-                        height: "55px",
-                        marginTop: "-2px",
-                        paddingTop: "1.5px",
-                        paddingBottom: "-11px",
-                        marginBottom: "-33px"
+                        paddingTop: "8px",
+                        paddingBottom: "4px",
+                        marginTop: "4px"
                       }}
-                      className="flex flex-col items-center justify-center gap-2 pt-3 mt-1 border-t border-dashed border-stone-200 dark:border-white/[0.08] w-full"
+                      className="flex flex-col items-center justify-center gap-2 border-t border-dashed border-stone-200 dark:border-white/[0.08] w-full shrink-0"
                     >
                       <div
                         style={{
                           width: "65px",
                           height: "12px",
                           fontSize: "10px",
-                          lineHeight: "15px",
-                          marginBottom: "-1px",
-                          marginTop: "-21px"
+                          lineHeight: "15px"
                         }}
                         className="flex items-center justify-center gap-2 py-1 select-none"
                       >
@@ -1156,8 +1163,7 @@ export function LookupPage({
 
                       <div
                         style={{
-                          height: "14px",
-                          marginBottom: "-11px"
+                          height: "36px"
                         }}
                         className="flex items-center gap-2"
                       >

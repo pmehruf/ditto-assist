@@ -23,8 +23,8 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
   return (
     <>
     <div
-      style={{ marginTop: "2px", marginBottom: "10px" }}
-      className={`relative overflow-hidden w-full rounded-2xl border font-sans flex-grow flex flex-col justify-center h-auto lg:h-[calc(100vh-140px)] lg:max-h-[720px] lg:min-h-[500px] ${
+      style={{ marginTop: "2px", marginBottom: "4px" }}
+      className={`relative overflow-hidden w-full rounded-2xl border font-sans flex-grow flex flex-col justify-center h-auto lg:h-[calc(100vh-175px)] lg:max-h-[680px] lg:min-h-[480px] ${
         theme === "dark" ? "border-white/[0.08] bg-transparent text-[#FFFFFF]" : "border-[#a1b7c3] bg-transparent text-stone-900"
       }`}
     >
