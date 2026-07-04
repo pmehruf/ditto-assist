@@ -2757,7 +2757,7 @@ export default function App() {
                   title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={theme === "dark"}
                 >
                   {theme === "dark"
-                    ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffa000" }} />
+                    ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ff7b00" }} />
                     : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#a089c8" }} />
                   }
                 </button>
@@ -2769,7 +2769,7 @@ export default function App() {
                   title="Direct Logout"
                   aria-label="Direct logout"
                 >
-                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#c63b3d" }} />
+                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#9a9c9e" }} />
                 </button>
               </div>
             </div>
