@@ -17,7 +17,7 @@ import { getPlanConfig, MatchOutput } from "./src/types.js";
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanQuestion } from "./src/engine.js";
 import { getGoogleAuthUrl, exchangeCodeForIdentity } from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
-import { attachUser } from "./src/server/auth/middleware.js";
+import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
 
 dotenv.config();
 
@@ -496,6 +496,101 @@ app.get("/api/auth/session", (req, res) => {
 app.post("/api/auth/logout", (req, res) => {
   res.clearCookie(SESSION_COOKIE_NAME);
   res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// USER DIRECTORY — server-backed source of truth for the org's user list
+// (email, name, tactId, tier, status). This is what makes an Owner's edit
+// in the UI "actually reflect in the core for all users": the record lives
+// in data/users.json on the server, not in one browser's localStorage, so
+// every client that fetches GET /api/users afterward sees the same data.
+//
+// Authorization here is intentionally simple and matches the rest of this
+// app's trust model (see session.ts's comment about role checks being a
+// "separate, deliberately-not-cached check layered on top of" identity):
+// req.user (the verified Google session) tells us WHO is calling; we look
+// their tier up in the directory itself to decide WHAT they can do.
+// ─────────────────────────────────────────────────────────────────────────
+const usersDataPath = path.join(process.cwd(), "data", "users.json");
+
+interface DirectoryUser {
+  email: string;
+  name: string;
+  tactId: string;
+  tier: "General" | "Admin" | "Owner";
+  status: "Active" | "Pending First Login";
+}
+
+function readUsersFile(): DirectoryUser[] {
+  try {
+    if (!fs.existsSync(usersDataPath)) return [];
+    const parsed = JSON.parse(fs.readFileSync(usersDataPath, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error("Failed to read data/users.json:", err);
+    return [];
+  }
+}
+
+function writeUsersFile(users: DirectoryUser[]): void {
+  fs.mkdirSync(path.dirname(usersDataPath), { recursive: true });
+  fs.writeFileSync(usersDataPath, JSON.stringify(users, null, 2) + "\n", "utf-8");
+}
+
+/** Users not yet present in the directory default to "General" — matches the
+ * client's existing fallback for a first-time Google sign-in. */
+function getCallerTier(req: any, users: DirectoryUser[]): "General" | "Admin" | "Owner" {
+  const email = (req.user?.email as string | undefined)?.toLowerCase();
+  if (!email) return "General";
+  const match = users.find((u) => u.email.toLowerCase() === email);
+  return match?.tier ?? "General";
+}
+
+function isValidDirectoryUser(u: any): u is DirectoryUser {
+  return (
+    u &&
+    typeof u.email === "string" &&
+    typeof u.name === "string" &&
+    typeof u.tactId === "string" &&
+    (u.tier === "General" || u.tier === "Admin" || u.tier === "Owner") &&
+    (u.status === "Active" || u.status === "Pending First Login")
+  );
+}
+
+// Admin and Owner can view the directory; anyone else is refused.
+app.get("/api/users", requireAuth, (req, res) => {
+  const users = readUsersFile();
+  const callerTier = getCallerTier(req, users);
+  if (callerTier !== "Admin" && callerTier !== "Owner") {
+    return res.status(403).json({ error: "The user directory is restricted to Admin and Owner roles." });
+  }
+  return res.json({ users });
+});
+
+// Only Owner can edit — Admin gets a read-only view in the UI, enforced
+// again here so the restriction can't be bypassed by calling the API directly.
+app.put("/api/users", requireAuth, (req, res) => {
+  const existingUsers = readUsersFile();
+  const callerTier = getCallerTier(req, existingUsers);
+  if (callerTier !== "Owner") {
+    return res.status(403).json({ error: "Only the Owner role can edit the user directory." });
+  }
+
+  const { users } = req.body;
+  if (!Array.isArray(users) || !users.every(isValidDirectoryUser)) {
+    return res.status(400).json({ error: "Invalid users payload." });
+  }
+  if (!users.some((u: DirectoryUser) => u.tier === "Owner")) {
+    return res.status(400).json({ error: "At least one user must remain an Owner." });
+  }
+
+  try {
+    writeUsersFile(users);
+    return res.json({ success: true, users });
+  } catch (err: any) {
+    console.error("Failed to write data/users.json:", err);
+    return res.status(500).json({ error: "Failed to persist the user directory." });
+  }
 });
 
 // Helper function to safely serve files only if they exist on disk, preventing ENOENT stat crashes

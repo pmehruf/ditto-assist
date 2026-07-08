@@ -99,6 +99,9 @@ const LookupPage = lazy(() =>
 const ResourcesPage = lazy(() =>
   import("./pages/ResourcesPage").then((m) => ({ default: m.ResourcesPage }))
 );
+const ProfileAccessPage = lazy(() =>
+  import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
+);
 const MyActivityPage = lazy(() =>
   import("./pages/MyActivityPage").then((m) => ({ default: m.MyActivityPage }))
 );
@@ -113,7 +116,7 @@ const FlaggedResponsesPage = lazy(() =>
 );
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses">("lookup");
   const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>(() => {
     try {
       const saved = localStorage.getItem("ditto_qa_announcements");
@@ -809,7 +812,7 @@ export default function App() {
     if (currentUser) {
       if (!hasAccess(activeTab, "Viewer")) {
         // Fallback sequentially to ensure user isn't stuck on a forbidden tab
-        const priorityTabs = ["lookup", "my_activity", "resources", "audit", "flagged_responses"] as const;
+        const priorityTabs = ["lookup", "my_activity", "resources", "audit", "profile_access", "flagged_responses"] as const;
         const available = priorityTabs.find(tab => hasAccess(tab, "Viewer")) || "lookup";
         setActiveTab(available);
       }
@@ -1895,7 +1898,7 @@ export default function App() {
                           setTempTactId(e.target.value);
                           setLoginError(null);
                         }}
-                        placeholder="e.g. TACT-128"
+                        placeholder="e.g. TACT128"
                         className={`w-full px-4 py-3 rounded-2xl border outline-none text-xs transition-all font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
                           isDark 
                             ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500" 
@@ -2152,7 +2155,7 @@ export default function App() {
             </button>
           )}
 
-          {(hasAccess("audit", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
+          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
             <>
               {/* Clear separation between Advisor Zone and Admin Zone — a
                   visibly distinct rule (not just a faint hairline) so the two
@@ -2165,6 +2168,27 @@ export default function App() {
               <span className={`block text-[10px] font-bold tracking-wider px-2 mb-2 ${theme === "dark" ? "text-[#9CA3AF]" : "text-[#03101a] font-extrabold"}`}>
                 Admin Zone
               </span>
+
+              {hasAccess("profile_access", "Viewer") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("profile_access");
+                    if (isMobile) setIsMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "profile_access"
+                      ? theme === "dark"
+                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold"
+                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
+                      : theme === "dark"
+                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                  } rounded-r-lg border-y-transparent border-r-transparent`}
+                >
+                  <User className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+                  <span>User Directory</span>
+                </button>
+              )}
 
               {hasAccess("qa_announcement_log", "Viewer") && (
                 <button
@@ -2345,11 +2369,26 @@ export default function App() {
                 </button>
               )}
 
+              {hasAccess("profile_access", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("profile_access")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                    activeTab === "profile_access"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                  }`}
+                  style={{ color: activeTab === "profile_access" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                  title="User Directory"
+                >
+                  <User style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
               {hasAccess("qa_announcement_log", "Viewer") && (
-                <button 
+                <button
                   onClick={() => setActiveTab("qa_announcement_log")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "qa_announcement_log" 
+                    activeTab === "qa_announcement_log"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
                   }`}
@@ -2618,7 +2657,7 @@ export default function App() {
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 flagged_responses: { label: "Flagged Responses", icon: <AlertCircle className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                
+                profile_access: { label: "User Directory", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
               };
               const meta = tabMeta[activeTab] || tabMeta.lookup;
@@ -3047,6 +3086,29 @@ export default function App() {
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
                   <ResourcesPage theme={theme} />
                 </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB: USER DIRECTORY (server-backed org user list; Owner can edit) */}
+          {activeTab === "profile_access" && currentUser && (
+            <motion.div
+              key="profile_access"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="User Directory">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <ProfileAccessPage
+                theme={theme}
+                usersList={usersList}
+                setUsersList={setUsersList}
+                effectiveTier={effectiveTier}
+              />
+              </Suspense>
               </ErrorBoundary>
             </motion.div>
           )}

@@ -1,0 +1,5 @@
+[
+  { "email": "mehruf.p@joinditto.in", "name": "Mehruf P", "tactId": "TACT-101", "tier": "Owner", "status": "Active" },
+  { "email": "rebecca.s@joinditto.in", "name": "Rebecca S", "tactId": "TACT-102", "tier": "Admin", "status": "Active" },
+  { "email": "shashank@joinditto.in", "name": "Shashank J", "tactId": "TACT-103", "tier": "General", "status": "Active" }
+]

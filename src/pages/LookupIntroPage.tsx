@@ -41,85 +41,99 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
           theme === "dark" ? "border-white/[0.08]" : "border-[#a1b7c3]"
         }`}>
 
-          <div
-            style={{
-              paddingTop: "0px",
-              marginRight: "0px",
-              marginLeft: "0px"
-            }}
-            className="flex flex-col justify-center h-full w-full relative z-10 py-1"
-          >
-            <div className="flex items-center gap-2 select-none mb-2">
-              <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: "var(--accent)" }} />
-              <span
-                style={{ fontSize: "11px" }}
-                className={`font-mono tracking-[0.4em] uppercase ${
-                  theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
-                }`}
-              >
-                ADVISORY PROTOCOL
-              </span>
-            </div>
-
-            <h1
-              style={{ width: "740px", maxWidth: "100%", fontSize: "clamp(32px, 5.5vw, 60.888px)", lineHeight: "1.1" }}
-              className={`font-sans font-bold uppercase tracking-tight mb-3 select-none ${
-                theme === "dark" ? "text-white" : "text-stone-900"
-              }`}
-            >
-              Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>What</b> To Declare.<br />
-              Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>Where</b> To Declare.
-            </h1>
-
-            <p
-              style={{ fontSize: "clamp(12px, 1.8vh, 14px)", lineHeight: "1.5" }}
-              className={`max-w-[600px] mb-3 font-sans ${
-                theme === "dark" ? "text-white/60" : "text-stone-600 font-medium"
-              }`}
-            >
-              Accurate disclosure is not just about what you declare. It is also about where you declare it. Your Declaration Assistant helps you identify the most appropriate place to disclose a medical condition by considering both medical context and policy logic.
-            </p>
-
+          {/* flex-wrap (not a breakpoint) decides whether the mascot sits
+              beside the text or drops below it — that reflow now tracks the
+              row's actual rendered width continuously, so it responds
+              correctly to browser zoom too, instead of the mascot just
+              vanishing at a fixed viewport-width cutoff (which is what
+              "hidden xl:flex" caused — zooming in shrinks the effective CSS
+              viewport, so it could drop below the xl breakpoint and hide the
+              mascot entirely even on a huge window). */}
+          <div className="flex flex-row flex-wrap items-center h-full w-full relative z-10 py-1 gap-4">
+            {/* Text content — flex-1 with a real min-width (not min-w-0) so
+                it stops shrinking at a readable size and hands off to wrap
+                instead of squeezing itself unreadably thin to keep the
+                mascot on the same line. */}
             <div
-              style={{ padding: "clamp(8px, 1.5vh, 12px)" }}
-              className={`border-l-2 mb-3 max-w-[550px] ${
-                theme === "dark" ? "border-[#ff9f43] bg-[#ff9f43]/5" : "border-amber-500 bg-amber-500/[0.04]"
-              }`}
+              style={{ paddingTop: "0px", marginRight: "0px", marginLeft: "0px" }}
+              className="flex flex-col justify-center flex-1 min-w-[240px]"
             >
-              <p
-                style={{ fontSize: "clamp(10px, 1.5vh, 12px)" }}
-                className={`font-mono uppercase tracking-wide leading-relaxed ${
-                  theme === "dark" ? "text-[#ff9f43]" : "text-amber-800 font-semibold"
+              <div className="flex items-center gap-2 select-none mb-2">
+                <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: "var(--accent)" }} />
+                <span
+                  style={{ fontSize: "11px" }}
+                  className={`font-mono tracking-[0.4em] uppercase ${
+                    theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
+                  }`}
+                >
+                  ADVISORY PROTOCOL
+                </span>
+              </div>
+
+              <h1
+                style={{ fontSize: "clamp(32px, 5.5vw, 60.888px)", lineHeight: "1.1" }}
+                className={`font-sans font-bold uppercase tracking-tight mb-3 select-none max-w-full ${
+                  theme === "dark" ? "text-white" : "text-stone-900"
                 }`}
               >
-                SYSTEM WARNING❗: Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Verify before disclosing.
+                Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>What</b> To Declare.<br />
+                Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>Where</b> To Declare.
+              </h1>
+
+              <p
+                style={{ fontSize: "clamp(12px, 1.8vh, 14px)", lineHeight: "1.5" }}
+                className={`max-w-[37.5rem] mb-3 font-sans ${
+                  theme === "dark" ? "text-white/60" : "text-stone-600 font-medium"
+                }`}
+              >
+                Accurate disclosure is not just about what you declare. It is also about where you declare it. Your Declaration Assistant helps you identify the most appropriate place to disclose a medical condition by considering both medical context and policy logic.
               </p>
+
+              <div
+                style={{ padding: "clamp(8px, 1.5vh, 12px)" }}
+                className={`border-l-2 mb-3 max-w-[34.375rem] ${
+                  theme === "dark" ? "border-[#ff9f43] bg-[#ff9f43]/5" : "border-amber-500 bg-amber-500/[0.04]"
+                }`}
+              >
+                <p
+                  style={{ fontSize: "clamp(10px, 1.5vh, 12px)" }}
+                  className={`font-mono uppercase tracking-wide leading-relaxed ${
+                    theme === "dark" ? "text-[#ff9f43]" : "text-amber-800 font-semibold"
+                  }`}
+                >
+                  SYSTEM WARNING❗: Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Verify before disclosing.
+                </p>
+              </div>
+
+              <PrimaryCtaButton
+                theme={theme}
+                onClick={() => setShowIntro(false)}
+                className="self-start"
+                style={{ marginTop: "clamp(6px, 1.5vh, 14px)" }}
+              >
+                LETS PUT THEM IN THEIR PLACE
+              </PrimaryCtaButton>
             </div>
 
-            <PrimaryCtaButton
-              theme={theme}
-              onClick={() => setShowIntro(false)}
-              className="self-start"
-              style={{ marginTop: "clamp(6px, 1.5vh, 14px)" }}
-            >
-              LETS PUT THEM IN THEIR PLACE
-            </PrimaryCtaButton>
-          </div>
-
-          {/* Absolute positioned floating mascot, vertically center aligned with body text */}
-          <div
-            className="absolute pointer-events-none z-0 hidden xl:block"
-            style={{ right: '50px', top: '50%', transform: 'translateY(-50%)', width: '220px', height: '240px' }}
-          >
+            {/* Mascot — a normal flex sibling (its own reserved column) instead
+                of an absolutely-positioned overlay, so it can never share
+                space with the text above regardless of window size or zoom.
+                Always rendered (no breakpoint hide) — flex-wrap above moves
+                it below the text on narrow rows instead of it disappearing
+                outright. Sized with clamp() (viewport-relative) rather than
+                a fixed px box, so it scales proportionally instead of
+                staying pinned at one physical size while everything around
+                it changes. */}
             <motion.div
               animate={{ y: [0, -10, 0], scale: [1, 1.03, 1] }}
               transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-              className="w-full h-full flex items-center justify-end select-none"
+              className="flex items-center justify-center shrink-0 mx-auto pointer-events-none select-none"
+              style={{ width: "clamp(120px, 14vw, 220px)", height: "clamp(130px, 15vw, 240px)" }}
             >
               <MascotWithFallback
                 src="/assets/.aistudio/mapping-mascot.png"
                 alt="Mapping Mascot"
-                className="object-contain max-h-[240px] max-w-[220px]"
+                className="object-contain w-full h-full"
                 type="magnifier"
               />
             </motion.div>
