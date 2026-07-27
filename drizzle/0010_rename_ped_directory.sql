@@ -1,0 +1,11 @@
+-- Renames the ped_suggestions table to ped_directory to match the
+-- admin-facing "PED Directory" name (the page was renamed from "PED
+-- Suggestions" earlier; this brings the physical table name in line with
+-- it). Pure rename — no columns, data, or the unique constraint on `term`
+-- are touched, so this is a zero-downtime, instant metadata-only change.
+--
+-- The TS binding (`pedSuggestions` in schema.ts), the repository class
+-- (`PedSuggestionsRepository`), and the API route path
+-- (/api/ped-suggestions) were deliberately left unrenamed to avoid an
+-- app-wide rename churn — only the underlying Postgres table name changed.
+ALTER TABLE "ped_suggestions" RENAME TO "ped_directory";

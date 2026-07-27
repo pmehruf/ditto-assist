@@ -1,0 +1,1 @@
+ALTER TABLE "external_resources" ADD COLUMN "icon" text;

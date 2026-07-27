@@ -66,6 +66,11 @@ export class FlaggedIssuesRepository {
     return row;
   }
 
+  /** Owner-only: permanently deletes a flagged issue report. */
+  async delete(id: number): Promise<void> {
+    await this.db.delete(flaggedIssues).where(eq(flaggedIssues.id, id));
+  }
+
   async list(filter: FlaggedIssueFilter = {}): Promise<FlaggedIssueRow[]> {
     const conditions = [];
     if (filter.status) conditions.push(eq(flaggedIssues.status, filter.status));
