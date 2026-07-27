@@ -37,11 +37,11 @@ export const SpecificIllnessLedgerCard: React.FC<SpecificIllnessLedgerCardProps>
           </div>
           
           <div className="shrink-0 font-sans">
-            <span 
+            <span
               style={{
-                backgroundColor: theme === "dark" ? "#11365A" : "#EFF6FF",
-                color: theme === "dark" ? "#00D3F3" : "#1A365D",
-                borderColor: theme === "dark" ? "#1F4A7A" : "#EFF6FF"
+                backgroundColor: theme === "dark" ? "rgba(255,159,67,0.16)" : "#FFF3E0",
+                color: theme === "dark" ? "#ffb870" : "#9a5b1f",
+                borderColor: theme === "dark" ? "rgba(255,159,67,0.35)" : "rgba(255,159,67,0.35)"
               }}
               className="px-2 py-1.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider select-none border inline-block whitespace-nowrap"
             >
@@ -90,33 +90,38 @@ export const SpecificIllnessLedgerCard: React.FC<SpecificIllnessLedgerCardProps>
               <div className="overflow-y-auto pr-1 space-y-3 custom-scrollbar flex-grow font-sans min-h-0">
                 {Object.keys(categories).map(catName => (
                   <div key={catName} className="space-y-1">
-                    <span 
+                    <span
                       style={{
-                        backgroundColor: theme === "dark" ? "#1E4D7E" : "#EFF6FF",
-                        color: theme === "dark" ? "#00D3F3" : "#1A365D",
-                        borderColor: theme === "dark" ? "#2D67A4" : "rgba(226, 232, 240, 0.4)"
+                        backgroundColor: theme === "dark" ? "rgba(255,159,67,0.22)" : "#FFF3E0",
+                        color: theme === "dark" ? "#ffb870" : "#9a5b1f",
+                        borderColor: theme === "dark" ? "rgba(255,159,67,0.40)" : "rgba(255,159,67,0.35)"
                       }}
                       className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border inline-block select-none"
                     >
                       {catName}
                     </span>
-                    <div className="space-y-1 pl-0.5 font-sans">
+                    {/* Flat list, no per-illness card/border — the category
+                        pill above is the only visual grouping now. A hairline
+                        divider between rows keeps entries scannable without
+                        boxing each one individually. */}
+                    <div className="pl-0.5 font-sans">
                       {categories[catName].map((ill, idx) => (
                         <div
                            key={idx}
                            style={{
-                             backgroundColor: theme === "dark" ? "#11365A" : "#C7CFD6",
-                             borderColor: theme === "dark" ? "#1F4A7A" : "#C7CFD6"
+                             borderBottom: idx !== categories[catName].length - 1
+                               ? `1px solid ${theme === "dark" ? "rgba(255,159,67,0.14)" : "rgba(255,159,67,0.18)"}`
+                               : "none",
                            }}
-                           className={`p-2 rounded-xl text-[10px] font-semibold leading-relaxed border flex items-start gap-1.5 transition-all ${
+                           className={`py-1.5 text-[10px] font-semibold leading-relaxed flex items-start gap-1.5 transition-colors ${
                              theme === "dark"
-                               ? "text-[#E2E8F0] hover:bg-[#143C66] hover:border-[#1F4A7A]"
-                               : "hover:bg-slate-200/50"
+                               ? "text-stone-100 hover:text-white"
+                               : "text-stone-800 hover:text-stone-950"
                            }`}
                         >
-                          <span 
+                          <span
                             style={{ backgroundColor: "var(--accent)" }}
-                            className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 animate-pulse" 
+                            className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
                           />
                           <span style={{ color: theme === "dark" ? "#FFFFFF" : "var(--text-primary)" }}>{ill}</span>
                         </div>

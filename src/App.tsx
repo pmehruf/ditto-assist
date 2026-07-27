@@ -9,10 +9,10 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
   CheckCircle2,
+  AlertCircle,
   AlertTriangle,
   XCircle,
   RefreshCw,
-  FileSpreadsheet,
   Check,
   Copy,
   Search,
@@ -29,29 +29,44 @@ import {
   PanelLeftClose,
   Clock,
   Menu,
-  AlertCircle,
   Target,
   Flag,
-  Sliders,
   History,
-  Bell,
-  LockKeyhole,
   Eye,
   Home,
-  Megaphone
+  Megaphone,
+  Link2,
+  Pencil,
+  Trash2,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+  LayoutDashboard,
+  FileText,
+  FileSpreadsheet,
+  ListChecks,
+  HelpCircle,
+  CreditCard,
+  BookOpen,
+  DollarSign,
+  Stethoscope,
+  Flame,
+  ShieldAlert
 } from "lucide-react";
 
 import {
   PLANS,
   getPlanConfig,
   TOP_PED_DICTIONARY,
-  MatchOutput
+  MatchOutput,
+  guessCategoryMap
 } from "./types.js";
 
 import {
   matchSpecificIllness,
   normalizePlanName,
   MASTER_ILLNESSES,
+  matchesPhrase,
 } from "./specificIllnessEngine";
 
 import {
@@ -63,13 +78,14 @@ import {
 
 import { SCRIPT_DICTIONARY } from "./constants/scriptDictionary";
 import { DEFAULT_FEATURE_PERMISSIONS } from "./constants/featurePermissions";
-import { AuditLogEntry, ReportedIssue, QAAnnouncement } from "./types/announcements";
+import { AuditLogEntry, ReportedIssue, QAAnnouncement, ExternalResource } from "./types/announcements";
 import { LoggedUser, UserProfile } from "./types/user";
-import { DraftPlan } from "./types/plans";
+import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
 import { DeclarationMapIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
+import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
 import { DittoMascot } from "./components/mascots/DittoMascot";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
@@ -99,6 +115,9 @@ const LookupPage = lazy(() =>
 const ResourcesPage = lazy(() =>
   import("./pages/ResourcesPage").then((m) => ({ default: m.ResourcesPage }))
 );
+const CoverageProjectionStudioPage = lazy(() =>
+  import("./pages/CoverageProjectionStudioPage").then((m) => ({ default: m.CoverageProjectionStudioPage }))
+);
 const ProfileAccessPage = lazy(() =>
   import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
 );
@@ -108,117 +127,409 @@ const MyActivityPage = lazy(() =>
 const AuditPage = lazy(() =>
   import("./pages/AuditPage").then((m) => ({ default: m.AuditPage }))
 );
+const AdvisoryZonePage = lazy(() =>
+  import("./pages/AdvisoryZonePage").then((m) => ({ default: m.AdvisoryZonePage }))
+);
+const OwnerControlsPage = lazy(() =>
+  import("./pages/OwnerControlsPage").then((m) => ({ default: m.OwnerControlsPage }))
+);
 const AnnouncementLogPage = lazy(() =>
   import("./pages/AnnouncementLogPage").then((m) => ({ default: m.AnnouncementLogPage }))
 );
 const FlaggedResponsesPage = lazy(() =>
   import("./pages/FlaggedResponsesPage").then((m) => ({ default: m.FlaggedResponsesPage }))
 );
+const PlanManagementPage = lazy(() =>
+  import("./pages/PlanManagementPage").then((m) => ({ default: m.PlanManagementPage }))
+);
+const PedSuggestionsPage = lazy(() =>
+  import("./pages/PedSuggestionsPage").then((m) => ({ default: m.PedSuggestionsPage }))
+);
+const SmokeTestPage = lazy(() =>
+  import("./pages/SmokeTestPage").then((m) => ({ default: m.SmokeTestPage }))
+);
+
+/** Picks a suitable icon for a Quick Access resource based on keywords in its
+ * title (dashboard, checklist, FAQ, Bliss CC medical-condition alert, DWT
+ * Updates medical-condition digest, credit card, updates, SOP/guide/
+ * playbook, Ditto Link), falling back to a generic link icon for anything
+ * else. */
+function getResourceIcon(title: string) {
+  const t = title.toLowerCase();
+  if (/\bdashboard\b/.test(t)) return LayoutDashboard;
+  if (/\bchecklist\b/.test(t)) return ListChecks;
+  if (/\bfaq\b/.test(t)) return HelpCircle;
+  if (/\bbliss cc\b/.test(t)) return AlertTriangle;
+  if (/\bcc\b|credit card/.test(t)) return CreditCard;
+  if (/\bdwt updates\b/.test(t)) return Stethoscope;
+  if (/\bupdates?\b/.test(t)) return RefreshCw;
+  if (/\bplaybook\b/.test(t)) return BookOpen;
+  if (/\bsop\b|\bguide\b/.test(t)) return FileText;
+  if (/\bditto\b.*\blink\b/.test(t)) return DollarSign;
+  return Link2;
+}
+
+/** Every icon an admin can explicitly assign to a Quick Access resource via
+ * the picker in the add/edit form, plus the lookup used to resolve a
+ * resource's stored `icon` name (e.g. "DollarSign") back to its component.
+ * Keep this in sync with the icons imported at the top of this file. */
+const RESOURCE_ICON_OPTIONS: { name: string; label: string; Icon: typeof Link2 }[] = [
+  { name: "Link2", label: "Generic Link", Icon: Link2 },
+  { name: "LayoutDashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { name: "ListChecks", label: "Checklist", Icon: ListChecks },
+  { name: "HelpCircle", label: "FAQ", Icon: HelpCircle },
+  { name: "CreditCard", label: "Credit Card", Icon: CreditCard },
+  { name: "DollarSign", label: "Payment / Dollar", Icon: DollarSign },
+  { name: "RefreshCw", label: "Updates", Icon: RefreshCw },
+  { name: "BookOpen", label: "Playbook / Guide", Icon: BookOpen },
+  { name: "FileText", label: "SOP / Document", Icon: FileText },
+  { name: "AlertTriangle", label: "Alert", Icon: AlertTriangle },
+  { name: "Stethoscope", label: "Medical", Icon: Stethoscope },
+];
+const RESOURCE_ICON_MAP: Record<string, typeof Link2> = Object.fromEntries(
+  RESOURCE_ICON_OPTIONS.map(({ name, Icon }) => [name, Icon])
+);
+
+/** Resolves a resource's icon: an explicit admin choice (resource.icon)
+ * wins if it's a recognized name, otherwise falls back to the keyword-based
+ * guess from getResourceIcon so existing/unset resources keep working. */
+/**
+ * Features that are Owner-only as a matter of code, not configuration.
+ *
+ * These bypass the featurePermissions registry entirely (see hasAccess).
+ * Nothing an Admin can edit — and no stale localStorage permission list —
+ * can grant access to anything in this set.
+ */
+const OWNER_ONLY_FEATURES = new Set(["owner_controls"]);
+
+function resolveResourceIcon(resource: { title: string; icon?: string }) {
+  if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
+  return getResourceIcon(resource.title);
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses">("lookup");
-  const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>(() => {
-    try {
-      const saved = localStorage.getItem("ditto_qa_announcements");
-      if (saved) {
-        const parsed = JSON.parse(saved) as QAAnnouncement[];
-        // Drop the old hardcoded "Special Instructions" seed announcement
-        // (that type has been removed from the app entirely) if it's still
-        // present in a returning user's localStorage.
-        return parsed.filter(item => item.id !== "ann-special-chronic" && (item.type as string) !== "Special Instructions");
-      }
-    } catch (_) {}
-    return [
-      {
-        id: "ann-1",
-        announcement: "Care Supreme Gastroenterology payout rule update: Wait lists now mandate medical director approval for standard hernia repair.",
-        effectiveDate: "2026-06-11",
-        category: "Gastroenterology",
-        addedBy: "Rebecca S (Admin)",
-        rating: 4
-      },
-      {
-        id: "ann-2",
-        announcement: "Activ One Max Payment schedule revisions for orthopaedic slip disc conditions. Effective immediately, require strict MRI scan date matching.",
-        effectiveDate: "2026-06-10",
-        category: "Orthopaedic / Rheumatological",
-        addedBy: "Mehruf P (Owner)",
-        rating: 2
-      },
-      {
-        id: "ann-3",
-        announcement: "Optima Secure eye procedures mapping guidelines: Advanced laser surgeries with clinic filters now require mandatory ophthalmology signature.",
-        effectiveDate: "2026-06-25",
-        category: "Eye",
-        addedBy: "Shashank J (Admin)",
-        rating: 5
-      },
-      {
-        id: "ann-4",
-        announcement: "Activ Fit Preferred ENT category disclaimer: Deviated nasal septum (DNS) wait times lowered to 12 months for corporate groups.",
-        effectiveDate: "2026-06-15",
-        category: "ENT",
-        addedBy: "Mehruf P (Owner)",
-        rating: 3
-      }
-    ];
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "coverage_projection" | "owner_controls">("lookup");
+  // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
+  // to be a hardcoded 4-item seed, persisted to (and re-read from) this
+  // browser's own localStorage — so an Admin publishing a new announcement
+  // was only ever visible on the browser they published it from. GET
+  // /api/announcements (server.ts, backed by the announcements table) is
+  // now the shared source of truth: every signed-in user fetches the same
+  // list on login, and every create/edit/delete round-trips through the
+  // API (see QAAnnouncementForm.tsx and AnnouncementLogPage.tsx).
+  const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>([]);
+
+  // Owner-hidden pages (feature ids). Fetched for every signed-in user
+  // because the nav needs it; only the Owner can change it. See hasAccess()
+  // — the Owner short-circuit runs before this is consulted.
+  const [hiddenPages, setHiddenPages] = useState<string[]>([]);
+  const [announcementsLoadError, setAnnouncementsLoadError] = useState<string | null>(null);
+
+  const mapAnnouncementRow = (row: any): QAAnnouncement => ({
+    id: String(row.id),
+    announcement: row.announcement,
+    effectiveDate: row.effectiveDate ?? undefined,
+    category: row.category,
+    addedBy: row.addedBy,
+    rating: row.rating ?? undefined,
+    type: row.type ?? "QA Announcement",
+    validTillDate: row.validTillDate ?? undefined,
+    title: row.title ?? undefined,
+    from: row.fromTeam ?? undefined,
+    announcementDate: row.announcementDate ?? undefined,
   });
 
-  // Sync announcements
-  useEffect(() => {
+  const fetchPageVisibility = async () => {
     try {
-      localStorage.setItem("ditto_qa_announcements", JSON.stringify(qaAnnouncements));
-    } catch (_) {}
-  }, [qaAnnouncements]);
+      const res = await fetch("/api/page-visibility");
+      // Guard against the SPA fallback answering with 200 + HTML when the
+      // route is missing (stale server). Fail open — nothing hidden — but
+      // don't pretend an HTML page was a valid empty result set.
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setHiddenPages((body.entries || []).filter((e: any) => e.hidden).map((e: any) => e.featureId));
+    } catch (_) {
+      // Never block the app on this — worst case nothing is hidden.
+    }
+  };
 
+  const fetchAnnouncements = async () => {
+    try {
+      const res = await fetch("/api/announcements");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to load announcements (HTTP ${res.status}).`);
+      setQaAnnouncements((body.entries || []).map(mapAnnouncementRow));
+      setAnnouncementsLoadError(null);
+    } catch (err: unknown) {
+      setAnnouncementsLoadError(err instanceof Error ? err.message : "Could not load announcements from the server.");
+    }
+  };
+  // The effect that actually calls fetchAnnouncements() lives further down,
+  // right after `currentUser` is declared (it depends on currentUser, which
+  // isn't in scope yet at this point in the component body).
+
+  // External resource links (Payment SOP, QA Dashboard, etc.) shown in the
+  // Workspace Controls drawer's Resources section — readable by every
+  // signed-in user, writable by Admin/Owner only (enforced server-side).
+  const [externalResources, setExternalResources] = useState<ExternalResource[]>([]);
+  const [externalResourcesLoadError, setExternalResourcesLoadError] = useState<string | null>(null);
+
+  const mapExternalResourceRow = (row: any): ExternalResource => ({
+    id: String(row.id),
+    title: row.title,
+    url: row.url,
+    addedBy: row.addedBy,
+    createdAt: row.createdAt ?? undefined,
+    icon: row.icon ?? undefined,
+  });
+
+  const fetchExternalResources = async () => {
+    try {
+      const res = await fetch("/api/external-resources");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to load resource links (HTTP ${res.status}).`);
+      setExternalResources((body.entries || []).map(mapExternalResourceRow));
+      setExternalResourcesLoadError(null);
+    } catch (err: unknown) {
+      setExternalResourcesLoadError(err instanceof Error ? err.message : "Could not load resource links from the server.");
+    }
+  };
+
+  // DB-backed plan declaration questionnaires (Plan Management page). This
+  // is the *live* source of truth for new/edited plans — /api/match reads
+  // from the same table server-side. Readable by every signed-in user
+  // (needed for the plan picker + matching to work for General tier too);
+  // writes gated to Admin/Owner both here and server-side.
+  const [dbPlanConfigs, setDbPlanConfigs] = useState<DbPlanConfigEntry[]>([]);
+  const [dbPlanConfigsLoadError, setDbPlanConfigsLoadError] = useState<string | null>(null);
+
+  const mapPlanConfigRow = (row: any): DbPlanConfigEntry => ({
+    planName: row.planName,
+    insurerName: row.insurerName,
+    questions: row.questions || [],
+    categoryMap: row.categoryMap || {},
+    anyOther: row.anyOther,
+    hasUmbrella: !!row.hasUmbrella,
+    umbrellaQuestions: row.umbrellaQuestions || [],
+    // Was missing entirely — every fetch of the plan list (page load,
+    // manual refresh) silently wiped specificIllnesses back to empty for
+    // any plan relying solely on this DB field (Aspire, Reassure 2.0: no
+    // hardcoded SPECIFIC_ILLNESSES fallback to mask the gap, unlike the
+    // original 4 plans). saveSpecificIllnessesForPlan's own savedRow
+    // mapper already included this field correctly, which is why it only
+    // ever looked broken after a reload/refetch, not right after saving.
+    specificIllnesses: row.specificIllnesses || [],
+    overrides: row.overrides || undefined,
+    addedBy: row.addedBy,
+  });
+
+  const fetchPlanConfigs = async () => {
+    try {
+      const res = await fetch("/api/plan-configs");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to load plans (HTTP ${res.status}).`);
+      setDbPlanConfigs((body.entries || []).map(mapPlanConfigRow));
+      setDbPlanConfigsLoadError(null);
+    } catch (err: unknown) {
+      setDbPlanConfigsLoadError(err instanceof Error ? err.message : "Could not load plans from the server.");
+    }
+  };
+
+  // Refreshes the Lookup page's autocomplete dropdown from the
+  // ped_suggestions table (DB-backed, decoupled from PED matching — see
+  // schema.ts). `dynamicSuggestions`'s useState initializer below computes
+  // the same list client-side from TOP_PED_DICTIONARY/SCRIPT_DICTIONARY as
+  // a bootstrap fallback, so this only overwrites it once the DB actually
+  // has rows — before that migration has run in a given environment, or if
+  // this fetch fails, the dropdown keeps working off the built-in list.
+  const fetchPedSuggestions = async () => {
+    try {
+      const res = await fetch("/api/ped-suggestions");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to load PED suggestions (HTTP ${res.status}).`);
+      const terms = (body.entries || [])
+        .map((row: any) => row.term)
+        .filter((t: unknown): t is string => typeof t === "string" && t.trim().length > 0);
+      if (terms.length > 0) {
+        setDynamicSuggestions(terms);
+      }
+    } catch (err: unknown) {
+      console.error("Failed to load PED suggestions from the server — keeping the built-in dropdown list:", err);
+    }
+  };
+
+  // Add/edit/delete state for the Resources section of the Workspace
+  // Controls drawer (Admin/Owner only — enforced server-side too).
+  const [newResourceTitle, setNewResourceTitle] = useState("");
+  const [newResourceUrl, setNewResourceUrl] = useState("");
+  // "" = auto (keyword-guessed from title); anything else is an explicit
+  // lucide-react icon name from RESOURCE_ICON_OPTIONS below.
+  const [newResourceIcon, setNewResourceIcon] = useState("");
+  const [isAddingResource, setIsAddingResource] = useState(false);
+  const [resourceFormError, setResourceFormError] = useState<string | null>(null);
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(null);
+  const [editResourceTitle, setEditResourceTitle] = useState("");
+  const [editResourceUrl, setEditResourceUrl] = useState("");
+  const [editResourceIcon, setEditResourceIcon] = useState("");
+  // Off by default — Admin/Owner see a plain link list just like everyone
+  // else until they explicitly opt into managing entries via the "Manage
+  // Resources" toggle in the drawer.
+  const [isManagingResources, setIsManagingResources] = useState(false);
+
+  const handleAddResource = async () => {
+    if (!newResourceTitle.trim() || !newResourceUrl.trim()) {
+      setResourceFormError("Title and URL are required.");
+      return;
+    }
+    setIsAddingResource(true);
+    setResourceFormError(null);
+    try {
+      const res = await fetch("/api/external-resources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newResourceTitle.trim(), url: newResourceUrl.trim(), icon: newResourceIcon }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to add this resource link (HTTP ${res.status}).`);
+      setExternalResources(prev => [mapExternalResourceRow(body.entry), ...prev]);
+      setNewResourceTitle("");
+      setNewResourceUrl("");
+      setNewResourceIcon("");
+    } catch (err: unknown) {
+      setResourceFormError(err instanceof Error ? err.message : "Failed to add this resource link.");
+    } finally {
+      setIsAddingResource(false);
+    }
+  };
+
+  const startEditingResource = (resource: ExternalResource) => {
+    setEditingResourceId(resource.id);
+    setEditResourceTitle(resource.title);
+    setEditResourceUrl(resource.url);
+    setEditResourceIcon(resource.icon || "");
+    setResourceFormError(null);
+  };
+
+  const handleUpdateResource = async (id: string) => {
+    if (!editResourceTitle.trim() || !editResourceUrl.trim()) {
+      setResourceFormError("Title and URL are required.");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/external-resources/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editResourceTitle.trim(), url: editResourceUrl.trim(), icon: editResourceIcon }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to update this resource link (HTTP ${res.status}).`);
+      const updated = mapExternalResourceRow(body.entry);
+      setExternalResources(prev => prev.map(r => (r.id === id ? updated : r)));
+      setEditingResourceId(null);
+    } catch (err: unknown) {
+      setResourceFormError(err instanceof Error ? err.message : "Failed to update this resource link.");
+    }
+  };
+
+  const handleDeleteResource = (id: string, title: string) => {
+    setConfirmActionLabel(`Delete resource link "${title}"`);
+    setOnConfirmAction(() => async () => {
+      try {
+        const res = await fetch(`/api/external-resources/${id}`, { method: "DELETE" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `Failed to delete this resource link (HTTP ${res.status}).`);
+        setExternalResources(prev => prev.filter(r => r.id !== id));
+      } catch (err: unknown) {
+        setResourceFormError(err instanceof Error ? err.message : "Failed to delete this resource link.");
+      }
+    });
+    setIsConfirmModalOpen(true);
+  };
+
+  // Swaps a resource link with its up/down neighbor in the displayed order,
+  // then persists the FULL new ordering (every id, in order) to the server —
+  // updated optimistically so the move feels instant, reverted by
+  // re-fetching if the save fails.
+  const handleMoveResource = async (id: string, direction: "up" | "down") => {
+    const currentIndex = externalResources.findIndex((r) => r.id === id);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= externalResources.length) return;
+
+    const reordered = [...externalResources];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setExternalResources(reordered);
+
+    try {
+      const res = await fetch("/api/external-resources/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedIds: reordered.map((r) => Number(r.id)) }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to save the new order (HTTP ${res.status}).`);
+      setExternalResources((body.entries || []).map(mapExternalResourceRow));
+    } catch (err: unknown) {
+      setResourceFormError(err instanceof Error ? err.message : "Failed to save the new order.");
+      fetchExternalResources();
+    }
+  };
+
+  // Which announcements advisors see on the Lookup page.
+  //
+  // Selection is driven by ANNOUNCEMENT DATE (the "Posted" date): newest
+  // first. QA and General announcements are now capped SEPARATELY (5 QA + 3
+  // General, each independently) rather than sharing one pool of 10 — so a
+  // burst of QA announcements can no longer crowd General announcements out
+  // of rotation entirely (or vice versa). This replaced an older
+  // Effective-Date rule that kept a *minimum* of 5 by back-filling expired
+  // items, which could resurface outdated announcements as though they were
+  // current.
+  const MAX_QA_ANNOUNCEMENTS = 5;
+  const MAX_GENERAL_ANNOUNCEMENTS = 3;
   const activeAnnouncements = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Announcements without an effectiveDate are treated as always-current
-    // (day 0 — never "in the past", always sorted alongside today's items).
-    const getDaysDiff = (dateStr?: string) => {
-      if (!dateStr) return 0;
-      const todayDate = new Date();
-      todayDate.setHours(0, 0, 0, 0);
-      const targetDate = new Date(dateStr);
-      targetDate.setHours(0, 0, 0, 0);
-      const diffTime = targetDate.getTime() - todayDate.getTime();
-      return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Sort key: announcement (posted) date. Falls back to effectiveDate for
+    // legacy rows saved before the announcement-date field existed, then to 0
+    // so an undated row sinks below every dated one instead of floating.
+    const getPostedTime = (item: QAAnnouncement) => {
+      const raw = item.announcementDate || item.effectiveDate;
+      if (!raw) return 0;
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return 0;
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
     };
 
-    // Filter out General announcements whose Valid Till Date is reached
+    // Retained rule: a General announcement past its Valid Till Date is
+    // expired and drops out regardless of how recently it was posted.
+    // QA announcements have no expiry field and are governed purely by the
+    // recency cap below.
     const unexpiredAnnouncements = qaAnnouncements.filter(item => {
-      if (item.type === "General Announcement") {
-        if (item.validTillDate) {
-          const tillDate = new Date(item.validTillDate);
-          tillDate.setHours(0, 0, 0, 0);
-          if (today.getTime() >= tillDate.getTime()) {
-            return false;
-          }
-        }
+      if (item.type === "General Announcement" && item.validTillDate) {
+        const tillDate = new Date(item.validTillDate);
+        tillDate.setHours(0, 0, 0, 0);
+        if (today.getTime() >= tillDate.getTime()) return false;
       }
       return true;
     });
 
-    // Separate future (and today) announcements vs past announcements
-    const futureAnnouncements = unexpiredAnnouncements
-      .filter(item => getDaysDiff(item.effectiveDate) >= 0)
-      .sort((a, b) => getDaysDiff(a.effectiveDate) - getDaysDiff(b.effectiveDate)); // closest future first
+    const sortByPostedDesc = (a: QAAnnouncement, b: QAAnnouncement) => getPostedTime(b) - getPostedTime(a);
 
-    const pastAnnouncements = unexpiredAnnouncements
-      .filter(item => getDaysDiff(item.effectiveDate) < 0)
-      .sort((a, b) => getDaysDiff(b.effectiveDate) - getDaysDiff(a.effectiveDate)); // closest/latest past first
+    // Missing `type` defaults to QA (matches the "QA Announcement" fallback
+    // used elsewhere, e.g. LookupPage's `item.type || "QA Announcement"`).
+    const qaOnly = unexpiredAnnouncements.filter(item => item.type === "General Announcement" ? false : true);
+    const generalOnly = unexpiredAnnouncements.filter(item => item.type === "General Announcement");
 
-    if (futureAnnouncements.length >= 5) {
-      // If there are 5 or more future effective date announcements, this 5 count is not applicable.
-      return futureAnnouncements;
-    } else {
-      // If there are less than 5 announcements, play previous latest announcements to match the count as 5 minimum always.
-      const needed = 5 - futureAnnouncements.length;
-      const extraPast = pastAnnouncements.slice(0, needed);
-      return [...futureAnnouncements, ...extraPast];
-    }
+    const cappedQa = [...qaOnly].sort(sortByPostedDesc).slice(0, MAX_QA_ANNOUNCEMENTS);
+    const cappedGeneral = [...generalOnly].sort(sortByPostedDesc).slice(0, MAX_GENERAL_ANNOUNCEMENTS);
+
+    // Re-merge and re-sort so the carousel still steps through both types
+    // newest-first overall, rather than all QA then all General.
+    return [...cappedQa, ...cappedGeneral].sort(sortByPostedDesc);
   }, [qaAnnouncements]);
 
   const [noticeIndex, setNoticeIndex] = useState<number>(0);
@@ -304,6 +615,21 @@ export default function App() {
       }
     }
   }, [usersList, currentUser]);
+
+  // Fetch announcements from the server once someone is actually signed in
+  // (covers both the normal session-restore path and completing first-time
+  // setup). See fetchAnnouncements' declaration above for why this used to
+  // be a hardcoded/localStorage seed instead.
+  useEffect(() => {
+    if (currentUser) {
+      fetchAnnouncements();
+      fetchExternalResources();
+      fetchPlanConfigs();
+      fetchPedSuggestions();
+      fetchPageVisibility();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email]);
 
   // Accessibility: trap keyboard focus within an open drawer; Escape closes; restore focus on close.
   useEffect(() => {
@@ -403,6 +729,40 @@ export default function App() {
     () => PLANS
   );
 
+  // Keep the plan picker's live plan-name list inclusive of anything added
+  // via the Plan Management page — productionPlans already feeds the
+  // dropdown everywhere else in the app, so this just folds DB-added names
+  // into that existing list rather than introducing a second list to sync.
+  //
+  // Also folds in any newly-hardcoded entries from types.ts's PLANS array
+  // (e.g. when a new built-in plan like Niva Bupa's "Aspire" is added to the
+  // codebase). productionPlans is a usePersistentState value seeded from
+  // PLANS only the very first time a browser ever loads the app — for any
+  // returning user, its localStorage value already exists and the PLANS
+  // initializer never runs again, so without this reconciliation a plan
+  // added to PLANS post-launch would silently never appear in an existing
+  // user's plan picker.
+  useEffect(() => {
+    setProductionPlans(prev => {
+      const names = new Set(prev);
+      let changed = false;
+      PLANS.forEach(planName => {
+        if (!names.has(planName)) {
+          names.add(planName);
+          changed = true;
+        }
+      });
+      dbPlanConfigs.forEach(row => {
+        if (!names.has(row.planName)) {
+          names.add(row.planName);
+          changed = true;
+        }
+      });
+      return changed ? Array.from(names) : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbPlanConfigs]);
+
   // Questions index records for approved draft plans
   const [promotedPlans, setPromotedPlans] = usePersistentState<Record<string, string[]>>(
     "ditto_promoted_plans_questions",
@@ -422,39 +782,74 @@ export default function App() {
     })
   );
 
-  // Master Change Log State
-  const [changeLogs, setChangeLogs] = usePersistentState<ChangeLogEntry[]>(
-    "ditto_change_logs",
-    () => [
-      {
-        id: "log-1",
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000 * 3).toISOString(), // 3 days ago
-        userName: "System Seed Engine",
-        role: "Owner",
-        actionType: "Draft Approved",
-        planName: "Optima Secure",
-        description: "Initial framework deployment for Optima Secure. 11 questionnaire paths activated."
-      },
-      {
-        id: "log-2",
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000 * 2).toISOString(), // 2 days ago
-        userName: "Ramesh Sharma",
-        role: "Admin",
-        actionType: "Insurer Edited",
-        planName: "Care Supreme",
-        description: "Updated insurer metadata mapped to Care Health Insurance."
-      },
-      {
-        id: "log-3",
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000 * 1.5).toISOString(), // 1.5 days ago
-        userName: "Rebecca S",
-        role: "Admin",
-        actionType: "Draft Created",
-        planName: "Activ One Safeguard [DRAFT]",
-        description: "Initiated raw framework setup and declarations indexing for Activ One Safeguard."
-      }
-    ]
-  );
+  // Master Change Log State ("Modification History" sub-tab under Audit).
+  //
+  // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
+  // to be persisted only to this browser's own localStorage, so an Owner
+  // triaging a flagged issue (or an Admin editing an announcement) never
+  // showed up in the modification history seen by anyone else — the audit
+  // trail wasn't actually a trail. GET/POST /api/change-logs (backed by the
+  // change_logs table) is now the shared source of truth. `setChangeLogs`
+  // below is a drop-in replacement for the old useState setter — every
+  // existing call site across the app (ProfileAccessManagement,
+  // FlaggedResponsesPage, QAAnnouncementForm, AnnouncementLogPage, etc.)
+  // already calls it as `setChangeLogs(prev => [newEntry, ...prev])`, so
+  // wrapping the setter here to also POST any newly-added entry means none
+  // of those call sites need to change.
+  const [changeLogs, setChangeLogsRaw] = useState<ChangeLogEntry[]>([]);
+
+  const mapChangeLogRow = (row: any): ChangeLogEntry => ({
+    id: String(row.id),
+    timestamp: row.timestamp,
+    userName: row.userName,
+    role: row.role,
+    actionType: row.actionType,
+    planName: row.planName,
+    description: row.description,
+    snapshot: row.snapshot ?? undefined,
+  });
+
+  // The effect that fetches change logs (below, right after `effectiveTier`
+  // is declared — it depends on effectiveTier, which isn't in scope yet at
+  // this point in the component body) lives further down.
+
+  // changeLogsRef mirrors `changeLogs` synchronously (state updates aren't
+  // visible until the next render, but setChangeLogs below needs the *current*
+  // value the instant it's called). It's also what makes setChangeLogs safe
+  // under StrictMode: the POST side effect below runs as a plain statement in
+  // this wrapper function, not inside the function passed to setChangeLogsRaw
+  // — React only double-invokes the latter (to catch impure updaters), so
+  // putting the fetch there was firing every change-log entry twice.
+  const changeLogsRef = useRef<ChangeLogEntry[]>([]);
+  useEffect(() => {
+    changeLogsRef.current = changeLogs;
+  }, [changeLogs]);
+
+  const setChangeLogs: React.Dispatch<React.SetStateAction<ChangeLogEntry[]>> = (update) => {
+    const prev = changeLogsRef.current;
+    const next = typeof update === "function"
+      ? (update as (p: ChangeLogEntry[]) => ChangeLogEntry[])(prev)
+      : update;
+
+    changeLogsRef.current = next;
+    setChangeLogsRaw(next);
+
+    const prevIds = new Set(prev.map(e => e.id));
+    next.filter(e => !prevIds.has(e.id)).forEach(entry => {
+      fetch("/api/change-logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actionType: entry.actionType,
+          planName: entry.planName,
+          description: entry.description,
+          snapshot: entry.snapshot,
+        }),
+      }).catch((err) => {
+        console.error("Failed to persist change log entry on the server:", err);
+      });
+    });
+  };
 
   // Activity Log States
   const [auditSubTab, setAuditSubTab] = useState<"user" | "modification">("user");
@@ -538,15 +933,39 @@ export default function App() {
     }
   );
 
-  let baseUserTier: "General" | "Admin" | "Owner" = "General";
-  if (currentUser) {
-    if (currentUser.email?.toLowerCase().trim() === "mehruf.p@joinditto.in") {
-      baseUserTier = "Owner";
-    } else {
-      baseUserTier = "General";
-    }
-  }
+  // NOTE (audit fix, see Production_Readiness_Audit.md Findings 1 & 6): this
+  // used to hardcode a single Owner email as a bypass and silently defaulted
+  // every other signed-in user to "General" tier regardless of what the
+  // user directory actually said — meaning even a real Admin never got
+  // Admin-level `effectiveTier` unless they were the hardcoded email or
+  // used the simulated-role feature. `currentUser.tier` is already the
+  // correct, server-resolved tier (set from the /api/users-backed directory
+  // when the session bootstraps below, and kept in sync by the effect that
+  // watches `usersList`) — trust it instead of re-deriving tier from a
+  // client-side special case.
+  const baseUserTier: "General" | "Admin" | "Owner" = currentUser?.tier ?? "General";
   const effectiveTier = simulatedRole || baseUserTier;
+
+  // Fetches change logs (Modification History) from the server. Only
+  // Admin/Owner can read this server-side (see requireAdminOrOwner in
+  // server.ts) — matches the Audit tab's own gating, so General-tier users
+  // simply never issue this fetch.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (effectiveTier !== "Admin" && effectiveTier !== "Owner") return;
+    fetch("/api/change-logs")
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        if (Array.isArray(body.entries)) {
+          setChangeLogsRaw(body.entries.map(mapChangeLogRow));
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load modification history from the server:", err);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email, effectiveTier]);
 
   // Dynamic Feature Permissions Governance State
   const [featurePermissions, setFeaturePermissions] = usePersistentState<FeaturePermission[]>(
@@ -556,11 +975,54 @@ export default function App() {
 
   // Unified dynamic hasAccess governance function
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
+    const isRealOwner = currentUser?.tier === "Owner";
+
+    // ── OWNER-ONLY HARD GATE ────────────────────────────────────────────
+    // Decided in code, NOT via the featurePermissions registry, and it
+    // returns before every other branch below.
+    //
+    // Why it can't go through the registry: `featurePermissions` is
+    // localStorage-backed (usePersistentState), so any browser that saved
+    // its permission list before a new feature id existed will not contain
+    // that id — and the `if (!perm) return true` fallback further down then
+    // grants it to EVERYONE. That is exactly how Owner Controls briefly
+    // became visible to Admin/General users. Anything that must never be
+    // reachable by a lower tier belongs in this list, not in the registry.
+    if (OWNER_ONLY_FEATURES.has(featureId)) {
+      // True for a real Owner even while previewing a lower tier via
+      // "View As" — otherwise hiding a page mid-preview could leave them
+      // with no route back to these toggles.
+      return isRealOwner;
+    }
+
     const tier = effectiveTier;
+
+    // Owner-hidden page — checked BEFORE the tier grants below so it applies
+    // uniformly. A real Owner not simulating another tier is exempt; a real
+    // Owner who IS simulating sees exactly what that tier sees, so "View As"
+    // stays an honest preview of the hiding they just configured.
+    if (hiddenPages.includes(featureId) && !(isRealOwner && tier === "Owner")) {
+      return false;
+    }
+
     if (tier === "Owner") return true;
 
-    const perm = featurePermissions.find(p => p.id === featureId);
-    if (!perm) return true; // Default open fallback for unrecognized features
+    // Resolve against the saved registry first, then fall back to the
+    // shipped defaults.
+    //
+    // That second lookup matters: the saved list lives in localStorage and
+    // goes stale the moment a new page is added, so without it every newly
+    // shipped feature would hit the default-open branch below and be granted
+    // to every tier on any browser with an older saved list. Falling through
+    // to DEFAULT_FEATURE_PERMISSIONS means a new page is governed by the
+    // tiers it actually shipped with.
+    const perm =
+      featurePermissions.find(p => p.id === featureId) ||
+      DEFAULT_FEATURE_PERMISSIONS.find(p => p.id === featureId);
+
+    // Genuinely unknown to both — not a page we ship. Kept open so
+    // non-page permission checks don't hard-fail.
+    if (!perm) return true;
 
     const level = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
     if (level === "Editor") return true;
@@ -568,68 +1030,60 @@ export default function App() {
     return false;
   };
 
-  // Owner Passcode authentication states
-  const [ownerPasscode, setOwnerPasscodeState] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem("ditto_owner_passcode");
-      return saved || "1234"; // Default passcode
-    } catch (_) {
-      return "1234";
+  // EVICTION GUARD — if the page the user is currently on becomes
+  // inaccessible (typically because the Owner just hid it), bounce them
+  // Home. Without this the nav button disappears but the tab body keeps
+  // rendering, because the route blocks below key off activeTab alone.
+  //
+  // Cannot strand a real Owner: hasAccess() always grants them
+  // "owner_controls", so the Owner Controls page stays reachable even if the
+  // guard bounces them out of a page they hid while previewing via "View As".
+  useEffect(() => {
+    if (activeTab === "lookup") return;
+    if (!hasAccess(activeTab, "Viewer")) {
+      setActiveTab("lookup");
+      setShowIntro(true);
     }
-  });
+  }, [hiddenPages, activeTab, currentUser, effectiveTier]);
 
-  const setOwnerPasscode = (code: string) => {
-    setOwnerPasscodeState(code);
-    try {
-      localStorage.setItem("ditto_owner_passcode", code);
-    } catch (_) {}
-  };
+  // Destructive-action confirmation state.
+  //
+  // NOTE (audit fix, see Production_Readiness_Audit.md Finding 2): this used
+  // to be an "Owner Passcode" gate — a 4-digit code stored in localStorage
+  // (defaulting to the literal string "1234") and compared to the user's
+  // input entirely in the browser. That provided no real access control:
+  // anyone could read the correct value out of localStorage, or simply
+  // invoke the stored `onConfirm` callback from devtools. The actual
+  // authorization check has always been (and remains) the `hasAccess(...)`
+  // tier check below — the passcode step added a false sense of security on
+  // top of it without adding any real one. This keeps the "are you sure,
+  // this is permanent" confirmation UX (still useful against accidental
+  // clicks) but is honest about what it is: a confirmation, not a
+  // credential check. Real enforcement for these actions happens server-side
+  // once they're wired to authenticated API routes (audit Finding 3).
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
+  const [onConfirmAction, setOnConfirmAction] = useState<(() => void) | null>(null);
+  const [confirmActionLabel, setConfirmActionLabel] = useState<string>("");
 
-  const [isPasscodeModalOpen, setIsPasscodeModalOpen] = useState<boolean>(false);
-  const [passcodeAttempt, setPasscodeAttempt] = useState<string>("");
-  const [passcodeError, setPasscodeError] = useState<string | null>(null);
-  const [onPasscodeSuccess, setOnPasscodeSuccess] = useState<(() => void) | null>(null);
-  const [passcodeActionLabel, setPasscodeActionLabel] = useState<string>("");
-
-  const requestOwnerPasscode = (actionDescription: string, onSuccess: () => void) => {
+  const confirmDestructiveAction = (actionDescription: string, onConfirm: () => void) => {
     if (!hasAccess("clear_activity", "Editor")) {
       alert(`Forbidden: Clearance Tier is ${effectiveTier}. This destructive operation requires additional permissions or higher clearance.`);
       return;
     }
-    setOnPasscodeSuccess(() => onSuccess);
-    setPasscodeAttempt("");
-    setPasscodeError(null);
-    setPasscodeActionLabel(actionDescription);
-    setIsPasscodeModalOpen(true);
+    setOnConfirmAction(() => onConfirm);
+    setConfirmActionLabel(actionDescription);
+    setIsConfirmModalOpen(true);
   };
 
-  const handleVerifyPasscode = () => {
-    if (passcodeAttempt === ownerPasscode) {
-      setIsPasscodeModalOpen(false);
-      if (onPasscodeSuccess) {
-        onPasscodeSuccess();
-      }
-    } else {
-      setPasscodeError("Invalid passport key. Action verification failed.");
+  const handleConfirmDestructiveAction = () => {
+    setIsConfirmModalOpen(false);
+    if (onConfirmAction) {
+      onConfirmAction();
     }
   };
 
   // Derived legacy support for general admin checks
   const currentUserRole = effectiveTier === "Admin" || effectiveTier === "Owner" ? "admin" : "advisor";
-
-  // Real-time toggler cycles between: General -> Admin -> Owner
-  const toggleUserRole = () => {
-    if (!currentUser) return;
-    let nextTier: "General" | "Admin" | "Owner" = "General";
-    if (currentUser.tier === "General") nextTier = "Admin";
-    else if (currentUser.tier === "Admin") nextTier = "Owner";
-    else if (currentUser.tier === "Owner") nextTier = "General";
-
-    const updatedUser = { ...currentUser, tier: nextTier };
-    setCurrentUser(updatedUser);
-    // Sync list
-    setUsersList(prev => prev.map(u => u.email === currentUser.email ? { ...u, tier: nextTier } : u));
-  };
 
   // Plan Configurations dynamically expanded with promoted and draft plans!
   const planConfigs = useMemo(() => {
@@ -643,42 +1097,13 @@ export default function App() {
         const umbrellas = qState.filter(q => q.tag === "Umbrella").map(q => q.text);
         const catchAllOpt = qState.find(q => q.tag === "Catch-all")?.text || "Other Medical Conditions";
 
-        const categoryMap: Record<string, string | number> = {};
-        const categoriesList = [
-          { key: "diabetes", regex: /diabet|sugar|glucose/i },
-          { key: "hypertension", regex: /hyperten|blood pressure\b|bp high|bp\s+high/i },
-          { key: "lipid", regex: /lipid|cholesterol|triglyceride/i },
-          { key: "respiratory", regex: /asthma|lung|tuberculosis|tb|respiratory|pleura|bronchitis|copd/i },
-          { key: "neuro", regex: /stroke|paralysis|epilepsy|fits|seizure|neurolog|brain|spinal cord/i },
-          { key: "psychiatric", regex: /psychiatr|mental|depress|anxiety|insomnia/i },
-          { key: "digestive", regex: /ulcer|digestive|stomach|intestine|piles|fissure|fistula|appendix/i },
-          { key: "liver", regex: /liver|jaundice|gall|hepatitis/i },
-          { key: "kidney", regex: /kidney|renal|urinary|prostate|dialysis/i },
-          { key: "reproductive", regex: /reproduct|ovarian|uterus|cervix|prostate|pcod|pcod|semen/i },
-          { key: "endocrine", regex: /thyroid|endocrine|gland|goiter|pituitary/i },
-          { key: "blood", regex: /blood disorder|anaemia|anemia|haemophilia|thalassaemia|genetic/i },
-          { key: "skin", regex: /skin|psoriasis|dermatitis|keloid/i },
-          { key: "neoplasm", regex: /cancer|tumour|tumor|cyst|polyp|growth/i },
-          { key: "autoimmune", regex: /autoimmune|sle|lupus|rheumatoid arthritis/i },
-          { key: "ent", regex: /ear|nose|throat|tonsil|sinus/i },
-          { key: "eye", regex: /eye|vision|cataract|glaucoma/i }
-        ];
-
-        specifics.forEach((qText) => {
-          categoriesList.forEach((cat) => {
-            if (cat.regex.test(qText)) {
-              categoryMap[cat.key] = qText;
-            }
-          });
-        });
-
         base[name] = {
           ...base[name],
           questions: [...specifics, catchAllOpt],
           anyOther: catchAllOpt,
           hasUmbrella: umbrellas.length > 0,
           umbrellaQuestions: umbrellas,
-          categoryMap: base[name]?.categoryMap || categoryMap
+          categoryMap: base[name]?.categoryMap || guessCategoryMap(specifics)
         };
       }
     });
@@ -695,45 +1120,34 @@ export default function App() {
       const umbrellas = questionsWithTags.filter(q => q.tag === "Umbrella").map(q => q.text);
       const catchAllOpt = questionsWithTags.find(q => q.tag === "Catch-all")?.text || "Other Medical Conditions";
 
-      const categoryMap: Record<string, string | number> = {};
-      const categoriesList = [
-        { key: "diabetes", regex: /diabet|sugar|glucose/i },
-        { key: "hypertension", regex: /hyperten|blood pressure\b|bp high|bp\s+high/i },
-        { key: "lipid", regex: /lipid|cholesterol|triglyceride/i },
-        { key: "respiratory", regex: /asthma|lung|tuberculosis|tb|respiratory|pleura|bronchitis|copd/i },
-        { key: "neuro", regex: /stroke|paralysis|epilepsy|fits|seizure|neurolog|brain|spinal cord/i },
-        { key: "psychiatric", regex: /psychiatr|mental|depress|anxiety|insomnia/i },
-        { key: "digestive", regex: /ulcer|digestive|stomach|intestine|piles|fissure|fistula|appendix/i },
-        { key: "liver", regex: /liver|jaundice|gall|hepatitis/i },
-        { key: "kidney", regex: /kidney|renal|urinary|prostate|dialysis/i },
-        { key: "reproductive", regex: /reproduct|ovarian|uterus|cervix|prostate|pcod|pcod|semen/i },
-        { key: "endocrine", regex: /thyroid|endocrine|gland|goiter|pituitary/i },
-        { key: "blood", regex: /blood disorder|anaemia|anemia|haemophilia|thalassaemia|genetic/i },
-        { key: "skin", regex: /skin|psoriasis|dermatitis|keloid/i },
-        { key: "neoplasm", regex: /cancer|tumour|tumor|cyst|polyp|growth/i },
-        { key: "autoimmune", regex: /autoimmune|sle|lupus|rheumatoid arthritis/i },
-        { key: "ent", regex: /ear|nose|throat|tonsil|sinus/i },
-        { key: "eye", regex: /eye|vision|cataract|glaucoma/i }
-      ];
-
-      specifics.forEach((qText) => {
-        categoriesList.forEach((cat) => {
-          if (cat.regex.test(qText)) {
-            categoryMap[cat.key] = qText;
-          }
-        });
-      });
-
       base[draft.name] = {
         questions: [...specifics, catchAllOpt],
         anyOther: catchAllOpt,
         hasUmbrella: umbrellas.length > 0,
         umbrellaQuestions: umbrellas,
-        categoryMap
+        categoryMap: guessCategoryMap(specifics)
       };
     });
+
+    // DB-authored plans (Plan Management page) are the live source of
+    // truth and win over anything derived above — this mirrors exactly
+    // what /api/match does server-side (see dbRowToPlanConfig in
+    // server.ts), so what an advisor sees in the picker/lookup always
+    // matches what the server will actually classify against.
+    dbPlanConfigs.forEach(row => {
+      const specifics = row.questions.filter(q => q.tag !== "Umbrella").map(q => q.text);
+      base[row.planName] = {
+        questions: specifics,
+        anyOther: row.anyOther,
+        hasUmbrella: row.hasUmbrella,
+        umbrellaQuestions: row.umbrellaQuestions,
+        categoryMap: row.categoryMap,
+        overrides: row.overrides,
+      };
+    });
+
     return base;
-  }, [draftPlans, productionPlans, planQuestionsState]);
+  }, [draftPlans, productionPlans, planQuestionsState, dbPlanConfigs]);
 
   const [dictionaryVersion, setDictionaryVersion] = useState<number>(0);
 
@@ -765,10 +1179,19 @@ export default function App() {
   const [tempSsoName, setTempSsoName] = useState<string>("");
   const [tempTactId, setTempTactId] = useState<string>("");
 
-  // Verify the real Google session on mount and hydrate currentUser. Tier
-  // still comes from the local usersList lookup for now (Google Groups RBAC
-  // lands in Phase 4c) — this only replaces the *identity* check (who is
-  // this) with the real, server-verified @joinditto.in login.
+  // Verify the real Google session on mount and hydrate currentUser.
+  //
+  // NOTE (audit fix, see Production_Readiness_Audit.md Findings 1 & 9): this
+  // used to resolve tier by looking the identity up in the local `usersList`
+  // state, which is seeded with a hardcoded default and only ever refreshed
+  // from the server when someone happened to open the Profile Access tab.
+  // A newly-provisioned (or newly re-tiered) user's very first login on a
+  // fresh browser would resolve against that stale/local copy instead of
+  // the real directory — e.g. a brand-new hire added by an Owner on a
+  // different machine would incorrectly land in the first-time-setup flow.
+  // GET /api/me (server.ts) returns the caller's own, server-authoritative
+  // directory record, resolved from their verified session email — every
+  // login now goes through that instead of a client-cached lookup.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -779,7 +1202,10 @@ export default function App() {
         const identity = data?.user as { email: string; name: string; picture?: string } | null;
         if (!identity || cancelled) return;
 
-        const existingUser = usersList.find(u => u.email.toLowerCase() === identity.email.toLowerCase());
+        const meRes = await fetch("/api/me");
+        const meData = meRes.ok ? await meRes.json().catch(() => null) : null;
+        const existingUser = meData?.user as UserProfile | null | undefined;
+
         if (existingUser && existingUser.status === "Active") {
           setCurrentUser({
             email: existingUser.email,
@@ -788,8 +1214,33 @@ export default function App() {
             tier: existingUser.tier,
             avatarUrl: identity.picture
           });
+          // Keep the local directory cache in sync with the one confirmed-
+          // current record we just fetched, so the "keep currentUser in
+          // sync with usersList" effect below doesn't clobber this with a
+          // stale cached entry.
+          setUsersList(prev => {
+            const idx = prev.findIndex(u => u.email.toLowerCase() === existingUser.email.toLowerCase());
+            if (idx === -1) return [...prev, existingUser];
+            if (prev[idx].tier === existingUser.tier && prev[idx].name === existingUser.name && prev[idx].tactId === existingUser.tactId) {
+              return prev;
+            }
+            const next = [...prev];
+            next[idx] = existingUser;
+            return next;
+          });
           setShowIntro(true);
           setActiveTab("lookup");
+        } else if (existingUser) {
+          // A directory record exists but status isn't "Active" — this
+          // means an Owner has Disabled the account (this used to also
+          // catch "Pending First Login", which no longer exists as a
+          // status). Don't route this into first-time-setup: that flow
+          // would just 409 anyway (the server refuses to re-provision an
+          // email that's already in the directory), so it'd surface as a
+          // confusing error instead of a clear "you're logged in with
+          // Google but this account is deactivated" outcome. Leaving
+          // currentUser unset here falls through to the normal login
+          // screen.
         } else {
           setTempSsoEmail(identity.email);
           setTempSsoName(identity.name);
@@ -803,7 +1254,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-    // Runs once on mount only; deliberately reads usersList's initial value.
+    // Runs once on mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -827,6 +1278,7 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditSearch, setAuditSearch] = useState<string>("");
   const [auditPlanFilter, setAuditPlanFilter] = useState<string>("All");
+  const [auditStatusFilter, setAuditStatusFilter] = useState<string>("All");
   const [auditTypeFilter, setAuditTypeFilter] = useState<string>("All");
   const [auditStartDate, setAuditStartDate] = useState<string>("");
   const [auditEndDate, setAuditEndDate] = useState<string>("");
@@ -1017,8 +1469,71 @@ export default function App() {
     ]
   };
 
+  // Folds each plan's DB-managed Specific Illness List (Plan Management
+  // wizard) into the same dict shape the Quick Reference sidebar
+  // (SpecificIllnessLedgerCard) already reads, so illnesses an admin adds
+  // there show up in that panel too — not just in the result-card tag from
+  // checkIllnessInPlanSpecificList below. Additive per plan, same as the
+  // matching logic: DB entries are appended after, never replacing, a
+  // built-in plan's existing hardcoded list.
+  const effectiveSpecificIllnessesDict = useMemo(() => {
+    const merged: Record<string, Array<{ category?: string; illness: string }>> = { ...SPECIFIC_ILLNESSES };
+    dbPlanConfigs.forEach(cfg => {
+      if (cfg.specificIllnesses && cfg.specificIllnesses.length > 0) {
+        merged[cfg.planName] = [...(merged[cfg.planName] || []), ...cfg.specificIllnesses];
+      }
+    });
+
+    // Plans with neither a curated SPECIFIC_ILLNESSES entry above nor a
+    // saved DB list yet (Aspire, Reassure 2.0 today) still have a full
+    // schedule sitting in MASTER_ILLNESSES's plan_schedules — the exact
+    // same source the Specific Illness Manager (SpecificIllnessLedger.tsx's
+    // handleSelectManagePlan) already previews to an admin before they
+    // explicitly click Save. Without this fallback, that preview creates
+    // the impression a plan's list "exists" while this dict — and the
+    // Quick Reference / Specific Illness List panel on the Results page
+    // that reads it — stays empty until someone happens to open the
+    // Manager and Save to formalize it into the DB. Only fills the gap: a
+    // plan that already has a real curated or DB-saved list is left alone.
+    const planNamesWithSchedules = new Set<string>();
+    MASTER_ILLNESSES.forEach(def => {
+      Object.keys(def.plan_schedules).forEach(name => planNamesWithSchedules.add(name));
+    });
+    planNamesWithSchedules.forEach(planName => {
+      if (merged[planName] && merged[planName].length > 0) return;
+      const derived = MASTER_ILLNESSES
+        .filter(def => Boolean(def.plan_schedules[planName]))
+        .map(def => ({ category: def.category as string, illness: def.parent_illness }));
+      if (derived.length > 0) merged[planName] = derived;
+    });
+
+    return merged;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbPlanConfigs]);
+
   const checkIllnessInPlanSpecificList = (pedText: string, plan: string) => {
     if (!plan) return null;
+
+    // 1. Admin-managed Specific Illness List for this exact plan (Plan
+    // Management wizard, DB-backed via plan_configs.specificIllnesses) —
+    // checked first so illnesses an admin explicitly added always take
+    // priority. Reuses matchesPhrase — the same whole-word/phrase matcher
+    // the legacy engine below uses — just scoped to this plan's own
+    // entries instead of the fixed MASTER_ILLNESSES catalog.
+    const dbConfig = dbPlanConfigs.find(cfg => cfg.planName === plan);
+    if (dbConfig?.specificIllnesses?.length) {
+      const dbMatch = dbConfig.specificIllnesses.find(entry => matchesPhrase(pedText, entry.illness));
+      if (dbMatch) {
+        return { category: dbMatch.category || "General", illness: dbMatch.illness };
+      }
+    }
+
+    // 2. Legacy hardcoded engine — additive fallback, not replaced by step
+    // 1, so the 4 original plans (Optima Secure, Care Supreme, Activ One
+    // Max, Activ Fit Preferred) keep matching against their existing
+    // specific illness schedule even after being edited in the wizard,
+    // since editing declaration questions there doesn't require
+    // re-entering their pre-existing specific illness list.
     const matches = matchSpecificIllness(pedText);
     const normalized = normalizePlanName(plan);
     const match = matches.find(m => m.match_type !== "no_match" && m.plans_applicable.includes(normalized));
@@ -1182,27 +1697,17 @@ export default function App() {
   const [copiedPedMap, setCopiedPedMap] = useState<Record<string, boolean>>({});
 
 
-  // Reported Mismatch Issues States
-  const [reportedIssues, setReportedIssues] = usePersistentState<ReportedIssue[]>(
-    "ditto_reported_issues",
-    () => [
-      {
-        id: "seed-1",
-        timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-        userEmail: "shashank@joinditto.in",
-        userName: "Shashank J",
-        userTactId: "TACT-102",
-        planName: "Optima Secure",
-        pedInput: "gdm during previous pregnancy",
-        matchedQuestion: "Is the proposed relationship a biological mother, or have you had any complications during delivery?",
-        matchType: "P1",
-        source: "Insurers Policy Wording Handbook",
-        explanation: "Since GDM (Gestational Diabetes Mellitus) represents pregnancy complications, advisor needs to declare it against the delivery complications question.",
-        issueNotes: "This should map to the specific endocrine/maternal diabetes clause under Section D rather than Delivery complications, because GDM is assessed for 48 months under HDFC Ergo internal underwriters guidelines.",
-        status: "Urgent"
-      }
-    ]
-  );
+  // Reported Mismatch Issues (Flagged Responses).
+  //
+  // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
+  // to be a hardcoded seed persisted to this browser's own localStorage —
+  // so a flagged report only ever existed in the reporting advisor's own
+  // browser, and an Owner's resolve/ignore/delete only ever updated their
+  // own browser too. FlaggedResponsesPage now fetches GET /api/flagged-issues
+  // (backed by the flagged_issues table) on mount, and every create (below)
+  // /resolve/ignore/delete (FlaggedResponsesPage.tsx) round-trips through
+  // the server.
+  const [reportedIssues, setReportedIssues] = useState<ReportedIssue[]>([]);
 
   const [reportingItem, setReportingItem] = useState<{
     planName: string;
@@ -1214,6 +1719,8 @@ export default function App() {
   } | null>(null);
 
   const [reportingNotes, setReportingNotes] = useState<string>("");
+  const [isSubmittingReport, setIsSubmittingReport] = useState<boolean>(false);
+  const [reportingError, setReportingError] = useState<string | null>(null);
   const [reportedIssuesFilter, setReportedIssuesFilter] = useState<string>("All Open"); // All Open, Pending, Urgent, Resolved, Ignored, All
   const [ownerResolutionNotes, setOwnerResolutionNotes] = useState<Record<string, string>>({});
   
@@ -1222,53 +1729,96 @@ export default function App() {
   const [editingAnnouncementId, setEditingAnnouncementId] = useState<string | null>(null);
   const [confirmingResetDefaults, setConfirmingResetDefaults] = useState<boolean>(false);
 
-  const resultsRef = useRef<HTMLDivElement>(null);
-  const mappingResultCardRef = useRef<HTMLDivElement>(null);
-  const rightHeaderRef = useRef<HTMLDivElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
   const pedInputRef = useRef<HTMLInputElement>(null);
 
   // (Persistence for `theme` is handled by the usePersistentState hook above;
   // the <html> "dark" class is kept in sync by the effect near isDark's
   // declaration, so this used to be a duplicate of both.)
 
-  // Load Search logs
+  // Load search history (Audit tab's full list / My Activity's self-filtered
+  // view — MyActivityPage does its own client-side filter-by-email on this
+  // same array).
+  //
+  // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
+  // to read/write this browser's own localStorage, capped at 400 in-memory
+  // entries with no sharing across users or devices — meaning "Audit" never
+  // actually audited anyone but the viewing browser. GET/POST/DELETE
+  // /api/search-history (backed by the search_history table) is now the
+  // shared source of truth: Admin/Owner fetch everyone's history (for the
+  // Audit tab), everyone else fetches only their own (for My Activity) —
+  // matching the server-side authorization already enforced by that route.
+  const mapSearchHistoryRow = (row: any): AuditLogEntry => ({
+    timestamp: row.timestamp,
+    userEmail: row.userEmail,
+    planName: row.planName,
+    pedInput: row.pedInput,
+    matchedQuestion: row.matchedQuestion,
+    matchType: row.matchType,
+    source: row.source,
+    explanation: row.explanation,
+  });
+
   useEffect(() => {
-    try {
-      const savedLogs = localStorage.getItem("ditto_ped_search_history");
-      if (savedLogs) {
-        setAuditLogs(JSON.parse(savedLogs));
-      }
-    } catch (_) {}
-  }, []);
+    if (!currentUser) return;
+    const isPrivileged = effectiveTier === "Admin" || effectiveTier === "Owner";
+    const url = isPrivileged
+      ? "/api/search-history"
+      : `/api/search-history?userEmail=${encodeURIComponent(currentUser.email)}`;
+    fetch(url)
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        if (Array.isArray(body.entries)) {
+          setAuditLogs(body.entries.map(mapSearchHistoryRow));
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load search history from the server:", err);
+      });
+    // Re-fetch when the signed-in user or their effective tier changes
+    // (e.g. simulating a different role should reflect that role's view).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email, effectiveTier]);
 
   const saveAuditLog = (ped: string, plan: string, result: MatchOutput, source: string) => {
-    const newEntry: AuditLogEntry = {
-      timestamp: new Date().toISOString(),
-      userEmail: currentUser?.email || "advisor@joinditto.in",
-      planName: plan,
-      pedInput: ped,
-      matchedQuestion: result.matched_question,
-      matchType: result.match_type,
-      source: source || "Deterministic Engine",
-      explanation: result.explanation
-    };
-
-    setAuditLogs(prev => {
-      const updated = [newEntry, ...prev].slice(0, 400); // Limit to 400 records
-      try {
-        localStorage.setItem("ditto_ped_search_history", JSON.stringify(updated));
-      } catch (_) {}
-      return updated;
-    });
+    // Fire-and-forget: this is telemetry, not something that should block
+    // the advisor from seeing their match result if the write fails. The
+    // local list is reconciled with the server's canonical row on success;
+    // a failure is logged but otherwise silent to avoid interrupting the
+    // lookup flow (the underlying match itself already succeeded).
+    fetch("/api/search-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        planName: plan,
+        pedInput: ped,
+        matchedQuestion: result.matched_question,
+        matchType: result.match_type,
+        source: source || "Deterministic Engine",
+        explanation: result.explanation,
+      }),
+    })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        setAuditLogs(prev => [mapSearchHistoryRow(body.entry), ...prev].slice(0, 400));
+      })
+      .catch((err) => {
+        console.error("Failed to record search history entry on the server:", err);
+      });
   };
 
   const handleClearAuditHistory = () => {
-    requestOwnerPasscode("Clear all activity audit logs permanently", () => {
-      setAuditLogs([]);
-      try {
-        localStorage.removeItem("ditto_ped_search_history");
-      } catch (_) {}
+    confirmDestructiveAction("Clear all activity audit logs permanently", () => {
+      fetch("/api/search-history", { method: "DELETE" })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+          setAuditLogs([]);
+        })
+        .catch((err) => {
+          console.error("Failed to clear search history on the server:", err);
+        });
     });
   };
 
@@ -1337,7 +1887,11 @@ export default function App() {
         throw new Error(errorData.error || "Failed to commit mapping to codebase");
       }
 
-      // Write directly to live in-memory deterministic index in the client session
+      // The server has already persisted this to ped_mapping_overrides and
+      // applied it to its own in-memory dictionary (see /api/add-ped-mapping
+      // in server.ts) — this local mutation just makes the correction show
+      // up instantly in *this* browser's suggestion dropdown without a
+      // reload, it's a UX nicety, not the source of durability anymore.
       const pedLower = pedClean.toLowerCase().replace(/[^\w\s]/g, "").trim();
       TOP_PED_DICTIONARY[pedLower] = category;
       setDictionaryVersion(prev => prev + 1);
@@ -1395,7 +1949,7 @@ export default function App() {
     window.location.href = "/api/auth/google/login";
   };
 
-  const handleProfileCompletion = (e: React.FormEvent) => {
+  const handleProfileCompletion = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
 
@@ -1410,43 +1964,52 @@ export default function App() {
     setLoginLoading(true);
 
     // Identity (email/name) is already server-verified via the real Google
-    // session; this only records the internal TACT ID and (for now) assigns
-    // tier from the local usersList lookup -- Google Groups RBAC replaces
-    // this tier assignment in Phase 4c.
-    const existingUser = usersList.find(u => u.email.toLowerCase() === tempSsoEmail.toLowerCase());
-    const assignedTier = existingUser ? existingUser.tier : "General";
+    // session. POST /api/me/first-time-setup (server.ts) is what actually
+    // provisions this person into the shared, server-side directory —
+    // always at "General" tier; an Owner promotes people afterward via User
+    // Management. (Audit fix, see Production_Readiness_Audit.md Finding 9:
+    // this used to only ever write to the completing browser's own
+    // localStorage, so the new user never appeared in the real directory
+    // and had to "complete setup" again on every new device.)
+    try {
+      const res = await fetch("/api/me/first-time-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameClean, tactId: tactClean }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error || `Failed to complete setup (HTTP ${res.status}).`);
+      }
 
-    const newUserProfile: UserProfile = {
-      email: tempSsoEmail.toLowerCase().trim(),
-      name: nameClean,
-      tactId: tactClean,
-      tier: assignedTier,
-      status: "Active"
-    };
+      const newUserProfile: UserProfile = body.user;
 
-    setUsersList(prev => {
-      // Exclude previous pending records
-      const filtered = prev.filter(u => u.email.toLowerCase() !== tempSsoEmail.toLowerCase());
-      return [...filtered, newUserProfile];
-    });
+      setUsersList(prev => {
+        const filtered = prev.filter(u => u.email.toLowerCase() !== newUserProfile.email.toLowerCase());
+        return [...filtered, newUserProfile];
+      });
 
-    const sessionUser: LoggedUser = {
-      email: tempSsoEmail.toLowerCase().trim(),
-      name: nameClean,
-      tactId: tactClean,
-      tier: assignedTier
-    };
+      const sessionUser: LoggedUser = {
+        email: newUserProfile.email,
+        name: newUserProfile.name,
+        tactId: newUserProfile.tactId,
+        tier: newUserProfile.tier
+      };
 
-    setCurrentUser(sessionUser);
-    setShowIntro(true);
-    setActiveTab("lookup");
+      setCurrentUser(sessionUser);
+      setShowIntro(true);
+      setActiveTab("lookup");
 
-    // Clear setup
-    setIsFirstTimeSetup(false);
-    setTempSsoEmail("");
-    setTempSsoName("");
-    setTempTactId("");
-    setLoginLoading(false);
+      // Clear setup
+      setIsFirstTimeSetup(false);
+      setTempSsoEmail("");
+      setTempSsoName("");
+      setTempTactId("");
+    } catch (err: unknown) {
+      setLoginError(err instanceof Error ? err.message : "Failed to complete setup. Please try again.");
+    } finally {
+      setLoginLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -1673,7 +2236,7 @@ export default function App() {
         {/* Modern, Simple, and Futuristic Ambient Background */}
         <div
           className={`absolute inset-0 pointer-events-none z-0 select-none transition-all duration-500 ${
-            isDark ? "opacity-90" : "opacity-[0.70]"
+            isDark ? "opacity-55" : "opacity-[0.35]"
           }`}
           style={{
             backgroundImage: isDark
@@ -2036,27 +2599,28 @@ export default function App() {
 
   const renderSidebarContent = (isMobile: boolean = false) => {
     return (
-      <div className={`h-full flex flex-col ${
-        theme === "dark" ? "bg-[#03101a] text-[#F5F7FA]" : "bg-[var(--sidebar-bg)] text-stone-950"
+      <div className={`h-full flex flex-col text-[#F5F7FA] ${
+        theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
       }`}>
         {/* Header */}
         <div
-          style={{ borderColor: theme === "dark" ? "" : "#2f384b" }}
-          className={`p-5 border-b flex items-center justify-between ${
-            theme === "dark" ? "border-white/[0.08] bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
+          className={`p-5 border-b border-white/[0.08] flex items-center justify-between ${
+            theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
           }`}
         >
           <div className="flex flex-col">
-            <span className={`text-xs font-bold uppercase tracking-wider ${theme === "dark" ? "text-stone-400" : "text-stone-950 font-black"}`}>Ditto Compliance</span>
-            <span className={`text-[10px] font-medium ${theme === "dark" ? "text-[#9CA3AF]" : "text-stone-900 font-bold"}`}>Medical Declaration Mapping Workspace</span>
+            {/* Explicit "text-white" (not the var(--sidebar-bg)-adjacent hex
+                this used to carry) so the title stays fully opaque white
+                against the sidebar's locked dark-navy chrome in BOTH themes
+                — it was reading as a barely-visible gray smudge in Light
+                theme. Sidebar bg is intentionally dark-navy in both themes
+                (see index.css's --sidebar-bg "LOCKED VALUE" note). */}
+            <span className="text-xs font-bold uppercase tracking-wider text-white">Ditto Compliance</span>
+            <span className="text-[10px] font-medium text-[#C4CDD8]">Medical Declaration Mapping Workspace</span>
           </div>
           <button
             onClick={() => setIsMenuOpen(false)}
-            className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-              theme === "dark"
-                ? "hover:bg-white/5 text-[#9CA3AF] hover:text-[#F5F7FA]"
-                : "hover:bg-black/10 text-[#061f3f] hover:text-[#061f3f]"
-            }`}
+            className="p-1.5 rounded-lg transition-all cursor-pointer hover:bg-white/5 text-[#C4CDD8] hover:text-[#F5F7FA]"
             title="Collapse Menu"
           >
             <PanelLeftClose className="w-5 h-5" />
@@ -2065,7 +2629,7 @@ export default function App() {
 
         {/* Categories / Navigation items */}
         <div role="navigation" aria-label="Workspace navigation" className="flex-grow p-4 space-y-1.5 overflow-y-auto">
-          <span className={`block text-[10px] font-bold tracking-wider px-2 mb-2 ${theme === "dark" ? "text-[#9CA3AF]" : "text-[#03101a] font-extrabold"}`}>
+          <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
             Advisor Zone
           </span>
 
@@ -2079,15 +2643,11 @@ export default function App() {
                 }}
                 className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
                   activeTab === "lookup" && showIntro
-                    ? theme === "dark"
-                      ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                      : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                    : theme === "dark"
-                      ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                    ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                    : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
-                <Home className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+                <Home className="w-4 h-4 shrink-0 text-blue-300" />
                 <span>Home</span>
               </button>
 
@@ -2099,18 +2659,50 @@ export default function App() {
                 }}
                 className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
                   activeTab === "lookup" && !showIntro
-                    ? theme === "dark"
-                      ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                      : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                    : theme === "dark"
-                      ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                    ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                    : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
-                <Sparkles className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+                <Sparkles className="w-4 h-4 shrink-0 text-blue-300" />
                 <span>Declaration Assistant</span>
               </button>
             </>
+          )}
+
+          {/* Advisory Zone — sits ABOVE the Admin Zone divider because it is
+              advisor-facing and visible to every tier. */}
+          {hasAccess("advisory_zone", "Viewer") && (
+            <button
+              onClick={() => {
+                setActiveTab("advisory_zone");
+                if (isMobile) setIsMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                activeTab === "advisory_zone"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+              } rounded-r-lg border-y-transparent border-r-transparent`}
+            >
+              <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>Plan Reference</span>
+            </button>
+          )}
+
+          {hasAccess("coverage_projection", "Viewer") && (
+            <button
+              onClick={() => {
+                setActiveTab("coverage_projection");
+                if (isMobile) setIsMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                activeTab === "coverage_projection"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+              } rounded-r-lg border-y-transparent border-r-transparent`}
+            >
+              <FileSpreadsheet className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>Cover projection</span>
+            </button>
           )}
 
           {hasAccess("resources", "Viewer") && (
@@ -2120,16 +2712,22 @@ export default function App() {
                 if (isMobile) setIsMenuOpen(false);
               }}
               className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "resources" 
-                  ? theme === "dark"
-                    ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                    : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                  : theme === "dark"
-                    ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                    : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                activeTab === "resources"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <DeclarationMapIcon width={16} height={16} color="currentColor" className={`shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+              {/* Faux-bold drop-shadow — this filled-path SVG's thin route
+                  lines read lighter than the other stroke-based icons at
+                  16px; the drop-shadow thickens the rendered shape itself
+                  without changing the box size. */}
+              <DeclarationMapIcon
+                width={16}
+                height={16}
+                color="currentColor"
+                className="shrink-0 text-blue-300"
+                style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }}
+              />
               <span>Declaration Map</span>
             </button>
           )}
@@ -2141,33 +2739,80 @@ export default function App() {
                 if (isMobile) setIsMenuOpen(false);
               }}
               className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "my_activity" 
-                  ? theme === "dark"
-                    ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                    : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                  : theme === "dark"
-                    ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                    : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                activeTab === "my_activity"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <History className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+              <History className="w-4 h-4 shrink-0 text-blue-300" />
               <span>My Activity</span>
             </button>
           )}
 
-          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
+          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
             <>
               {/* Clear separation between Advisor Zone and Admin Zone — a
                   visibly distinct rule (not just a faint hairline) so the two
                   sections of the workspace read as separate groups. */}
               <div
-                style={{ borderColor: theme === "dark" ? "rgba(255,255,255,0.12)" : "#1e293b" }}
+                style={{ borderColor: "rgba(255,255,255,0.12)" }}
                 className="border-t-2 my-4 opacity-70"
               />
 
-              <span className={`block text-[10px] font-bold tracking-wider px-2 mb-2 ${theme === "dark" ? "text-[#9CA3AF]" : "text-[#03101a] font-extrabold"}`}>
+              <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
                 Admin Zone
               </span>
+
+              {hasAccess("qa_announcement_log", "Viewer") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("qa_announcement_log");
+                    if (isMobile) setIsMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "qa_announcement_log"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                  } rounded-r-lg border-y-transparent border-r-transparent`}
+                >
+                  <Megaphone className="w-4 h-4 shrink-0 text-blue-300" />
+                  <span>Announcement Manager</span>
+                </button>
+              )}
+
+              {hasAccess("ped_suggestions", "Viewer") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("ped_suggestions");
+                    if (isMobile) setIsMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "ped_suggestions"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                  } rounded-r-lg border-y-transparent border-r-transparent`}
+                >
+                  <Stethoscope className="w-4 h-4 shrink-0 text-blue-300" />
+                  <span>PED Repository</span>
+                </button>
+              )}
+
+              {hasAccess("plan_scope", "Viewer") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("plan_scope");
+                    if (isMobile) setIsMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "plan_scope"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                  } rounded-r-lg border-y-transparent border-r-transparent`}
+                >
+                  <FileText className="w-4 h-4 shrink-0 text-blue-300" />
+                  <span>Plan Management</span>
+                </button>
+              )}
 
               {hasAccess("profile_access", "Viewer") && (
                 <button
@@ -2177,37 +2822,12 @@ export default function App() {
                   }}
                   className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
                     activeTab === "profile_access"
-                      ? theme === "dark"
-                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold"
-                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                      : theme === "dark"
-                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
-                  <User className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
-                  <span>User Directory</span>
-                </button>
-              )}
-
-              {hasAccess("qa_announcement_log", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("qa_announcement_log");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "qa_announcement_log" 
-                      ? theme === "dark"
-                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                      : theme === "dark"
-                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <Megaphone className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
-                  <span>Announcement Manager</span>
+                  <User className="w-4 h-4 shrink-0 text-blue-300" />
+                  <span>User Directory & Management</span>
                 </button>
               )}
 
@@ -2218,16 +2838,12 @@ export default function App() {
                     if (isMobile) setIsMenuOpen(false);
                   }}
                   className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "audit" 
-                      ? theme === "dark"
-                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                      : theme === "dark"
-                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                    activeTab === "audit"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
-                  <Clock className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+                  <Clock className="w-4 h-4 shrink-0 text-blue-300" />
                   <span>Activity Log</span>
                 </button>
               )}
@@ -2238,23 +2854,127 @@ export default function App() {
                     setActiveTab("flagged_responses");
                     if (isMobile) setIsMenuOpen(false);
                   }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "flagged_responses" 
-                      ? theme === "dark"
-                        ? "border-l-blue-600 bg-stone-850/40 text-white font-bold" 
-                        : "border-l-blue-700 bg-white/45 text-stone-950 font-black"
-                      : theme === "dark"
-                        ? "border-l-transparent text-[#9CA3AF] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                        : "border-l-transparent text-stone-900 hover:bg-white/20 hover:text-stone-950 font-semibold"
+                  className={`relative w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "flagged_responses"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
-                  <AlertCircle className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-blue-500" : "text-[#061f3f]"}`} />
+                  <span className="relative shrink-0 flex items-center justify-center">
+                    <AlertCircle className="w-4 h-4 text-blue-300" />
+                    {/* Moved here from the header's standalone Bell icon —
+                        the unresolved-mismatch alert now lives on the nav
+                        item that actually opens that list. */}
+                    {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
+                      <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                      </span>
+                    )}
+                  </span>
                   <span>Flagged Responses</span>
+                </button>
+              )}
+
+              {hasAccess("smoke_test", "Viewer") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("smoke_test");
+                    if (isMobile) setIsMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "smoke_test"
+                      ? "border-l-[#E08D4B] bg-[rgba(224,141,75,0.10)] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                  } rounded-r-lg border-y-transparent border-r-transparent`}
+                >
+                  <Flame className={`w-4 h-4 shrink-0 ${activeTab === "smoke_test" ? "text-[#E08D4B]" : "text-blue-300"}`} />
+                  <span>Smoke Test</span>
                 </button>
               )}
 
             </>
           )}
+
+          {/* OWNER ZONE — its own group below Admin Zone. Only ever renders
+              for the Owner (hasAccess short-circuits on tier), so no other
+              user sees this divider or heading at all. */}
+          {hasAccess("owner_controls", "Viewer") && (
+            <>
+              <div
+                style={{ borderColor: "rgba(255,255,255,0.12)" }}
+                className="border-t-2 my-4 opacity-70"
+              />
+
+              <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
+                Owner Zone
+              </span>
+
+              <button
+                onClick={() => {
+                  setActiveTab("owner_controls");
+                  if (isMobile) setIsMenuOpen(false);
+                }}
+                className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                  activeTab === "owner_controls"
+                    ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                    : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                } rounded-r-lg border-y-transparent border-r-transparent`}
+              >
+                <ShieldAlert className="w-4 h-4 shrink-0 text-blue-300" />
+                <span>Owner Controls</span>
+                {hiddenPages.length > 0 && (
+                  <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    {hiddenPages.length}
+                  </span>
+                )}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Bottom Profile Tab — DP picture + name, tab-styled to match the
+            nav buttons above it. Previously this whole footer only existed
+            in the collapsed rail (icon-only) state, so the profile
+            avatar/credentials trigger disappeared the moment the sidebar
+            was expanded. Shares profileButtonRef/profileOpen/
+            profileMenuPos with the collapsed rail's own avatar button
+            (see the collapsed branch below) — safe because the two are
+            never mounted at the same time. */}
+        <div className="mt-auto p-3 border-t border-white/[0.08] shrink-0">
+          <button
+            ref={profileButtonRef}
+            onClick={() => {
+              if (!profileOpen && profileButtonRef.current) {
+                const rect = profileButtonRef.current.getBoundingClientRect();
+                const bottom = Math.max(12, window.innerHeight - rect.bottom);
+                setProfileMenuPos({ bottom, left: rect.right + 8 });
+              }
+              setProfileOpen(!profileOpen);
+              if (isMobile) setIsMenuOpen(false);
+            }}
+            className="w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium rounded-r-lg border-y-transparent border-r-transparent"
+            title="View user credentials & active profile details"
+          >
+            <span
+              className="w-4 h-4 shrink-0 rounded-full overflow-hidden flex items-center justify-center"
+              style={{ backgroundColor: "#206147", borderColor: "#b9b97a", borderStyle: "solid", borderWidth: "1px" }}
+            >
+              {currentUser?.avatarUrl || currentUser?.photoUrl ? (
+                <img
+                  src={currentUser.avatarUrl || currentUser.photoUrl}
+                  alt={currentUser.name}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span className="text-[8px] font-bold uppercase text-white">
+                  {currentUser?.name?.charAt(0) || "M"}
+                </span>
+              )}
+            </span>
+            <span className="truncate">{currentUser?.name || "Advisor"}</span>
+          </button>
         </div>
       </div>
     );
@@ -2273,7 +2993,9 @@ export default function App() {
         animate={{ width: isMenuOpen ? 260 : (isMobileWindow ? 0 : 60) }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
         className={`${isMobileWindow ? "absolute left-0 top-0 h-full shadow-2xl" : "relative h-full"} flex flex-col shrink-0 z-50 overflow-hidden ${
-          isDark ? "bg-[#03101a] border-r border-white/[0.08]" : "bg-[var(--sidebar-bg)] border-r border-stone-300"
+          activeTab === "smoke_test"
+            ? "bg-[#060606] border-r border-[rgba(224,141,75,0.12)]"
+            : isDark ? "bg-[#03101a] border-r border-white/[0.08]" : "bg-[var(--sidebar-bg)] border-r border-white/[0.08]"
         }`}
       >
         {isMenuOpen ? (
@@ -2282,25 +3004,33 @@ export default function App() {
           </div>
         ) : (
           <div
-            style={{ borderRadius: "0px", backgroundColor: !isDark ? "var(--sidebar-bg)" : undefined }}
+            style={{
+              borderRadius: "0px",
+              backgroundColor: activeTab === "smoke_test" ? "#060606" : !isDark ? "var(--sidebar-bg)" : undefined,
+            }}
             className="w-full h-full flex flex-col items-center py-6 gap-3 overflow-hidden"
           >
             {/* Click to expand button */}
             <button 
               onClick={() => setIsMenuOpen(true)}
               className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                "hover:bg-white/5"
               }`}
               title="Expand Navigation Menu"
             >
-              <PanelLeftOpen className="w-5 h-5" style={{ color: !isDark ? "#061f3f" : "#9a9c9e" }} />
+              <PanelLeftOpen className="w-5 h-5" style={{ color: "#9a9c9e" }} />
             </button>
 
-            <div className={`w-10 border-b ${isDark ? "border-white/[0.08]" : "border-stone-200/50"} my-1`} />
+            <div className="w-10 border-b border-white/[0.08] my-1" />
 
             {/* Collapsed Menu Items of Active Tools */}
-            <div 
-              style={{ paddingLeft: "5px", paddingRight: "5px", borderRadius: "0px", backgroundColor: !isDark ? "var(--sidebar-bg)" : undefined }}
+            <div
+              style={{
+                paddingLeft: "5px",
+                paddingRight: "5px",
+                borderRadius: "0px",
+                backgroundColor: activeTab === "smoke_test" ? "#060606" : !isDark ? "var(--sidebar-bg)" : undefined,
+              }}
               className="flex flex-col gap-2 w-full flex-grow overflow-y-auto py-2 items-center no-scrollbar"
             >
               {hasAccess("lookup", "Viewer") && (
@@ -2313,9 +3043,9 @@ export default function App() {
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && showIntro
                         ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                        : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                        : "hover:bg-white/5"
                     }`}
-                    style={{ color: activeTab === "lookup" && showIntro ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                    style={{ color: activeTab === "lookup" && showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                     title="Home"
                   >
                     <Home style={{ width: "18px", height: "18px" }} />
@@ -2329,9 +3059,9 @@ export default function App() {
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && !showIntro
                         ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                        : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                        : "hover:bg-white/5"
                     }`}
-                    style={{ color: activeTab === "lookup" && !showIntro ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                    style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                     title="Declaration Assistant"
                   >
                     <Sparkles style={{ width: "18px", height: "18px" }} />
@@ -2339,33 +3069,118 @@ export default function App() {
                 </>
               )}
 
+              {hasAccess("advisory_zone", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("advisory_zone")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "advisory_zone"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "advisory_zone" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Plan Reference"
+                >
+                  <BookOpen style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("coverage_projection", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("coverage_projection")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "coverage_projection"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "coverage_projection" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Cover projection"
+                >
+                  <FileSpreadsheet style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
               {hasAccess("resources", "Viewer") && (
-                <button 
+                <button
                   onClick={() => setActiveTab("resources")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "resources" 
+                    activeTab === "resources"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                      : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "resources" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                  style={{ color: activeTab === "resources" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                   title="Declaration Map"
                 >
-                  <DeclarationMapIcon width={18} height={18} color="currentColor" />
+                  <DeclarationMapIcon width={18} height={18} color="currentColor" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} />
                 </button>
               )}
 
               {hasAccess("my_activity", "Viewer") && (
-                <button 
+                <button
                   onClick={() => setActiveTab("my_activity")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "my_activity" 
+                    activeTab === "my_activity"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                      : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "my_activity" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                  style={{ color: activeTab === "my_activity" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                   title="My Activity"
                 >
                   <History style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {/* Advisor Zone / Admin Zone separator — mirrors the divider
+                  shown between the two groups in the expanded sidebar
+                  (renderSidebarContent), so the same grouping boundary is
+                  visible whether the rail is collapsed or expanded. Same
+                  guard as the expanded version: only render it if there's
+                  at least one Admin Zone item this user can see. */}
+              {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
+                <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70" />
+              )}
+
+              {hasAccess("qa_announcement_log", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("qa_announcement_log")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                    activeTab === "qa_announcement_log"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "qa_announcement_log" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Announcement Manager"
+                >
+                  <Megaphone style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("ped_suggestions", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("ped_suggestions")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                    activeTab === "ped_suggestions"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "ped_suggestions" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="PED Repository"
+                >
+                  <Stethoscope style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("plan_scope", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("plan_scope")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                    activeTab === "plan_scope"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "plan_scope" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Plan Management"
+                >
+                  <FileText style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -2375,39 +3190,24 @@ export default function App() {
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "profile_access"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                      : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "profile_access" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
-                  title="User Directory"
+                  style={{ color: activeTab === "profile_access" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="User Directory & Management"
                 >
                   <User style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
-              {hasAccess("qa_announcement_log", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("qa_announcement_log")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "qa_announcement_log"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
-                  }`}
-                  style={{ color: activeTab === "qa_announcement_log" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
-                  title="Announcement Manager"
-                >
-                  <Megaphone style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
               {hasAccess("audit", "Viewer") && (
-                <button 
+                <button
                   onClick={() => setActiveTab("audit")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "audit" 
+                    activeTab === "audit"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                      : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "audit" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                  style={{ color: activeTab === "audit" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                   title="Activity Log"
                 >
                   <Clock style={{ width: "18px", height: "18px" }} />
@@ -2415,17 +3215,57 @@ export default function App() {
               )}
 
               {hasAccess("flagged_responses", "Viewer") && (
-                <button 
+                <button
                   onClick={() => setActiveTab("flagged_responses")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "flagged_responses" 
+                    activeTab === "flagged_responses"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
-                      : isDark ? "hover:bg-white/5" : "hover:bg-black/[0.12]"
+                      : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "flagged_responses" ? "var(--accent)" : (theme === "dark" ? "var(--text-muted)" : "#061f3f") }}
+                  style={{ color: activeTab === "flagged_responses" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                   title="Flagged Responses"
                 >
                   <AlertCircle style={{ width: "18px", height: "18px" }} />
+                  {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
+                    <span className="absolute top-1 right-1 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {hasAccess("smoke_test", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("smoke_test")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "smoke_test"
+                      ? "bg-[rgba(224,141,75,0.10)] border border-[#E08D4B]"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "smoke_test" ? "#E08D4B" : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Smoke Test"
+                >
+                  <Flame style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {/* Owner Controls — collapsed rail. Owner-only. */}
+              {hasAccess("owner_controls", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("owner_controls")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                    activeTab === "owner_controls"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "owner_controls" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Owner Controls"
+                >
+                  <ShieldAlert style={{ width: "18px", height: "18px" }} />
+                  {hiddenPages.length > 0 && (
+                    <span className="absolute top-1 right-1 inline-flex rounded-full h-2 w-2 bg-rose-500" />
+                  )}
                 </button>
               )}
             </div>
@@ -2449,7 +3289,7 @@ export default function App() {
                   setProfileOpen(!profileOpen);
                 }}
                 className="rounded-full flex items-center justify-center cursor-pointer transition-all shrink-0 overflow-hidden bg-[#20C4C7]"
-                style={{ width: "35px", height: "35px", backgroundColor: "#206147", borderColor: "#b9b97a", borderStyle: "solid", borderWidth: "1px" }}
+                style={{ width: "28px", height: "28px", backgroundColor: "#206147", borderColor: "#b9b97a", borderStyle: "solid", borderWidth: "1px" }}
                 title="View user credentials & active profile details"
               >
                 {currentUser?.avatarUrl || currentUser?.photoUrl ? (
@@ -2465,89 +3305,133 @@ export default function App() {
                   </div>
                 )}
               </button>
-
-              {createPortal(
-                <AnimatePresence>
-                  {profileOpen && profileMenuPos && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-[9998] cursor-default"
-                        onClick={() => setProfileOpen(false)}
-                      />
-                      <motion.div
-                        initial={{ opacity: 0, x: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, x: 0, scale: 1 }}
-                        exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                        transition={{ duration: 0.15 }}
-                        style={{
-                          bottom: profileMenuPos.bottom,
-                          left: profileMenuPos.left,
-                          maxHeight: "calc(100vh - 24px)",
-                          overflowY: "auto",
-                        }}
-                        className={`fixed w-64 rounded-lg border shadow-xl z-[9999] p-4 font-sans text-left ${
-                          theme === "dark"
-                            ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
-                            : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
-                        }`}
-                      >
-                      <div className="space-y-3">
-                        <div className="border-b pb-2 border-dashed border-stone-700/50 dark:border-stone-200/50">
-                          <p className="text-xs font-bold leading-tight">
-                            {currentUser?.name}
-                          </p>
-                        </div>
-
-                        <div className="space-y-2 text-xs">
-                          <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                            <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Email ID:</span>
-                            <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.email || "advisor@joinditto.in"}</span>
-                          </div>
-
-                          <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                            <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Access Level:</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
-                              currentUser?.tier === "Owner"
-                                ? "bg-red-500/10 text-red-500"
-                                : currentUser?.tier === "Admin"
-                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                : "bg-blue-500/10 text-blue-600 dark:text-sky-400"
-                            }`}>
-                              {currentUser?.tier || "General"}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="pt-2 border-t border-stone-700/50 dark:border-stone-250">
-                          <button
-                            onClick={() => {
-                              setProfileOpen(false);
-                              handleLogout();
-                            }}
-                            className="w-full py-2 px-3 border border-red-500/20 hover:border-red-500 bg-red-500/5 hover:bg-red-500/10 text-xs font-bold text-red-500 rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                          >
-                            <LogOut className="w-3.5 h-3.5" />
-                            <span>Log Out</span>
-                          </button>
-                        </div>
-                      </div>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>,
-                document.body
-              )}
             </div>
           </div>
         )}
       </motion.aside>
 
+      {/* Shared user-credentials dropdown card — a portal, so it renders
+          regardless of which sidebar state (expanded/collapsed) is
+          currently mounted. Both the collapsed rail's avatar circle and the
+          expanded sidebar's "profile tab" (see renderSidebarContent) share
+          the same profileButtonRef/profileOpen/profileMenuPos state to
+          trigger this; they're never mounted at the same time (one lives in
+          the isMenuOpen branch, the other in the collapsed branch), so
+          sharing the ref is safe. */}
+      {createPortal(
+        <AnimatePresence>
+          {profileOpen && profileMenuPos && (
+            <>
+              <div
+                className="fixed inset-0 z-[9998] cursor-default"
+                onClick={() => setProfileOpen(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, x: 10, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 10, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                style={{
+                  bottom: profileMenuPos.bottom,
+                  left: profileMenuPos.left,
+                  maxHeight: "calc(100vh - 24px)",
+                  overflowY: "auto",
+                }}
+                className={`fixed w-64 rounded-lg border shadow-xl z-[9999] p-4 font-sans text-left ${
+                  theme === "dark"
+                    ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
+                    : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
+                }`}
+              >
+              <div className="space-y-3">
+                <div className="border-b pb-2 border-dashed border-stone-700/50 dark:border-stone-200/50">
+                  <p className="text-xs font-bold leading-tight">
+                    {currentUser?.name}
+                  </p>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                    <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Email ID:</span>
+                    <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.email || "advisor@joinditto.in"}</span>
+                  </div>
+
+                  <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                    <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">TACT ID:</span>
+                    <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.tactId || "—"}</span>
+                  </div>
+
+                  <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                    <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Access Level:</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
+                      currentUser?.tier === "Owner"
+                        ? "bg-red-500/10 text-red-500"
+                        : currentUser?.tier === "Admin"
+                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                        : "bg-blue-500/10 text-blue-600 dark:text-sky-400"
+                    }`}>
+                      {currentUser?.tier || "General"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-stone-700/50 dark:border-stone-250">
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full py-2 px-3 border border-red-500/20 hover:border-red-500 bg-red-500/5 hover:bg-red-500/10 text-xs font-bold text-red-500 rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Log Out</span>
+                  </button>
+                </div>
+              </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+
       {/* MAIN APPLICATION CONTENT AREA */}
       <div className="flex-grow flex flex-col min-w-0 h-full overflow-hidden relative">
       {/* Modern, Simple, and Futuristic Ambient Background (Combining premium organic digital waves and soft light/dark glow) */}
+      {/*
+        SMOKE TEST EXCEPTION — this tab is intentionally off-theme (ember on
+        black, not the app's navy). Previously SmokeTestPage.tsx tried to
+        cover this up from the inside with its own full-bleed background,
+        but that div only fills <main>'s padded, width-constrained,
+        content-hugging box — it can't reach the space beyond the content's
+        own height, or the app's shared blue glow blobs below, which live
+        here at the shell level. Wherever the page content is shorter than
+        the viewport, or narrower than this shell, the app's navy pattern
+        showed through underneath. Swapping the SOURCE of this shell-level
+        layer for the smoke-test tab (rather than trying to paper over it
+        from inside the page) means there is no navy left anywhere behind
+        the page, at any viewport size or content height. */}
+      {activeTab === "smoke_test" ? (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none z-0 select-none"
+          style={{
+            backgroundColor: "#070707",
+            // Artwork dimmed ~35-40% below its own dark overlay so the
+            // matte-black surfaces read as dominant and the flame/smoke/gear
+            // art is atmosphere, not foreground.
+            backgroundImage:
+              `linear-gradient(rgba(7,7,7,0.73), rgba(7,7,7,0.88)), url("/assets/smoketest_page.png")`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }}
+        />
+      ) : (
+        <>
       <div
         className={`absolute inset-0 pointer-events-none z-0 select-none transition-all duration-500 ${
-          isDark ? "opacity-90" : "opacity-[0.70]"
+          isDark ? "opacity-55" : "opacity-[0.35]"
         }`}
         style={{
           backgroundImage: isDark
@@ -2563,13 +3447,15 @@ export default function App() {
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden select-none">
         {/* Top-left glow */}
         <div className={`absolute top-[-15%] left-[-15%] w-[60%] h-[60%] rounded-full blur-[100px] sm:blur-[120px] md:blur-[150px] animate-pulse ${
-          isDark ? "bg-blue-600/12 opacity-[0.35]" : "bg-blue-400/20 opacity-[0.25]"
+          isDark ? "bg-blue-600/12 opacity-[0.35]" : "bg-blue-400/18 opacity-[0.22]"
         }`} style={{ animationDuration: "14s" }} />
         {/* Bottom-right glow */}
         <div className={`absolute bottom-[-15%] right-[-15%] w-[70%] h-[70%] rounded-full blur-[110px] sm:blur-[130px] md:blur-[180px] animate-pulse ${
-          isDark ? "bg-[#3B82F6]/10 opacity-[0.35]" : "bg-[#2563EB]/15 opacity-[0.20]"
+          isDark ? "bg-[#3B82F6]/10 opacity-[0.35]" : "bg-[#2563EB]/14 opacity-[0.20]"
         }`} style={{ animationDuration: "20s" }} />
       </div>
+        </>
+      )}
 
       {/* Sitewide grid/scanline texture — sits behind ALL tab content (z-0),
           edge-to-edge with the app shell, so every page reads consistently
@@ -2578,40 +3464,42 @@ export default function App() {
           it's clipped). Opaque cards (Announcement, Mapping Results, etc.)
           naturally occlude it since they paint on top; transparent areas
           (like the Mapping Engine's input section) show it as their backdrop. */}
-      <GridTexture theme={theme} zIndexClassName="z-0" />
+      {/* SMOKE TEST EXCEPTION (same reasoning as the background block above):
+          this shell-level texture ran on the live app theme unconditionally,
+          so switching to light theme while on the Smoke Test tab swapped in
+          the light variant's blue-tinted scanlines behind the page's
+          intentionally-always-dark ember surface — forcing "dark" here
+          keeps it identical to how it renders in dark theme. */}
+      <GridTexture theme={activeTab === "smoke_test" ? "dark" : theme} zIndexClassName="z-0" />
 
       <a href="#main-content" className="skip-to-content">Skip to main content</a> {/* HEADER BAR: Frosted floating glass compliance console bar */}
-      <div className="p-4 pb-0 shrink-0 select-none relative z-40 w-full lg:w-[99%] xl:w-[98%] max-w-[1850px] mx-auto">
+      <div className="p-4 pb-0 shrink-0 select-none relative z-40 w-full lg:w-[99%] xl:w-[98%] max-w-[var(--container-shell)] mx-auto">
         <header className={`rounded-2xl border transition-all duration-300 ${
-          theme === "dark"
+          activeTab === "smoke_test"
+            ? "border-[rgba(224,141,75,0.12)] bg-[rgba(8,8,8,0.90)] backdrop-blur-md text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:border-[rgba(224,141,75,0.40)] hover:shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
+            : theme === "dark"
             ? "border-white/[0.08] bg-[#03101a] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)] hover:border-white/[0.12]"
-            : "border-black/10 bg-[var(--header-bg)] text-[#061f3f] shadow-[0_4px_20px_rgba(11,18,32,0.12)] hover:border-black/15"
+            : "border-white/[0.08] bg-[var(--header-bg)] text-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] hover:border-white/[0.12]"
         }`}>
-          <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: "var(--header-bg)", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
+          <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: activeTab === "smoke_test" ? "transparent" : "var(--header-bg)", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
           
-          {/* Back Arrow navigation replacing the sandwich menu icon */}
+          {/* Back/Home arrow — restored per explicit request; a prior pass
+              had removed this as functionally redundant with the wordmark
+              button below (both just go Home), but its absence read as a
+              missing navigation affordance rather than an intentional
+              simplification, so it's back. Same action as the wordmark. */}
           <div className="flex items-center gap-3.5 shrink-0 z-10">
             <button
               onClick={() => {
-                if (activeTab === "lookup" && !showIntro) {
-                  setShowIntro(true);
-                } else {
-                  setActiveTab("lookup");
-                  setShowIntro(true);
-                }
+                setActiveTab("lookup");
+                setShowIntro(true);
               }}
-              className="p-1.5 transition-all cursor-pointer flex items-center justify-center shrink-0"
-              style={{
-                backgroundColor: "transparent",
-                borderColor: "transparent",
-                color: theme === "dark" ? "#94a3b8" : "#061f3f",
-                borderRadius: "6px"
-              }}
-              title="Go Back" aria-label="Go back"
+              className="p-1.5 -mr-1 rounded transition-all cursor-pointer hover:bg-white/10"
+              title="Back to Home"
+              aria-label="Go back to home"
             >
-              <ArrowLeft className="w-4 h-4" aria-hidden="true" style={{ fontSize: "18px", width: "25px", height: "20px", marginRight: "-5px", marginLeft: "-14px", color: theme === "dark" ? "#ffffff" : "#061f3f", borderColor: theme === "dark" ? "#ffffff" : "#061f3f" }} />
+              <ArrowLeft className="w-4 h-4 text-white/70" aria-hidden="true" style={{ width: "18px", height: "18px" }} />
             </button>
-
             <button
               onClick={() => {
                 setActiveTab("lookup");
@@ -2621,7 +3509,7 @@ export default function App() {
               title="Home (Go to Compliance & Policy Mapping Engine)" aria-label="Go to home — Declaration Assistant"
             >
               <div className="flex items-center gap-2">
-                <DittoWordmark className="text-lg" isWhite={theme === "dark"} style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} firstSpanStyle={{ color: theme === "dark" ? "#fefefe" : "#061f3f" }} secondSpanStyle={{ color: "#1e7af5" }} />
+                <DittoWordmark className="text-lg" isWhite style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} firstSpanStyle={{ color: "#fefefe" }} secondSpanStyle={{ color: "#1e7af5" }} />
               </div>
             </button>
           </div>
@@ -2636,7 +3524,7 @@ export default function App() {
                     style={{
                       backgroundColor: "transparent",
                       borderColor: "transparent",
-                      color: theme === "dark" ? "#ffffff" : "#061f3f",
+                      color: "#ffffff",
                       borderWidth: "0px",
                       boxShadow: "none",
                       borderRadius: "12px"
@@ -2644,8 +3532,8 @@ export default function App() {
                     className="title-badge-btn px-6 py-2 justify-center text-xs sm:text-sm font-black uppercase tracking-widest border-0 duration-300 transition-all flex items-center gap-2.5 cursor-pointer whitespace-nowrap active:scale-95 hover:scale-[1.02]"
                     title="Current workspace tab view"
                   >
-                    <Home className="title-badge-icon w-4 h-4 shrink-0 text-cyan-400" style={{ color: theme === "dark" ? "#fafafa" : "#061f3f", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }} />
-                    <span style={{ fontSize: "13px", color: theme === "dark" ? "#f9f9fc" : "#061f3f", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }} className="title-badge-text font-sans font-black uppercase tracking-wider">
+                    <Home className="title-badge-icon w-4 h-4 shrink-0 text-cyan-400" style={{ color: "#fafafa", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }} />
+                    <span style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }} className="title-badge-text font-sans font-black uppercase tracking-wider">
                       Advisor Home
                     </span>
                   </button>
@@ -2654,11 +3542,17 @@ export default function App() {
               const tabMeta = {
                 lookup: { label: "Declaration Assistant", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 flagged_responses: { label: "Flagged Responses", icon: <AlertCircle className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                profile_access: { label: "User Directory", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
+                profile_access: { label: "User Directory & Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                plan_scope: { label: "Plan Management", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                owner_controls: { label: "Owner Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
               };
               const meta = tabMeta[activeTab] || tabMeta.lookup;
               return (
@@ -2667,19 +3561,32 @@ export default function App() {
                   style={{
                     backgroundColor: "transparent",
                     borderColor: "transparent",
-                    color: theme === "dark" ? "#ffffff" : "#061f3f",
+                    color: "#ffffff",
                     borderWidth: "0px",
                     boxShadow: "none"
                   }}
                   className="title-badge-btn px-6 py-2 justify-center text-xs sm:text-sm font-black uppercase tracking-widest border-0 duration-300 transition-all flex items-center gap-2.5 cursor-pointer whitespace-nowrap active:scale-95 hover:scale-[1.02]"
                   title="Current workspace tab view"
                 >
+                  {/* Merge (not replace) className/style onto the icon —
+                      cloneElement's second argument overwrites both props
+                      wholesale by default. That was harmless for every
+                      lucide SVG icon here (their sizing comes from SVG
+                      width/height attributes, not this style object), but it
+                      silently wiped out the CSS-mask icon's own style
+                      (backgroundColor + mask-image), which is ALL inline
+                      style with nothing else to fall back on — that's why
+                      Coverage Projection Studio's badge icon wasn't
+                      rendering. Spreading the icon's own className/style
+                      first keeps that intact while these badge-specific
+                      overrides (size, color, margins) still win where they
+                      overlap. */}
                   {React.cloneElement(meta.icon, {
-                    className: "title-badge-icon w-4.5 h-4.5 shrink-0 text-cyan-400",
-                    style: { color: theme === "dark" ? "#fafafa" : "#061f3f", borderColor: "transparent", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }
+                    className: `title-badge-icon w-4.5 h-4.5 shrink-0 text-cyan-400 ${(meta.icon.props as { className?: string }).className || ""}`,
+                    style: { ...(meta.icon.props as { style?: React.CSSProperties }).style, color: "#fafafa", borderColor: "transparent", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }
                   })}
                   <span
-                    style={{ fontSize: "13px", color: theme === "dark" ? "#f9f9fc" : "#061f3f", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }}
+                    style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }}
                     className="title-badge-text font-sans font-black uppercase tracking-wider"
                   >
                     {meta.label}
@@ -2699,47 +3606,76 @@ export default function App() {
                 borderColor: "transparent"
               }}
             >
-                {/* Flagged Mismatches Notification Icon (Request 3) */}
-                {hasAccess("flagged_responses", "Viewer") && (
-                  <button
-                    onClick={() => {
-                      setActiveTab("flagged_responses");
-                      setShowIntro(false);
+                {/* Quick Access drawer trigger — open to every signed-in
+                    user now that the drawer includes the Resources link
+                    list (readable by everyone). The View As simulator
+                    stays gated to Owner/Admin, tucked in the footer. */}
+                <button
+                  onClick={(e) => {
+                    setIsRightSidebarOpen(true);
+                    e.currentTarget.blur();
+                  }}
+                  className="p-1.5 rounded transition-all cursor-pointer inline-flex items-center justify-center"
+                  title="Quick Access"
+                  aria-label="Open quick access panel"
+                >
+                  {/* Sun/Moon/LogOut are lucide SVGs at a 20px box, but
+                      lucide's 24x24 viewBox reserves ~2px of internal
+                      padding on every edge, so their actual ink is only
+                      ~83% of that box. This PNG's artwork (like the prior
+                      accessible.png) fills its canvas edge-to-edge with no
+                      such padding, so matching the literal 20px box would
+                      make it read heavier/larger than its siblings —
+                      sized to 17px to match their visual (ink) weight
+                      instead of their box size. Button stays inline-flex +
+                      items-center/justify-center so the masked span (a
+                      display:inline-block box whose default baseline sits
+                      at its own bottom edge) is truly centered rather than
+                      relying on baseline alignment. */}
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: "17px",
+                      height: "17px",
+                      backgroundColor: "#00D3F3",
+                      WebkitMaskImage: "url(/assets/.aistudio/portal-enter.png)",
+                      maskImage: "url(/assets/.aistudio/portal-enter.png)",
+                      WebkitMaskSize: "contain",
+                      maskSize: "contain",
+                      WebkitMaskRepeat: "no-repeat",
+                      maskRepeat: "no-repeat",
+                      WebkitMaskPosition: "center",
+                      maskPosition: "center",
                     }}
-                    className="p-1.5 rounded transition-all cursor-pointer relative flex items-center justify-center mr-1"
-                    title="Flagged Mismatches"
-                    aria-label="View flagged mismatches"
-                  >
-                    <Bell className={`w-2 h-4 transition-colors ${theme === "dark" ? "text-[#5dc0b4] hover:text-[#5dc0b4]" : "text-[#0e7490] hover:text-[#0e7490]"}`} style={{ width: "20px", height: "20px" }} />
-                    {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
-                      <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500"></span>
-                      </span>
-                    )}
-                  </button>
-                )}
+                  />
+                </button>
 
                 {/* Dark / Light theme toggle */}
                 <button
-                  onClick={toggleTheme}
+                  onClick={(e) => {
+                    toggleTheme();
+                    e.currentTarget.blur();
+                  }}
                   className="p-1.5 rounded transition-all cursor-pointer"
                   title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={theme === "dark"}
                 >
                   {theme === "dark"
                     ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffb700" }} />
-                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#3730a3" }} />
+                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#93c5fd" }} />
                   }
                 </button>
 
                 {/* Direct Logout (Request 2) */}
                 <button
-                  onClick={handleLogout}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    handleLogout();
+                  }}
                   className="p-1.5 rounded transition-all cursor-pointer text-red-500 hover:text-red-400"
                   title="Direct Logout"
                   aria-label="Direct logout"
                 >
-                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: theme === "dark" ? "#9a9c9e" : "#334155" }} />
+                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#9a9c9e" }} />
                 </button>
               </div>
             </div>
@@ -2782,105 +3718,275 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              id="right-controls-drawer" role="dialog" aria-modal="true" aria-label="Workspace controls" className={`fixed top-0 right-0 h-full w-80 border-l z-54 shadow-2xl flex flex-col font-sans p-6 text-left ${
-                theme === "dark" 
-                  ? "bg-[#12151A] border-[#252A34] text-white" 
-                  : "bg-white border-stone-300 text-stone-900"
-              }`}
+              id="right-controls-drawer" role="dialog" aria-modal="true" aria-label="Quick access"
+              // Mirrors the left sidebar's chrome and type scale exactly
+              // (see renderSidebarContent above) rather than its own
+              // one-off card styling — same bg, same header block, same
+              // text-[10px]/text-xs sizes, same #F5F7FA/#C4CDD8 text
+              // colors and blue-300 icon accent, same flat (unboxed)
+              // nav-row treatment for list items.
+              className={`fixed top-0 right-0 h-full w-80 border-l z-54 shadow-2xl flex flex-col font-sans text-left text-[#F5F7FA] ${
+                theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
+              } border-white/[0.08]`}
             >
-              {/* Header */}
-              <div className="flex items-center justify-between border-b pb-4 mb-6 border-dashed border-stone-700/50 dark:border-stone-200/50">
-                <div className="flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-[#3B82F6]" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Workspace Controls</span>
+              {/* Header — identical structure to the sidebar's own header */}
+              <div
+                className={`p-5 border-b border-white/[0.08] flex items-center justify-between ${
+                  theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
+                }`}
+              >
+                <div className="flex flex-col">
+                  {/* Inline color (not just the text-[#F5F7FA] class) since a
+                      global CSS sweep rule elsewhere in the app has, more
+                      than once, silently overridden a bracket color class on
+                      an uppercase heading like this one — inline style always
+                      wins over any class-based rule, so this is immune to it
+                      regardless of which rule it turns out to be. */}
+                  <span style={{ color: "#F5F7FA" }} className="text-xs font-bold uppercase tracking-wider">Quick Access</span>
+                  <span style={{ color: "#C4CDD8" }} className="text-[10px] font-medium">Resources &amp; Preview Controls</span>
                 </div>
                 <button
                   onClick={() => setIsRightSidebarOpen(false)}
-                  className={`p-1 rounded-lg transition-all cursor-pointer ${
-                    theme === "dark" 
-                      ? "hover:bg-stone-800/50 text-[#9CA3AF] hover:text-[#F5F7FA]" 
-                      : "hover:bg-stone-100 text-stone-650 hover:text-stone-900"
-                  }`}
-                  title="Close Controls Panel"
+                  className="p-1.5 rounded-lg transition-all cursor-pointer hover:bg-white/5 text-[#C4CDD8] hover:text-[#F5F7FA]"
+                  title="Close panel"
                 >
                   <XCircle className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Controls Stack in the requested order: Tier, View As, Theme Switch */}
-              <div className="space-y-6 flex-grow overflow-y-auto">
-                
-                {/* 1. Tier (User Access Switcher) */}
-                {currentUser?.tier === "Owner" && (
-                  <div className="space-y-2">
-                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                      App Access Tier
-                    </label>
-                    <div className={`p-4 rounded-lg border flex flex-col gap-3 ${
-                      theme === "dark" ? "bg-[#171B22] border-[#252A34]" : "bg-stone-50 border-stone-200"
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium">Current Tier</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                          currentUser?.tier === "Owner"
-                            ? "bg-red-500/10 text-red-500 border border-red-500/10"
-                            : "bg-blue-500/10 text-sky-500 border border-blue-500/10"
-                        }`}>
-                          {currentUser?.tier || "General"}
-                        </span>
+              {/* Controls Stack: Resources (View As lives in the footer) */}
+              <div className="flex-grow p-4 space-y-1.5 overflow-y-auto">
+
+                {/* Resources — external link list (Payment SOP, QA Dashboard,
+                    etc.). Visible/clickable for every signed-in user by
+                    default, same as everyone else. Admin/Owner get a
+                    "Manage Resources" toggle that reveals add/edit/delete
+                    controls on demand instead of showing them by default. */}
+                <div className="flex items-center justify-between px-2 mb-2">
+                  <span className="block text-[10px] font-bold tracking-wider text-[#C4CDD8]">
+                    Resources
+                  </span>
+                  {(currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                    <button
+                      onClick={() => {
+                        setIsManagingResources((prev) => !prev);
+                        setEditingResourceId(null);
+                        setResourceFormError(null);
+                      }}
+                      className={`flex items-center gap-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
+                        isManagingResources ? "text-blue-300" : "text-[#C4CDD8] hover:text-[#F5F7FA]"
+                      }`}
+                    >
+                      <Pencil className="w-2.5 h-2.5" />
+                      {isManagingResources ? "Done" : "Manage Resources"}
+                    </button>
+                  )}
+                </div>
+
+                {externalResourcesLoadError && (
+                  <p className="text-[10px] font-semibold text-red-400 px-2">{externalResourcesLoadError}</p>
+                )}
+                {externalResources.length === 0 && !externalResourcesLoadError && (
+                  <p className="text-xs text-[#C4CDD8] italic px-3 py-2">No resource links added yet.</p>
+                )}
+                {externalResources.map((resource, resIdx) => {
+                  const ResourceIcon = resolveResourceIcon(resource);
+                  return (
+                  <div key={resource.id}>
+                    {editingResourceId === resource.id ? (
+                      <div className="p-2 rounded-md border border-white/[0.08] bg-white/[0.03] space-y-1.5 mx-0.5">
+                        <input
+                          type="text"
+                          value={editResourceTitle}
+                          onChange={(e) => setEditResourceTitle(e.target.value)}
+                          placeholder="Title"
+                          className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+                        />
+                        <input
+                          type="text"
+                          value={editResourceUrl}
+                          onChange={(e) => setEditResourceUrl(e.target.value)}
+                          placeholder="https://..."
+                          className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+                        />
+                        <div className="space-y-1">
+                          <span className="block text-[9px] font-bold uppercase tracking-wider text-[#8B98AC]">Icon</span>
+                          <div className="flex items-center gap-2">
+                            <div className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
+                              {(() => {
+                                const PreviewIcon = editResourceIcon
+                                  ? RESOURCE_ICON_MAP[editResourceIcon] || getResourceIcon(editResourceTitle)
+                                  : getResourceIcon(editResourceTitle);
+                                return <PreviewIcon className="w-3.5 h-3.5 text-blue-300" />;
+                              })()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <CustomSelect
+                                theme="dark"
+                                value={editResourceIcon}
+                                onChange={setEditResourceIcon}
+                                placeholder="Auto (guess from title)"
+                                triggerClassName="w-full flex items-center justify-between gap-1 text-xs pl-1.5 pr-6 py-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20 cursor-pointer relative"
+                                options={RESOURCE_ICON_OPTIONS.map(({ name, label }) => ({ value: name, label }))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-0.5">
+                          <button
+                            onClick={() => setEditingResourceId(null)}
+                            className="text-[10px] font-bold uppercase text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer px-1.5 py-1"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleUpdateResource(resource.id)}
+                            className="text-[10px] font-bold uppercase text-blue-300 hover:text-blue-200 cursor-pointer px-1.5 py-1"
+                          >
+                            Save
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={toggleUserRole}
-                        className={`w-full py-2 px-3 text-xs font-semibold rounded-md border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                          theme === "dark"
-                            ? "bg-[#12151A] border-[#252A34] text-white hover:border-stone-700 hover:bg-stone-800/30"
-                            : "bg-white border-stone-250 text-stone-800 hover:bg-stone-100 font-medium shadow-xs"
-                        }`}
-                        title="Toggle app access role instantly"
+                    ) : (
+                      <div
+                        className={`w-full flex items-center justify-between gap-1.5 px-3 py-2 text-xs font-medium transition-all border-l-2 border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] rounded-r-lg border-y-transparent border-r-transparent`}
                       >
-                        <User className="w-3.5 h-3.5 text-[#3B82F6]" />
-                        <span>Switch Credentials Tier</span>
-                      </button>
+                        <a
+                          href={resource.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 min-w-0 hover:text-[#F5F7FA] transition-colors"
+                          title={resource.url}
+                        >
+                          <ResourceIcon className="w-4 h-4 shrink-0 text-blue-300" />
+                          <span className="truncate">{resource.title}</span>
+                        </a>
+                        {isManagingResources && (currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              onClick={() => handleMoveResource(resource.id, "up")}
+                              disabled={resIdx === 0}
+                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                              title="Move up"
+                            >
+                              <ChevronUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => handleMoveResource(resource.id, "down")}
+                              disabled={resIdx === externalResources.length - 1}
+                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                              title="Move down"
+                            >
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => startEditingResource(resource)}
+                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer"
+                              title="Edit resource link"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteResource(resource.id, resource.title)}
+                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-red-400 cursor-pointer"
+                              title="Delete resource link"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  );
+                })}
+
+                {isManagingResources && (currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                  <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5 px-0.5">
+                    {resourceFormError && (
+                      <p className="text-[10px] font-semibold text-red-400">{resourceFormError}</p>
+                    )}
+                    <input
+                      type="text"
+                      value={newResourceTitle}
+                      onChange={(e) => setNewResourceTitle(e.target.value)}
+                      placeholder="Title (e.g. Payment SOP)"
+                      className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+                    />
+                    <input
+                      type="text"
+                      value={newResourceUrl}
+                      onChange={(e) => setNewResourceUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+                    />
+                    <div className="space-y-1">
+                      <span className="block text-[9px] font-bold uppercase tracking-wider text-[#8B98AC]">Icon</span>
+                      <div className="flex items-center gap-2">
+                        <div className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
+                          {(() => {
+                            const PreviewIcon = newResourceIcon
+                              ? RESOURCE_ICON_MAP[newResourceIcon] || getResourceIcon(newResourceTitle)
+                              : getResourceIcon(newResourceTitle);
+                            return <PreviewIcon className="w-3.5 h-3.5 text-blue-300" />;
+                          })()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <CustomSelect
+                            theme="dark"
+                            value={newResourceIcon}
+                            onChange={setNewResourceIcon}
+                            placeholder="Auto (guess from title)"
+                            triggerClassName="w-full flex items-center justify-between gap-1 text-xs pl-1.5 pr-6 py-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20 cursor-pointer relative"
+                            options={RESOURCE_ICON_OPTIONS.map(({ name, label }) => ({ value: name, label }))}
+                          />
+                        </div>
+                      </div>
                     </div>
+                    <button
+                      onClick={handleAddResource}
+                      disabled={isAddingResource}
+                      className="w-full py-1.5 px-3 text-xs font-medium rounded-md border transition-all cursor-pointer flex items-center justify-center gap-1.5 bg-transparent border-white/[0.08] text-[#C4CDD8] hover:border-white/20 hover:text-[#F5F7FA] disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-blue-300" />
+                      <span>{isAddingResource ? "Adding..." : "Add Resource Link"}</span>
+                    </button>
                   </div>
                 )}
-
-                {/* 2. View As (Simulated Role Switcher) */}
-                {currentUser?.tier === "Owner" && (
-                  <div className="space-y-2">
-                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                      Simulation View As
-                    </label>
-                    <div className={`p-4 rounded-lg border flex flex-col gap-2 ${
-                      theme === "dark" ? "bg-[#171B22] border-[#252A34]" : "bg-stone-50 border-stone-200"
-                    }`}>
-                      <span className="text-xs font-medium">Select Preview Profile</span>
-                      <select
-                        value={simulatedRole || ""}
-                        onChange={(e) => {
-                          const val = (e.target.value as "General" | "Admin" | "Owner" | "") || null;
-                          setSimulatedRole(val);
-                        }}
-                        className={`w-full text-xs font-semibold p-2 rounded-md border outline-none cursor-pointer ${
-                          theme === "dark" 
-                            ? "bg-[#12151A] border-[#252A34] text-white focus:border-stone-700" 
-                            : "bg-white border-stone-250 text-stone-850 focus:border-blue-500 shadow-xs"
-                        }`}
-                      >
-                        <option value="">Default Profile</option>
-                        <option value="Admin">Admin View</option>
-                        <option value="General">Advisor View</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
 
               </div>
 
-              {/* Drawer Footer info */}
-              <div className="pt-4 border-t border-dashed border-stone-700/50 dark:border-stone-200/50 text-[10px] text-stone-500 dark:text-stone-400 font-medium">
-                Adjust rules, security scopes and test setups dynamically.
+              {/* Drawer Footer — minimal View As (Owner/Admin only) plus the
+                  standing helper note. Owner can preview Admin or Advisor;
+                  Admin can preview Advisor only (no reason to "preview" their
+                  own tier, and letting them preview upward would be a
+                  confusing no-op since Owner-only actions stay
+                  server-enforced regardless of this client UI toggle). */}
+              <div className="p-4 border-t border-white/[0.08] space-y-2">
+                {(currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                  <div className="flex items-center justify-between gap-2 px-2">
+                    <span className="text-[10px] font-bold tracking-wider text-[#C4CDD8] shrink-0">
+                      Preview As
+                    </span>
+                    <div className="max-w-[130px]">
+                      <CustomSelect
+                        theme="dark"
+                        value={simulatedRole || ""}
+                        onChange={(val) => setSimulatedRole((val as "General" | "Admin" | "Owner" | "") || null)}
+                        placeholder="Default Profile"
+                        triggerClassName="w-full flex items-center justify-between gap-1 text-xs font-medium pl-2 pr-6 py-1 rounded border outline-none cursor-pointer bg-transparent border-white/[0.08] text-[#C4CDD8] hover:text-[#F5F7FA] focus:border-white/20 relative"
+                        options={[
+                          { value: "", label: "Default Profile" },
+                          ...(currentUser?.tier === "Owner" ? [{ value: "Admin", label: "Admin View" }] : []),
+                          { value: "General", label: "Advisor View" },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] text-[#C4CDD8] font-medium px-2">
+                  Adjust rules, security scopes and test setups dynamically.
+                </p>
               </div>
             </motion.div>
           </>
@@ -2891,20 +3997,32 @@ export default function App() {
       <div 
         id="main-scrollable-body" 
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
-          showIntro && activeTab === "lookup" ? "lg:overflow-hidden overflow-y-auto" : "overflow-y-auto"
+          activeTab === "lookup" || activeTab === "qa_announcement_log"
+            ? "lg:overflow-hidden overflow-y-auto"
+            : "overflow-y-auto"
         }`}
       >
         {/* BODY WRAPPER with centering content constraint */}
         <main 
           id="main-content" 
           tabIndex={-1} 
-          style={{ color: "#000000", marginTop: showIntro && activeTab === "lookup" ? "2px" : "6px", marginBottom: showIntro && activeTab === "lookup" ? "2px" : "12px" }} 
+          style={{ color: "var(--text-primary)", marginTop: showIntro && activeTab === "lookup" ? "2px" : "6px", marginBottom: showIntro && activeTab === "lookup" ? "2px" : "12px" }}
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
-            showIntro && activeTab === "lookup" ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-center" : "lg:p-5 pt-1.5 sm:pt-2"
+            showIntro && activeTab === "lookup"
+              ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-center"
+              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log"
+              ? "lg:p-5 pt-1.5 sm:pt-2 lg:flex lg:flex-col lg:min-h-0"
+              : "lg:p-5 pt-1.5 sm:pt-2"
           }`}
         >
           {/* Expanded premium layout container, reducing margin distance to human-optimal minimums */}
-          <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[1550px] mx-auto ${showIntro && activeTab === "lookup" ? "flex-grow flex flex-col" : ""}`}>
+          <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto ${
+            showIntro && activeTab === "lookup"
+              ? "flex-grow flex flex-col"
+              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log"
+              ? "lg:flex-grow lg:flex lg:flex-col lg:min-h-0"
+              : ""
+          }`}>
         <AnimatePresence mode="wait">
           {/* TAB 1: INTRO PAGE / ONBOARDING */}
           {activeTab === "lookup" && showIntro && (
@@ -2948,7 +4066,7 @@ export default function App() {
                 marginTop: "0px",
                 marginBottom: "10px"
               }}
-              className="flex flex-col gap-4"
+              className="flex flex-col gap-4 lg:flex-1 lg:min-h-0"
             >
               <ErrorBoundary theme={theme} label="Declaration Assistant">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
@@ -2974,13 +4092,9 @@ export default function App() {
                 handleMapAnotherPed={handleMapAnotherPed}
                 setReportingItem={setReportingItem}
                 setReportingNotes={setReportingNotes}
-                mappingResultCardRef={mappingResultCardRef}
-                resultsRef={resultsRef}
-                sidebarRef={sidebarRef}
-                rightHeaderRef={rightHeaderRef}
                 illnessSearchQuery={illnessSearchQuery}
                 setIllnessSearchQuery={setIllnessSearchQuery}
-                specificIllnessesDict={SPECIFIC_ILLNESSES}
+                specificIllnessesDict={effectiveSpecificIllnessesDict}
                 planConfigs={planConfigs}
                 checkIllnessInPlanSpecificList={checkIllnessInPlanSpecificList}
                 setActiveTab={setActiveTab}
@@ -3021,6 +4135,8 @@ export default function App() {
                 setAuditSearch={setAuditSearch}
                 auditPlanFilter={auditPlanFilter}
                 setAuditPlanFilter={setAuditPlanFilter}
+                auditStatusFilter={auditStatusFilter}
+                setAuditStatusFilter={setAuditStatusFilter}
                 auditTypeFilter={auditTypeFilter}
                 setAuditTypeFilter={setAuditTypeFilter}
                 auditStartDate={auditStartDate}
@@ -3033,6 +4149,7 @@ export default function App() {
                 historyActionFilter={historyActionFilter}
                 setHistoryActionFilter={setHistoryActionFilter}
                 changeLogs={changeLogs}
+                usersList={usersList}
               />
               </Suspense>
               </ErrorBoundary>
@@ -3100,13 +4217,85 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="User Directory">
+              <ErrorBoundary theme={theme} label="User Directory & Management">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <ProfileAccessPage
                 theme={theme}
                 usersList={usersList}
                 setUsersList={setUsersList}
                 effectiveTier={effectiveTier}
+                currentUser={currentUser}
+                setChangeLogs={setChangeLogs}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* ADVISORY ZONE — read-only plan reference, visible to every tier
+              (Advisory Zone vs Admin Zone distinction; see
+              featurePermissions.ts). */}
+          {activeTab === "advisory_zone" && (
+            <motion.div
+              key="advisory_zone"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0"
+            >
+              <ErrorBoundary theme={theme} label="Advisory Zone">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <AdvisoryZonePage
+                theme={theme}
+                productionPlans={productionPlans}
+                planConfigs={planConfigs}
+                specificIllnessesDict={effectiveSpecificIllnessesDict}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* COVERAGE PROJECTION STUDIO — read-only Base Cover / Bonus /
+              Restoration Benefit calculator, visible to every tier (same
+              Advisor Zone visibility as Plan Reference; see
+              featurePermissions.ts). Gated by the app's own login like every
+              other tab here — no separate auth of its own. */}
+          {activeTab === "coverage_projection" && (
+            <motion.div
+              key="coverage_projection"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Coverage Projection Studio">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <CoverageProjectionStudioPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* OWNER CONTROLS — page visibility switch. Reachable only by the
+              Owner (featurePermissions marks General/Admin as "None"). */}
+          {activeTab === "owner_controls" && (
+            <motion.div
+              key="owner_controls"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="Owner Controls">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <OwnerControlsPage
+                theme={theme}
+                hiddenPages={hiddenPages}
+                setHiddenPages={setHiddenPages}
               />
               </Suspense>
               </ErrorBoundary>
@@ -3121,7 +4310,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.2 }}
-              className="space-y-6 text-left"
+              className="space-y-6 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0"
             >
               <ErrorBoundary theme={theme} label="QA Announcement Log">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
@@ -3163,18 +4352,143 @@ export default function App() {
                 ownerResolutionNotes={ownerResolutionNotes}
                 setOwnerResolutionNotes={setOwnerResolutionNotes}
                 effectiveTier={effectiveTier}
-                requestOwnerPasscode={requestOwnerPasscode}
+                confirmDestructiveAction={confirmDestructiveAction}
+                currentUser={currentUser}
+                setChangeLogs={setChangeLogs}
               />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
           )}
 
+          {/* TAB 8: PLAN MANAGEMENT — add/edit insurance plan declaration
+              questionnaires and their category-to-question mapping. This is
+              the finished version of what used to be dead draftPlans/
+              planQuestionsState/productionPlans scaffolding: it's now backed
+              by Postgres (plan_configs table) and read directly by
+              /api/match server-side, so a plan added here is immediately
+              usable for real matching. */}
+          {activeTab === "plan_scope" && (
+            <motion.div
+              key="plan_scope"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="Plan Management">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <PlanManagementPage
+                theme={theme}
+                effectiveTier={effectiveTier}
+                dbPlanConfigs={dbPlanConfigs}
+                setDbPlanConfigs={setDbPlanConfigs}
+                dbPlanConfigsLoadError={dbPlanConfigsLoadError}
+                fetchPlanConfigs={fetchPlanConfigs}
+                confirmDestructiveAction={confirmDestructiveAction}
+                setChangeLogs={setChangeLogs}
+                currentUser={currentUser}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB 9: PED SUGGESTIONS — admin management UI for the
+              ped_suggestions table (Lookup page autocomplete dropdown
+              source list). Deliberately separate from the PED matching
+              engine (TOP_PED_DICTIONARY in types.ts); see
+              PedSuggestionsManagement.tsx for the full explanation. */}
+          {activeTab === "ped_suggestions" && (
+            <motion.div
+              key="ped_suggestions"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="PED Repository">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <PedSuggestionsPage
+                theme={theme}
+                effectiveTier={effectiveTier}
+                currentUser={currentUser}
+                setChangeLogs={setChangeLogs}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TAB 10: SMOKE TEST — runs the deterministic mapping engine
+              against a curated baseline of common PEDs (plus any
+              Admin/Owner-added custom entries) for one plan at a time, to
+              catch classification regressions without needing a real
+              advisor lookup. See SmokeTestPage.tsx for the full
+              explanation. */}
+          {activeTab === "smoke_test" && (
+            <motion.div
+              key="smoke_test"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="Smoke Test">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <SmokeTestPage
+                theme={theme}
+                effectiveTier={effectiveTier}
+                currentUser={currentUser}
+                productionPlans={productionPlans}
+                selectedPlan={selectedPlan}
+                setSelectedPlan={setSelectedPlan}
+                setChangeLogs={setChangeLogs}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
 
         </AnimatePresence>
           </div> {/* CLOSES centering wrapper */}
         </main>
       </div> {/* CLOSES flex-grow flex flex-col min-w-0 overflow-y-auto */}
+
+      {/* Compact elegant Launcher Info Bar — a shrink-0 sibling of the
+          scrollable body (not nested inside it), so it always stays pinned
+          to the bottom of the viewport instead of trailing after short
+          pages or scrolling away on long ones. Shown on every tab, not
+          just the lookup intro. Wrapped in the same centering/padding
+          classes as <main> so it lines up edge-to-edge with the page
+          content exactly like the original design did. */}
+      <div className="shrink-0 relative z-10 w-full p-3 sm:p-4 lg:p-5 pt-0 sm:pt-0 lg:pt-0">
+        <div className="w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto">
+          <div
+            style={{ borderColor: !isDark && activeTab !== "smoke_test" ? "#707a80" : undefined }}
+            className={`pt-2.5 border-t flex justify-between items-center text-[10px] font-mono tracking-widest uppercase select-none w-full ${
+              /* SMOKE TEST EXCEPTION (same reasoning as the GridTexture/backdrop
+                 fixes above): this footer is shell-level and renders on every
+                 tab, but it reacted to the live theme unconditionally — so
+                 switching to light theme while on Smoke Test swapped in text
+                 colors meant for a light page background, making the footer
+                 nearly invisible against the page's intentionally-always-dark
+                 backdrop. Force the dark-theme values whenever Smoke Test is active. */
+              theme === "dark" || activeTab === "smoke_test"
+                ? "border-[#252A34]/40 text-slate-400"
+                : "font-extrabold text-stone-600"
+            }`}
+          >
+            <div className="flex items-center select-none">
+              <span>YOUR PAYMENT ASSISTANT</span>
+            </div>
+            <span style={{ color: !isDark && activeTab !== "smoke_test" ? "#57534d" : "#90a1b9", fontWeight: !isDark && activeTab !== "smoke_test" ? "bold" : "normal", fontSize: "10px" }} className="font-normal">©BLISS GUIDES.DITTO</span>
+          </div>
+        </div>
+      </div>
 
       {/* Global Mismatch Reporting Modal */}
       <AnimatePresence>
@@ -3224,12 +4538,17 @@ export default function App() {
                 />
               </div>
 
+              {reportingError && (
+                <p className="text-[11px] font-bold text-red-500 pt-1">{reportingError}</p>
+              )}
+
               <div className="flex justify-end gap-3 pt-3 border-t border-stone-200 dark:border-stone-800">
                 <button
                   type="button"
                   onClick={() => {
                     setReportingItem(null);
                     setReportingNotes("");
+                    setReportingError(null);
                   }}
                   className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-[#111827] dark:hover:text-white cursor-pointer"
                 >
@@ -3238,30 +4557,64 @@ export default function App() {
                 <PrimaryCtaButton
                   theme={theme}
                   variant="danger"
-                  disabled={!reportingNotes.trim()}
-                  onClick={() => {
-                    if (!reportingNotes.trim()) return;
-                    const newIssue: ReportedIssue = {
-                      id: "issue-" + Date.now(),
-                      timestamp: new Date().toISOString(),
-                      userEmail: currentUser?.email || "unknown@joinditto.in",
-                      userName: currentUser?.name || "Advisor",
-                      userTactId: currentUser?.tactId || "TACT-000",
-                      planName: reportingItem.planName,
-                      pedInput: reportingItem.pedInput,
-                      matchedQuestion: reportingItem.mappedQuestion,
-                      matchType: reportingItem.matchType,
-                      source: reportingItem.source,
-                      explanation: reportingItem.explanation,
-                      issueNotes: reportingNotes,
-                      status: "Pending",
-                    };
-                    setReportedIssues(prev => [newIssue, ...prev]);
-                    setReportingItem(null);
-                    setReportingNotes("");
+                  disabled={!reportingNotes.trim() || isSubmittingReport}
+                  onClick={async () => {
+                    if (!reportingNotes.trim() || !reportingItem || isSubmittingReport) return;
+                    setIsSubmittingReport(true);
+                    setReportingError(null);
+                    // NOTE (audit fix, see Production_Readiness_Audit.md
+                    // Finding 3): this now round-trips through the server
+                    // (flagged_issues table) instead of only ever being
+                    // written to this browser's own localStorage — identity
+                    // fields (userEmail/userName/userTactId) are filled in
+                    // server-side from the verified session, never trusted
+                    // from the client.
+                    try {
+                      const res = await fetch("/api/flagged-issues", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          planName: reportingItem.planName,
+                          pedInput: reportingItem.pedInput,
+                          matchedQuestion: reportingItem.mappedQuestion,
+                          matchType: reportingItem.matchType,
+                          source: reportingItem.source,
+                          explanation: reportingItem.explanation,
+                          issueNotes: reportingNotes,
+                        }),
+                      });
+                      const body = await res.json().catch(() => ({}));
+                      if (!res.ok) throw new Error(body.error || `Failed to submit report (HTTP ${res.status}).`);
+
+                      const row = body.entry;
+                      const newIssue: ReportedIssue = {
+                        id: String(row.id),
+                        timestamp: row.timestamp,
+                        userEmail: row.userEmail,
+                        userName: row.userName,
+                        userTactId: row.userTactId,
+                        planName: row.planName,
+                        pedInput: row.pedInput,
+                        matchedQuestion: row.matchedQuestion,
+                        matchType: row.matchType,
+                        source: row.source,
+                        explanation: row.explanation,
+                        issueNotes: row.issueNotes,
+                        status: row.status,
+                        ownerNotes: row.ownerNotes ?? undefined,
+                        resolvedAt: row.resolvedAt ?? undefined,
+                      };
+                      setReportedIssues(prev => [newIssue, ...prev]);
+                      setReportingItem(null);
+                      setReportingNotes("");
+                    } catch (err: unknown) {
+                      setReportingError(err instanceof Error ? err.message : "Failed to submit this report. Please try again.");
+                    } finally {
+                      setIsSubmittingReport(false);
+                    }
                   }}
                 >
-                  Submit Report
+                  {isSubmittingReport ? "Submitting..." : "Submit Report"}
                 </PrimaryCtaButton>
               </div>
             </motion.div>
@@ -3269,9 +4622,10 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Owner Passcode Verification Modal — gates destructive actions like permanent record deletion */}
+      {/* Destructive-action confirmation modal (see confirmDestructiveAction above for why this
+          is a plain confirmation and not a passcode/credential check). */}
       <AnimatePresence>
-        {isPasscodeModalOpen && (
+        {isConfirmModalOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -3288,77 +4642,39 @@ export default function App() {
             >
               <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">
                 <div className="flex items-center gap-2">
-                  <LockKeyhole className="w-4 h-4 text-red-500" />
-                  <h3 className="text-xs font-black uppercase tracking-wider">Owner Verification Required</h3>
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  <h3 className="text-xs font-black uppercase tracking-wider">Confirm Destructive Action</h3>
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsPasscodeModalOpen(false);
-                    setPasscodeAttempt("");
-                    setPasscodeError(null);
-                  }}
+                  onClick={() => setIsConfirmModalOpen(false)}
                   className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
                 >
                   <XCircle className="w-5 h-5 font-bold" />
                 </button>
               </div>
 
-              <div className="space-y-4 py-4 text-left">
+              <div className="space-y-2 py-4 text-left">
                 <p className="text-xs font-semibold text-stone-500 dark:text-stone-400 leading-relaxed">
-                  {passcodeActionLabel || "This is a destructive action."} Enter the owner passcode to confirm.
+                  {confirmActionLabel || "This is a destructive action."} This cannot be undone — are you sure you want to continue?
                 </p>
-
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-stone-450 font-sans">
-                    Owner Passcode
-                  </label>
-                  <input
-                    type="password"
-                    autoFocus
-                    value={passcodeAttempt}
-                    onChange={(e) => {
-                      setPasscodeAttempt(e.target.value);
-                      if (passcodeError) setPasscodeError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleVerifyPasscode();
-                      }
-                    }}
-                    placeholder="Enter passcode"
-                    className={`w-full text-xs font-semibold p-2.5 rounded-lg border outline-none ${
-                      theme === "dark"
-                        ? "bg-[#12151A] border-[#252A34] text-white focus:border-red-500"
-                        : "bg-white border-stone-250 text-stone-850 focus:border-red-500 shadow-sm"
-                    }`}
-                  />
-                  {passcodeError && (
-                    <p className="text-[11px] font-bold text-red-500">{passcodeError}</p>
-                  )}
-                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-stone-200 dark:border-stone-800">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsPasscodeModalOpen(false);
-                    setPasscodeAttempt("");
-                    setPasscodeError(null);
-                  }}
+                  onClick={() => setIsConfirmModalOpen(false)}
                   className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-[#111827] dark:hover:text-white cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={!passcodeAttempt}
-                  onClick={handleVerifyPasscode}
-                  className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
+                  autoFocus
+                  onClick={handleConfirmDestructiveAction}
+                  className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
                 >
-                  Verify & Continue
+                  Confirm & Continue
                 </button>
               </div>
             </motion.div>
