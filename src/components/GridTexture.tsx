@@ -33,7 +33,7 @@ export function GridTexture({ theme, zIndexClassName = "z-20" }: GridTextureProp
   if (theme === "dark") {
     return (
       <div
-        className={`absolute inset-0 pointer-events-none select-none opacity-80 ${zIndexClassName}`}
+        className={`absolute inset-0 pointer-events-none select-none opacity-45 ${zIndexClassName}`}
         style={{
           backgroundImage: `linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.15) 50%), linear-gradient(90deg, rgba(255,0,0,0.03), rgba(0,255,0,0.01), rgba(0,0,255,0.03))`,
           backgroundSize: "100% 3px, 3px 100%"
@@ -43,9 +43,9 @@ export function GridTexture({ theme, zIndexClassName = "z-20" }: GridTextureProp
   }
   return (
     <div
-      className={`absolute inset-0 pointer-events-none select-none opacity-50 ${zIndexClassName}`}
+      className={`absolute inset-0 pointer-events-none select-none opacity-30 ${zIndexClassName}`}
       style={{
-        backgroundImage: `linear-gradient(rgba(70,115,169,0) 50%, rgba(70,115,169,0.14) 50%), linear-gradient(90deg, rgba(70,115,169,0.07), rgba(255,255,255,0), rgba(70,115,169,0.07))`,
+        backgroundImage: `linear-gradient(rgba(70,115,169,0) 50%, rgba(70,115,169,0.08) 50%), linear-gradient(90deg, rgba(70,115,169,0.04), rgba(255,255,255,0), rgba(70,115,169,0.04))`,
         backgroundSize: "100% 3px, 3px 100%"
       }}
     />

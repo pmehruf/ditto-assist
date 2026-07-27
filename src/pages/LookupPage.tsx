@@ -4,6 +4,7 @@
  */
 
 import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ShieldCheck,
@@ -14,13 +15,12 @@ import {
   Info,
   RefreshCw,
   RotateCcw,
-  AlertTriangle,
   ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
 import { DeclarationMapIcon } from "../components/icons";
+import { GridTexture } from "../components/GridTexture";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
 import { DeclarationAssistantResults } from "../components/DeclarationAssistantResults";
@@ -28,6 +28,9 @@ import { MatchOutput, PlanConfig } from "../types.js";
 import { QAAnnouncement } from "../types/announcements";
 import { ReportingItem } from "../types/lookup";
 import { renderFormattedAnnouncement } from "../utils/renderFormattedAnnouncement";
+import { getPlanInsurerColor, hexToRgba, getContrastTextForPlanColor } from "../utils/planInsurerColors";
+import { buildGroupedSuggestions } from "../constants/pedSynonymGroups";
+import { CustomSelect } from "../components/CustomSelect";
 
 type TabId =
   | "lookup"
@@ -68,12 +71,6 @@ interface LookupPageProps {
   // Reporting a mismatch from within results
   setReportingItem: (value: ReportingItem | null) => void;
   setReportingNotes: (value: string) => void;
-
-  // Layout refs (measured heights for the results split view)
-  mappingResultCardRef: RefObject<HTMLDivElement>;
-  resultsRef: RefObject<HTMLDivElement>;
-  sidebarRef: RefObject<HTMLDivElement>;
-  rightHeaderRef: RefObject<HTMLDivElement>;
 
   // Specific illness ledger cross-check
   illnessSearchQuery: string;
@@ -136,10 +133,6 @@ export function LookupPage({
   handleMapAnotherPed,
   setReportingItem,
   setReportingNotes,
-  mappingResultCardRef,
-  resultsRef,
-  sidebarRef,
-  rightHeaderRef,
   illnessSearchQuery,
   setIllnessSearchQuery,
   specificIllnessesDict,
@@ -157,10 +150,52 @@ export function LookupPage({
   slideDirection,
   setSlideDirection
 }: LookupPageProps) {
+  // Quiet per-plan insurer color hint for the queue card (border, queued PED
+  // tags, and the total-queue counter) — same muted palette used for the PED
+  // result card's left border in DeclarationAssistantResults.tsx. Falls back
+  // to the flat neutral PED_BORDER_COLOR for any plan without a known
+  // insurer mapping, so the queue card looks the same as before until a plan
+  // is selected.
+  const queueInsurerColor = getPlanInsurerColor(selectedPlan);
+  const queueAccentHex = theme === "dark" ? queueInsurerColor.dark : queueInsurerColor.light;
+  const queueCounterTextColor = getContrastTextForPlanColor(theme);
+
+  // The QA Announcement card (right column, intro/pre-results view) needs to
+  // match the PED Mapping Engine input column's (left column) actual
+  // rendered height exactly, with its own content scrolling internally if
+  // it doesn't fit — not the other way around. Flexbox's `items-stretch`
+  // alone can't do this: it stretches BOTH siblings to whichever is
+  // naturally taller, so if the announcement text is long, the left column
+  // would get stretched too, and CSS has no way to say "match sibling A's
+  // height, capping and scrolling sibling B" — that needs the actual
+  // rendered pixel height, hence measuring it directly.
+  const leftColRef = useRef<HTMLDivElement | null>(null);
+  const [leftColHeight, setLeftColHeight] = useState<number | null>(null);
+  const [isDesktopLayout, setIsDesktopLayout] = useState(true);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)"); // Tailwind's `lg`
+    const updateLayout = () => setIsDesktopLayout(mql.matches);
+    updateLayout();
+    mql.addEventListener("change", updateLayout);
+    return () => mql.removeEventListener("change", updateLayout);
+  }, []);
+
+  useEffect(() => {
+    const el = leftColRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect?.height;
+      if (height) setLeftColHeight(height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <>
       {isResultsActive ? (
-        <div className="flex flex-col lg:flex-row gap-6 items-start w-full">
+        <div className="flex flex-col lg:flex-row gap-6 items-stretch w-full lg:flex-1 lg:min-h-0">
           <DeclarationAssistantResults
             theme={theme}
             selectedPlan={selectedPlan}
@@ -169,12 +204,9 @@ export function LookupPage({
             lookupResults={lookupResults}
             onReset={handleClearLookupFields}
             onMapAnotherPed={handleMapAnotherPed}
+            setActiveTab={setActiveTab}
             setReportingItem={setReportingItem}
             setReportingNotes={setReportingNotes}
-            mappingResultCardRef={mappingResultCardRef}
-            resultsRef={resultsRef}
-            sidebarRef={sidebarRef}
-            rightHeaderRef={rightHeaderRef}
             illnessSearchQuery={illnessSearchQuery}
             setIllnessSearchQuery={setIllnessSearchQuery}
             specificIllnessesDict={specificIllnessesDict}
@@ -191,7 +223,7 @@ export function LookupPage({
               grid texture is scoped to the input area only so it doesn't
               bleed into the announcement card. */}
           <div
-            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 animate-fade-in ${
+            className={`w-full flex flex-col lg:flex-row items-center gap-10 lg:gap-16 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
@@ -202,7 +234,7 @@ export function LookupPage({
                 directly on the shared app-shell background (grid + ambient
                 glow blobs already rendered behind every tab in App.tsx), so
                 it blends into the page instead of looking like its own panel. */}
-            <div className="flex-1 min-w-0 flex flex-col justify-start relative z-10">
+            <div ref={leftColRef} className="flex-1 min-w-0 flex flex-col justify-start relative z-10">
 
               {/* Title mapping section */}
               <div
@@ -238,7 +270,7 @@ export function LookupPage({
                     style={{ marginTop: "clamp(4px, 0.8vh, 10px)" }}
                   >
                     <span
-                      style={{ fontSize: "clamp(24px, 4.4vh, 46px)", display: "block", backgroundImage: "var(--gradient-heading)" }}
+                      style={{ fontSize: "clamp(12px, 2.2vh, 23px)", display: "block", backgroundImage: "var(--gradient-heading)" }}
                       className="bg-clip-text text-transparent bg-gradient-to-r"
                     >
                       PED DECLARATION
@@ -287,34 +319,19 @@ export function LookupPage({
                     <ShieldCheck className={`w-3.5 h-3.5 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`} />
                     Health Insurance Plan
                   </label>
-                  <div className="relative w-full">
-                    <select
-                      value={selectedPlan}
-                      onChange={(e) => setSelectedPlan(e.target.value)}
-                      style={{
-                        borderRadius: "12px",
-                        height: "40.5px",
-                        paddingTop: "8.5px",
-                        paddingBottom: "8.5px",
-                        paddingRight: "44px"
-                      }}
-                      className={`w-full pl-3 pr-11 py-3 rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
-                        theme === "dark"
-                          ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]"
-                          : "bg-white border-stone-250 text-stone-850"
-                      }`}
-                      id="insurance-plan-dropdown"
-                    >
-                      <option value="" className={theme === "dark" ? "bg-[#102236] text-slate-400 font-medium" : "bg-white text-stone-400 font-medium"}>
-                        Select Plan
-                      </option>
-                      {productionPlans.map((plan) => (
-                        <option key={plan} value={plan} className={theme === "dark" ? "bg-[#102236] text-[#eff6ff] font-medium" : "bg-white text-stone-850 font-medium"}>
-                          {plan}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <CustomSelect
+                    theme={theme}
+                    value={selectedPlan}
+                    onChange={setSelectedPlan}
+                    placeholder="Select Plan"
+                    id="insurance-plan-dropdown"
+                    options={productionPlans.map((plan) => ({ value: plan, label: plan }))}
+                    triggerClassName={`w-full flex items-center justify-between gap-2 pl-3 pr-8 h-[42px] rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
+                      theme === "dark"
+                        ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]"
+                        : "bg-white border-stone-250 text-stone-850"
+                    }`}
+                  />
                 </div>
 
                 {/* BOX B: Search & Map Condition */}
@@ -330,7 +347,7 @@ export function LookupPage({
                   <div className="relative w-full">
                     <div className="flex items-center gap-2 w-full">
                       <div
-                        style={{ borderRadius: "12px", height: "40.5px" }}
+                        style={{ borderRadius: "12px", height: "42px" }}
                         className={`flex items-center border transition-all duration-200 shadow-sm focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/25 flex-grow ${
                           theme === "dark" ? "bg-[#102236] border-[#1e3e5c]" : "bg-white border-stone-250"
                         }`}
@@ -345,15 +362,30 @@ export function LookupPage({
                               setActiveSuggestionIndex(-1);
                             }}
                             onKeyDown={(e) => {
-                              const query = pedInput.trim().toLowerCase();
-                              const itemsToDisplay = pedInput.trim().length > 0
-                                ? dynamicSuggestions.filter(item =>
-                                    item.toLowerCase().includes(query) && !lookupPeds.includes(item)
-                                  ).sort((a, b) => {
-                                    if (a.length !== b.length) {
-                                      return a.length - b.length;
+                              const query = pedInput.trim();
+                              // Synonyms of the same PED (e.g. "High BP" /
+                              // "Hypertension" / "Systemic Hypertension")
+                              // collapse into a single grouped dropdown row
+                              // here — see buildGroupedSuggestions for why
+                              // clicking/selecting still inserts the one
+                              // specific synonym that matched, not the
+                              // joined label.
+                              const itemsToDisplay = query.length > 0
+                                ? buildGroupedSuggestions(dynamicSuggestions, query, lookupPeds)
+                                  .sort((a, b) => {
+                                    // Rank by the specific term that matched
+                                    // (insertValue), not the display label —
+                                    // a grouped row's label balloons to the
+                                    // full joined "A Or B Or C" string, which
+                                    // would otherwise make close/exact
+                                    // matches like "Hypertension" sort behind
+                                    // unrelated longer single terms (e.g.
+                                    // "Portal hypertension") and get pushed
+                                    // out of the top-6 cutoff below.
+                                    if (a.insertValue.length !== b.insertValue.length) {
+                                      return a.insertValue.length - b.insertValue.length;
                                     }
-                                    return a.localeCompare(b);
+                                    return a.insertValue.localeCompare(b.insertValue);
                                   }).slice(0, 6)
                                 : [];
 
@@ -374,7 +406,7 @@ export function LookupPage({
                               } else if (e.key === "Enter") {
                                 e.preventDefault();
                                 if (activeSuggestionIndex >= 0 && activeSuggestionIndex < itemsToDisplay.length) {
-                                  handleAddLookupPed(itemsToDisplay[activeSuggestionIndex]);
+                                  handleAddLookupPed(itemsToDisplay[activeSuggestionIndex].insertValue);
                                   setActiveSuggestionIndex(-1);
                                 } else {
                                   handleAddLookupPed(pedInput);
@@ -384,6 +416,7 @@ export function LookupPage({
                               }
                             }}
                             placeholder="Enter PED"
+                            autoComplete="off"
                             style={{ borderRadius: "12px", fontFamily: "system-ui" }}
                             className={`w-full pl-3 pr-8 py-2 bg-transparent border-0 outline-none font-bold text-xs ${
                               theme === "dark"
@@ -406,53 +439,80 @@ export function LookupPage({
                           handleAddLookupPed(pedInput);
                           setActiveSuggestionIndex(-1);
                         }}
-                        style={{ borderRadius: "12px" }}
-                        className={`h-[38px] px-4 border shadow-sm flex items-center justify-center shrink-0 select-none text-[11px] font-black uppercase tracking-widest transition-all duration-305 active:scale-95 cursor-pointer ${
+                        style={{
+                          clipPath: "polygon(100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 0)",
+                        }}
+                        className={`h-[42px] px-4 border shadow-sm flex items-center justify-center gap-1.5 shrink-0 select-none text-xs font-mono font-bold uppercase tracking-[0.2em] transition-all duration-200 active:scale-95 cursor-pointer relative isolate overflow-hidden ${
                           theme === "dark"
                             ? "bg-[#365c75] border-[#293b52] text-white hover:bg-[#416984]"
                             : "bg-[#4673a9] border-[#4673a9] text-white hover:bg-[#3a608e]"
                         }`}
                       >
-                        + ADD
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-0 pointer-events-none"
+                          style={{
+                            zIndex: -1,
+                            backgroundImage:
+                              "linear-gradient(rgba(0,0,0,0) 50%, rgba(0,0,0,0.08) 50%), linear-gradient(90deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.025) 50%)",
+                            backgroundSize: "100% 3px, 3px 100%",
+                          }}
+                        />
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                        ADD
                       </button>
                     </div>
 
                     {/* Floating Dropdown for Suggestions */}
                     {pedInput.trim().length > 0 && (() => {
-                      const query = pedInput.trim().toLowerCase();
-                      const itemsToDisplay = dynamicSuggestions.filter(item =>
-                        item.toLowerCase().includes(query) && !lookupPeds.includes(item)
-                      ).sort((a, b) => {
-                        if (a.length !== b.length) {
-                          return a.length - b.length;
-                        }
-                        return a.localeCompare(b);
-                      }).slice(0, 6);
+                      const query = pedInput.trim();
+                      // Same grouping as the onKeyDown handler above — each
+                      // synonym cluster shows as one joined row ("A Or B Or
+                      // C"); isAdded/insertValue still track the specific
+                      // real term so clicking behaves exactly as before.
+                      const itemsToDisplay = buildGroupedSuggestions(dynamicSuggestions, query, lookupPeds)
+                        .sort((a, b) => {
+                          // Same insertValue-based ranking as the onKeyDown
+                          // handler above — see that comment for why sorting
+                          // by the joined label buries grouped rows.
+                          if (a.insertValue.length !== b.insertValue.length) {
+                            return a.insertValue.length - b.insertValue.length;
+                          }
+                          return a.insertValue.localeCompare(b.insertValue);
+                        }).slice(0, 6);
 
                       return (
                         <div className={`absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border shadow-lg overflow-hidden flex flex-col ${
                           theme === "dark" ? "bg-stone-900 border-white/[0.08] text-white" : "bg-white border-stone-200 text-stone-900"
                         }`}>
-                          <div className="max-h-[130px] overflow-y-auto">
+                          {/* max-h raised from 130px and text now wraps
+                              instead of truncating — a grouped label like
+                              "Type 2 diabetes mellitus Or Type 2 DM Or..."
+                              was getting cut off with the old short/
+                              single-line row. Font size on the label is a
+                              notch smaller (text-[11px] vs the row's
+                              text-xs) to fit more of a long joined label
+                              per line. */}
+                          <div className="max-h-[280px] overflow-y-auto">
                             {itemsToDisplay.length === 0 ? (
                               <div className="px-4 py-3 text-xs italic text-left select-none text-stone-500">
                                 No typing matches...
                               </div>
                             ) : (
                               itemsToDisplay.map((sug, idx) => {
-                                const isAdded = lookupPeds.includes(sug);
+                                const isAdded = lookupPeds.includes(sug.insertValue);
                                 const isActive = idx === activeSuggestionIndex;
                                 return (
                                   <button
-                                    key={sug}
+                                    key={sug.insertValue}
                                     type="button"
                                     disabled={isAdded}
                                     onClick={() => {
-                                      handleAddLookupPed(sug);
+                                      handleAddLookupPed(sug.insertValue);
                                       setActiveSuggestionIndex(-1);
                                     }}
                                     onMouseEnter={() => setActiveSuggestionIndex(idx)}
-                                    className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between transition-all font-sans font-medium ${
+                                    className={`w-full text-left px-3.5 py-2.5 text-xs flex items-start justify-between gap-2 transition-all font-sans font-medium ${
                                       isAdded
                                         ? "opacity-40 cursor-not-allowed"
                                         : isActive
@@ -462,15 +522,44 @@ export function LookupPage({
                                             : "hover:bg-stone-100 border-l-2 border-transparent pl-[10px]"
                                     }`}
                                   >
-                                    <div className="flex items-center gap-2 truncate">
-                                      <Stethoscope className={`w-3.5 h-3.5 shrink-0 ${
+                                    <div className="flex items-start gap-2 min-w-0">
+                                      <Stethoscope className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
                                         isActive
                                           ? "text-blue-400"
                                           : "text-stone-500"
                                       }`} />
-                                      <span className="truncate">{sug}</span>
+                                      {/* Two-line display model: canonical name
+                                          (line 1, primary) + remaining aliases
+                                          (line 2, muted, "•"-separated). Line 2
+                                          is hidden when there are no extra
+                                          aliases. Replaces the old single long
+                                          "A Or B Or C" label for scannability;
+                                          insertValue/search are unchanged. */}
+                                      <div className="min-w-0 flex flex-col gap-0.5">
+                                        <span className={`text-[12px] font-semibold leading-snug whitespace-normal break-words ${
+                                          isActive
+                                            ? ""
+                                            : theme === "dark" ? "text-white" : "text-stone-900"
+                                        }`}>{sug.displayName}</span>
+                                        {sug.aliases.length > 0 && (() => {
+                                          // Cap the muted alias line so very
+                                          // large groups stay compact; every
+                                          // alias remains fully searchable —
+                                          // this only trims what's *shown*.
+                                          const MAX_ALIASES = 6;
+                                          const shown = sug.aliases.slice(0, MAX_ALIASES).join(" • ");
+                                          const extra = sug.aliases.length - MAX_ALIASES;
+                                          return (
+                                            <span className={`text-[10px] leading-snug whitespace-normal break-words ${
+                                              isActive
+                                                ? "text-blue-300/80"
+                                                : theme === "dark" ? "text-slate-400" : "text-stone-500"
+                                            }`}>{shown}{extra > 0 ? ` +${extra} more` : ""}</span>
+                                          );
+                                        })()}
+                                      </div>
                                     </div>
-                                    <Plus className={`w-3.5 h-3.5 shrink-0 transition-transform ${
+                                    <Plus className={`w-3.5 h-3.5 shrink-0 mt-0.5 transition-transform ${
                                       isActive ? "scale-110 text-current animate-pulse" : "text-stone-500"
                                     }`} />
                                   </button>
@@ -491,10 +580,14 @@ export function LookupPage({
                   borderWidth: "1.5px",
                   minHeight: "clamp(130px, 28vh, 300px)",
                   marginTop: "clamp(10px, 1.5vh, 22px)",
-                  padding: "clamp(10px, 1.5vh, 16px)"
+                  padding: "clamp(10px, 1.5vh, 16px)",
+                  // Quiet per-plan insurer border hint — see queueAccentHex
+                  // comment above. Falls back to the same neutral look as
+                  // before when no plan is selected/known.
+                  borderColor: selectedPlan ? queueAccentHex : undefined
                 }}
                 className={`rounded-2xl relative flex flex-col justify-between border overflow-hidden ${
-                  theme === "dark" ? "border-white/[0.12] bg-white/[0.04]" : "border-stone-300 bg-stone-100/60"
+                  theme === "dark" ? (selectedPlan ? "bg-white/[0.04]" : "border-white/[0.12] bg-white/[0.04]") : (selectedPlan ? "bg-stone-100/60" : "border-stone-300 bg-stone-100/60")
                 }`}
               >
                 <div className="flex items-start justify-between gap-4">
@@ -516,8 +609,14 @@ export function LookupPage({
                         {lookupPeds.map((tag, idx) => (
                           <div
                             key={`${tag}-${idx}`}
+                            style={selectedPlan ? {
+                              backgroundColor: hexToRgba(queueAccentHex, theme === "dark" ? 0.16 : 0.10),
+                              borderColor: hexToRgba(queueAccentHex, theme === "dark" ? 0.55 : 0.4)
+                            } : undefined}
                             className={`text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-2 transition-all font-medium border ${
-                              theme === "dark" ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-stone-100 border-stone-250 text-stone-850"
+                              selectedPlan
+                                ? (theme === "dark" ? "text-[#eff6ff]" : "text-stone-850")
+                                : (theme === "dark" ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-stone-100 border-stone-250 text-stone-850")
                             }`}
                           >
                             <span className="truncate max-w-[120px]" title={tag}>{tag}</span>
@@ -540,9 +639,12 @@ export function LookupPage({
                   {/* Total queued counter, top-right */}
                   <div className="flex flex-col items-center gap-1 shrink-0 select-none">
                     <span className={`text-[9px] font-black uppercase tracking-widest ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>Total Queue</span>
-                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
-                      theme === "dark" ? "bg-white/10 text-white" : "bg-stone-900 text-white"
-                    }`}>{lookupPeds.length}</span>
+                    <span
+                      style={selectedPlan ? { backgroundColor: queueAccentHex, color: queueCounterTextColor } : undefined}
+                      className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
+                        selectedPlan ? "" : (theme === "dark" ? "bg-white/10 text-white" : "bg-stone-600 text-white")
+                      }`}
+                    >{lookupPeds.length}</span>
                   </div>
 
                   {/* Doctor Mascot — left end of queue card */}
@@ -571,12 +673,26 @@ export function LookupPage({
                 Enter one or multiple conditions to map them sequentially against the selected plan wording.
               </p>
 
-              {/* Action row: Find a Match / Reset Fields */}
+              {/* Action row: Find a Match / Reset Fields — wrapped in a relative,
+                  overflow-hidden shell so the shared GridTexture scan-line
+                  texture shows in the gaps around the buttons, matching the
+                  app's premium card identity. Rendered at z-0 (behind the
+                  buttons) so it doesn't cut across their clipped-corner
+                  notches and folded-corner accents.
+                  Deliberately NOT rounded (no rounded-2xl) — the buttons sit
+                  flush against this shell's edges, so a rounded mask here
+                  was leaking onto their outer corners (Find a Match's left
+                  side, Reset Fields' top-right), fighting the app's sharp
+                  90°-corner + single diagonal-clip button identity. */}
               <div
                 style={{ marginTop: "clamp(8px, 1.2vh, 18px)" }}
-                className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
-                title={(!selectedPlan || lookupPeds.length === 0) ? "Select a plan and add at least one condition to proceed" : ""}
+                className="relative overflow-hidden"
               >
+                <GridTexture theme={theme} zIndexClassName="z-0" />
+                <div
+                  className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
+                  title={(!selectedPlan || lookupPeds.length === 0) ? "Select a plan and add at least one condition to proceed" : ""}
+                >
                 <PrimaryCtaButton
                   theme={theme}
                   onClick={() => {
@@ -585,6 +701,7 @@ export function LookupPage({
                   }}
                   disabled={isLookupLoading || lookupPeds.length === 0 || !selectedPlan}
                   className="w-full sm:w-auto sm:flex-1 !flex items-center justify-center gap-2"
+                  style={{ border: "none" }}
                   id="match-disclosure-button"
                   title={(!selectedPlan || lookupPeds.length === 0) ? "Select a plan and add at least one condition to proceed" : ""}
                 >
@@ -604,165 +721,32 @@ export function LookupPage({
                 <button
                   type="button"
                   onClick={handleClearLookupFields}
-                  style={
-                    theme === "dark"
-                      ? { backgroundColor: "#1C2C3D", borderColor: "#3B4A5A", color: "#A3B2C2" }
-                      : { backgroundColor: "var(--surface-elevated)", borderColor: "var(--border-strong)", color: "var(--text-secondary)" }
-                  }
-                  className="w-full sm:w-auto sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide border duration-200 transition-all hover:brightness-110 active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer select-none shadow-sm"
+                  style={{
+                    backgroundColor: "#374151",
+                    border: "none",
+                    color: "#ffffff",
+                    clipPath: "polygon(100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 0)",
+                    paddingTop: "clamp(8px, 1.2vh, 12px)",
+                    paddingBottom: "clamp(8px, 1.2vh, 12px)",
+                  }}
+                  className="w-full sm:w-auto sm:flex-1 px-6 text-xs font-mono uppercase font-bold tracking-[0.2em] duration-200 transition-all hover:brightness-110 hover:shadow-[0_0_40px_rgba(31,41,55,0.25)] active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer select-none relative isolate overflow-hidden"
                 >
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      zIndex: -1,
+                      backgroundImage:
+                        "linear-gradient(rgba(0,0,0,0) 50%, rgba(0,0,0,0.08) 50%), linear-gradient(90deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.025) 50%)",
+                      backgroundSize: "100% 3px, 3px 100%",
+                    }}
+                  />
                   <RotateCcw className="w-3.5 h-3.5 text-current" />
                   Reset Fields
                 </button>
+                </div>
               </div>
 
-
-              {/* Reusable / Universal Special Instruction block for PEDs (Collapsible Intelligent Layout) */}
-              {(() => {
-                const lowercasePeds = lookupPeds.map(p => p.toLowerCase());
-
-                // Check if any entered PED matches synonyms for our rules
-                const matchesRule = (ruleSynonyms: string[]) => {
-                  return lowercasePeds.some(ped =>
-                    ruleSynonyms.some(synonym => {
-                      if (synonym === "bp") {
-                        // Enforce exact word boundaries for "bp" so it does not match "bph"
-                        return /\bbp\b/i.test(ped);
-                      }
-                      return ped.includes(synonym);
-                    })
-                  );
-                };
-
-                const chronicSynonyms = [
-                  "diabet", "sugar", "sweet", "insulin", "hyperglyc", "prediabet", "pre-diabet",
-                  "hyperten", "bp", "blood pressure", "systolic", "diastolic", "pressure",
-                  "cholesterol", "lipid", "hyperchol", "statins", "triglyceride", "lipoprotein"
-                ];
-
-                const isMatched = matchesRule(chronicSynonyms);
-
-                if (!isMatched) {
-                  return null; // Completely hidden (removed)
-                }
-
-                const isExpanded = userAdvisoryToggle === true;
-
-                if (!isExpanded) {
-                  const shouldGlow = !advisoryHasBeenExpanded;
-                  return (
-                    <div
-                      onClick={() => {
-                        setUserAdvisoryToggle(true);
-                        setAdvisoryHasBeenExpanded(true);
-                      }}
-                      style={{
-                        background: theme === "dark"
-                          ? "linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(217, 119, 6, 0.08) 100%)"
-                          : "linear-gradient(135deg, #FFFDF5 0%, #FEF9C3 100%)",
-                        borderColor: theme === "dark" ? "rgba(245, 158, 11, 0.3)" : "rgba(234, 179, 8, 0.4)",
-                        fontWeight: "bold"
-                      }}
-                      className={`mt-8 w-full flex items-center justify-between gap-4 p-4 rounded-xl border text-xs transition-all duration-300 cursor-pointer shadow-sm hover:shadow-md ${
-                      shouldGlow
-                        ? theme === "dark"
-                          ? "text-amber-300 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.25)] animate-notification-glow"
-                          : "text-amber-850 border-amber-400 shadow-[0_0_15px_rgba(234, 179, 8, 0.2)] animate-notification-glow"
-                        : theme === "dark"
-                          ? "text-amber-300"
-                          : "text-amber-850"
-                    }`}>
-                      <div className="flex items-center gap-2.5 text-left">
-                        <div className="relative">
-                          <AlertTriangle className={`w-4 h-4 shrink-0 select-none ${shouldGlow ? "animate-bounce" : ""} ${
-                            theme === "dark" ? "text-amber-400" : "text-amber-800"
-                          }`} style={{ animationDuration: shouldGlow ? "2s" : undefined }} />
-                          {shouldGlow && (
-                            <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                            </span>
-                          )}
-                        </div>
-                        <span className={`font-sans font-medium transition-colors ${theme === "dark" ? "text-amber-300" : "text-amber-800"}`}>
-                          <strong className={theme === "dark" ? "text-amber-400" : "text-amber-800"}>
-                            Waring : Special Instruction Alert. Click to know more!
-                          </strong>
-                        </span>
-                      </div>
-                      <ChevronDown className={`w-4 h-4 shrink-0 ${theme === "dark" ? "text-amber-400" : "text-amber-800"}`} />
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    className={`mt-8 w-full p-4.5 rounded-xl border transition-all duration-300 relative overflow-hidden shadow-md ${
-                      theme === "dark"
-                        ? "bg-slate-900 border-slate-700 text-slate-100"
-                        : "bg-white border-slate-300 text-slate-900"
-                    }`}
-                  >
-                    <div className="flex flex-col space-y-3.5 text-left select-none font-sans font-medium">
-                      {/* Line 1: Header to click-collapse + Rating */}
-                      <div
-                        onClick={() => setUserAdvisoryToggle(false)}
-                        className={`flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b pb-2.5 cursor-pointer hover:opacity-85 transition-opacity ${
-                        theme === "dark" ? "border-slate-800" : "border-slate-200"
-                      }`}>
-                        <div className="flex items-start gap-2 max-w-2xl">
-                          <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${theme === "dark" ? "text-red-400" : "text-red-600"}`} />
-                          <span className={`text-[11px] md:text-[11.5px] font-semibold leading-relaxed ${theme === "dark" ? "text-slate-200" : "text-[#0F172A]"}`}>
-                            Advisors must mandatorily discuss the below narrative if the lead has any of the targeted PEDs mentioned below as a pre-existing condition.
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
-                          <span className={`text-[10px] font-mono font-black border uppercase tracking-wider px-2.5 py-0.5 rounded-md ${
-                            theme === "dark"
-                              ? "bg-slate-800 text-slate-100 border-slate-700"
-                              : "bg-slate-900 text-white border-slate-950"
-                          }`}>
-                            RATING: 2
-                          </span>
-                          <ChevronUp className="w-4 h-4 text-slate-500 shrink-0" />
-                        </div>
-                      </div>
-
-                      {/* Line 2: Condition Tags */}
-                      <div className="flex flex-wrap gap-1.5 items-center">
-                        <span className={`text-[10px] font-bold uppercase tracking-wide mr-1 ${theme === "dark" ? "text-slate-400" : "text-slate-600"}`}>TARGETS:</span>
-                        {["Diabetes / Pre-Diabetes", "Hypertension (High BP)", "Hypercholesterolaemia"].map((tag, idx) => (
-                          <span key={idx} className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
-                            theme === "dark"
-                              ? "bg-slate-800 border-slate-700 text-slate-200"
-                              : "bg-stone-50 border-stone-200 text-slate-800"
-                          }`}>
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-
-                      {/* Line 3: Advisor Narrative & Compact Flexibility Note */}
-                      <div className="space-y-1.5">
-                        <span className={`text-[10.5px] font-extrabold uppercase tracking-wider block ${
-                          theme === "dark" ? "text-white" : "text-[#04233f]"
-                        }`}>
-                          Advisor Narrative:
-                        </span>
-                        <blockquote className={`pl-3 border-l-2 border-slate-400 text-xs italic leading-relaxed font-semibold ${
-                          theme === "dark" ? "text-slate-200" : "text-stone-900"
-                        }`}>
-                          "Usually, people are hospitalized not solely because they have diabetes, high cholesterol, or hypertension, but due to complications like heart attacks and strokes that are linked to these conditions. If there is a waiting period for coverage of these underlying conditions, claims for events such as heart attacks or strokes may be rejected because they stem from diabetes, cholesterol, or hypertension."
-                        </blockquote>
-                        <p className={`text-[10px] font-semibold leading-relaxed mt-1 ${theme === "dark" ? "text-slate-300" : "text-slate-700"}`}>
-                          <strong className={theme === "dark" ? "text-white font-extrabold" : "text-slate-950 font-extrabold"}>Flexibility Note:</strong> Advisors are fully flexible to use their own words. Ensure the core reasoning of linked medical risks is clearly explained.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
 
 
@@ -797,58 +781,28 @@ export function LookupPage({
 
               const diffDays = getDaysDiff(item.effectiveDate);
 
+              // One neat solid fill for every case — unlike the rating
+              // badge, this one intentionally does NOT vary color by
+              // urgency; only the text changes. Matte (muted, non-neon)
+              // terracotta fill with black text, matching the reference look.
+              const countdownClasses = "bg-[#de7c50] text-black border border-[#c26a3d] font-extrabold";
               const getCountdownBadgeConfig = (diff: number) => {
                 if (diff === 0) {
-                  return {
-                    text: "Effective today",
-                    classes: theme === "dark"
-                      ? "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/35 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.2)]"
-                      : "bg-red-105 text-red-700 border-red-305 animate-pulse font-extrabold",
-                  };
+                  return { text: "Effective today", classes: countdownClasses };
                 } else if (diff === 1) {
-                  return {
-                    text: "Live in 1 day",
-                    classes: theme === "dark"
-                      ? "bg-red-500/15 text-red-400 dark:text-red-300 border border-red-500/25 animate-pulse"
-                      : "bg-red-55 text-red-650 border border-red-200 animate-pulse font-extrabold",
-                  };
+                  return { text: "Live in 1 day", classes: countdownClasses };
                 } else if (diff === 2) {
-                  return {
-                    text: "Live in 2 days",
-                    classes: theme === "dark"
-                      ? "bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 font-extrabold"
-                      : "bg-indigo-50/65 text-indigo-200 border border-indigo-505/30 font-extrabold",
-                  };
+                  return { text: "Live in 2 days", classes: countdownClasses };
                 } else if (diff === 3) {
-                  return {
-                    text: "Live in 3 days",
-                    classes: theme === "dark"
-                      ? "bg-indigo-500/10 text-indigo-305 border border-indigo-500/15 font-extrabold"
-                      : "bg-indigo-50/50 text-indigo-205 border border-indigo-505/25 font-extrabold",
-                  };
+                  return { text: "Live in 3 days", classes: countdownClasses };
                 } else if (diff > 3 && diff <= 7) {
-                  return {
-                    text: `Live in ${diff} days`,
-                    classes: theme === "dark"
-                      ? "bg-sky-500/15 text-sky-305 border border-sky-500/20 font-extrabold"
-                      : "bg-sky-50/60 text-sky-200 border border-sky-500/30 font-extrabold",
-                  };
+                  return { text: `Live in ${diff} days`, classes: countdownClasses };
                 } else if (diff < 0) {
                   const absDiff = Math.abs(diff);
                   const dayLabel = absDiff === 1 ? "day" : "days";
-                  return {
-                    text: `Active since ${absDiff} ${dayLabel}`,
-                    classes: theme === "dark"
-                      ? "bg-teal-500/10 text-teal-400 border border-teal-500/15 font-extrabold"
-                      : "bg-teal-55 text-teal-800 border border-teal-205 font-extrabold",
-                  };
+                  return { text: `Active since ${absDiff} ${dayLabel}`, classes: countdownClasses };
                 } else {
-                  return {
-                    text: `Active from ${formatOrdinal(item.effectiveDate)}`,
-                    classes: theme === "dark"
-                      ? "bg-stone-500/10 text-stone-400 border border-stone-500/15 font-extrabold"
-                      : "bg-slate-55 text-slate-600 border border-slate-205 font-extrabold",
-                  };
+                  return { text: `Active from ${formatOrdinal(item.effectiveDate)}`, classes: countdownClasses };
                 }
               };
 
@@ -861,33 +815,34 @@ export function LookupPage({
                       : "bg-stone-55 text-stone-600 border border-stone-205 font-extrabold",
                   };
                 }
+                // Solid, opaque severity fills (not theme-dependent pale
+                // tints) — the card background is now a colorful gradient,
+                // so a pale/translucent badge reads as washed-out white
+                // instead of a distinct color. 1=Red...4=Green is the actual
+                // severity scale; only this rating badge varies this way —
+                // the countdown badge next to it intentionally does not.
+                // Matte (muted, non-neon) fills with black text throughout —
+                // same finish as the countdown badge, not a bright/glossy
+                // Tailwind 500-level color.
                 if (rating === 1) {
                   return {
                     text: "Rating 1",
-                    classes: theme === "dark"
-                      ? "bg-red-500/20 text-red-400 border border-red-500/35 font-extrabold shadow-[0_0_8px_rgba(239,68,68,0.25)]"
-                      : "bg-red-55 text-red-700 border border-red-200 font-extrabold",
+                    classes: "bg-[#c1665c] text-black border border-[#a84f46] font-extrabold",
                   };
                 } else if (rating === 2) {
                   return {
                     text: "Rating 2",
-                    classes: theme === "dark"
-                      ? "bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 font-extrabold"
-                      : "bg-indigo-50/60 text-indigo-200 border border-indigo-500/30 font-extrabold",
+                    classes: "bg-[#de7c50] text-black border border-[#c26a3d] font-extrabold",
                   };
                 } else if (rating === 3) {
                   return {
                     text: "Rating 3",
-                    classes: theme === "dark"
-                      ? "bg-sky-500/15 text-sky-305 border border-sky-500/20 font-extrabold"
-                      : "bg-sky-50/60 text-sky-200 border border-sky-500/30 font-extrabold",
+                    classes: "bg-[#d1a34a] text-black border border-[#b3872f] font-extrabold",
                   };
                 } else if (rating === 4) {
                   return {
                     text: "Rating 4",
-                    classes: theme === "dark"
-                      ? "bg-blue-500/10 text-blue-400 border border-blue-500/20 font-extrabold"
-                      : "bg-blue-55 text-blue-700 border border-blue-200 font-extrabold",
+                    classes: "bg-[#94b06c] text-black border border-[#7a9552] font-extrabold",
                   };
                 } else if (rating === -1) {
                   return {
@@ -899,43 +854,68 @@ export function LookupPage({
                 }
                 return {
                   text: `Rating ${rating}`,
-                  classes: theme === "dark"
-                    ? "bg-teal-500/10 text-teal-400 border border-teal-500/15 font-extrabold"
-                    : "bg-teal-55 text-teal-800 border border-teal-200 font-extrabold",
+                  classes: "bg-[#6fa08c] text-black border border-[#57806e] font-extrabold",
                 };
               };
 
               const countdownConfig = getCountdownBadgeConfig(diffDays);
               const ratingConfig = getRatingBadgeConfig(item.rating);
 
-              const renderAnnouncementWithRatings = (text: string) => {
-                return renderFormattedAnnouncement(text, theme, true);
-              };
-
               const annType = item.type || "QA Announcement";
+
+              // QA Announcement's card is a forced-light-blue gradient in
+              // both themes, so its bold-red text always needs the light
+              // (forceLightContrast) branch to stay readable. General/Common
+              // Announcement's card now has its own distinct, properly
+              // legible background per theme again (dark navy vs a light
+              // mint-tinted card — see the secondary-card background below),
+              // so it follows the real ambient `theme` like any normal card.
+              const renderAnnouncementWithRatings = (text: string) => {
+                return renderFormattedAnnouncement(text, theme, annType !== "General Announcement");
+              };
 
               const typeConfig = (() => {
                 if (annType === "General Announcement") {
+                  // Primary/outer card. Dark theme blends smoothly into the
+                  // secondary/body card beneath it because containerBg
+                  // layers a transparent-to-teal gradient over #061a2b. Light
+                  // theme's base was briefly changed to #EDF6F3 to match the
+                  // secondary card's new color, but that made the whole
+                  // outer card read as more saturated/vivid than intended —
+                  // reverted back to the original, paler #F6F8FA base (the
+                  // secondary/body card keeps its own #EDF6F3 independently;
+                  // they don't need to share a base color).
                   return {
-                    containerClass: theme === "dark"
-                      ? "bg-[#061a2b] border-white/[0.09] shadow-xs"
-                      : "bg-white border-stone-200 shadow-xs",
-                    headerSubColor: theme === "dark" ? "text-emerald-400 font-extrabold" : "text-emerald-600 font-extrabold",
+                    containerClass: "shadow-xs",
+                    containerBg: theme === "dark"
+                      ? "linear-gradient(135deg, rgba(13,148,136,0) 0%, rgba(13,148,136,0.34) 100%), #061a2b"
+                      : "linear-gradient(135deg, rgba(20,184,166,0.05) 0%, rgba(20,184,166,0.24) 100%), #F6F8FA",
+                    headerSubColor: theme === "dark" ? "text-emerald-400 font-extrabold" : "text-emerald-900 font-extrabold",
                     titleColor: theme === "dark" ? "text-emerald-300 font-bold" : "text-emerald-700 font-bold",
                   };
                 } else {
-                  // QA Announcement
+                  // QA Announcement — primary/outer card. Light theme now
+                  // mirrors dark theme's diagonal wash direction (135deg /
+                  // to-br: top-left to bottom-right) with a light-blue to
+                  // red gradient, rather than the old flat rose-to-red class
+                  // (from-rose-200 to-red-300 were close enough in tone to
+                  // read as a solid fill). Dark theme keeps its inline
+                  // `background` (see containerBg below) — a semi-transparent
+                  // red wash over the base dark-navy card, which a Tailwind
+                  // bg-* class can't replicate since it just paints flat.
                   return {
-                    containerClass: theme === "dark"
-                      ? "bg-[#061a2b] border-white/[0.09] shadow-xs"
-                      : "bg-white border-stone-200 shadow-xs",
-                    headerSubColor: theme === "dark" ? "text-rose-400 font-extrabold" : "text-rose-600 font-extrabold",
+                    containerClass: theme === "dark" ? "shadow-xs" : "bg-gradient-to-br from-[#3a608e] via-red-200 to-red-400 shadow-xs",
+                    containerBg: theme === "dark"
+                      ? "linear-gradient(135deg, rgba(190,18,60,0) 0%, rgba(220,38,38,0.38) 100%), #061a2b"
+                      : undefined,
+                    headerSubColor: theme === "dark" ? "text-rose-400 font-extrabold" : "text-rose-900 font-extrabold",
                     titleColor: theme === "dark" ? "text-rose-300 font-bold" : "text-rose-700 font-bold",
                   };
                 }
               })();
 
               const containerStyle = typeConfig.containerClass;
+              const containerBg = typeConfig.containerBg;
 
               const motionVariants = {
                 enter: (dir: "right-to-left" | "left-to-right") => ({
@@ -955,10 +935,25 @@ export function LookupPage({
               return (
                 <div
                   style={{
-                    minHeight: "clamp(380px, 55vh, 650px)",
+                    // On desktop (side-by-side columns), pin this card's
+                    // height to the left column's actual measured pixel
+                    // height (see leftColHeight/ResizeObserver above) so the
+                    // two always match exactly, with long announcement text
+                    // scrolling inside via the Announcement Content div's
+                    // own flex-1/min-h-0/overflow-y-auto — rather than this
+                    // card growing to fit its content and running past the
+                    // left column, which is what happened before. Falls
+                    // back to the previous clamp-based height before the
+                    // measurement lands, and on mobile (stacked columns,
+                    // where matching the left column's height doesn't make
+                    // layout sense).
+                    height: isDesktopLayout && leftColHeight ? `${leftColHeight}px` : "clamp(380px, 55vh, 650px)",
+                    maxHeight: isDesktopLayout && leftColHeight ? `${leftColHeight}px` : "clamp(380px, 55vh, 650px)",
                     paddingBottom: "8px",
+                    border: "none",
+                    ...(containerBg ? { background: containerBg } : {}),
                   }}
-                  className={`p-6 sm:p-8 flex flex-col gap-4 select-none transition-all duration-300 w-full lg:w-96 xl:w-[28rem] flex-shrink-0 overflow-hidden relative rounded-2xl border ${containerStyle}`}
+                  className={`p-6 sm:p-8 flex flex-col gap-4 select-none transition-all duration-300 w-full lg:w-96 xl:w-[28rem] flex-shrink-0 overflow-hidden relative rounded-2xl ${containerStyle}`}
                 >
 
                   {/* UPPER HEADER BAR (Row 1 of Layout) */}
@@ -979,39 +974,38 @@ export function LookupPage({
                           marginTop: "0px",
                           marginBottom: "0px"
                         }}
-                        className="inline-block text-[10px] leading-none font-black uppercase tracking-widest px-2.5 py-1 rounded bg-[#EFF6FF] dark:bg-[#0E1F33] text-[#1A365D] dark:text-[#D7E5FF] w-fit"
+                        className="inline-block text-[10px] leading-none font-black uppercase tracking-widest px-2.5 py-1 text-[#1A365D] dark:text-[#D7E5FF] w-fit"
                       >
                         Updates
                       </span>
-                      <span className="block text-[15px] leading-[18px] font-black mt-1 bg-gradient-to-r from-[#00D3F3] to-[#58A3FF] bg-clip-text text-transparent">
-                        {(() => {
-                          const annType = item.type || "QA Announcement";
-                          if (annType === "General Announcement") {
-                            return "Common Announcements";
-                          }
-                          return "QA Announcements";
-                        })()}
+                      <span
+                        className={`block text-[15px] leading-[18px] font-black mt-1 ${
+                          theme === "light" && annType !== "General Announcement"
+                            ? "text-[#0f2942]"
+                            : "bg-clip-text text-transparent"
+                        }`}
+                        style={
+                          theme === "light" && annType !== "General Announcement"
+                            ? undefined
+                            : { backgroundImage: "var(--gradient-heading)" }
+                        }
+                      >
+                        {annType === "General Announcement" ? "Common Announcements" : "QA Announcements"}
                       </span>
                     </div>
 
                     {/* Badges on Top Right */}
                     <div className="flex flex-wrap items-center gap-1.5 justify-end">
-                      <span
-                        className={`text-[10px] px-2 py-1 tracking-wider whitespace-nowrap flex items-center justify-center font-extrabold h-6 rounded ${countdownConfig.classes}`}
-                        style={{
-                          backgroundColor: "#de7c50",
-                          color: "#170505",
-                        }}
-                      >
-                        {countdownConfig.text}
-                      </span>
+                      {item.effectiveDate && (
+                        <span
+                          className={`text-[10px] px-2 py-1 tracking-wider whitespace-nowrap flex items-center justify-center font-extrabold h-6 rounded ${countdownConfig.classes}`}
+                        >
+                          {countdownConfig.text}
+                        </span>
+                      )}
                       {item.rating !== undefined && item.rating !== 0 && (
                         <span
-                          className={`text-[10px] px-2 py-1 tracking-wide rounded border whitespace-nowrap flex items-center justify-center font-extrabold h-6 ${ratingConfig.classes}`}
-                          style={{
-                            backgroundColor: "#94b06c",
-                            color: "#000000",
-                          }}
+                          className={`text-[10px] px-2 py-1 tracking-wide rounded whitespace-nowrap flex items-center justify-center font-extrabold h-6 ${ratingConfig.classes}`}
                         >
                           {ratingConfig.text}
                         </span>
@@ -1020,23 +1014,38 @@ export function LookupPage({
                   </div>
 
                   {/* HORIZONTAL SHARP DIVIDER */}
-                  <div className="border-t border-stone-200 dark:border-white/[0.08] w-full"></div>
+                  <div className="border-t border-[#4E6981] dark:border-white/[0.08] w-full"></div>
 
-                  {/* BODY CONTENT (Row 2 of Layout) — secondary card */}
+                  {/* BODY CONTENT (Row 2 of Layout) — secondary card. QA
+                      Announcements get a light blue background here, same
+                      in both themes. General Announcement's card keeps its
+                      own dark-navy card in dark theme, and a dedicated light
+                      mint-tinted card (#EDF6F3, not a flat near-white gray)
+                      in light theme — chosen to actually suit a light
+                      backdrop rather than reusing the dark card's colors. */}
                   <div
                     style={{
-                      backgroundColor: theme === "dark" ? "#0a1f33" : "#92a5b573",
-                      paddingTop: "12px",
-                      paddingBottom: "12px",
+                      background: annType === "General Announcement"
+                        ? (theme === "dark" ? "#0a1f33" : "#EDF6F3")
+                        : "linear-gradient(135deg, #dbeafe, #bfdbfe)",
+                      paddingTop: "10px",
+                      paddingBottom: "8px",
                       paddingLeft: "12px",
                       paddingRight: "10px",
                       marginTop: "0px",
                       marginBottom: "0px",
                       borderRadius: "16px",
                       position: "relative",
-                      border: theme === "dark" ? "1px solid rgba(255,255,255,0.06)" : "1px solid #e2e8f0",
+                      border: annType === "General Announcement"
+                        ? (theme === "dark" ? "1px solid rgba(255,255,255,0.06)" : "1px solid #A9C9C2")
+                        : "1px solid #93c5fd",
                       flexGrow: 1,
-                      minHeight: "220px"
+                      // Was 220px, which left a large empty block under short
+                      // announcements. 170px still clears the 140px mascot
+                      // anchored to the primary card's bottom-right, so the
+                      // card can shrink to its content without the mascot
+                      // overflowing.
+                      minHeight: "170px"
                     }}
                     className="flex flex-row items-start justify-between gap-3 md:gap-4 self-stretch w-full min-w-0"
                   >
@@ -1045,8 +1054,21 @@ export function LookupPage({
                     <div className="flex-grow flex-1 min-w-0 text-left flex flex-col justify-start h-full">
                       {/* Announcement Title */}
                       <span
-                        style={{ fontFamily: "system-ui", color: theme === "dark" ? "#94a3b8" : "#420606", marginTop: "0px", marginBottom: "0px" }}
-                        className="text-xs md:text-[13px] font-bold tracking-tight uppercase mb-2 block"
+                        style={{
+                          fontFamily: "system-ui",
+                          // QA's secondary card is light blue in both themes,
+                          // so this label stays a dark navy in both too.
+                          // General Announcement's card differs by theme
+                          // again (dark navy vs light mint), so this label
+                          // goes back to following it: a muted slate on the
+                          // dark card, a deep teal on the new light card.
+                          color: annType === "General Announcement"
+                            ? (theme === "dark" ? "#94a3b8" : "#134E4A")
+                            : "#0f2942",
+                          marginTop: "0px",
+                          marginBottom: "0px"
+                        }}
+                        className="text-xs md:text-[13px] font-bold tracking-tight uppercase mb-1.5 block"
                       >
                         {item.category || "General Announcement"}
                       </span>
@@ -1054,23 +1076,39 @@ export function LookupPage({
                       {/* General Announcement meta: optional "From" team */}
                       {annType === "General Announcement" && item.from && (
                         <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2">
-                          <span className="text-[9px] text-cyan-800 font-semibold">
+                          {/* Explicit hex instead of text-cyan-800 (which
+                              resolves to var(--accent) globally) so this
+                              always matches this card's OWN accent, not
+                              whatever --accent happens to be elsewhere. */}
+                          <span className="text-[9px] font-semibold" style={{ color: theme === "dark" ? "#00D3F3" : "#0754B7" }}>
                             From: {item.from}
                           </span>
                         </div>
                       )}
 
-                      {/* Announcement Content */}
+                      {/* Announcement Content — flex-1/min-h-0 so it shares
+                          the Left Text Block's height with the Posted Date
+                          footer below instead of claiming a hardcoded 45px
+                          offset; this is what lets the footer stay pinned to
+                          the bottom regardless of how tall this scrolls. */}
+                      {/* Scrollbar contrast follows the CARD, not the ambient
+                          theme: the QA card is always light-blue, so keying
+                          the thumb off `theme` made it invisible in light
+                          mode. Only the General card in dark mode is a
+                          genuinely dark surface. */}
                       <div
                         style={{
-                          height: "calc(100% - 45px)",
-                          maxHeight: "calc(100% - 45px)",
                           overflowY: "auto",
                           overflowX: "hidden",
                           scrollbarWidth: "thin",
-                          scrollbarColor: theme === "dark" ? "#2B3E5A transparent" : "#CBD5E1 transparent"
+                          scrollbarColor:
+                            annType === "General Announcement" && theme === "dark"
+                              ? "#5A6E8C transparent"
+                              : "#64748B transparent",
                         }}
-                        className="relative w-full flex flex-col justify-start bg-transparent pr-1 overflow-x-hidden"
+                        className={`announcement-scroll ${
+                          annType === "General Announcement" && theme === "dark" ? "on-dark " : ""
+                        }relative w-full flex-1 min-h-0 flex flex-col justify-start bg-transparent pr-1 overflow-x-hidden`}
                       >
                         <AnimatePresence mode="wait" initial={false}>
                           <motion.div
@@ -1085,22 +1123,39 @@ export function LookupPage({
                           >
                             <div
                               className="text-[12.5px] font-medium leading-relaxed text-stone-850"
-                              style={{ maxWidth: '100%', fontFamily: "system-ui", marginRight: "0px" }}
+                              style={{
+                                maxWidth: '100%',
+                                fontFamily: "system-ui",
+                                marginRight: "0px",
+                                // `.text-stone-850` follows the AMBIENT theme
+                                // (index.css only force-lightens it under a
+                                // `.dark` ancestor), but QA's card is always
+                                // light-blue regardless of ambient theme, so
+                                // it needs an explicit override; General's
+                                // card now differs by theme again (dark navy
+                                // vs the new light mint card), so it needs
+                                // its own explicit pair too rather than
+                                // relying on `.text-stone-850`'s defaults.
+                                color: annType === "General Announcement"
+                                  ? (theme === "dark" ? "#F5F7FA" : "#1E293B")
+                                  : "#0f2942",
+                              }}
                             >
                               {/* Desktop/MD Floated Spacer to push mascot to bottom right */}
-                              <div className="hidden md:block" style={{ float: 'right', height: '120px', width: '0px' }} />
-                              {/* Floated Mascot Placeholder (Invisible Spacer) inside the text flow */}
+                              <div className="hidden md:block" style={{ float: 'right', height: '84px', width: '0px' }} />
+                              {/* Floated Mascot Placeholder (Invisible Spacer) inside the text flow —
+                                  shrunk so the mascot sits tighter in the corner and covers less text. */}
                               <div
                                 className="hidden md:block"
                                 style={{
                                   float: 'right',
                                   clear: 'right',
-                                  width: '112.71199999999999px',
-                                  height: '130px',
-                                  marginLeft: '16px',
-                                  marginRight: '-10px',
-                                  marginTop: '8px',
-                                  marginBottom: sorted.length > 1 ? "-16px" : "3px"
+                                  width: '78px',
+                                  height: '91px',
+                                  marginLeft: '12px',
+                                  marginRight: '-7px',
+                                  marginTop: '6px',
+                                  marginBottom: sorted.length > 1 ? "-11px" : "2px"
                                 }}
                               />
                               {renderAnnouncementWithRatings(item.announcement)}
@@ -1108,82 +1163,113 @@ export function LookupPage({
                           </motion.div>
                         </AnimatePresence>
                       </div>
+
+                      {/* Posted Date — footer, pinned to the bottom-left of
+                          the secondary card. Deliberately a sibling of the
+                          scrollable Announcement Content div above (not
+                          nested inside it) so it never scrolls away with
+                          long content and never shifts position as content
+                          height changes; the content area is flex-1 above,
+                          so this footer always gets pushed to the bottom of
+                          the available space instead. */}
+                      {item.announcementDate && (
+                        <div className="shrink-0 mt-1 pt-1 border-t border-dashed border-stone-300/40 dark:border-white/10">
+                          <span className="text-[9.5px] font-semibold tracking-wide text-stone-400">
+                            Posted {formatOrdinal(item.announcementDate)}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Fixed Mascot aligned to the bottom-right of the Row 2 container, overlapping correctly */}
+                  </div>
+
+                  {/* Fixed Mascot — positioned relative to the PRIMARY card
+                      (not the secondary card, like before), anchored to its
+                      bottom-right corner and made tall enough that its top
+                      portion pokes up slightly above the secondary card's
+                      top edge instead of being fully confined inside it. */}
+                  <div
+                    className="hidden md:flex items-end justify-center shrink-0 py-1 select-none absolute"
+                    style={{
+                      width: '130px',
+                      height: '140px',
+                      bottom: sorted.length > 1 ? "0px" : "4px",
+                      right: "2px",
+                      pointerEvents: "none"
+                    }}
+                  >
                     <div
-                      className="hidden md:flex items-end justify-center shrink-0 py-1 select-none absolute"
                       style={{
-                        width: '150px',
-                        height: '150px',
-                        bottom: sorted.length > 1 ? "-11px" : "0px",
-                        right: "0px",
-                        pointerEvents: "none"
+                        marginRight: "-20px",
+                        paddingLeft: "0px",
+                        width: "97px",
+                        height: "113px",
+                        marginLeft: "20px",
+                        marginTop: "0px",
+                        marginBottom: "2px"
                       }}
+                      className="flex items-end justify-center relative pointer-events-auto"
                     >
-                      <div
-                        style={{
-                          marginRight: "-35px",
-                          paddingLeft: "0px",
-                          width: "112.71199999999999px",
-                          height: "130px",
-                          marginLeft: "23px",
-                          marginTop: "0px",
-                          marginBottom: "3px"
-                        }}
-                        className="flex items-end justify-center relative pointer-events-auto"
-                      >
-                        <MascotWithFallback
-                          src="/assets/.aistudio/announcement-mascot.png"
-                          alt="Announcement Mascot"
-                          className="h-full w-auto object-contain transition-all duration-300 transform-gpu hover:scale-105 pointer-events-none select-none"
-                          type="notepad"
-                          style={{ maxHeight: '100%', maxWidth: '150px' }}
-                        />
-                      </div>
+                      <MascotWithFallback
+                        src="/assets/.aistudio/announcement-mascot.png"
+                        alt="Announcement Mascot"
+                        className="h-full w-auto object-contain transition-all duration-300 transform-gpu hover:scale-105 pointer-events-none select-none"
+                        type="notepad"
+                        style={{ maxHeight: '100%', maxWidth: '130px' }}
+                      />
                     </div>
-
                   </div>
 
                   {/* PAGE INDICATOR & ARROWS (Row 3 of Layout) */}
                   {sorted.length >= 1 && (
                     <div
                       style={{
-                        paddingTop: "8px",
-                        paddingBottom: "4px",
-                        marginTop: "4px"
+                        paddingTop: "4px",
+                        paddingBottom: "2px",
+                        marginTop: "2px"
                       }}
-                      className="flex flex-col items-center justify-center gap-2 border-t border-dashed border-stone-200 dark:border-white/[0.08] w-full shrink-0"
+                      className="flex flex-col items-center justify-center gap-2 border-t border-dashed border-[#4E6981] dark:border-white/[0.08] w-full shrink-0"
                     >
-                      <div
-                        style={{
-                          width: "65px",
-                          height: "12px",
-                          fontSize: "10px",
-                          lineHeight: "15px"
-                        }}
-                        className="flex items-center justify-center gap-2 py-1 select-none"
-                      >
+                      {/* Pagination indicator — slim vertical ticks, matching
+                          the established compact look. Previously this was a
+                          hardcoded 65px-wide row of round dots, which only
+                          *looked* slim because the dots were being squeezed
+                          by that fixed width; once the active-announcement cap
+                          rose to 10 they squeezed to zero and disappeared.
+                          The tick is now its own intrinsic size, so it stays
+                          compact and visible at any count. Each tick sits in a
+                          padded button so the click target stays usable even
+                          though the visible mark is only 3px wide. */}
+                      <div className="flex flex-wrap items-center justify-center gap-0.5 select-none max-w-full px-2">
                         {sorted.map((_, idx) => (
                           <button
                             key={idx}
+                            type="button"
                             onClick={() => {
                               setSlideDirection(idx > noticeIndex ? "right-to-left" : "left-to-right");
                               setNoticeIndex(idx);
                             }}
-                            className={`w-2 h-2 rounded-full transition-all duration-300 cursor-pointer ${
-                              idx === noticeIndex
-                                ? (theme === "dark" ? "bg-cyan-400 w-4 shadow-[0_0_8px_rgba(34,211,238,0.5)]" : "bg-blue-600 w-4 shadow-[0_0_6px_rgba(37,99,235,0.3)]")
-                                : (theme === "dark" ? "bg-stone-700 hover:bg-stone-600" : "bg-stone-300 hover:bg-stone-400")
-                            }`}
+                            className="shrink-0 py-1 px-[2px] cursor-pointer group leading-none"
                             title={`Go to page ${idx + 1}`}
-                          />
+                          >
+                            <span
+                              className={`block h-2.5 rounded-[3px] transition-all duration-300 ${
+                                idx === noticeIndex
+                                  ? (theme === "dark"
+                                      ? "w-2.5 bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.6)]"
+                                      : "w-2.5 bg-blue-600 shadow-[0_0_5px_rgba(37,99,235,0.4)]")
+                                  : (theme === "dark"
+                                      ? "w-[3px] bg-stone-600 group-hover:bg-stone-500"
+                                      : "w-[3px] bg-stone-400 group-hover:bg-stone-500")
+                              }`}
+                            />
+                          </button>
                         ))}
                       </div>
 
                       <div
                         style={{
-                          height: "36px"
+                          height: "30px"
                         }}
                         className="flex items-center gap-2"
                       >

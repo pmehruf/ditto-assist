@@ -4,6 +4,7 @@
  */
 
 import { motion } from "motion/react";
+import { AlertTriangle } from "lucide-react";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
 import { GridTexture } from "../components/GridTexture";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
@@ -23,7 +24,6 @@ interface LookupIntroPageProps {
  */
 export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPageProps) {
   return (
-    <>
     <div
       style={{ marginTop: "2px", marginBottom: "4px" }}
       className={`relative overflow-hidden w-full rounded-2xl border font-sans flex-grow flex flex-col justify-center h-auto lg:h-[calc(100vh-175px)] lg:max-h-[680px] lg:min-h-[480px] ${
@@ -71,13 +71,23 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
               </div>
 
               <h1
-                style={{ fontSize: "clamp(32px, 5.5vw, 60.888px)", lineHeight: "1.1" }}
+                style={{ fontSize: "clamp(24px, 5vw, 60px)", lineHeight: "1.15" }}
                 className={`font-sans font-bold uppercase tracking-tight mb-3 select-none max-w-full ${
                   theme === "dark" ? "text-white" : "text-stone-900"
                 }`}
               >
-                Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>What</b> To Declare.<br />
-                Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>Where</b> To Declare.
+                {/* Each line forced onto a single row (no internal wrap) so the
+                    heading always renders as exactly 2 lines — matching the
+                    80%-zoom appearance — instead of the browser's page-zoom
+                    shrinking the effective container width faster than this
+                    capped font-size shrinks, which used to wrap each line a
+                    second time into 4 lines total at 100% zoom. */}
+                <span className="block whitespace-nowrap">
+                  Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>What</b> To Declare.
+                </span>
+                <span className="block whitespace-nowrap">
+                  Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>Where</b> To Declare.
+                </span>
               </h1>
 
               <p
@@ -89,19 +99,44 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
                 Accurate disclosure is not just about what you declare. It is also about where you declare it. Your Declaration Assistant helps you identify the most appropriate place to disclose a medical condition by considering both medical context and policy logic.
               </p>
 
+              {/* Advisory Note — was a thin amber left-border strip with a
+                  single inline "SYSTEM WARNING❗:" sentence; now a full
+                  rounded card with its own icon+title header row and a
+                  diagonal navy→red gradient background (dark) / soft
+                  indigo→rose gradient (light), mirroring the same blue-to-red
+                  diagonal wash already used for the QA Announcement card in
+                  LookupPage.tsx so warning-style cards read consistently
+                  across the app. Title/icon keep the same amber accent
+                  color the old inline warning text used. */}
               <div
-                style={{ padding: "clamp(8px, 1.5vh, 12px)" }}
-                className={`border-l-2 mb-3 max-w-[34.375rem] ${
-                  theme === "dark" ? "border-[#ff9f43] bg-[#ff9f43]/5" : "border-amber-500 bg-amber-500/[0.04]"
+                style={{
+                  padding: "clamp(10px, 1.8vh, 14px)",
+                  ...(theme === "dark"
+                    ? { background: "linear-gradient(135deg, #0f1f3d 0%, #14243f 45%, #7f1d1d 100%)" }
+                    : {}),
+                }}
+                className={`rounded-2xl mb-3 max-w-[34.375rem] shadow-xs ${
+                  theme === "light" ? "bg-gradient-to-br from-indigo-100 via-rose-100 to-red-200" : ""
                 }`}
               >
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${theme === "dark" ? "text-[#ff9f43]" : "text-amber-700"}`} />
+                  <span
+                    style={{ fontSize: "clamp(10px, 1.5vh, 12px)" }}
+                    className={`font-mono uppercase tracking-wide font-black ${
+                      theme === "dark" ? "text-[#ff9f43]" : "text-amber-700"
+                    }`}
+                  >
+                    Advisory Note
+                  </span>
+                </div>
                 <p
                   style={{ fontSize: "clamp(10px, 1.5vh, 12px)" }}
-                  className={`font-mono uppercase tracking-wide leading-relaxed ${
-                    theme === "dark" ? "text-[#ff9f43]" : "text-amber-800 font-semibold"
+                  className={`leading-relaxed font-medium ${
+                    theme === "dark" ? "text-white/85" : "text-stone-800"
                   }`}
                 >
-                  SYSTEM WARNING❗: Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Verify before disclosing.
+                  Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Always verify before disclosing, and reach out to your mentor when you need clarity.
                 </p>
               </div>
 
@@ -163,14 +198,20 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
             </span>
           </div>
 
-          {/* SPEC CARDS */}
-          <div className={`divide-y flex-grow flex flex-col justify-between overflow-hidden ${
+          {/* SPEC CARDS — hugged as a compact group directly under the header,
+              rather than each card stretching (flex-1) to fill an equal,
+              oversized slice of the full panel height (old approach spread
+              the 5 cards out with large empty gaps at taller viewport/zoom
+              combinations) or being centered as a group (left a large gap
+              between the header and card 1). justify-start keeps card 1
+              flush against the header. */}
+          <div className={`divide-y flex-grow flex flex-col justify-start overflow-hidden ${
             theme === "dark" ? "divide-white/[0.08]" : "divide-[#a1b7c3]"
           }`}>
 
             {/* CARD 1 */}
             <div
-              className="flex-1 flex flex-col justify-center py-1 sm:py-1.5 lg:py-1 xl:py-2 px-4 lg:px-5 text-left overflow-hidden"
+              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
             >
               <span className={`block font-mono text-[9px] mb-0.5 ${
                 theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -187,7 +228,7 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
 
             {/* CARD 2 */}
             <div
-              className="flex-1 flex flex-col justify-center py-1 sm:py-1.5 lg:py-1 xl:py-2 px-4 lg:px-5 text-left overflow-hidden"
+              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
             >
               <span className={`block font-mono text-[9px] mb-0.5 ${
                 theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -204,7 +245,7 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
 
             {/* CARD 3 */}
             <div
-              className="flex-1 flex flex-col justify-center py-1 sm:py-1.5 lg:py-1 xl:py-2 px-4 lg:px-5 text-left overflow-hidden"
+              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
             >
               <span className={`block font-mono text-[9px] mb-0.5 ${
                 theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -225,7 +266,7 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
 
             {/* CARD 4 */}
             <div
-              className="flex-1 flex flex-col justify-center py-1 sm:py-1.5 lg:py-1 xl:py-2 px-4 lg:px-5 text-left overflow-hidden"
+              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
             >
               <span className={`block font-mono text-[9px] mb-0.5 ${
                 theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -242,7 +283,7 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
 
             {/* CARD 5 */}
             <div
-              className="flex-1 flex flex-col justify-center py-1 sm:py-1.5 lg:py-1 xl:py-2 px-4 lg:px-5 text-left overflow-hidden"
+              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
             >
               <span className={`block font-mono text-[9px] mb-0.5 ${
                 theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -262,21 +303,5 @@ export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPage
 
       </div>
     </div>
-
-    {/* Compact elegant Launcher Info Bar */}
-    <div
-      style={{ marginTop: "clamp(6px, 1.5vh, 12px)", marginBottom: "0px", borderColor: !isDark ? "#707a80" : undefined }}
-      className={`pt-2.5 border-t flex justify-between items-center text-[10px] font-mono tracking-widest uppercase select-none shrink-0 w-full ${
-        theme === "dark"
-          ? "border-[#252A34]/40 text-slate-400"
-          : "font-extrabold text-stone-600"
-      }`}
-    >
-      <div className="flex items-center select-none">
-        <span>YOUR PAYMENT ASSISTANT</span>
-      </div>
-      <span style={{ color: !isDark ? "#57534d" : "#90a1b9", fontWeight: !isDark ? "bold" : "normal", fontSize: "10px" }} className="font-normal">©BLISS GUIDES.DITTO</span>
-    </div>
-    </>
   );
 }

@@ -32,6 +32,60 @@
   --weight-body: 500;
   --weight-heading: 700;
 
+  /* ---------- Typography Scale (role tokens) ----------
+     Single source of truth for every text role in the app — replaces the
+     ad-hoc mix of Tailwind's text-xs/sm/base and ~400 arbitrary text-[Npx]
+     one-offs scattered across pages with a named scale everyone can share.
+
+     Calibrated FROM the app's actual current sizes (audited via a grep
+     frequency count across src/), not from a generic SaaS scale — the goal
+     is a refined version of what's already here, not a bigger-looking app.
+     Page titles, for example, stay close to the ~20-24px they already are;
+     the biggest real gap was consistency and a readability floor on the
+     smallest metadata text (7.5-9px), not undersized type overall.
+
+     These are used via the .text-* utility classes defined in section 3
+     (Typography Utilities) below, NOT via Tailwind's @theme font-size keys
+     — kept as plain CSS so nothing depends on a particular Tailwind minor
+     version's theme-key pairing behavior.
+
+     IMPORTANT: these are fixed px values, deliberately NOT tied to the
+     <html> root font-size or viewport width — see the "typography does not
+     scale with viewport" rule under BASE STYLES. Only layout/spacing should
+     adapt across screen sizes; type stays visually stable. */
+  --text-page-title: 22px;
+  --leading-page-title: 28px;
+  --text-section-heading: 11px;       /* the app's uppercase "eyebrow" convention (Plan Configuration, Claim Scenarios, …), not a large heading */
+  --leading-section-heading: 15px;
+  --text-card-title: 13px;
+  --leading-card-title: 18px;
+  --text-body: 13px;
+  --leading-body: 19px;
+  --text-label: 11px;
+  --leading-label: 14px;
+  --text-input-value: 13px;
+  --leading-input-value: 18px;
+  --text-button: 12px;
+  --leading-button: 16px;
+  --text-table-header: 11px;
+  --leading-table-header: 14px;
+  --text-table-cell: 12.5px;
+  --leading-table-cell: 17px;
+  --text-helper: 11px;
+  --leading-helper: 15px;
+  --text-meta: 10px;
+  --leading-meta: 13px;
+
+  /* ---------- Container widths ----------
+     Two tiers, both already in use in App.tsx (the top header bar runs
+     slightly wider than the body/footer content column) — tokenized here so
+     both stay a single source of truth instead of two independently
+     hardcoded pixel values that can silently drift apart. Keeps wide
+     monitors from letting content stretch edge-to-edge: extra width becomes
+     margin, not more content per row. */
+  --container-shell: 1850px;
+  --container-content: 1550px;
+
   /* ---------- Radius ----------
      NOTE: names must not collide with Tailwind's --radius-sm/md/lg/xl/2xl,
      which power the rounded-* utilities used across the app. */
@@ -52,17 +106,22 @@
 
   /* ================= LIGHT THEME (default) ================= */
 
-  /* Backgrounds & surfaces */
-  --bg: #F1F6FB;                    /* page background            */
-  --surface: #FFFFFF;               /* cards / panels             */
-  --surface-elevated: #EBF1F7;      /* inset steel-blue panels    */
-  --surface-inset: #D9E4F0;         /* step cards / inner widgets */
-  --surface-tint: #E1EAF7;          /* accent-tinted panels       */
-  --surface-hover: #F8FAFD;
+  /* Backgrounds & surfaces — a real elevation ladder instead of a dark-theme
+     inversion. Level 0 (--bg) is a quiet neutral gray, not blue-tinted, so it
+     recedes; cards (--surface) are pure white and read as the most "raised"
+     layer; the tiers in between (--surface-elevated/-inset/-tint) give large
+     section containers (stats panels, filter bars, config groups) their own
+     recognizable tone instead of collapsing into the same white as cards. */
+  --bg: #F5F6F8;                    /* Level 0 — app background   */
+  --surface: #FFFFFF;               /* Level 2 — cards / panels   */
+  --surface-elevated: #EFF2F6;      /* Level 1 — section containers */
+  --surface-inset: #E7EBF1;         /* Level 1 — step cards / inner widgets */
+  --surface-tint: #E9EFF8;          /* Level 1 — accent-tinted panels */
+  --surface-hover: #F5F8FB;         /* Level 3/4 — row / control hover */
 
-  /* Borders */
-  --border: #D2DFEC;
-  --border-strong: #C3CFDE;
+  /* Borders — perceptible but soft; defines structure without drawing the eye */
+  --border: #DCE2EA;
+  --border-strong: #96A5B8;
 
   /* PRIMARY ACCENT — Dark Brand Blue (hero title / top nav family) */
   --accent: #0754B7;
@@ -76,15 +135,19 @@
   --gradient-accent: linear-gradient(to right, #0754B7, #3B82F6);
   --gradient-heading: linear-gradient(to right, #192030, #3A4A6E);
 
-  /* Secondary accent (approved teal, functional only) */
-  --teal: #0F766E;
+  /* Secondary accent (approved teal, functional only)
+     Darkened from #0F766E — the original shade fell to ~2.3-3.4:1 against
+     the pale mint chip/badge fills it's paired with (Mapping Result's
+     "Mapped Declaration Question" label family, Activity Log status pills).
+     This value keeps the same hue but clears 4.5:1 AA against those fills. */
+  --teal: #0B5C56;
 
   /* Mapping / AI result card panels */
   --panel-bg: #ffffff00;
   --panel-bg-strong: #FFFFFF;
-  --panel-body: #EBF1F7;
-  --panel-border: #C7CFD6;
-  --panel-border-strong: #B0BCC8;
+  --panel-body: #EEF1F5;
+  --panel-border: #D3D9E1;
+  --panel-border-strong: #B6C0CC;
 
   /* Status */
   --success-bg: #DCFCE7;
@@ -96,10 +159,12 @@
   --danger-bg: #FEE2E2;
   --danger-text: #DC2626;
 
-  /* Text */
-  --text-heading: #2D3748;
+  /* Text — headings now read distinctly darker/heavier than secondary body
+     copy (previously --text-secondary was identical to --text-heading,
+     flattening the hierarchy between titles and supporting text). */
+  --text-heading: #1A2333;
   --text-primary: #1E293B;
-  --text-secondary: #2D3748;
+  --text-secondary: #4C5A72;
   --text-muted: #0E1016;            /* WCAG AA on --bg and --surface-* */
   --text-disabled: #94A3B8;
 
@@ -109,34 +174,47 @@
   /* Selection */
   --selection-bg: rgba(7, 84, 183, 0.22);
 
-  /* Inputs */
-  --input-bg: #DDE5F0;
-  --input-border: #C3CFDE;
+  /* Inputs — a hair off-white so fields read as distinct wells sunk into
+     their (white) parent card, rather than blending flush with it. */
+  --input-bg: #FAFBFC;
+  --input-border: #C7D0DC;
+  --input-border-hover: #A9B7C8;
   --input-text: #1E293B;
-  --option-bg: #D5E2F0;
+  --option-bg: #D9E1EC;
 
   /* Tables */
-  --table-header-bg: #EBF1F7;
-  --table-row-hover: #F8FAFD;
+  --table-header-bg: #EEF1F5;
+  --table-row-hover: #F1F5F9;
 
-  /* Header / Sidebar — unified steel-blue chrome for the light theme.
+  /* Header / Sidebar — unified chrome for the light theme.
      LOCKED VALUE: this is the single source of truth for both the header
      and sidebar background in light mode. Every element that needs this
      color should reference var(--header-bg) / var(--sidebar-bg) directly
      rather than a separate hardcoded bg-[#hex] Tailwind class — two
      independent declarations of the "same" color is exactly what caused
-     them to silently drift out of sync before. */
-  --header-bg: #748A9D;
-  --header-text: #061F3F;
-  --sidebar-bg: #748A9D;
+     them to silently drift out of sync before.
 
-  /* Shadows */
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.05);
-  --shadow-overlay: 0 12px 32px rgba(15, 23, 42, 0.10);
+     Darkened from the original mid-tone steel blue #748A9D to a deep
+     steel-navy so header/sidebar icons and text reach the same ~5-9:1
+     contrast Dark theme gets against its near-black chrome — a mid-tone bg
+     physically caps contrast well below that no matter what icon color is
+     used. This dark chrome is the permanent Light theme header/sidebar
+     styling going forward. */
+  --header-bg: #16232F;
+  --header-text: #F5F7FA;
+  --sidebar-bg: #16232F;
 
-  /* Scanline / texture overlays used on hero panels */
-  --texture-line: rgba(70, 115, 169, 0.14);
+  /* Shadows — layered "soft elevation" (a tight contact shadow + a wider,
+     softer diffuse one) instead of one big blur, so cards read as gently
+     raised rather than floating. Kept restrained per spec. */
+  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.06);
+  --shadow-overlay: 0 2px 6px rgba(16, 24, 40, 0.07), 0 12px 32px rgba(16, 24, 40, 0.12);
+
+  /* Scanline / texture overlays used on hero panels — dialed down so the
+     sitewide grid texture (see GridTexture.tsx) supports content instead of
+     competing with it. */
+  --texture-line: rgba(70, 115, 169, 0.08);
 
   /* -------- Legacy variable names (kept for @theme utilities) ------- */
   --color-ditto-dark: var(--bg);
@@ -155,17 +233,26 @@
 
 /* ================= DARK THEME ================= */
 .dark {
-  /* Backgrounds & surfaces */
-  --bg: #001322;
-  --surface: #07111F;
-  --surface-elevated: #0A1528;
-  --surface-inset: #0A1528;
-  --surface-tint: #0E2236;
-  --surface-hover: #0A1528;
+  /* Backgrounds & surfaces — shifted up ~one tonal step from the original
+     near-black ladder, and de-compressed: --surface-elevated/-inset/-hover
+     used to all resolve to the identical #0A1528, collapsing section
+     containers, inner widgets, and hover feedback into one flat tone. Each
+     tier is now distinct so page → section → card → hover reads as a real
+     staircase instead of 2 tones. Still deep navy throughout — no gray,
+     no charcoal, no OLED black — per the "same app, easier on the eyes"
+     brief. */
+  --bg: #041B2E;                    /* page                         */
+  --surface-inset: #082238;         /* step cards / inner widgets   */
+  --surface-elevated: #0B2A44;      /* section containers           */
+  --surface: #102F4C;               /* cards — the brightest static tier */
+  --surface-tint: #123659;          /* accent-tinted panels         */
+  --surface-hover: #163963;         /* row / control hover-active   */
 
-  /* Borders */
-  --border: rgba(0, 183, 255, 0.12);
-  --border-strong: rgba(0, 183, 255, 0.22);
+  /* Borders — nudged up slightly so structure is perceptible without
+     drawing the eye (brief: "current borders are slightly difficult to
+     perceive"). Same aqua hue, a bit more opacity. */
+  --border: rgba(120, 190, 255, 0.16);
+  --border-strong: rgba(120, 190, 255, 0.28);
 
   /* PRIMARY ACCENT — Aqua / Cyan Blue */
   --accent: #00D3F3;
@@ -182,7 +269,7 @@
   --teal: #2DD4BF;
 
   /* Mapping / AI result card panels */
-  --panel-bg: #11365A;
+  --panel-bg: #0E2236;
   --panel-bg-strong: #1E4D7E;
   --panel-body: #43687A;
   --panel-border: #1A3B62;
@@ -198,37 +285,46 @@
   --danger-bg: rgba(220, 38, 38, 0.15);
   --danger-text: #FCA5A5;
 
-  /* Text */
+  /* Text — secondary/muted brightened (top brief priority: "secondary text
+     is slightly too dim"). Heading/primary untouched — brief says those
+     already work. Gap between primary → secondary → muted → disabled is
+     preserved, just shifted up so nothing reads as dim during long sessions. */
   --text-heading: #F5F7FA;
   --text-primary: #F5F7FA;
-  --text-secondary: #CFE0F5;
-  --text-muted: #90A6C4;
-  --text-disabled: #64748B;
+  --text-secondary: #DCEAFB;
+  --text-muted: #A9C0DC;
+  --text-disabled: #6B7C94;
 
   /* Focus ring */
   --focus-ring: #58A3FF;
 
   --selection-bg: rgba(0, 211, 243, 0.28);
 
-  /* Inputs */
-  --input-bg: #0A1528;
-  --input-border: rgba(0, 183, 255, 0.18);
+  /* Inputs — kept a touch darker/recessed than --surface (cards) so fields
+     still read as sunken wells, not just another flat panel. */
+  --input-bg: #0D2740;
+  --input-border: rgba(120, 190, 255, 0.22);
   --input-text: #E2E8F0;
-  --option-bg: #0A1528;
+  --option-bg: #0D2740;
 
-  /* Tables */
-  --table-header-bg: #0A1528;
-  --table-row-hover: #0A1528;
+  /* Tables — header/hover now distinct tiers instead of both matching the
+     old flat #0A1528, so the header reads as chrome and hover reads as
+     feedback rather than both disappearing into the row color. */
+  --table-header-bg: #0B2A44;
+  --table-row-hover: #163963;
 
-  /* Header / Sidebar */
-  --header-bg: #03101A;
+  /* Header / Sidebar — deliberately a notch darker than the (now brighter)
+     page background so the nav chrome reads as its own grounded surface
+     instead of nearly matching --bg like before. Still navy, not black. */
+  --header-bg: #020D18;
   --header-text: #F5F7FA;
-  --sidebar-bg: #03101A;
+  --sidebar-bg: #020D18;
 
-  /* Shadows */
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.45);
-  --shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.55);
+  /* Shadows — softened further; dark UIs should read depth from tonal
+     steps above, not shadow weight (brief: "avoid stronger shadows"). */
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.30);
+  --shadow-overlay: 0 6px 24px rgba(0, 0, 0, 0.40);
 
   --texture-line: rgba(0, 0, 0, 0.15);
 }
@@ -265,6 +361,14 @@
   --color-content-muted: var(--text-muted);
   --color-content-disabled: var(--text-disabled);
 
+  /* Shadow scale — exposes the 3 elevation tokens as shadow-soft/-card/
+     -overlay utilities, alongside (not replacing) Tailwind's own
+     shadow-sm/md/lg/xl. New call sites should reach for these instead of a
+     one-off shadow-[...] arbitrary value. */
+  --shadow-soft: var(--shadow-soft);
+  --shadow-card: var(--shadow-card);
+  --shadow-overlay: var(--shadow-overlay);
+
   /* Legacy names used across the JSX (bg-ditto-card, border-ditto-border…) */
   --color-ditto-dark: var(--color-ditto-dark);
   --color-ditto-card: var(--color-ditto-card);
@@ -289,24 +393,88 @@ body, * {
   font-optical-sizing: auto;
 }
 
+/* Fixed at 16px on every desktop breakpoint — deliberately NOT scaled by
+   viewport width. This used to step from 15px up to 18px between mobile and
+   large-desktop breakpoints, which silently grew EVERY rem-based Tailwind
+   utility (text-xs, p-4, gap-6, all of it) by ~20% between a 13" laptop and
+   a 27" monitor at the same 100% browser zoom — the actual root cause of
+   "the app feels bigger/smaller depending on screen." Typography now stays
+   visually stable across desktop sizes; responsiveness instead comes from
+   explicit layout/spacing breakpoint variants (p-3 sm:p-4 lg:p-5, container
+   max-widths, grid column counts, etc.) — see --container-shell/-content
+   above and the page-shell wrapper in App.tsx. */
 html {
   background-color: var(--bg);
   color: var(--text-primary);
   transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  font-size: 15px; /* Mobile base size */
+  font-size: 16px;
 }
 
-/* Fluid scaling for laptop / desktop at 100% zoom */
-@media (min-width: 768px)  { html { font-size: 16px; } }
-@media (min-width: 1024px) { html { font-size: 17px; } }
-@media (min-width: 1280px) { html { font-size: 17.5px; } }
-@media (min-width: 1440px) { html { font-size: 18px; } }
+/* --------------------------------------------------------------
+   3a. TYPOGRAPHY UTILITIES — one class per role, backed by the scale
+   defined in section 1. Prefer these over one-off text-[Npx] classes or
+   reaching for text-xs/text-sm and hoping it's the right role — that
+   mismatch (using the same generic size for titles, labels, table cells
+   and buttons alike) is what made typography feel inconsistent across the
+   app to begin with.
+   -------------------------------------------------------------- */
+.text-page-title { font-size: var(--text-page-title); line-height: var(--leading-page-title); font-weight: 700; }
+.text-section-heading { font-size: var(--text-section-heading); line-height: var(--leading-section-heading); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.text-card-title { font-size: var(--text-card-title); line-height: var(--leading-card-title); font-weight: 700; }
+.text-body { font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--weight-body); }
+.text-label { font-size: var(--text-label); line-height: var(--leading-label); font-weight: 600; }
+.text-input-value { font-size: var(--text-input-value); line-height: var(--leading-input-value); font-weight: 500; }
+.text-button { font-size: var(--text-button); line-height: var(--leading-button); font-weight: 700; }
+.text-table-header { font-size: var(--text-table-header); line-height: var(--leading-table-header); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.text-table-cell { font-size: var(--text-table-cell); line-height: var(--leading-table-cell); font-weight: 500; }
+.text-helper { font-size: var(--text-helper); line-height: var(--leading-helper); font-weight: 500; }
+.text-meta { font-size: var(--text-meta); line-height: var(--leading-meta); font-weight: 500; }
+
+/* Existing "uppercase eyebrow" section-heading convention (Plan
+   Configuration, Claim Scenarios, Reported Mismatch Challenges, …) — routes
+   the specific 4-class combo already used for this role everywhere it
+   appears onto the same --text-section-heading token, instead of each call
+   site's own text-xs (which is also used for a dozen unrelated things, so
+   it can't be redefined globally). */
+.text-xs.font-black.uppercase.tracking-wider {
+  font-size: var(--text-section-heading);
+  line-height: var(--leading-section-heading);
+}
+
+/* Same card-eyebrow role as above ("Filter Logs", "Plan Configuration",
+   "Category → Question Mapping"), but a handful of call sites reached for
+   text-sm instead of text-xs for the identical role ("Page Visibility",
+   "Payment Journey Questions", "Active Announcements", "Year-by-year
+   Results", …) — rendering 14px next to 11px siblings elsewhere for what
+   is visually the same card-title convention. Folding both onto the same
+   token so every card's title reads at one consistent size regardless of
+   which arbitrary Tailwind size class the call site originally picked. */
+.text-sm.font-black.uppercase.tracking-wider,
+.text-sm.font-bold.uppercase.tracking-wider {
+  font-size: var(--text-section-heading);
+  line-height: var(--leading-section-heading);
+}
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* Announcement carousel content scroller.
+   The global thumb above uses var(--border-strong), which follows the AMBIENT
+   theme — but the QA announcement card is always light-blue regardless of
+   theme, so in light mode the thumb resolved to a near-white slate and was
+   effectively invisible against the card. These rules pin the thumb to the
+   CARD's background instead of the ambient theme. `.on-dark` is only applied
+   for the General Announcement card in dark mode (the one genuinely dark
+   card). Also covers older WebKit builds that ignore `scrollbar-color`. */
+.announcement-scroll::-webkit-scrollbar { width: 8px; }
+.announcement-scroll::-webkit-scrollbar-track { background: transparent; }
+.announcement-scroll::-webkit-scrollbar-thumb { background: #64748B; border-radius: 9999px; }
+.announcement-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
+.announcement-scroll.on-dark::-webkit-scrollbar-thumb { background: #5A6E8C; }
+.announcement-scroll.on-dark::-webkit-scrollbar-thumb:hover { background: #7189AD; }
 
 /* Keyboard focus visibility — one ring, themed */
 :focus-visible {
@@ -349,14 +517,54 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
 }
 .skip-to-content:focus { transform: translateX(-50%) translateY(0); }
 
-/* Readability floor — raise 8/8.5px micro-labels to 9px */
-.text-\[8px\], .text-\[8\.5px\] { font-size: 9px !important; }
+/* Readability floor — modest, uniform nudge for the smallest metadata text
+   in the app (timestamps, micro-badges) rather than a font-by-font redesign.
+   Deliberately small and monotonic (never shrinks anything, never changes
+   which role a given size maps to) so it can't visually surprise anywhere
+   it's used. */
+.text-\[7\.5px\], .text-\[8px\], .text-\[8\.5px\] { font-size: 9.5px !important; }
 
-/* Native date picker follows the active theme (was forced dark globally) */
+/* Native date picker follows the active theme (was forced dark globally).
+   `color-scheme: dark` alone already makes the browser draw the calendar
+   glyph in a light colour to match — the `filter: invert(1)` that used to
+   sit alongside it inverted that already-light icon straight back to a
+   dark one, which is why it kept blending into dark-theme inputs instead
+   of showing white (Announcement form's date fields, Audit/My Activity
+   Start/End Date filters, etc). */
 .dark input[type="date"] { color-scheme: dark; }
-.dark input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
 html:not(.dark) input[type="date"] { color-scheme: light; }
 input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+
+/* Native <select> dropdown arrow follows the active theme too — without
+   this, the browser assumes a light UI for the arrow glyph even when the
+   select itself has a dark background, making it look washed-out/mismatched
+   against dark panels (Activity Log filters, Announcement form, etc). */
+.dark select { color-scheme: dark; }
+html:not(.dark) select { color-scheme: light; }
+
+/* Custom, evenly-padded dropdown arrow for every <select> in the app.
+   Previously these relied on the browser's native arrow glyph, which sits
+   flush against the right edge with no breathing room (Insurance
+   Plan/Mapping Status/Mapping Source filters, Plan Management, Announcement
+   forms, PED Suggestions, Profile Access, Specific Illness Ledger, etc).
+   The Health Insurance Plan select on the Declaration Assistant page
+   (#insurance-plan-dropdown) already renders its own hand-placed
+   ChevronDown + padding, so it's excluded here to avoid a double arrow. */
+select:not(#insurance-plan-dropdown) {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.625rem center !important;
+  background-size: 14px 14px !important;
+  padding-right: 2.25rem !important;
+}
+.dark select:not(#insurance-plan-dropdown) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
+html:not(.dark) select:not(#insurance-plan-dropdown) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23A8A29E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+}
 
 /* Notification glow (flag alert chip) */
 @keyframes custom-notification-glow {
@@ -381,6 +589,14 @@ input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
   background: var(--danger-text);
   border-radius: 50%;
   box-shadow: 0 0 8px var(--danger-text);
+}
+
+/* ClippedButton's `borderColor` prop (see ClippedButton.tsx) — the button's
+   own background IS the border color; the hover swap needs !important
+   since the base color is set inline via style, which normal-specificity
+   stylesheet rules can never beat. */
+.clipped-btn-bordered:hover:not(:disabled) {
+  background: var(--clipped-border-hover-color) !important;
 }
 
 /* Header title badge — always light-on-navy, both themes */
@@ -543,6 +759,11 @@ html:not(.dark) .text-emerald-700, html:not(.dark) .text-emerald-805 {
    -------------------------------------------------------------- */
 html:not(.dark) .bg-white { background-color: var(--surface); }
 
+/* Page-shell background — several call sites (Login screen, main app root,
+   a couple of bordered panels) hardcode the old page-bg hex directly rather
+   than referencing --bg, so they'd otherwise drift out of sync with it. */
+html:not(.dark) .bg-\[\#F1F6FB\] { background-color: var(--bg); }
+
 html:not(.dark) .bg-\[\#14161a\], html:not(.dark) .bg-\[\#12151A\],
 html:not(.dark) .bg-\[\#111622\], html:not(.dark) .bg-\[\#091520\]\/80,
 html:not(.dark) .bg-\[\#0b1427\], html:not(.dark) .bg-\[\#14161a\]\/95,
@@ -556,6 +777,15 @@ html:not(.dark) .bg-stone-200 {
 /* Inner step cards / widgets — slightly deeper steel blue */
 html:not(.dark) .bg-stone-50, html:not(.dark) .bg-stone-100 {
   background-color: var(--surface-inset);
+}
+
+/* Row/list hover states — the :hover variant is a distinct generated class
+   from its base (.bg-stone-50 above), so it needs its own rule or it falls
+   through to Tailwind's raw near-white stone-50/100, which barely
+   registered as hover feedback against white cards. */
+html:not(.dark) .hover\:bg-stone-50:hover,
+html:not(.dark) .hover\:bg-stone-100:hover {
+  background-color: var(--table-row-hover);
 }
 
 html:not(.dark) .border-stone-150, html:not(.dark) .border-stone-200,
@@ -577,6 +807,18 @@ html:not(.dark) h4, html:not(.dark) h5, html:not(.dark) h6,
 html:not(.dark) .card-title, html:not(.dark) .card-header {
   color: var(--text-heading);
   font-weight: var(--weight-heading);
+}
+
+/* SMOKE TEST EXCEPTION: SmokeTestPage.tsx is intentionally always-dark
+   regardless of the app-wide theme toggle (matte black + ember accents).
+   Its own <h1> already sets a fixed #F2F2F2 via a Tailwind class, but the
+   bare `html:not(.dark) h1` rule above outranks that single class in light
+   theme, coercing the title to the light-theme heading color and making it
+   unreadable against the page's own dark backdrop. The extra ".smoke-test-scope"
+   class here wins the specificity fight and re-pins the title to the page's
+   fixed color. */
+html:not(.dark) .smoke-test-scope h1 {
+  color: #F2F2F2;
 }
 
 /* Dark-panel body text (pale blues/grays) → readable slate */
@@ -622,16 +864,84 @@ html:not(.dark) .text-stone-705 { color: var(--text-secondary); }
 html:not(.dark) .text-amber-850 { color: var(--warning-strong); }
 
 /* --------------------------------------------------------------
+   4h. DARK THEME — common secondary/muted text shades. Pages reach for
+   Tailwind's stock text-stone-400/text-slate-400/etc. directly for "de-
+   emphasized" copy, which compiles to Tailwind's own dim stock hex, not
+   our (now brightened) --text-secondary/--text-muted tokens — the single
+   biggest reason secondary text still reads dim after the token bump
+   above. Routed onto the real tokens so every "secondary" label/caption in
+   the app benefits, not just the ones already using CSS vars directly.
+   -------------------------------------------------------------- */
+.dark .text-stone-400, .dark .text-slate-400, .dark .text-zinc-400,
+.dark .text-zinc-440, .dark .text-gray-400 {
+  color: var(--text-secondary);
+}
+.dark .text-stone-500, .dark .text-slate-500, .dark .text-zinc-500,
+.dark .text-gray-500 {
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------
    4h. INPUTS — one definition per theme (was defined twice).
    -------------------------------------------------------------- */
+/* Font size applies to every native input/select/textarea in BOTH themes —
+   the app's "Input Values" typography role, applied once here so every
+   plain <input>/<select> across the app (there's no shared Input
+   component to route this through) picks it up automatically instead of
+   each page guessing its own text-xs/text-sm. Colors/borders below stay
+   light-theme-only, same as before. */
+input, select, textarea {
+  font-size: var(--text-input-value);
+}
+
 html:not(.dark) input, html:not(.dark) select, html:not(.dark) textarea {
   background-color: var(--input-bg);
   border-color: var(--input-border);
   color: var(--input-text);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 html:not(.dark) select option {
   background-color: var(--option-bg);
   color: var(--input-text);
+}
+/* Hover feedback — a visibly deeper border (not a background swap) so
+   fields read as interactive without competing with the focus ring. */
+html:not(.dark) input:not(:disabled):not(:focus):hover,
+html:not(.dark) select:not(:disabled):not(:focus):hover,
+html:not(.dark) textarea:not(:disabled):not(:focus):hover {
+  border-color: var(--input-border-hover);
+}
+html:not(.dark) input:focus, html:not(.dark) select:focus, html:not(.dark) textarea:focus {
+  border-color: var(--accent);
+}
+
+/* SMOKE TEST EXCEPTION: same reasoning as the heading exception above.
+   SmokeTestPage.tsx's Custom PEDs <input> hardcodes a fixed dark
+   background/border/text (matching the page's own always-dark design), but
+   the bare `html:not(.dark) input` rules above outrank that single Tailwind
+   class in light theme and swap in the normal light-theme input colors,
+   making the field render as a white box that no longer matches the page
+   around it. Re-pin every state (base/hover/focus) to the page's own values. */
+html:not(.dark) .smoke-test-scope input,
+html:not(.dark) .smoke-test-scope select,
+html:not(.dark) .smoke-test-scope textarea {
+  background-color: #090909;
+  border-color: rgba(255, 255, 255, 0.06);
+  color: #F2F2F2;
+}
+html:not(.dark) .smoke-test-scope input::placeholder,
+html:not(.dark) .smoke-test-scope textarea::placeholder {
+  color: #6B6B6B;
+}
+html:not(.dark) .smoke-test-scope input:not(:disabled):not(:focus):hover,
+html:not(.dark) .smoke-test-scope select:not(:disabled):not(:focus):hover,
+html:not(.dark) .smoke-test-scope textarea:not(:disabled):not(:focus):hover {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+html:not(.dark) .smoke-test-scope input:focus,
+html:not(.dark) .smoke-test-scope select:focus,
+html:not(.dark) .smoke-test-scope textarea:focus {
+  border-color: #E08D4B;
 }
 
 /* --------------------------------------------------------------

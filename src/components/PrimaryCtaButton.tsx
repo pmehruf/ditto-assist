@@ -62,7 +62,11 @@ export function PrimaryCtaButton({
       disabled={disabled}
       title={title}
       id={id}
-      className={`px-6 border-[1.5px] text-xs font-mono uppercase font-bold tracking-[0.2em] transition-all select-none relative overflow-hidden ${
+      // `isolate` scopes the texture span's negative z-index to this button
+      // alone (see ClippedButton.tsx's BUTTON_GRID_TEXTURE for the same
+      // pattern) — texture paints behind the label, above the button's own
+      // background, without needing to wrap `children`.
+      className={`px-6 border-[1.5px] text-xs font-mono uppercase font-bold tracking-[0.2em] transition-all select-none relative isolate overflow-hidden ${
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
       } ${
         isDanger
@@ -81,11 +85,20 @@ export function PrimaryCtaButton({
         ...style,
       }}
     >
-      {children}
+      {/* Grid texture veneer — matches the Home page CTA's original look,
+          now applied to every ClippedButton too (see ClippedButton.tsx) so
+          the whole app's buttons share one consistent surface. */}
       <span
-        className="absolute top-0 right-0 w-2.5 h-2.5 transform rotate-45 translate-x-1 -translate-y-1 pointer-events-none"
-        style={{ backgroundColor: isDanger ? "#450a0a" : !dark ? "#021426" : "#0a0a0c" }}
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          zIndex: -1,
+          backgroundImage:
+            "linear-gradient(rgba(0,0,0,0) 50%, rgba(0,0,0,0.08) 50%), linear-gradient(90deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.025) 50%)",
+          backgroundSize: "100% 3px, 3px 100%",
+        }}
       />
+      {children}
     </button>
   );
 }

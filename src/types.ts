@@ -59,6 +59,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "dyslipidimia": "lipid",
   "dyslipidmia": "lipid",
   "covid.19": "covid",
+  "covid19": "covid",
   "congestion": "ambiguous_symptom",
   "cold": "acute_infection",
   "absence seizure": "neuro",
@@ -73,6 +74,8 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "gas": "ambiguous_symptom",
   "foos poisoning": "acute_infection",
   "h. pylori": "digestive",
+  "h pylori": "digestive",
+  "helicobacter pylori": "digestive",
   "pylori": "digestive",
   "gall bladder removal": "digestive",
   "gall bladder stone": "digestive",
@@ -89,6 +92,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "sinus surgery": "eyeEnt",
   "tonsillectomy": "eyeEnt",
   "tymnoplasty": "eyeEnt",
+  "tympanoplasty": "eyeEnt",
   "adenoid": "eyeEnt",
   "adenoids": "eyeEnt",
   "thalaseemia": "blood",
@@ -103,6 +107,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "stitches": "acute_trauma",
   "accident": "acute_trauma",
   "c - section": "natural_life_stage",
+  "c section": "natural_life_stage",
   "premature baby": "ambiguous_symptom",
   "infertillity": "reproductive",
   "superficial thrombophlebitis": "vascular_fallback",
@@ -119,6 +124,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "nicotine": "lifestyle",
   "vaping": "lifestyle",
   "e-cigarette": "lifestyle",
+  "ecigarette": "lifestyle",
   "beedi": "lifestyle",
   "pan": "lifestyle",
   "paan": "lifestyle",
@@ -434,6 +440,8 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "incisional hernia": "digestive",
   "appendicitis": "digestive",
   "appendix surgery": "digestive",
+  "appendectomy": "digestive",
+  "appendicectomy": "digestive",
   "gastric polyp": "digestive",
   "colon polyp": "digestive",
   "kidney stones": "kidney",
@@ -482,6 +490,10 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "ivf": "reproductive",
   "gout": "musculoskeletal",
   "osteoarthritis": "musculoskeletal",
+  "knee replacement": "musculoskeletal",
+  "hip replacement": "musculoskeletal",
+  "total knee replacement": "musculoskeletal",
+  "total hip replacement": "musculoskeletal",
   "osteoporosis": "musculoskeletal",
   "osteopenia": "musculoskeletal",
   "ankylosing spondylitis": "autoimmune",
@@ -503,6 +515,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "ra": "autoimmune",
   "thyroid disease": "endocrine",
   "thyroid disorder": "endocrine",
+  "thyroidectomy": "endocrine",
   "abnormal thyroid": "endocrine",
   "thyrotoxicosis": "endocrine",
   "adrenal insufficiency": "endocrine",
@@ -638,6 +651,8 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "diabetic retinopathy": "eye",
   "glaucoma": "eye",
   "cataract": "eye",
+  "cataract surgery": "eye",
+  "cataract operation": "eye",
   "retinal detachment": "eye",
   "allergic conjunctivitis": "eye",
   "strabismus": "eye",
@@ -673,6 +688,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "fracture healing with implant": "musculoskeletal",
   "kidney stone removal": "kidney",
   "hysterectomy history": "reproductive",
+  "hysterectomy": "reproductive",
   "c section history": "natural_life_stage",
   "gastric problem": "digestive",
   "gas problem": "ambiguous_symptom",
@@ -738,6 +754,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "fit and fine": "natural_life_stage",
   "nil medical history": "natural_life_stage",
   "no pre-existing disease": "natural_life_stage",
+  "no preexisting disease": "natural_life_stage",
   "none": "natural_life_stage",
   "not applicable": "natural_life_stage",
   "regular period": "natural_life_stage",
@@ -812,6 +829,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "prostatectomy": "reproductive",
   "cystoscopy done": "kidney",
   "nephrectomy history": "kidney",
+  "nephrectomy": "kidney",
   "renal transplant history": "kidney",
   "kidney donor": "kidney",
   "dialysis patient": "kidney",
@@ -819,6 +837,7 @@ export const TOP_PED_DICTIONARY: Record<string, string> = {
   "aki": "kidney",
   "lscs delivery": "natural_life_stage",
   "c-section delivery": "natural_life_stage",
+  "csection delivery": "natural_life_stage",
   "postpartum recovery": "natural_life_stage",
   "lactation stage": "natural_life_stage",
   "breastfeeding mother": "natural_life_stage",
@@ -998,13 +1017,115 @@ export const PED_BRIEFS: Record<string, string> = {
   "eye": "condition affecting vision or ocular structures",
 };
 
-export const PLANS: string[] = ["Optima Secure", "Care Supreme", "Activ One Max", "Activ Fit Preferred"];
+// Short, mapping-focused category labels used to explain *why* a condition was
+// routed to a given declaration question (e.g. "X falls under the Y category").
+// Every categoryKey that TOP_PED_DICTIONARY can resolve to MUST have an entry
+// here so the mapping explanation can never render an empty placeholder.
+export const CATEGORY_LABELS: Record<string, string> = {
+  "diabetes": "Diabetes / Blood Sugar",
+  "hypertension": "Hypertension / Blood Pressure",
+  "lipid": "Cholesterol / Lipid Disorder",
+  "respiratory": "Respiratory / Lung Disease",
+  "neuro": "Neurological",
+  "psychiatric": "Psychiatric / Mental Health",
+  "digestive": "Digestive / Gastrointestinal",
+  "musculoskeletal": "Orthopaedic / Musculoskeletal",
+  "kidney": "Kidney / Renal / Urinary",
+  "reproductive": "Reproductive / Gynaecological",
+  "endocrine": "Endocrine / Hormonal",
+  "blood": "Blood Disorder",
+  "skin": "Dermatological / Skin",
+  "neoplasm": "Tumour / Growth (Neoplasm)",
+  "autoimmune": "Autoimmune / Immunity",
+  "ent": "Ear, Nose & Throat (ENT)",
+  "eyeEnt": "Eye / ENT (Ear, Nose & Throat)",
+  "eye": "Eye / Vision",
+  "genetic": "Congenital / Genetic Disorder",
+  "heart": "Cardiac / Heart Disease",
+  "hiv": "HIV / AIDS",
+  "liver": "Liver / Hepatic",
+  "covid": "COVID-19",
+  "sarcoidosis": "Systemic Granulomatous Disease",
+  "benign_growth": "Benign Growth",
+  "vascular_fallback": "Vascular / Venous Condition",
+  "acute_infection": "Acute / Transient Infection",
+  "allergy": "Allergy / Hypersensitivity",
+  "ambiguous_symptom": "General Symptom / Finding",
+  "eosinophilia_finding": "Blood Test Finding",
+  "gynecomastia": "Breast Tissue Disorder",
+  "lifestyle": "Lifestyle Habit",
+  "natural_life_stage": "Natural Life Stage",
+  "acute_trauma": "Acute Injury / Procedure",
+};
+
+// Keyword rules used to auto-suggest a category -> question map when a new
+// plan's declaration questions are entered (Add/Edit Plan wizard). This is
+// the single source of truth for that heuristic — it used to be copy-pasted
+// three times (twice in App.tsx's planConfigs merge, once in server.ts's
+// /api/ai-plan-workflow route) and had drifted slightly between copies.
+// Order matters only in that a later entry can overwrite an earlier one's
+// claim on a category if a question happens to match multiple categories'
+// regexes — each category is tested independently against every question,
+// so the *last* matching question for a given category wins.
+export const CATEGORY_AUTO_MAP_RULES: Array<{ key: string; regex: RegExp }> = [
+  { key: "diabetes", regex: /diabet|sugar|glucose/i },
+  { key: "hypertension", regex: /hyperten|blood pressure\b|bp high|bp\s+high/i },
+  { key: "lipid", regex: /lipid|cholesterol|triglyceride/i },
+  { key: "respiratory", regex: /asthma|lung|tuberculosis|\btb\b|respiratory|pleura|bronchitis|copd/i },
+  { key: "neuro", regex: /stroke|paralysis|epilepsy|fits|seizure|neurolog|brain|spinal cord/i },
+  { key: "psychiatric", regex: /psychiatr|mental|depress|anxiety|insomnia/i },
+  { key: "digestive", regex: /ulcer|digestive|stomach|intestine|piles|fissure|fistula|appendix/i },
+  { key: "liver", regex: /liver|jaundice|gall|hepatitis/i },
+  { key: "kidney", regex: /kidney|renal|urinary|prostate|dialysis/i },
+  { key: "reproductive", regex: /reproduct|ovarian|uterus|cervix|pcod|semen/i },
+  { key: "endocrine", regex: /thyroid|endocrine|gland|goiter|pituitary/i },
+  { key: "blood", regex: /blood disorder|anaemia|anemia|haemophilia|thalassaemia/i },
+  { key: "genetic", regex: /genetic|congenital|hereditary/i },
+  { key: "skin", regex: /skin|psoriasis|dermatitis|keloid/i },
+  { key: "neoplasm", regex: /cancer|tumour|tumor|cyst|polyp|growth|malignan/i },
+  { key: "autoimmune", regex: /autoimmune|sle\b|lupus|rheumatoid arthritis/i },
+  { key: "ent", regex: /ear|nose|throat|tonsil|sinus/i },
+  { key: "eye", regex: /eye|vision|cataract|glaucoma/i },
+  { key: "hiv", regex: /hiv|aids|std\b/i },
+  { key: "heart", regex: /heart|cardiac|cardiovascular|coronary|angioplasty|bypass/i },
+  { key: "musculoskeletal", regex: /arthritis|spondylitis|fracture|joint|ligament|cartilage|orthoped/i },
+  { key: "covid", regex: /covid/i },
+];
+
+/** Suggests a category -> question map for a freshly-entered set of plan
+ * questions, using simple keyword rules (instant, free, no API call). Used
+ * as the first-pass suggestion in the Add/Edit Plan wizard, before an
+ * optional AI refinement pass and before the admin reviews/edits it.
+ *
+ * Only returns categories that had an actual keyword match — a category
+ * like "skin" simply won't appear here if none of the plan's questions
+ * contain a word like "skin"/"psoriasis" (true for Optima Secure, Care
+ * Supreme, and Activ Fit Preferred's real question text, which all lump
+ * skin conditions into a generic "any other" question instead of naming
+ * skin explicitly). Callers that persist this map should run it through
+ * fillUnmappedCategories() (PlanManagementPage.tsx) first — a category
+ * missing from categoryMap makes the deterministic engine (engine.ts) skip
+ * this plan for that category entirely and fall through to the Gemini AI
+ * fallback, which (lacking this app's plan-specific fallback logic) can
+ * misjudge a real diagnosis, e.g. Urticaria, as a vague/ambiguous symptom
+ * instead of correctly routing it to the catch-all question. */
+export function guessCategoryMap(questions: string[]): Record<string, string> {
+  const categoryMap: Record<string, string> = {};
+  for (const qText of questions) {
+    for (const { key, regex } of CATEGORY_AUTO_MAP_RULES) {
+      if (regex.test(qText)) categoryMap[key] = qText;
+    }
+  }
+  return categoryMap;
+}
+
+export const PLANS: string[] = ["Optima Secure", "Care Supreme", "Activ One Max", "Activ Fit Preferred", "Aspire", "Reassure 2.0"];
 
 export function getPlanConfig(): Record<string, PlanConfig> {
   return {
     "Optima Secure": {
       questions: [
-        "Are you having any disability/ deformity including accidental or congenital?",
+        "Are you having any disability / deformity including accidental or congenital?",
         "Hypertension / High blood pressure?",
         "Diabetes / High blood sugar / Sugar in urine?",
         "Cancer, Tumour, Growth or Cyst of any kind?",
@@ -1016,11 +1137,11 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         "Any Blood disorder (example Anaemia, Haemophilia, Thalassaemia) or any genetic disorder?",
         "HIV Infection / AIDS or Positive test for HIV?",
         "Nervous, Psychiatric or Mental or Sleep disorder?",
-        "Stroke/ Paralysis / Epilepsy (Fits) or any other Nervous disorder (Brain / Spinal Cord etc.)?",
+        "Stroke / Paralysis / Epilepsy (Fits) or any other Nervous disorder (Brain / Spinal Cord etc.)?",
         "Abnormal Thyroid Function / Goiter or any Endocrine organ disorders?",
-        "Eye or vision disorders/ Ear / Nose or Throat diseases?",
-        "Arthritis, Spondylitis, Fracture or any other disorder of Muscle Bone/Joint/Ligament/Cartilage?",
-        "Any other disease/condition not mentioned above?"
+        "Eye or vision disorders / Ear / Nose or Throat diseases?",
+        "Arthritis, Spondylitis, Fracture or any other disorder of Muscle / Bone / Joint / Ligament / Cartilage?",
+        "Any other disease / condition not mentioned above?"
       ],
       overrides: {
         excludePrediabetes: true
@@ -1040,17 +1161,22 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         hiv: "HIV Infection / AIDS or Positive test for HIV?",
         psychiatric: "Nervous, Psychiatric or Mental or Sleep disorder?",
         neuro: "Stroke/ Paralysis / Epilepsy (Fits) or any other Nervous disorder (Brain / Spinal Cord etc.)?",
-        neuroPsych: "Stroke/ Paralysis / Epilepsy (Fits) or any other Nervous disorder (Brain / Spinal Cord etc.)?",
         endocrine: "Abnormal Thyroid Function / Goiter or any Endocrine organ disorders?",
-        eye: "Eye or vision disorders/ Ear / Nose or Throat diseases?",
-        ent: "Eye or vision disorders/ Ear / Nose or Throat diseases?",
-        eyeEnt: "Eye or vision disorders/ Ear / Nose or Throat diseases?",
-        musculoskeletal: "Arthritis, Spondylitis, Fracture or any other disorder of Muscle Bone/Joint/Ligament/Cartilage?",
-        lipid: "Any other disease/condition not mentioned above?",
-        skin: "Any other disease/condition not mentioned above?",
+        eye: "Eye or vision disorders / Ear / Nose or Throat diseases?",
+        eyeEnt: "Eye or vision disorders / Ear / Nose or Throat diseases?",
+        musculoskeletal: "Arthritis, Spondylitis, Fracture or any other disorder of Muscle / Bone / Joint / Ligament / Cartilage?",
+        lipid: "Any other disease / condition not mentioned above?",
+        skin: "Any other disease / condition not mentioned above?",
         sarcoidosis: "Tuberculosis / Asthma or any other Lung disorder?",
+        // Plan has no dedicated Covid-19 question — without this, a
+        // Covid-19 declaration silently skips the deterministic engine
+        // entirely (the "covid" categoryKey rule at engine.ts's COVID-19
+        // check returns nothing when this key is missing) and falls
+        // through to the Gemini AI fallback instead of cleanly resolving
+        // to this plan's own catch-all.
+        covid: "Any other disease / condition not mentioned above?",
       },
-      anyOther: "Any other disease/condition not mentioned above?",
+      anyOther: "Any other disease / condition not mentioned above?",
       hasUmbrella: true,
       umbrellaQuestions: [
         "Has the insured member(s) undergone any tests or medical investigation?",
@@ -1062,7 +1188,7 @@ export function getPlanConfig(): Record<string, PlanConfig> {
 
     "Care Supreme": {
       questions: [
-        "HIV/ AIDS/ STD?",
+        "HIV / AIDS / STD?",
         "Cancer",
         "Diabetes Mellitus type 1 or Diabetes on insulin or Diabetes associated with blindness or chronic foot ulcer",
         "Any disorders of the endocrine system (including but not limited to Pituitary / Parathyroid / adrenal gland disorders)",
@@ -1070,9 +1196,9 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         "Any Neuromuscular (muscles or nervous system) disorder or Psychiatric disorders (including but not limited to Motor Neuron Disease, Muscular dystrophies, Epilepsy, Paralysis, Parkinsonism, multiple sclerosis, stroke, mental illness)",
         "Any Respiratory disease / Disease of Lungs, Pleura and airway (including but not limited to Asthma / Tuberculosis / Pleural effusion / Bronchitis / Emphysema)?",
         "Hypertension / High Blood Pressure",
-        "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Willson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
+        "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Wilson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
         "Any Kidney / urinary track / reproductive organ Disease",
-        "Any cardiovascular/Heart Disease (including but not limited to Coronary artery disease / Rheumatic heart disease / Heart Attack or Myocardial infarction / Heart failure / Bypass Grafting or CABG / Angioplasty or PTCA / Heart valve diseases / Pacemaker implantation)",
+        "Any cardiovascular / Heart Disease (including but not limited to Coronary artery disease / Rheumatic heart disease / Heart Attack or Myocardial infarction / Heart failure / Bypass Grafting or CABG / Angioplasty or PTCA / Heart valve diseases / Pacemaker implantation)",
         "Congenital Disorder?",
         "Any other diseases or ailments not mentioned above ?"
       ],
@@ -1084,33 +1210,36 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         excludePrediabetes: true 
       },
       categoryMap: {
-        hiv: "HIV/ AIDS/ STD?",
+        hiv: "HIV / AIDS / STD?",
         neoplasm: "Cancer",
         diabetes: "Diabetes Mellitus type 1 or Diabetes on insulin or Diabetes associated with blindness or chronic foot ulcer",
         endocrine: "Any disorders of the endocrine system (including but not limited to Pituitary / Parathyroid / adrenal gland disorders)",
         blood: "Any disorders of Blood and / or Immunity (including but not limited to bleeding or clotting disorders, Systemic Lupus Erythematosus, Rheumatoid Arthritis, Crohn's disease, Ulcerative Colitis)",
         genetic: "Congenital Disorder?",
         autoimmune: "Any disorders of Blood and / or Immunity (including but not limited to bleeding or clotting disorders, Systemic Lupus Erythematosus, Rheumatoid Arthritis, Crohn's disease, Ulcerative Colitis)",
-        neuroPsych: "Any Neuromuscular (muscles or nervous system) disorder or Psychiatric disorders (including but not limited to Motor Neuron Disease, Muscular dystrophies, Epilepsy, Paralysis, Parkinsonism, multiple sclerosis, stroke, mental illness)",
         neuro: "Any Neuromuscular (muscles or nervous system) disorder or Psychiatric disorders (including but not limited to Motor Neuron Disease, Muscular dystrophies, Epilepsy, Paralysis, Parkinsonism, multiple sclerosis, stroke, mental illness)",
         psychiatric: "Any Neuromuscular (muscles or nervous system) disorder or Psychiatric disorders (including but not limited to Motor Neuron Disease, Muscular dystrophies, Epilepsy, Paralysis, Parkinsonism, multiple sclerosis, stroke, mental illness)",
         respiratory: "Any Respiratory disease / Disease of Lungs, Pleura and airway (including but not limited to Asthma / Tuberculosis / Pleural effusion / Bronchitis / Emphysema)?",
         hypertension: "Hypertension / High Blood Pressure",
-        liver: "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Willson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
-        digestive: "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Willson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
+        liver: "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Wilson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
+        digestive: "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Wilson's disease) or any other digestive track disorder (disorders of esophagus or stomach or intestine or any other)",
         kidney: "Any Kidney / urinary track / reproductive organ Disease",
         reproductive: "Any Kidney / urinary track / reproductive organ Disease",
-        heart: "Any cardiovascular/Heart Disease (including but not limited to Coronary artery disease / Rheumatic heart disease / Heart Attack or Myocardial infarction / Heart failure / Bypass Grafting or CABG / Angioplasty or PTCA / Heart valve diseases / Pacemaker implantation)",
+        heart: "Any cardiovascular / Heart Disease (including but not limited to Coronary artery disease / Rheumatic heart disease / Heart Attack or Myocardial infarction / Heart failure / Bypass Grafting or CABG / Angioplasty or PTCA / Heart valve diseases / Pacemaker implantation)",
         lipid: "Any other diseases or ailments not mentioned above ?",
         musculoskeletal: "Any other diseases or ailments not mentioned above ?",
         skin: "Any other diseases or ailments not mentioned above ?",
         eye: "Any other diseases or ailments not mentioned above ?",
-        ent: "Any other diseases or ailments not mentioned above ?",
-        eyeEnt: "Any other diseases or ailments not mentioned above ?"
+        eyeEnt: "Any other diseases or ailments not mentioned above ?",
+        // No dedicated Covid-19 question on this plan — same fix as
+        // Optima Secure/Activ Fit Preferred, so a Covid-19 declaration
+        // doesn't silently skip the deterministic engine and fall through
+        // to the Gemini AI fallback.
+        covid: "Any other diseases or ailments not mentioned above ?"
       },
       umbrellaQuestions: [
-        "Has any of the Proposed to be Insured consulted/taken treatment or recommended to take investigations/medication/surgery other than for childbirth/minor injuries?",
-        "Has any of the Proposed to be Insured been hospitalized or has been under any prolonged treatment for any illness/injury or has undergone surgery other than for childbirth/minor injuries?"
+        "Has any of the Proposed to be Insured consulted / taken treatment or recommended to take investigations / medication / surgery other than for childbirth / minor injuries?",
+        "Has any of the Proposed to be Insured been hospitalized or has been under any prolonged treatment for any illness / injury or has undergone surgery other than for childbirth / minor injuries?"
       ]
     },
 
@@ -1118,62 +1247,60 @@ export function getPlanConfig(): Record<string, PlanConfig> {
       questions: [
         "Cancer, tumor, polyp or cyst",
         "Any heart disease or disorder, chest pain or discomfort, irregular heartbeats, palpitations or heart murmur",
-        "Hypertension / High Blood Pressure(BP)/ High Cholesterol/Any other Lipid disorders",
-        "Asthma / Tuberculosis (TB) / COPD/ Pleural effusion / Bronchitis / Emphysema or any other disease of Lungs, Pleura and airway or Respiratory disease?",
-        "Thyroid disease/ Cushing's disease/ Parathyroid Disease/ Addison's disease / Pituitary tumor/ disease or any other disorder of Endocrine system?",
+        "Hypertension / High Blood Pressure (BP) / High Cholesterol / Any other Lipid disorders",
+        "Asthma / Tuberculosis (TB) / COPD / Pleural effusion / Bronchitis / Emphysema or any other disease of Lungs, Pleura and airway or Respiratory disease?",
+        "Thyroid disease / Cushing's disease / Parathyroid Disease / Addison's disease / Pituitary tumor / disease or any other disorder of Endocrine system?",
         "Diabetes Mellitus / High Blood Sugar / Diabetes on Insulin or medication",
-        "Motor Neuron Disease/ Muscular dystrophies/ Myasthenia Gravis/ Demyelinating disease or any other disease of Neuromuscular system (muscles and/or nervous system)",
-        "Stroke/Paralysis/Transient Ischemic Attack/Multiple Sclerosis/Epilepsy/Mental-Psychiatric illness/ Parkinsonism/Alzheimer's/Depression /Dementia or any other disease of Brain and Nervous System?",
-        "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis /Inflammatory Bowel Diseases/ Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder,Stomach or Intestines or any other part of Digestive system",
-        "Kidney Stones/ Renal Failure/ Dialysis/ Chronic Kidney Disease/ Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
-        "HIV/SLE/ Rheumatoid Arthritis / Scleroderma / Sarcoidosis/ Psoriasis/ bleeding or clotting disorders or any other diseases of Blood, Bonemarrow/ Immunity or Skin",
+        "Motor Neuron Disease / Muscular dystrophies / Myasthenia Gravis / Demyelinating disease or any other disease of Neuromuscular system (muscles and/or nervous system)",
+        "Stroke / Paralysis / Transient Ischemic Attack / Multiple Sclerosis / Epilepsy / Mental-Psychiatric illness / Parkinsonism / Alzheimer's / Depression / Dementia or any other disease of Brain and Nervous System?",
+        "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis / Inflammatory Bowel Diseases / Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder, Stomach or Intestines or any other part of Digestive system",
+        "Kidney Stones / Renal Failure / Dialysis / Chronic Kidney Disease / Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
+        "HIV / SLE / Rheumatoid Arthritis / Scleroderma / Sarcoidosis / Psoriasis / bleeding or clotting disorders or any other diseases of Blood, Bone marrow / Immunity or Skin",
         "Disease or disorder of eye, ear, nose or throat (except any sight related problems corrected by prescription lenses)?",
-        "Disease of the musculoskeletal system / Orthopedic disorders/Degeneration, Fracture or dislocation of bones or joints/ avascular necrosis of joints or any other disorder related to it?",
-        "Has any of the Proposed to be Insured have been suffering/ suffered from Covid-19 disease? If yes, confirm if any complications arise due to covid-19",
-        "Any other disease / health adversity / injury/ condition / treatment not mentioned above."
+        "Disease of the musculoskeletal system / Orthopedic disorders / Degeneration, Fracture or dislocation of bones or joints / avascular necrosis of joints or any other disorder related to it?",
+        "Has any of the Proposed to be Insured have been suffering / suffered from Covid-19 disease? If yes, confirm if any complications arise due to covid-19",
+        "Any other disease / health adversity / injury / condition / treatment not mentioned above."
       ],
-      anyOther: "Any other disease / health adversity / injury/ condition / treatment not mentioned above.",
+      anyOther: "Any other disease / health adversity / injury / condition / treatment not mentioned above.",
       hasUmbrella: true,
       categoryMap: {
         neoplasm: "Cancer, tumor, polyp or cyst",
-        covid: "Has any of the Proposed to be Insured have been suffering/ suffered from Covid-19 disease? If yes, confirm if any complications arise due to covid-19",
+        covid: "Has any of the Proposed to be Insured have been suffering / suffered from Covid-19 disease? If yes, confirm if any complications arise due to covid-19",
         heart: "Any heart disease or disorder, chest pain or discomfort, irregular heartbeats, palpitations or heart murmur",
-        hypertension: "Hypertension / High Blood Pressure(BP)/ High Cholesterol/Any other Lipid disorders",
-        lipid: "Hypertension / High Blood Pressure(BP)/ High Cholesterol/Any other Lipid disorders",
-        respiratory: "Asthma / Tuberculosis (TB) / COPD/ Pleural effusion / Bronchitis / Emphysema or any other disease of Lungs, Pleura and airway or Respiratory disease?",
-        endocrine: "Thyroid disease/ Cushing's disease/ Parathyroid Disease/ Addison's disease / Pituitary tumor/ disease or any other disorder of Endocrine system?",
+        hypertension: "Hypertension / High Blood Pressure (BP) / High Cholesterol / Any other Lipid disorders",
+        lipid: "Hypertension / High Blood Pressure (BP) / High Cholesterol / Any other Lipid disorders",
+        respiratory: "Asthma / Tuberculosis (TB) / COPD / Pleural effusion / Bronchitis / Emphysema or any other disease of Lungs, Pleura and airway or Respiratory disease?",
+        endocrine: "Thyroid disease / Cushing's disease / Parathyroid Disease / Addison's disease / Pituitary tumor / disease or any other disorder of Endocrine system?",
         diabetes: "Diabetes Mellitus / High Blood Sugar / Diabetes on Insulin or medication",
-        neuro: "Stroke/Paralysis/Transient Ischemic Attack/Multiple Sclerosis/Epilepsy/Mental-Psychiatric illness/ Parkinsonism/Alzheimer's/Depression /Dementia or any other disease of Brain and Nervous System?",
-        psychiatric: "Stroke/Paralysis/Transient Ischemic Attack/Multiple Sclerosis/Epilepsy/Mental-Psychiatric illness/ Parkinsonism/Alzheimer's/Depression /Dementia or any other disease of Brain and Nervous System?",
-        neuroPsych: "Stroke/Paralysis/Transient Ischemic Attack/Multiple Sclerosis/Epilepsy/Mental-Psychiatric illness/ Parkinsonism/Alzheimer's/Depression /Dementia or any other disease of Brain and Nervous System?",
-        liver: "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis /Inflammatory Bowel Diseases/ Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder,Stomach or Intestines or any other part of Digestive system",
-        digestive: "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis /Inflammatory Bowel Diseases/ Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder,Stomach or Intestines or any other part of Digestive system",
-        kidney: "Kidney Stones/ Renal Failure/ Dialysis/ Chronic Kidney Disease/ Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
-        reproductive: "Kidney Stones/ Renal Failure/ Dialysis/ Chronic Kidney Disease/ Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
-        blood: "HIV/SLE/ Rheumatoid Arthritis / Scleroderma / Sarcoidosis/ Psoriasis/ bleeding or clotting disorders or any other diseases of Blood, Bonemarrow/ Immunity or Skin",
-        autoimmune: "HIV/SLE/ Rheumatoid Arthritis / Scleroderma / Sarcoidosis/ Psoriasis/ bleeding or clotting disorders or any other diseases of Blood, Bonemarrow/ Immunity or Skin",
-        skin: "HIV/SLE/ Rheumatoid Arthritis / Scleroderma / Sarcoidosis/ Psoriasis/ bleeding or clotting disorders or any other diseases of Blood, Bonemarrow/ Immunity or Skin",
-        hiv: "HIV/SLE/ Rheumatoid Arthritis / Scleroderma / Sarcoidosis/ Psoriasis/ bleeding or clotting disorders or any other diseases of Blood, Bonemarrow/ Immunity or Skin",
+        neuro: "Stroke / Paralysis / Transient Ischemic Attack / Multiple Sclerosis / Epilepsy / Mental-Psychiatric illness / Parkinsonism / Alzheimer's / Depression / Dementia or any other disease of Brain and Nervous System?",
+        psychiatric: "Stroke / Paralysis / Transient Ischemic Attack / Multiple Sclerosis / Epilepsy / Mental-Psychiatric illness / Parkinsonism / Alzheimer's / Depression / Dementia or any other disease of Brain and Nervous System?",
+        liver: "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis / Inflammatory Bowel Diseases / Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder, Stomach or Intestines or any other part of Digestive system",
+        digestive: "Cirrhosis / Hepatitis / Wilson's disease / Pancreatitis / Liver disease / Crohn's disease / Ulcerative Colitis / Inflammatory Bowel Diseases / Piles or any other disease of Mouth, Esophagus, Liver, Gall bladder, Stomach or Intestines or any other part of Digestive system",
+        kidney: "Kidney Stones / Renal Failure / Dialysis / Chronic Kidney Disease / Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
+        reproductive: "Kidney Stones / Renal Failure / Dialysis / Chronic Kidney Disease / Prostate Disease or any other disease of Kidney, Urinary Tract or Reproductive Organs?",
+        blood: "HIV / SLE / Rheumatoid Arthritis / Scleroderma / Sarcoidosis / Psoriasis / bleeding or clotting disorders or any other diseases of Blood, Bone marrow / Immunity or Skin",
+        autoimmune: "HIV / SLE / Rheumatoid Arthritis / Scleroderma / Sarcoidosis / Psoriasis / bleeding or clotting disorders or any other diseases of Blood, Bone marrow / Immunity or Skin",
+        skin: "HIV / SLE / Rheumatoid Arthritis / Scleroderma / Sarcoidosis / Psoriasis / bleeding or clotting disorders or any other diseases of Blood, Bone marrow / Immunity or Skin",
+        hiv: "HIV / SLE / Rheumatoid Arthritis / Scleroderma / Sarcoidosis / Psoriasis / bleeding or clotting disorders or any other diseases of Blood, Bone marrow / Immunity or Skin",
         eye: "Disease or disorder of eye, ear, nose or throat (except any sight related problems corrected by prescription lenses)?",
-        ent: "Disease or disorder of eye, ear, nose or throat (except any sight related problems corrected by prescription lenses)?",
         eyeEnt: "Disease or disorder of eye, ear, nose or throat (except any sight related problems corrected by prescription lenses)?",
-        musculoskeletal: "Disease of the musculoskeletal system / Orthopedic disorders/Degeneration, Fracture or dislocation of bones or joints/ avascular necrosis of joints or any other disorder related to it?",
-        genetic: "Any other disease / health adversity / injury/ condition / treatment not mentioned above."
+        musculoskeletal: "Disease of the musculoskeletal system / Orthopedic disorders / Degeneration, Fracture or dislocation of bones or joints / avascular necrosis of joints or any other disorder related to it?",
+        genetic: "Any other disease / health adversity / injury / condition / treatment not mentioned above."
       },
       umbrellaQuestions: [
-        "Has any of the Proposed to be Insured been hospitalized/ recommended to take investigations/medication or has been under any prolonged treatment/ undergone surgery for any illness/injury other than for childbirth/minor injuries?"
+        "Has any of the Proposed to be Insured been hospitalized / recommended to take investigations / medication or has been under any prolonged treatment / undergone surgery for any illness / injury other than for childbirth / minor injuries?"
       ]
     },
 
     "Activ Fit Preferred": {
       questions: [
-        "Any form of Heart Disease, Peripheral Vascular Disease, procedures like Angioplasty/PTCA/By Pass Surgery, valve replacement etc",
+        "Any form of Heart Disease, Peripheral Vascular Disease, procedures like Angioplasty / PTCA / By Pass Surgery, valve replacement etc",
         "Diabetes, High blood pressure, High Cholesterol, Anaemia / Blood disorder (whether treated or not).",
         "Tuberculosis (TB), Asthma, any Respiratory / Lung disease.",
         "Disease of Eye, Ear, Nose, Throat, Thyroid.",
-        "Cancer, tumor, lump,cyst,ulcer",
+        "Cancer, tumor, lump, cyst, ulcer",
         "Disease of Kidney, Digestive tract, Liver / Gall bladder, Pancreas, Breast, Reproductive / urinary system or any past complication of pregnancy.",
-        "Paralysis, Polio, Joints / Arthitis / prolonged back pain",
+        "Paralysis, Polio, Joints / Arthritis / prolonged back pain",
         "Mental illness, Psychiatric / Psychological disorder",
         "Disease of the Brain / Spine / Nervous System / Epilepsy",
         "Neurological or Skeletal disorders",
@@ -1192,7 +1319,7 @@ export function getPlanConfig(): Record<string, PlanConfig> {
       anyOther: "Other Medical conditions",
       hasUmbrella: false,
       categoryMap: {
-        heart: "Any form of Heart Disease, Peripheral Vascular Disease, procedures like Angioplasty/PTCA/By Pass Surgery, valve replacement etc",
+        heart: "Any form of Heart Disease, Peripheral Vascular Disease, procedures like Angioplasty / PTCA / By Pass Surgery, valve replacement etc",
         hypertension: "Diabetes, High blood pressure, High Cholesterol, Anaemia / Blood disorder (whether treated or not).",
         diabetes: "Diabetes, High blood pressure, High Cholesterol, Anaemia / Blood disorder (whether treated or not).",
         blood: "Diabetes, High blood pressure, High Cholesterol, Anaemia / Blood disorder (whether treated or not).",
@@ -1201,22 +1328,134 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         lipid: "Diabetes, High blood pressure, High Cholesterol, Anaemia / Blood disorder (whether treated or not).",
         respiratory: "Tuberculosis (TB), Asthma, any Respiratory / Lung disease.",
         eye: "Disease of Eye, Ear, Nose, Throat, Thyroid.",
-        ent: "Disease of Eye, Ear, Nose, Throat, Thyroid.",
         eyeEnt: "Disease of Eye, Ear, Nose, Throat, Thyroid.",
         endocrine: "Disease of Eye, Ear, Nose, Throat, Thyroid.",
-        neoplasm: "Cancer, tumor, lump,cyst,ulcer",
+        neoplasm: "Cancer, tumor, lump, cyst, ulcer",
         kidney: "Disease of Kidney, Digestive tract, Liver / Gall bladder, Pancreas, Breast, Reproductive / urinary system or any past complication of pregnancy.",
         reproductive: "Disease of Kidney, Digestive tract, Liver / Gall bladder, Pancreas, Breast, Reproductive / urinary system or any past complication of pregnancy.",
         liver: "Disease of Kidney, Digestive tract, Liver / Gall bladder, Pancreas, Breast, Reproductive / urinary system or any past complication of pregnancy.",
         digestive: "Disease of Kidney, Digestive tract, Liver / Gall bladder, Pancreas, Breast, Reproductive / urinary system or any past complication of pregnancy.",
-        musculoskeletal: "Paralysis, Polio, Joints / Arthitis / prolonged back pain",
+        musculoskeletal: "Paralysis, Polio, Joints / Arthritis / prolonged back pain",
         psychiatric: "Mental illness, Psychiatric / Psychological disorder",
-        neuroPsych: "Disease of the Brain / Spine / Nervous System / Epilepsy",
         neuro: "Disease of the Brain / Spine / Nervous System / Epilepsy",
         hiv: "HIV / AIDS, other sexually transmitted diseases or accidental injury",
-        skin: "Other Medical conditions"
+        skin: "Other Medical conditions",
+        // No dedicated Covid-19 question on this plan either — same fix as
+        // Optima Secure/Care Supreme above.
+        covid: "Other Medical conditions"
       },
       umbrellaQuestions: []
+    },
+
+    // Niva Bupa — "Aspire". Question 1 is a single compound proposal-form
+    // question covering 8 sub-items (a-h); each sub-item's category key below
+    // points to that same question text, mirroring how Activ One Max's
+    // compound "HIV / SLE / Rheumatoid Arthritis ... Blood, Bone marrow /
+    // Immunity or Skin" question maps to 4 different categories.
+    "Aspire": {
+      questions: [
+        "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        "Do you have Diabetes?",
+        "Do you have Hypertension?",
+        "Ever been diagnosed with a disease that needed treatment for more than a week?",
+        "Ever underwent a surgery? Or advised one?",
+        "Currently under any follow up or awaiting any treatment?",
+        "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        "Has the Applicant ever had adverse findings to any diagnostic tests or investigations related to Thyroid Profile, Lipid Profile, Treadmill test, Angiography, Echocardiography, Endoscopy, Ultrasound, CT Scan, MRI, Biopsy and FNAC?",
+        "Does the Applicant have diabetes or pre-diabetes or has he/she EVER had high blood sugar?",
+        "Does the Applicant have Hypertension or High Blood Pressure?",
+        "Has the Applicant ever been diagnosed or treated for any genetic / hereditary disorders or HIV / AIDS?",
+        "Has the Applicant ever been diagnosed or treated for any mental/ psychiatric disorders?"
+      ],
+      anyOther: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+      hasUmbrella: true,
+      umbrellaQuestions: [
+        "Ever been diagnosed with a disease that needed treatment for more than a week?",
+        "Ever underwent a surgery? Or advised one?",
+        "Currently under any follow up or awaiting any treatment?"
+      ],
+      categoryMap: {
+        neoplasm: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        heart: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        kidney: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        neuro: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        respiratory: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        liver: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        digestive: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        blood: "Are you suffering from any of the following diseases: Cancer/Leukemia/Malignant Tumour; Cardiac Ailments (Heart Attack, By-Pass Surgery etc); Major organ failure (Kidney, Liver, Heart, Lungs, etc.); Neurological disorder/Stroke/Paralysis; Chronic Obstructive Pulmonary Disease (COPD) / Progressive Lungs Disease; Hepatitis B or C, Chronic liver disease, Crohn's disease, Ulcerative colitis; Any anaemia other than iron deficiency anaemia; Type 1 Diabetes?",
+        diabetes: "Does the Applicant have diabetes or pre-diabetes or has he/she EVER had high blood sugar?",
+        hypertension: "Does the Applicant have Hypertension or High Blood Pressure?",
+        lipid: "Has the Applicant ever had adverse findings to any diagnostic tests or investigations related to Thyroid Profile, Lipid Profile, Treadmill test, Angiography, Echocardiography, Endoscopy, Ultrasound, CT Scan, MRI, Biopsy and FNAC?",
+        endocrine: "Has the Applicant ever had adverse findings to any diagnostic tests or investigations related to Thyroid Profile, Lipid Profile, Treadmill test, Angiography, Echocardiography, Endoscopy, Ultrasound, CT Scan, MRI, Biopsy and FNAC?",
+        genetic: "Has the Applicant ever been diagnosed or treated for any genetic / hereditary disorders or HIV / AIDS?",
+        hiv: "Has the Applicant ever been diagnosed or treated for any genetic / hereditary disorders or HIV / AIDS?",
+        psychiatric: "Has the Applicant ever been diagnosed or treated for any mental/ psychiatric disorders?",
+        // No dedicated question exists for these — default to the plan's
+        // broad catch-all (anyOther) rather than leaving them unmapped, so
+        // the deterministic engine never silently skips this plan for these
+        // categories and falls through to the Gemini fallback (the exact
+        // bug pattern found and fixed for the original 4 plans' "skin" key).
+        // "autoimmune" belongs here too — Question 1 only names two SPECIFIC
+        // autoimmune-adjacent GI diseases (Crohn's, Ulcerative colitis),
+        // which are already correctly routed via the separate "digestive"
+        // category key above. It does not cover autoimmune/immunity
+        // generally, so a generic autoimmune PED like Psoriasis or
+        // Rheumatoid Arthritis was incorrectly routing there — it was
+        // mistakenly mapped to Q1 as if the whole category applied.
+        autoimmune: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        reproductive: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        skin: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        eyeEnt: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        eye: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        musculoskeletal: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        covid: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        sarcoidosis: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and/or hospitalized for more than 5 days and/or undergone/advised to undergo any surgical procedures and/or taken any medication/had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts."
+      }
+    },
+
+    // Niva Bupa — "Reassure 2.0". A much shorter proposal form (6 questions,
+    // no compound disease list, no umbrella questions) — most disease
+    // categories that Aspire covers via its dedicated compound question have
+    // no equivalent here and correctly fall back to this plan's own broad
+    // catch-all question instead.
+    "Reassure 2.0": {
+      questions: [
+        "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        "Has the Applicant ever had adverse findings to any diagnostic tests or investigations related to Thyroid Profile, Lipid Profile, Treadmill test, Angiography, Echocardiography, Endoscopy, Ultrasound, CT Scan, MRI, Biopsy and FNAC?",
+        "Does the Applicant have diabetes or pre-diabetes or has he/she EVER had high blood sugar?",
+        "Does the Applicant have Hypertension or High Blood Pressure?",
+        "Has the Applicant ever been diagnosed or treated for any genetic / hereditary disorders or HIV / AIDS?",
+        "Has the Applicant ever been diagnosed or treated for any mental/ psychiatric disorders?"
+      ],
+      anyOther: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+      hasUmbrella: false,
+      umbrellaQuestions: [],
+      categoryMap: {
+        diabetes: "Does the Applicant have diabetes or pre-diabetes or has he/she EVER had high blood sugar?",
+        hypertension: "Does the Applicant have Hypertension or High Blood Pressure?",
+        lipid: "Has the Applicant ever had adverse findings to any diagnostic tests or investigations related to Thyroid Profile, Lipid Profile, Treadmill test, Angiography, Echocardiography, Endoscopy, Ultrasound, CT Scan, MRI, Biopsy and FNAC?",
+        endocrine: "Has the Applicant ever had adverse findings to any diagnostic tests or investigations related to Thyroid Profile, Lipid Profile, Treadmill test, Angiography, Echocardiography, Endoscopy, Ultrasound, CT Scan, MRI, Biopsy and FNAC?",
+        genetic: "Has the Applicant ever been diagnosed or treated for any genetic / hereditary disorders or HIV / AIDS?",
+        hiv: "Has the Applicant ever been diagnosed or treated for any genetic / hereditary disorders or HIV / AIDS?",
+        psychiatric: "Has the Applicant ever been diagnosed or treated for any mental/ psychiatric disorders?",
+        // No dedicated question for these in this shorter form — fall back
+        // to the broad catch-all, same rationale as Aspire above.
+        respiratory: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        neuro: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        digestive: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        musculoskeletal: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        kidney: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        reproductive: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        skin: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        neoplasm: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        autoimmune: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        eyeEnt: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        eye: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        heart: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        liver: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        covid: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts.",
+        sarcoidosis: "Other than common cold, flu, infections, minor injury or other minor ailments; has the Applicant ever been diagnosed with any disease and / or hospitalized for more than 5 days and / or undergone / advised to undergo any surgical procedures and / or taken any medication/ had any symptoms for more than 14 days? Medication is including but not limited to inhalers, injections, oral drugs and external medical applications on body parts."
+      }
     }
   };
 }

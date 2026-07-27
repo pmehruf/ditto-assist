@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  ShieldCheck,
   Layers,
   ChevronDown,
   Compass,
@@ -8,14 +7,13 @@ import {
   Lightbulb,
   ArrowRight
 } from "lucide-react";
-import { DeclarationMapIcon } from "./icons";
 
 interface DisclosureMapProps {
   theme: "light" | "dark";
 }
 
 export default function DisclosureMap({ theme }: DisclosureMapProps) {
-  // Actively track expanded branches
+  // All 4 branches start collapsed.
   const [expandedBranches, setExpandedBranches] = useState<number[]>([]);
 
   const toggleBranch = (id: number) => {
@@ -26,57 +24,8 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
     }
   };
 
-  const isFocused = expandedBranches.length > 0;
-
   return (
     <div className="space-y-6 select-none font-sans">
-      
-      {/* HEADER LEVEL INLINE CARDS */}
-      <div className={`p-6 rounded-2xl border transition-all relative overflow-hidden ${
-        theme === "dark" 
-          ? "bg-gradient-to-r from-teal-950/20 via-[#10141b] to-blue-950/20 border-[#252A34]" 
-          : "bg-gradient-to-r from-[#E2EBF5] via-white to-sky-50 border-stone-200 shadow-xs"
-      }`}>
-        {/* Background ambient glows */}
-        <div className="absolute right-0 top-0 w-64 h-64 bg-teal-500/5 dark:bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute left-1/3 bottom-0 w-64 h-64 bg-blue-500/5 dark:bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 space-y-3">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="space-y-2">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[10px] font-extrabold tracking-widest uppercase ${
-                theme === "dark" ? "bg-teal-500/10 text-teal-400 border border-teal-500/20" : "bg-teal-100 text-teal-800 border border-teal-200"
-              }`}>
-                <DeclarationMapIcon width={14} height={14} color={theme === "dark" ? "#14b8a6" : "#0d9488"} /> Ditto · Advisor Disclosure Logic
-              </span>
-              <h2 className={`text-xl md:text-3xl font-black tracking-tight leading-tight flex items-center gap-3 ${
-                theme === "dark" 
-                  ? "bg-gradient-to-r from-cyan-400 via-sky-450 to-teal-400 bg-clip-text text-transparent"
-                  : "text-[#1E293B]"
-              }`}>
-                <DeclarationMapIcon 
-                  width={40} 
-                  height={40} 
-                  color={theme === "dark" ? "#06b6d4" : "#0284c7"}
-                />
-                Declaration Framework — The Complete Map
-              </h2>
-              <p className={`text-xs md:text-sm leading-relaxed font-semibold max-w-3xl ${
-                theme === "dark" ? "text-zinc-400" : "text-stone-600"
-              }`}>
-                One system, three layers. The ladder is how you pick a question. The branches are what to do when one fact could go two places. The engine is why any of it matters.
-              </p>
-            </div>
-          </div>
-          
-          <div className={`mt-3 inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-full border ${
-            theme === "dark" ? "bg-[#0b1320] border-white/10 text-[#6b82a3]" : "bg-[#DDE5F0] border-stone-250 text-stone-700"
-          }`}>
-            <span className="w-2 h-2 rounded-full bg-[#2a9bff] animate-ping" />
-            <span>Tap a branch to focus it — the rest step back</span>
-          </div>
-        </div>
-      </div>
 
       {/* DECISION SWITCH (Compact Horizontal Reminder) */}
       <div className={`p-5 rounded-2xl border backdrop-blur-md relative overflow-hidden space-y-4 ${
@@ -150,16 +99,374 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
         </div>
       </div>
 
-      {/* MAIN LAYOUT GRID (TWO COLUMNS - LEFT CARD LIST & RIGHT CARD LIST) */}
+      {/* DECLARATION GUIDE: OVERLAPPING QUESTIONS Block (Interactive branches, covers full width — sits above the Ladder/Decision Sequence grid) */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 px-1">
+          <Layers className="w-4 h-4 text-[#117FDA]" />
+          <h3 className={`text-xs font-black uppercase tracking-widest ${
+            theme === "dark" ? "text-stone-200" : "text-stone-850"
+          }`}>
+            Declaration Guide: Overlapping Questions
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          {/* BRANCH 1: PED x Surgery */}
+          <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
+            theme === "dark" ? "bg-[#0e2236]" : "bg-white shadow-xs"
+          } ${
+            expandedBranches.includes(1)
+              ? "border-[#ff9f43]/50 ring-1 ring-[#ff9f43]/20"
+              : theme === "dark" ? "border-white/10" : "border-stone-250"
+          }`}>
+            <button
+              onClick={() => toggleBranch(1)}
+              className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
+                theme === "dark"
+                  ? "bg-white/5 text-[#ff9f43] border-[#ff9f43]/30"
+                  : "bg-[#FEF3C7] text-[#D97706] border-[#ff9f43]/55"
+              }`}>
+                🔪
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#B4C2D6]" : "text-stone-500"}`}>
+                  Branch 1
+                </div>
+                <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
+                  PED × Surgery
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
+                expandedBranches.includes(1) ? "transform rotate-180 text-[#ff9f43]" : ""
+              }`} />
+            </button>
+
+            {expandedBranches.includes(1) && (
+              <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
+                <div className="mt-4 pl-3.5 border-l-2 border-[#ff9f43] space-y-5">
+
+                  {/* Sub-Case A */}
+                  <div className="space-y-2">
+                    <strong className={`text-xs block ${theme === "dark" ? "text-white" : ""}`}>
+                      Cured / one-time (Cataract, Kidney stones) — the surgery is the key declaration.
+                    </strong>
+                    <div className="space-y-1">
+                      <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
+                        Declaration Options
+                      </span>
+                      <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
+                        <li>Surgeries Q or Organ / System Q <span className="font-extrabold" style={{ color: "var(--teal)" }}>(PED Q is optional)</span></li>
+                      </ol>
+                    </div>
+                    <span className={`inline-block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
+                      theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
+                    }`}>
+                      <span className="text-[#3b9eff] font-bold">Care:</span> Surgery Q = Yes + surgery name in <strong>Others</strong>
+                    </span>
+                  </div>
+
+                  {/* Sub-Case B */}
+                  <div className="border-t border-dashed border-stone-200 dark:border-white/5 pt-4 space-y-2">
+                    <strong className={`text-xs block ${theme === "dark" ? "text-white" : ""}`}>
+                      Linked to active PED (heart condition + Angioplasty) — PED is extremely important here; its declaration is <span className="text-red-500">mandatory</span> in the PED / Organ / System specific question, along with the surgery.
+                    </strong>
+
+                    <div className="space-y-1">
+                      <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
+                        Declaration Options
+                      </span>
+                      <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
+                        <li>Declaration of the PED in PED / Organ / System (by priority order) is <span className="text-red-500 font-black">mandatory</span></li>
+                        <li>
+                          Surgery declared in:
+                          <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                            <li>Same Q as the PED declaration</li>
+                            <li>Generic umbrella Surgeries Q</li>
+                            <li>Others Section</li>
+                          </ul>
+                        </li>
+                      </ol>
+                    </div>
+
+                    <span className={`block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
+                      theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
+                    }`}>
+                      <span className="text-[#3b9eff] font-bold">Care:</span> PED/Organ Q = Yes → Surgery Q = Yes → Others = PED name <span className="text-red-500 font-extrabold">(mandatory)</span> + surgery name <span className="font-bold" style={{ color: "var(--teal)" }}>(optional)</span>
+                    </span>
+                  </div>
+
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* BRANCH 2: PED x Hospitalization */}
+          <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
+            theme === "dark" ? "bg-[#0e2236]" : "bg-white shadow-xs"
+          } ${
+            expandedBranches.includes(2)
+              ? "border-[#2ed573]/50 ring-1 ring-[#2ed573]/20"
+              : theme === "dark" ? "border-white/10" : "border-stone-250"
+          }`}>
+            <button
+              onClick={() => toggleBranch(2)}
+              className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
+                theme === "dark"
+                  ? "bg-white/5 text-[#2ed573] border-[#2ed573]/30"
+                  : "bg-[#E1F7E8] text-[#0F766E] border-[#2ed573]/55"
+              }`}>
+                🛏️
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#B4C2D6]" : "text-stone-500"}`}>
+                  Branch 2
+                </div>
+                <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
+                  PED × Hospitalization
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
+                expandedBranches.includes(2) ? "transform rotate-180 text-[#2ed573]" : ""
+              }`} />
+            </button>
+
+            {expandedBranches.includes(2) && (
+              <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
+                <div className="mt-4 pl-3.5 border-l-2 border-[#2ed573] space-y-5">
+
+                  {/* Sub-case A */}
+                  <div className="space-y-2">
+                    <strong className={`text-xs block ${theme === "dark" ? "text-white" : ""}`}>
+                      Non-active PED — one-time & not organ-related (Dengue, COVID, Viral fever).
+                    </strong>
+                    <div className="space-y-1">
+                      <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
+                        Declaration Options
+                      </span>
+                      <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
+                        <li>Hospitalization Q only</li>
+                      </ol>
+                    </div>
+                    <span className={`inline-block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
+                      theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
+                    }`}>
+                      <span className="text-[#3b9eff] font-bold">Care:</span> Hospitalization Q = Yes + details in <strong>Others</strong>
+                    </span>
+                  </div>
+
+                  {/* Sub-case B */}
+                  <div className="border-t border-dashed border-stone-200 dark:border-white/5 pt-4 space-y-2">
+                    <strong className={`text-xs block ${theme === "dark" ? "text-white" : ""}`}>
+                      Active-PED-linked hospitalization (hospitalized for Diabetes).
+                    </strong>
+
+                    <div className="space-y-1">
+                      <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
+                        Declaration Options
+                      </span>
+                      <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
+                        <li>Declaration of the PED in PED / Organ / System (by priority order) is <span className="text-red-500 font-extrabold">mandatory</span></li>
+                        <li>
+                          Hospitalization declared in:
+                          <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                            <li>Same Q as the PED declaration</li>
+                            <li>Generic umbrella Hospitalization Q</li>
+                            <li>Others Section</li>
+                          </ul>
+                        </li>
+                      </ol>
+                    </div>
+
+                    <span className={`block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
+                      theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
+                    }`}>
+                      <span className="text-[#3b9eff] font-bold">Care:</span> PED/Organ Q = Yes → Hospitalization Q = Yes → Others = PED name <span className="text-red-500 font-extrabold">(mandatory)</span> + details <span className="font-bold" style={{ color: "var(--teal)" }}>(optional)</span>
+                    </span>
+                  </div>
+
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* BRANCH 3: PED x Medication */}
+          <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
+            theme === "dark" ? "bg-[#0e2236]" : "bg-white shadow-xs"
+          } ${
+            expandedBranches.includes(3)
+              ? "border-[#3b9eff]/50 ring-1 ring-[#3b9eff]/20"
+              : theme === "dark" ? "border-white/10" : "border-stone-250"
+          }`}>
+            <button
+              onClick={() => toggleBranch(3)}
+              className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
+                theme === "dark"
+                  ? "bg-white/5 text-[#3b9eff] border-[#3b9eff]/30"
+                  : "bg-[#E1EAF7] text-[#1D63ED] border-[#3b9eff]/55"
+              }`}>
+                💊
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#B4C2D6]" : "text-stone-500"}`}>
+                  Branch 3
+                </div>
+                <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
+                  PED × Medication
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
+                expandedBranches.includes(3) ? "transform rotate-180 text-[#3b9eff]" : ""
+              }`} />
+            </button>
+
+            {expandedBranches.includes(3) && (
+              <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
+                <div className="mt-4 pl-3.5 border-l-2 border-[#3b9eff] space-y-4">
+                  <div className="space-y-1.5">
+                    <p className={`text-xs leading-relaxed ${theme === "dark" ? "text-stone-300" : "text-stone-750"}`}>
+                      <strong>Declare both the PED and the medication.</strong> Use the general format — “Medications of [condition] going on” — the drug name is not required.
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
+                        Declaration Options
+                      </span>
+                      <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
+                        <li>PED Q + Meds in the <strong>same</strong> question</li>
+                        <li>PED Q + Meds in the generic umbrella Meds Q</li>
+                        <li>PED Q + Meds in the Others section</li>
+                      </ol>
+                    </div>
+
+                    <div className="mt-3">
+                      <span className={`inline-block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
+                        theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
+                      }`}>
+                        <span className="text-[#3b9eff] font-bold">Care:</span> PED Q = Yes + medication in <strong>Others</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-dashed border-stone-200 dark:border-white/5 pt-3.5">
+                    <p className={`text-xs leading-relaxed ${theme === "dark" ? "text-stone-400" : "text-stone-700"}`}>
+                      A <strong>missing-medication flag</strong> is raised for <strong>Diabetes · Cholesterol · Hypertension · Thyroid</strong> if the PED is declared but no medication is.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* BRANCH 4: PED/No-PED × Investigative Tests */}
+          <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
+            theme === "dark" ? "bg-[#0e2236]" : "bg-white shadow-xs"
+          } ${
+            expandedBranches.includes(4)
+              ? "border-[#b07cff]/50 ring-1 ring-[#b07cff]/20"
+              : theme === "dark" ? "border-white/10" : "border-stone-250"
+          }`}>
+            <button
+              onClick={() => toggleBranch(4)}
+              className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
+                theme === "dark"
+                  ? "bg-white/5 text-[#b07cff] border-[#b07cff]/30"
+                  : "bg-[#EBE1F7] text-[#7C3AED] border-[#b07cff]/55"
+              }`}>
+                🔬
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#B4C2D6]" : "text-stone-500"}`}>
+                  Branch 4
+                </div>
+                <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
+                  PED/No-PED × Investigative Tests
+                </div>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
+                expandedBranches.includes(4) ? "transform rotate-180 text-[#b07cff]" : ""
+              }`} />
+            </button>
+
+            {expandedBranches.includes(4) && (
+              <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
+                <div className="mt-4 pl-3.5 border-l-2 border-[#b07cff] space-y-4">
+
+                  {/* Safety Flag / Alert Row */}
+                  <div className={`p-3 rounded-xl border font-semibold ${
+                    theme === "dark" ? "bg-[#ff5a6e]/10 border-[#ff5a6e]/50 text-[#ffd9df]" : "bg-red-50 border-red-200 text-red-800"
+                  }`}>
+                    <div className="text-xs">
+                      <span className="text-red-700 font-bold dark:text-[#ff8a9a]">⚠ Mandatory declaration:</span> Disclose <strong>with or without a diagnosis</strong> (exception applicable), <strong>with or without findings</strong>, and <strong>with or without reports</strong>.
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className={`text-xs leading-relaxed ${theme === "dark" ? "text-stone-300" : "text-stone-750"}`}>
+                      <strong>Exception:</strong> if a test was done <strong>only</strong> to diagnose an already-declared PED (e.g. an <strong>ECG</strong> that revealed a declared heart condition), you need <strong>not</strong> name it.
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
+                        Declaration Options
+                      </span>
+                      <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
+                        <li>Umbrella Question — Investigative Tests</li>
+                        <li>Others Section</li>
+                      </ol>
+                    </div>
+
+                    <div className="mt-3 space-y-4">
+                      <div className={`p-3 rounded-xl border ${
+                        theme === "dark" ? "bg-stone-950/20 border-white/5" : "bg-white border-stone-200 shadow-xs"
+                      }`}>
+                        <strong className={`text-xs block font-bold mb-1 ${theme === "dark" ? "text-white" : ""}`}>
+                          7 critical tests — name exactly:
+                        </strong>
+                        <p className="font-mono text-xs text-indigo-500 dark:text-blue-300 font-extrabold leading-relaxed">
+                          Angiography · TRT (Treadmill Test) / Stress Test · ECG · MRI · Endoscopy · Colonoscopy · USG
+                        </p>
+                      </div>
+
+                      <div className={`p-3 rounded-xl border ${
+                        theme === "dark" ? "bg-stone-950/20 border-white/5" : "bg-white border-stone-200 shadow-xs"
+                      }`}>
+                        <strong className={`text-xs block font-bold mb-1 ${theme === "dark" ? "text-white" : ""}`}>
+                          Any other test:
+                        </strong>
+                        <p className={`text-xs m-0 ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-600"}`}>
+                          → use the generic phrase <strong>“Medical tests were done.”</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* MAIN LAYOUT GRID: Priority Ladder + Critical Rules (left) and Decision Sequence (right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        
-        {/* LEFT COLUMN (Priority Ladder & Golden Rules) */}
+
+        {/* LEFT COLUMN (Priority Ladder & Critical Rules, stacked) */}
         <div className="col-span-1 lg:col-span-4 space-y-6">
-          
+
           {/* PRIORITY LADDER (SPINE) */}
           <aside className={`p-5 rounded-2xl border space-y-4 transition-all ${
             theme === "dark" 
-              ? "bg-[#10233a] border-white/10" 
+              ? "bg-[#0e2236] border-white/10" 
               : "bg-[#EBF1F7] border-stone-250 shadow-xs"
           }`}>
             <h3 className={`text-xs font-black uppercase tracking-widest text-center border-b pb-2 ${
@@ -284,10 +591,10 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
 
         {/* RIGHT COLUMN (Decision Sequence) */}
         <div className="col-span-1 lg:col-span-8">
-          
+
           {/* DECISION SEQUENCE (Moved directly to the right of Priority Ladder) */}
           <div className={`p-5 rounded-2xl border space-y-4 m-0 transition-all h-full flex flex-col ${
-            theme === "dark" ? "bg-[#10233a] border-white/10" : "bg-white border-stone-250 shadow-xs"
+            theme === "dark" ? "bg-[#0e2236] border-white/10" : "bg-white border-stone-250 shadow-xs"
           }`}>
             <div className="flex items-center gap-2 border-b pb-3 border-stone-200/50 dark:border-white/5">
               <Compass className="w-4.5 h-4.5 text-teal-400" />
@@ -327,16 +634,16 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
             <div className="space-y-4">
               <ol className="space-y-1">
                 {[
-                  { text: <span><strong>Healthy?</strong> No PED / reports / meds / tests → leave Others blank. Stop.</span> },
-                  { text: <span><strong>Each PED:</strong> find its highest home — P0 (exact) → P1 (organ) → P2 (umbrella). Active PED with an event → P0/P1 is mandatory; the event Q alone never suffices.</span> },
-                  { text: <span><strong>Events:</strong> surgery / hospitalization / medication → also select the respective P2 umbrella Q without fail.</span> },
+                  { text: <span><strong>Healthy?</strong> : No - PEDs / reports / medications / medical tests → Leave <strong>Others</strong> blank.</span> },
+                  { text: <span><strong>Each PED</strong> finds its highest home: P0 (exact) → P1 (category) → P2 (umbrella). If a condition fits a P0/P1 question in the payment journey and a P2 umbrella question, follow the Declaration Guide on Overlap Questions.</span> },
+                  { text: <span><strong>Events:</strong> surgery / hospitalization / medication → select the respective P2 umbrella Q without fail if applicable.</span> },
                   { text: <span>
                       <strong>Tests — with or without diagnosis, findings or reports:</strong>
                       <span className="block mt-1 pl-2 border-l border-white/10 dark:border-white/10 space-y-1 text-[11px]">
                         <span>• <strong>one of the 7</strong> → name it: <span className={theme === "dark" ? "text-[#90a6c4]" : "text-stone-605"}>Angiography · TRT (Treadmill Test) / Stress Test · ECG · MRI · Endoscopy · Colonoscopy · USG</span></span>
                         <span>• <strong>Any other</strong> → “Medical tests were done.” <span className={theme === "dark" ? "text-zinc-500" : "text-stone-500"}> (Not mandatory if there is a diagnosis which is declared in the application. E.g. ECG, and we have declared the angioplasty for which the ECG was taken.)</span></span>
                       </span>
-                    </span> 
+                    </span>
                   },
                   { text: <span><strong>Plan extras:</strong> Care → name surgery/hosp per profile in Others; HDFC → add lifestyle habits.</span> },
                   { text: <span><strong>Feed Others (P3):</strong> un-housed PED names + required keywords. Nothing specific left? → “Medical details available.” Never blank on a risk; never say reports are unavailable.</span> }
@@ -383,375 +690,9 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
 
       </div>
 
-      {/* DECLARATION GUIDE: OVERLAPPING QUESTIONS Block (Interactive branches, covers full width) */}
-      <div className="space-y-4">
-            <div className="flex items-center gap-2 px-1">
-              <Layers className="w-4 h-4 text-[#117FDA]" />
-              <h3 className={`text-xs font-black uppercase tracking-widest ${
-                theme === "dark" ? "text-stone-200" : "text-stone-850"
-              }`}>
-                Declaration Guide: Overlapping Questions
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              
-              {/* BRANCH 1: PED x Medication */}
-              <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
-                theme === "dark" ? "bg-[#10233a]" : "bg-white shadow-xs"
-              } ${
-                expandedBranches.includes(1) 
-                  ? "border-[#3b9eff]/50 ring-1 ring-[#3b9eff]/20" 
-                  : theme === "dark" ? "border-white/10" : "border-stone-250"
-              } ${
-                isFocused && !expandedBranches.includes(1) ? "opacity-30 hover:opacity-60 scale-[0.98]" : "opacity-100"
-              }`}>
-                <button 
-                  onClick={() => toggleBranch(1)}
-                  className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
-                >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
-                    theme === "dark" 
-                      ? "bg-white/5 text-[#3b9eff] border-[#3b9eff]/30" 
-                      : "bg-[#E1EAF7] text-[#1D63ED] border-[#3b9eff]/55"
-                  }`}>
-                    💊
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-500"}`}>
-                      Branch 1
-                    </div>
-                    <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
-                      PED × Medication
-                    </div>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
-                    expandedBranches.includes(1) ? "transform rotate-180 text-[#3b9eff]" : ""
-                  }`} />
-                </button>
-
-                {expandedBranches.includes(1) && (
-                  <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
-                    <div className="mt-4 pl-3.5 border-l-2 border-[#3b9eff] space-y-4">
-                      <div className="space-y-1.5">
-                        <p className={`text-xs leading-relaxed ${theme === "dark" ? "text-stone-300" : "text-stone-750"}`}>
-                          <strong>Declare both the PED and the medication.</strong> Use the general format — “Medications of [condition] going on” — the drug name is not required.
-                        </p>
-                        
-                        <div className="mt-3 space-y-2">
-                          <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
-                            Declaration Options
-                          </span>
-                          <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
-                            <li>PED Q + Meds in the <strong>same</strong> question</li>
-                            <li>PED Q + Meds in the generic umbrella Meds Q</li>
-                            <li>PED Q + Meds in the Others section</li>
-                          </ol>
-                        </div>
-
-                        <div className="mt-3">
-                          <span className={`inline-block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
-                            theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
-                          }`}>
-                            <span className="text-[#3b9eff] font-bold">Care:</span> PED Q = Yes + medication in <strong>Others</strong>
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-dashed border-stone-200 dark:border-white/5 pt-3.5">
-                        <p className={`text-xs leading-relaxed ${theme === "dark" ? "text-stone-400" : "text-stone-700"}`}>
-                          A <strong>missing-medication flag</strong> is raised for <strong>Diabetes · Cholesterol · Hypertension · Thyroid</strong> if the PED is declared but no medication is.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* BRANCH 2: PED/No-PED × Investigative Tests (Reordered / Replaced content) */}
-              <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
-                theme === "dark" ? "bg-[#10233a]" : "bg-white shadow-xs"
-              } ${
-                expandedBranches.includes(2) 
-                  ? "border-[#b07cff]/50 ring-1 ring-[#b07cff]/20" 
-                  : theme === "dark" ? "border-white/10" : "border-stone-250"
-              } ${
-                isFocused && !expandedBranches.includes(2) ? "opacity-30 hover:opacity-60 scale-[0.98]" : "opacity-100"
-              }`}>
-                <button 
-                  onClick={() => toggleBranch(2)}
-                  className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
-                >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
-                    theme === "dark" 
-                      ? "bg-white/5 text-[#b07cff] border-[#b07cff]/30" 
-                      : "bg-[#EBE1F7] text-[#7C3AED] border-[#b07cff]/55"
-                  }`}>
-                    🔬
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-500"}`}>
-                      Branch 2
-                    </div>
-                    <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
-                      PED/No-PED × Investigative Tests
-                    </div>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
-                    expandedBranches.includes(2) ? "transform rotate-180 text-[#b07cff]" : ""
-                  }`} />
-                </button>
-
-                {expandedBranches.includes(2) && (
-                  <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
-                    <div className="mt-4 pl-3.5 border-l-2 border-[#b07cff] space-y-4">
-                      
-                      {/* Safety Flag / Alert Row */}
-                      <div className={`p-3 rounded-xl border font-semibold ${
-                        theme === "dark" ? "bg-[#ff5a6e]/10 border-[#ff5a6e]/50 text-[#ffd9df]" : "bg-red-50 border-red-200 text-red-800"
-                      }`}>
-                        <div className="text-xs">
-                          <span className="text-red-500 font-bold dark:text-[#ff8a9a]">⚠ Mandatory declaration:</span> Disclose <strong>with or without a diagnosis</strong> (exception applicable), <strong>with or without findings</strong>, and <strong>with or without reports</strong>.
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <p className={`text-xs leading-relaxed ${theme === "dark" ? "text-stone-300" : "text-stone-750"}`}>
-                          <strong>Exception:</strong> if a test was done <strong>only</strong> to diagnose an already-declared PED (e.g. an <strong>ECG</strong> that revealed a declared heart condition), you need <strong>not</strong> name it.
-                        </p>
-
-                        <div className="mt-3 space-y-2">
-                          <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
-                            Declaration Options
-                          </span>
-                          <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
-                            <li>Umbrella Question — Investigative Tests</li>
-                            <li>Others Section</li>
-                          </ol>
-                        </div>
-
-                        <div className="mt-3 space-y-4">
-                          <div className={`p-3 rounded-xl border ${
-                            theme === "dark" ? "bg-stone-950/20 border-white/5" : "bg-white border-stone-200 shadow-xs"
-                          }`}>
-                            <strong className="text-xs block font-bold mb-1">
-                              7 critical tests — name exactly:
-                            </strong>
-                            <p className="font-mono text-xs text-indigo-500 dark:text-blue-300 font-extrabold leading-relaxed">
-                              Angiography · TRT (Treadmill Test) / Stress Test · ECG · MRI · Endoscopy · Colonoscopy · USG
-                            </p>
-                          </div>
-
-                          <div className={`p-3 rounded-xl border ${
-                            theme === "dark" ? "bg-stone-950/20 border-white/5" : "bg-white border-stone-200 shadow-xs"
-                          }`}>
-                            <strong className="text-xs block font-bold mb-1">
-                              Any other test:
-                            </strong>
-                            <p className={`text-xs m-0 ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-600"}`}>
-                              → use the generic phrase <strong>“Medical tests were done.”</strong>
-                            </p>
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* BRANCH 3: PED x Surgery */}
-              <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
-                theme === "dark" ? "bg-[#10233a]" : "bg-white shadow-xs"
-              } ${
-                expandedBranches.includes(3) 
-                  ? "border-[#ff9f43]/50 ring-1 ring-[#ff9f43]/20" 
-                  : theme === "dark" ? "border-white/10" : "border-stone-250"
-              } ${
-                isFocused && !expandedBranches.includes(3) ? "opacity-30 hover:opacity-60 scale-[0.98]" : "opacity-100"
-              }`}>
-                <button 
-                  onClick={() => toggleBranch(3)}
-                  className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
-                >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
-                    theme === "dark" 
-                      ? "bg-white/5 text-[#ff9f43] border-[#ff9f43]/30" 
-                      : "bg-[#FEF3C7] text-[#D97706] border-[#ff9f43]/55"
-                  }`}>
-                    🔪
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-500"}`}>
-                      Branch 3
-                    </div>
-                    <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
-                      PED × Surgery
-                    </div>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
-                    expandedBranches.includes(3) ? "transform rotate-180 text-[#ff9f43]" : ""
-                  }`} />
-                </button>
-
-                {expandedBranches.includes(3) && (
-                  <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
-                    <div className="mt-4 pl-3.5 border-l-2 border-[#ff9f43] space-y-5">
-                      
-                      {/* Sub-Case A */}
-                      <div className="space-y-2">
-                        <strong className="text-xs block">
-                          Cured / one-time (Cataract, Kidney stones) — the surgery is the key declaration.
-                        </strong>
-                        <div className="space-y-1">
-                          <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
-                            Declaration Options
-                          </span>
-                          <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
-                            <li>Surgeries Q or Organ / System Q <span className="text-emerald-500 dark:text-emerald-400 font-extrabold">(PED Q is optional)</span></li>
-                          </ol>
-                        </div>
-                        <span className={`inline-block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
-                          theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
-                        }`}>
-                          <span className="text-[#3b9eff] font-bold">Care:</span> Surgery Q = Yes + surgery name in <strong>Others</strong>
-                        </span>
-                      </div>
-
-                      {/* Sub-Case B */}
-                      <div className="border-t border-dashed border-stone-200 dark:border-white/5 pt-4 space-y-2">
-                        <strong className="text-xs block">
-                          Linked to active PED (heart condition + Angioplasty) — PED is extremely important here; its declaration is <span className="text-red-500">mandatory</span> in the PED / Organ / System specific question, along with the surgery.
-                        </strong>
-                        
-                        <div className="space-y-1">
-                          <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
-                            Declaration Options
-                          </span>
-                          <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
-                            <li>Declaration of the PED in PED / Organ / System (by priority order) is <span className="text-red-500 font-black">mandatory</span></li>
-                            <li>
-                              Surgery declared in:
-                              <ul className="list-disc pl-4 mt-1 space-y-0.5">
-                                <li>Same Q as the PED declaration</li>
-                                <li>Generic umbrella Surgeries Q</li>
-                                <li>Others Section</li>
-                              </ul>
-                            </li>
-                          </ol>
-                        </div>
-
-                        <span className={`block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
-                          theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
-                        }`}>
-                          <span className="text-[#3b9eff] font-bold">Care:</span> PED/Organ Q = Yes → Surgery Q = Yes → Others = PED name <span className="text-red-500 font-extrabold">(mandatory)</span> + surgery name <span className="text-[#2ed573] font-bold">(optional)</span>
-                        </span>
-                      </div>
-
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* BRANCH 4: PED x Hospitalization */}
-              <div className={`border rounded-2xl overflow-hidden transition-all duration-300 ${
-                theme === "dark" ? "bg-[#10233a]" : "bg-white shadow-xs"
-              } ${
-                expandedBranches.includes(4) 
-                  ? "border-[#2ed573]/50 ring-1 ring-[#2ed573]/20" 
-                  : theme === "dark" ? "border-white/10" : "border-stone-250"
-              } ${
-                isFocused && !expandedBranches.includes(4) ? "opacity-30 hover:opacity-60 scale-[0.98]" : "opacity-100"
-              }`}>
-                <button 
-                  onClick={() => toggleBranch(4)}
-                  className="w-full text-left p-4 flex gap-3.5 items-center bg-transparent focus:outline-none cursor-pointer"
-                >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xl shrink-0 border ${
-                    theme === "dark" 
-                      ? "bg-white/5 text-[#2ed573] border-[#2ed573]/30" 
-                      : "bg-[#E1F7E8] text-[#0F766E] border-[#2ed573]/55"
-                  }`}>
-                    🛏️
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-500"}`}>
-                      Branch 4
-                    </div>
-                    <div className={`text-base font-black ${theme === "dark" ? "text-[#e9f1fb]" : "text-stone-900"}`}>
-                      PED × Hospitalization
-                    </div>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-stone-400 transition-transform shrink-0 ${
-                    expandedBranches.includes(4) ? "transform rotate-180 text-[#2ed573]" : ""
-                  }`} />
-                </button>
-
-                {expandedBranches.includes(4) && (
-                  <div className={`px-4 pb-5 border-t ${theme === "dark" ? "border-white/5" : "border-stone-250 bg-[#F8FAFD]"}`}>
-                    <div className="mt-4 pl-3.5 border-l-2 border-[#2ed573] space-y-5">
-                      
-                      {/* Sub-case A */}
-                      <div className="space-y-2">
-                        <strong className="text-xs block">
-                          Non-active PED — one-time & not organ-related (Dengue, COVID, Viral fever).
-                        </strong>
-                        <div className="space-y-1">
-                          <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
-                            Declaration Options
-                          </span>
-                          <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
-                            <li>Hospitalization Q only</li>
-                          </ol>
-                        </div>
-                        <span className={`inline-block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
-                          theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
-                        }`}>
-                          <span className="text-[#3b9eff] font-bold">Care:</span> Hospitalization Q = Yes + details in <strong>Others</strong>
-                        </span>
-                      </div>
-
-                      {/* Sub-case B */}
-                      <div className="border-t border-dashed border-stone-200 dark:border-white/5 pt-4 space-y-2">
-                        <strong className="text-xs block">
-                          Active-PED-linked hospitalization (hospitalized for Diabetes).
-                        </strong>
-
-                        <div className="space-y-1">
-                          <span className={`block text-[10px] uppercase font-bold tracking-wider ${theme === "dark" ? "text-[#9fcbff]" : "text-stone-500"}`}>
-                            Declaration Options
-                          </span>
-                          <ol className={`list-decimal pl-4 text-xs font-semibold ${theme === "dark" ? "text-stone-400" : "text-stone-600"}`}>
-                            <li>Declaration of the PED in PED / Organ / System (by priority order) is <span className="text-red-500 font-extrabold">mandatory</span></li>
-                            <li>
-                              Hospitalization declared in:
-                              <ul className="list-disc pl-4 mt-1 space-y-0.5">
-                                <li>Same Q as the PED declaration</li>
-                                <li>Generic umbrella Hospitalization Q</li>
-                                <li>Others Section</li>
-                              </ul>
-                            </li>
-                          </ol>
-                        </div>
-
-                        <span className={`block text-[11px] font-semibold border rounded-lg px-2.5 py-1.5 leading-normal ${
-                          theme === "dark" ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-250 text-[#1E293B]"
-                        }`}>
-                          <span className="text-[#3b9eff] font-bold">Care:</span> PED/Organ Q = Yes → Hospitalization Q = Yes → Others = PED name <span className="text-red-500 font-extrabold">(mandatory)</span> + details <span className="text-[#2ed573] font-bold">(optional)</span>
-                        </span>
-                      </div>
-
-                    </div>
-                  </div>
-                )}
-              </div>
-
-            </div>
-          </div>
-
       {/* UNDER ALL THIS: THE 3 KEYWORDS "DO NOT MIX UP" CARD BLOCK (Spans full width) */}
       <div className={`p-5 rounded-2xl border space-y-4 ${
-        theme === "dark" ? "bg-[#10233a] border-white/10" : "bg-white border-stone-250 shadow-xs"
+        theme === "dark" ? "bg-[#0e2236] border-white/10" : "bg-white border-stone-250 shadow-xs"
       }`}>
         <div className="flex items-center gap-2">
           <Lightbulb className="w-5 h-5 text-amber-500 dark:text-[#e0b94a]" />
@@ -811,9 +752,10 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
       <p className={`text-[10px] font-bold text-center leading-relaxed font-mono ${
         theme === "dark" ? "text-[#6b82a3]" : "text-stone-600"
       }`}>
-        Reading order: Engine → Ladder → Decision Sequence → Branches → Critical Rules → Keywords. Print this page for a full static version — every branch expands automatically.
+        Reading order: Engine → Branches → Ladder → Decision Sequence → Critical Rules → Keywords.
       </p>
 
     </div>
   );
 }
+

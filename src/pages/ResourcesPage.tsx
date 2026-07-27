@@ -4,7 +4,6 @@
  */
 
 import DisclosureMap from "../components/DisclosureMap";
-import OverlapRuleCompliance from "../components/OverlapRuleCompliance";
 
 interface ResourcesPageProps {
   theme: "light" | "dark";
@@ -25,25 +24,22 @@ export function ResourcesPage({ theme }: ResourcesPageProps) {
   return (
     <>
       {/* PAGE-LEVEL HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
         <div>
-          <h1 className={`text-xl md:text-2xl font-black tracking-tight flex items-center gap-2 ${
+          <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
             theme === "dark" ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
             <span>Declaration Map</span>
           </h1>
-          <p className={`text-xs mt-1.5 font-semibold ${
-            theme === "dark" ? "text-stone-400" : "text-stone-600"
-          }`}>
+          <p className="text-xs mt-1 font-semibold text-content-muted">
             Comprehensive visual guide to medical declaration rules and payout mapping structures.
           </p>
         </div>
       </div>
 
-      <div className="space-y-6 pb-6">
+      <div className="space-y-5 pb-6">
         <DisclosureMap theme={theme} />
-        <OverlapRuleCompliance theme={theme} />
       </div>
     </>
   );

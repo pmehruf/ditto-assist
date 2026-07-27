@@ -3,13 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo } from "react";
-import { Filter, Search, Calendar, Activity, Download, User, Clock } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Filter, Search, Calendar, Activity, Download, Clock, ChevronRight } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { AuditLogEntry } from "../types/announcements";
 import { ChangeLogEntry } from "../types/changeLog";
+import { UserProfile } from "../types/user";
 import { parseGlobalLogTimestamp, formatDisplayTimestamp } from "../utils/timestamps";
-import { translateMatchTypeToLayman, translateSourceToLayman } from "../utils/labelTranslation";
+import { translateSourceToLayman, getSourceInfo } from "../utils/labelTranslation";
+import { getMatchTierInfo } from "../utils/matchTier";
+import { CustomSelect } from "../components/CustomSelect";
+import { ClippedButton } from "../components/ClippedButton";
 
 interface AuditPageProps {
   theme: "light" | "dark";
@@ -20,6 +24,8 @@ interface AuditPageProps {
   setAuditSearch: (value: string) => void;
   auditPlanFilter: string;
   setAuditPlanFilter: (value: string) => void;
+  auditStatusFilter: string;
+  setAuditStatusFilter: (value: string) => void;
   auditTypeFilter: string;
   setAuditTypeFilter: (value: string) => void;
   auditStartDate: string;
@@ -32,6 +38,13 @@ interface AuditPageProps {
   historyActionFilter: string;
   setHistoryActionFilter: (value: string) => void;
   changeLogs: ChangeLogEntry[];
+  /**
+   * User directory, used to resolve an advisor's real name and TACT ID from
+   * the email stored on each log row. search_history only records
+   * user_email, so without this the table had to fall back to the
+   * email's local-part — which is not the advisor's actual name.
+   */
+  usersList: UserProfile[];
 }
 
 /**
@@ -51,6 +64,8 @@ export function AuditPage({
   setAuditSearch,
   auditPlanFilter,
   setAuditPlanFilter,
+  auditStatusFilter,
+  setAuditStatusFilter,
   auditTypeFilter,
   setAuditTypeFilter,
   auditStartDate,
@@ -63,7 +78,53 @@ export function AuditPage({
   historyActionFilter,
   setHistoryActionFilter,
   changeLogs,
+  usersList,
 }: AuditPageProps) {
+  // Which rows have their explanation expanded (keyed by row index).
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+
+  const toggleRow = (index: number) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  /**
+   * email -> { name, tactId } from the user directory.
+   *
+   * Log rows only carry the email, so the previous display derived a "name"
+   * by chopping at the "@". That produced things like "p.mehruf" rather than
+   * the advisor's real name, and never showed the TACT ID at all.
+   */
+  const userDirectory = useMemo(() => {
+    const map = new Map<string, { name: string; tactId: string }>();
+    usersList.forEach((u) => {
+      map.set(u.email.toLowerCase(), { name: u.name, tactId: u.tactId });
+    });
+    return map;
+  }, [usersList]);
+
+  const resolveAdviser = (email: string): { name: string; tactId: string } => {
+    const hit = userDirectory.get((email || "").toLowerCase());
+    if (hit) return hit;
+    // Not in the directory (deactivated/deleted user, or a log predating
+    // them). Fall back to formatting the email's local-part as a name --
+    // "priya.sharma" -> "Priya Sharma" -- instead of showing the raw,
+    // lowercase, dot-separated local-part verbatim. Still not a substitute
+    // for the real name on file, so say plainly that no TACT ID is on record
+    // rather than inventing one.
+    const localPart = (email || "").split("@")[0] || "";
+    const formattedName = localPart
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ") || "Unknown";
+    return { name: formattedName, tactId: "—" };
+  };
+
   const filteredAuditLogs = useMemo(() => {
     return auditLogs.filter(log => {
       const matchSearch =
@@ -76,17 +137,28 @@ export function AuditPage({
         auditPlanFilter === "All" ||
         log.planName === auditPlanFilter;
 
-      // "System Rule" = resolved by the deterministic engine (source contains
-      // "Deterministic", e.g. "Deterministic Underwriting Rule" / "Deterministic
-      // Engine"); "AI Fallback" = everything else (Gemini API calls and their
-      // own error-path fallbacks, e.g. "Live Gemini API" / "Disaster Recovery
-      // Local Rules"). This mirrors the source-based bucketing convention
-      // already used elsewhere in the app (see translateSourceToLayman).
-      const isSystemRuleMatch = (log.source || "").toLowerCase().includes("deterministic");
-      const matchType =
+      // Mapping Status filter — separate from the Mapping Source filter
+      // below. This one filters by the shared confidence tier taxonomy
+      // (src/utils/matchTier.ts): Level 1/2/3, Needs Clarification, or Not
+      // a Medical Ailment — same labels shown in the MAPPING STATUS column
+      // and on the Match Category Distribution chart.
+      const statusTier = getMatchTierInfo(log.matchType);
+      const matchStatus =
+        auditStatusFilter === "All" ||
+        statusTier.levelLabel === auditStatusFilter;
+
+      // Shared classifier (src/utils/labelTranslation.ts getSourceInfo) —
+      // same System Rule / AI Generated split shown in the SOURCE column
+      // below. This used to be a local .includes("deterministic") check,
+      // which mislabeled the two offline safety-net fallbacks ("Match API
+      // Error Fallback", "Disaster Recovery Local Rules") as AI even though
+      // no AI reasoning runs on those paths — so filtering by "AI Fallback"
+      // silently included plain rule-based fallback entries too.
+      const isSystemRuleMatch = getSourceInfo(log.source).isSystemRule;
+      const matchSource =
         auditTypeFilter === "All" ||
         (auditTypeFilter === "System Rule" && isSystemRuleMatch) ||
-        (auditTypeFilter === "AI Fallback" && !isSystemRuleMatch);
+        (auditTypeFilter === "AI Generated" && !isSystemRuleMatch);
 
       let matchDate = true;
       const logDate = parseGlobalLogTimestamp(log.timestamp);
@@ -108,44 +180,43 @@ export function AuditPage({
         }
       }
 
-      return matchSearch && matchPlan && matchType && matchDate;
+      return matchSearch && matchPlan && matchStatus && matchSource && matchDate;
     });
-  }, [auditLogs, auditSearch, auditPlanFilter, auditTypeFilter, auditStartDate, auditEndDate]);
+  }, [auditLogs, auditSearch, auditPlanFilter, auditStatusFilter, auditTypeFilter, auditStartDate, auditEndDate]);
 
   const auditChartData = useMemo(() => {
-    let p0Count = 0;
-    let p1Count = 0;
-    let p2Count = 0;
-    let fallbackCount = 0;
-    let escalateCount = 0;
+    // Bucketed through the shared taxonomy (src/utils/matchTier.ts) so this
+    // chart's categories always agree with the badges shown in this same
+    // table, the live Declaration Assistant results screen, and My Activity
+    // Journal. Previously P1 and P2 were split into separate bars ("P1
+    // (Category)" / "P2 (Umbrella)") even though the product decision is
+    // that they're the same confidence tier (Level 2: Category Match) —
+    // only *how* a question was found differs, not the tier shown to
+    // advisers. Unrecognized/malformed match types fall into Level 3
+    // (Fallback) here too, matching getMatchTierInfo's documented safe
+    // default, so there's no more silent "Other" bucket.
+    let level1Count = 0;
+    let level2Count = 0;
+    let level3Count = 0;
+    let needsClarificationCount = 0;
     let nonAilmentCount = 0;
-    let otherCount = 0;
 
     filteredAuditLogs.forEach(log => {
-      const type = String(log.matchType || "").toUpperCase();
-      if (type === "P0" || type === "EXACT") p0Count++;
-      else if (type === "P1" || type === "LIVE_MATCH" || type === "LIVE MATCH") p1Count++;
-      else if (type === "P2") p2Count++;
-      else if (type === "FALLBACK") fallbackCount++;
-      else if (type === "ESCALATE") escalateCount++;
-      else if (type === "NON_AILMENT") nonAilmentCount++;
-      else otherCount++;
+      const tier = getMatchTierInfo(log.matchType);
+      if (tier.level === 1) level1Count++;
+      else if (tier.level === 2) level2Count++;
+      else if (tier.level === 3) level3Count++;
+      else if (tier.label === "Not a Medical Ailment") nonAilmentCount++;
+      else needsClarificationCount++;
     });
 
-    const data = [
-      { name: "P0 (Exact)", count: p0Count, color: "#14B8A6" },
-      { name: "P1 (Category)", count: p1Count, color: "#3B82F6" },
-      { name: "P2 (Umbrella)", count: p2Count, color: "#F59E0B" },
-      { name: "Fallback", count: fallbackCount, color: "#8B5CF6" },
-      { name: "Officer Review", count: escalateCount, color: "#EF4444" },
-      { name: "Non-Medical", count: nonAilmentCount, color: "#10B981" }
+    return [
+      { name: "Level 1: Direct Match", count: level1Count, color: "#14B8A6" },
+      { name: "Level 2: Category Match", count: level2Count, color: "#3B82F6" },
+      { name: "Level 3: Fallback", count: level3Count, color: "#8B5CF6" },
+      { name: "Needs Clarification", count: needsClarificationCount, color: "#EF4444" },
+      { name: "Not a Medical Ailment", count: nonAilmentCount, color: "#10B981" }
     ];
-
-    if (otherCount > 0) {
-      data.push({ name: "Other", count: otherCount, color: "#6B7280" });
-    }
-
-    return data;
   }, [filteredAuditLogs]);
 
   const filteredChangeLogs = useMemo(() => {
@@ -154,88 +225,99 @@ export function AuditPage({
         (log.planName || "").toLowerCase().includes(historySearch.toLowerCase()) ||
         (log.description || "").toLowerCase().includes(historySearch.toLowerCase()) ||
         (log.userName || "").toLowerCase().includes(historySearch.toLowerCase());
-      const matchType = historyActionFilter === "All" || log.actionType === historyActionFilter;
+      const matchType = historyActionFilter === "All" || log.actionType.startsWith(historyActionFilter);
       return matchSearch && matchType;
     });
   }, [changeLogs, historySearch, historyActionFilter]);
 
   return (
-    <div className="space-y-6">
-      {/* PAGE-LEVEL HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
-        <div className="space-y-1">
-          <h1 className={`text-xl md:text-2xl font-black tracking-tight flex items-center gap-2 ${
+    <div className="space-y-5">
+      {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
+          Studio, the reference implementation): flat, no card surface,
+          accent line + title sitting directly on the page. */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
+        <div>
+          <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
             theme === "dark" ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
             <span>Activity Log</span>
           </h1>
-          <p className={`text-xs font-semibold ${
-            theme === "dark" ? "text-stone-400" : "text-stone-600"
-          }`}>
+          <p className="text-xs mt-1 font-semibold text-content-muted">
             {auditSubTab === "user"
               ? "A complete record of all adviser condition searches and mapping outcomes."
               : "A detailed auditable history of all master policy changes, drafts, and mappings."}
           </p>
         </div>
 
-        <div role="tablist" aria-label="Activity log view" className={`flex p-1 rounded-xl border shrink-0 select-none ${
-          theme === "dark"
-            ? "bg-stone-900/40 border-stone-800"
-            : "bg-stone-100 border-stone-250"
-        }`}>
-          <button
-            role="tab" aria-selected={auditSubTab === "user"} onClick={() => setAuditSubTab("user")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              auditSubTab === "user"
-                ? "bg-blue-600 text-white shadow-md font-extrabold"
-                : theme === "dark"
-                  ? "text-stone-400 hover:text-stone-200"
-                  : "text-stone-600 hover:text-stone-900 font-bold"
-            }`}
-          >
-            User Activity
-          </button>
-          <button
-            role="tab" aria-selected={auditSubTab === "modification"} onClick={() => setAuditSubTab("modification")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
-              auditSubTab === "modification"
-                ? "bg-blue-600 text-white shadow-md font-extrabold"
-                : theme === "dark"
-                  ? "text-stone-400 hover:text-stone-200"
-                  : "text-stone-600 hover:text-stone-900 font-bold font-sans"
-            }`}
-          >
-            Modification History
-          </button>
-        </div>
+          <div role="tablist" aria-label="Activity log view" className={`flex p-1 rounded-xl border shrink-0 select-none ${
+            theme === "dark"
+              ? "bg-stone-900/40 border-stone-800"
+              : "bg-stone-100 border-stone-250"
+          }`}>
+            <button
+              role="tab" aria-selected={auditSubTab === "user"} onClick={() => setAuditSubTab("user")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                auditSubTab === "user"
+                  ? "bg-blue-600 text-white shadow-md font-extrabold"
+                  : theme === "dark"
+                    ? "text-stone-400 hover:text-stone-200"
+                    : "text-stone-600 hover:text-stone-900 font-bold"
+              }`}
+            >
+              User Activity
+            </button>
+            <button
+              role="tab" aria-selected={auditSubTab === "modification"} onClick={() => setAuditSubTab("modification")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                auditSubTab === "modification"
+                  ? "bg-blue-600 text-white shadow-md font-extrabold"
+                  : theme === "dark"
+                    ? "text-stone-400 hover:text-stone-200"
+                    : "text-stone-600 hover:text-stone-900 font-bold font-sans"
+              }`}
+            >
+              Modification History
+            </button>
+          </div>
       </div>
 
       {auditSubTab === "user" && (
         <>
-        <div className="flex flex-wrap items-center gap-3 shrink-0 self-end md:self-auto justify-end w-full">
-          <button
-            onClick={() => downloadCSV(filteredAuditLogs, "ped-audit-history-crm.csv")}
-            disabled={filteredAuditLogs.length === 0}
-            className="px-4 py-2 text-xs font-extrabold bg-[#117FDA] hover:bg-[#0d6dbb] disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Journal
-          </button>
-        </div>
-
       {/* CHARTS & FILTERS GRID */}
       {auditLogs.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Filters Card */}
-          <div className={`lg:col-span-4 rounded-2xl border p-5 space-y-4 ${
-            theme === "dark" ? "bg-[#14161a]/95 border-stone-800/80" : "bg-white border-stone-200/80 shadow-xs"
+          {/* Filters Card — flat transparent-grey glass card (was a
+              teal/blue gradient wash) to match the neutral, low-chroma card
+              treatment used throughout an earlier version of this page. */}
+          <div className={`relative overflow-hidden lg:col-span-4 rounded-2xl border p-5 space-y-4 ${
+            theme === "dark"
+              ? "bg-white/[0.03] border-white/[0.08]"
+              : "bg-black/[0.02] border-black/[0.08]"
           }`}>
-            <div className="flex items-center gap-2 pb-2.5 border-b border-stone-200 dark:border-stone-850">
-              <Filter className="w-4 h-4 text-[#117FDA] dark:text-sky-400" />
-              <h3 className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-white' : 'text-[#111827]'}`}>
-                Filter Logs
-              </h3>
+            <div className="absolute right-0 top-0 w-40 h-40 bg-white/[0.02] dark:bg-white/[0.03] rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex items-center justify-between gap-2 pb-2.5 border-b border-stone-200 dark:border-stone-850">
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-[#117FDA] dark:text-sky-400" />
+                <h3 className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-white' : 'text-[#111827]'}`}>
+                  Filter Logs
+                </h3>
+              </div>
+              {/* App-wide clipped-corner button (see ClippedButton.tsx)
+                  instead of a one-off rounded pill, so this matches every
+                  other function-performing button in the app. */}
+              <ClippedButton
+                onClick={() => downloadCSV(filteredAuditLogs, "ped-audit-history-crm.csv")}
+                disabled={filteredAuditLogs.length === 0}
+                size="sm"
+                title="Export the filtered activity log as a CSV file"
+                className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+              >
+                {/* Was an unlabelled icon — no way to tell what it did
+                    without hovering. */}
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>Export CSV</span>
+              </ClippedButton>
             </div>
 
             {/* Search Input */}
@@ -264,41 +346,80 @@ export function AuditPage({
               <label className="text-[10px] font-black uppercase tracking-wider text-stone-450 block font-mono">
                 Insurance Plan
               </label>
-              <select
+              <CustomSelect
+                theme={theme === "dark" ? "dark" : "light"}
                 value={auditPlanFilter}
-                onChange={(e) => setAuditPlanFilter(e.target.value)}
-                className={`w-full text-xs px-3 py-2 rounded-xl border outline-none font-semibold cursor-pointer ${
+                onChange={setAuditPlanFilter}
+                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs pl-3 pr-8 py-2 rounded-xl border outline-none font-semibold cursor-pointer relative ${
                   theme === 'dark'
                     ? 'bg-[#060a12] border-stone-800 text-white'
                     : 'bg-white border-stone-200 text-stone-900'
                 }`}
-              >
-                <option value="All">All Plans</option>
-                <option value="Optima Secure">Optima Secure</option>
-                <option value="Care Supreme">Care Supreme</option>
-                <option value="Activ One Max">Activ One Max</option>
-                <option value="Activ Fit Preferred">Activ Fit Preferred</option>
-              </select>
+                options={[
+                  { value: "All", label: "All Plans" },
+                  { value: "Optima Secure", label: "Optima Secure" },
+                  { value: "Care Supreme", label: "Care Supreme" },
+                  { value: "Activ One Max", label: "Activ One Max" },
+                  { value: "Activ Fit Preferred", label: "Activ Fit Preferred" },
+                ]}
+              />
             </div>
 
-            {/* Match Type Filter */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-stone-450 block font-mono">
-                Match Type Category
-              </label>
-              <select
-                value={auditTypeFilter}
-                onChange={(e) => setAuditTypeFilter(e.target.value)}
-                className={`w-full text-xs px-3 py-2 rounded-xl border outline-none font-semibold cursor-pointer ${
-                  theme === 'dark'
-                    ? 'bg-[#060a12] border-stone-800 text-white'
-                    : 'bg-white border-stone-200 text-stone-900'
-                }`}
-              >
-                <option value="All">All</option>
-                <option value="System Rule">System Rule</option>
-                <option value="AI Fallback">AI Fallback</option>
-              </select>
+            {/* Mapping Status + Mapping Source Filters — laid out side by
+                side in one row, same grid-cols-2 pattern as the Start/End
+                Date row below. Status filters by the shared confidence
+                tier taxonomy (src/utils/matchTier.ts): Level 1/2/3, Needs
+                Clarification, or Not a Medical Ailment — same labels as the
+                MAPPING STATUS column and the Match Category Distribution
+                chart above. Source filters by *how* a mapping was produced
+                (System Rule vs AI Generated), matching the SOURCE column
+                terminology exactly. Two independent filters, not a single
+                merged one. */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-stone-450 block font-mono">
+                  Mapping Status
+                </label>
+                <CustomSelect
+                  theme={theme === "dark" ? "dark" : "light"}
+                  value={auditStatusFilter}
+                  onChange={setAuditStatusFilter}
+                  triggerClassName={`w-full flex items-center justify-between gap-2 text-xs pl-3 pr-8 py-2 rounded-xl border outline-none font-semibold cursor-pointer relative ${
+                    theme === 'dark'
+                      ? 'bg-[#060a12] border-stone-800 text-white'
+                      : 'bg-white border-stone-200 text-stone-900'
+                  }`}
+                  options={[
+                    { value: "All", label: "All" },
+                    { value: "Level 1: Direct Match", label: "Level 1: Direct Match" },
+                    { value: "Level 2: Category Match", label: "Level 2: Category Match" },
+                    { value: "Level 3: Fallback", label: "Level 3: Fallback" },
+                    { value: "Needs Clarification", label: "Needs Clarification" },
+                    { value: "Not a Medical Ailment", label: "Not a Medical Ailment" },
+                  ]}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-stone-450 block font-mono">
+                  Mapping Source
+                </label>
+                <CustomSelect
+                  theme={theme === "dark" ? "dark" : "light"}
+                  value={auditTypeFilter}
+                  onChange={setAuditTypeFilter}
+                  triggerClassName={`w-full flex items-center justify-between gap-2 text-xs pl-3 pr-8 py-2 rounded-xl border outline-none font-semibold cursor-pointer relative ${
+                    theme === 'dark'
+                      ? 'bg-[#060a12] border-stone-800 text-white'
+                      : 'bg-white border-stone-200 text-stone-900'
+                  }`}
+                  options={[
+                    { value: "All", label: "All" },
+                    { value: "System Rule", label: "System Rule" },
+                    { value: "AI Generated", label: "AI Generated" },
+                  ]}
+                />
+              </div>
             </div>
 
             {/* Date filter inputs */}
@@ -364,10 +485,14 @@ export function AuditPage({
             )}
           </div>
 
-          {/* Distribution Chart Card */}
-          <div className={`lg:col-span-8 rounded-2xl border p-5 flex flex-col justify-between ${
-            theme === "dark" ? "bg-[#14161a]/95 border-stone-800/80" : "bg-white border-stone-200/80 shadow-xs"
+          {/* Distribution Chart Card — same flat transparent-grey treatment
+              as the Filters Card above (was a teal/blue gradient wash). */}
+          <div className={`relative overflow-hidden lg:col-span-8 rounded-2xl border p-5 flex flex-col justify-between ${
+            theme === "dark"
+              ? "bg-white/[0.03] border-white/[0.08]"
+              : "bg-black/[0.02] border-black/[0.08]"
           }`}>
+            <div className="absolute left-1/3 bottom-0 w-64 h-64 bg-white/[0.02] dark:bg-white/[0.03] rounded-full blur-3xl pointer-events-none" />
             <div className="pb-3 border-b border-stone-200 dark:border-stone-850 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-emerald-500" />
@@ -443,7 +568,7 @@ export function AuditPage({
 
       {/* TABLE CONTAINER: FOLLOWED DIRECTLY BY THE TABLE */}
       <div className={`rounded-2xl border overflow-hidden ${
-        theme === "dark" ? "bg-[#14161a] border-stone-800" : "bg-white border-stone-200 shadow-sm"
+        theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
       }`}>
         <div className="overflow-x-auto max-h-[600px]">
           {auditLogs.length === 0 ? (
@@ -462,31 +587,49 @@ export function AuditPage({
             <table className="w-full text-left border-collapse text-xs">
               <thead className={`text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${
                 theme === "dark"
-                  ? "bg-[#14161a] text-stone-300 border-stone-800"
+                  ? "bg-[#132c46] text-stone-300 border-stone-800"
                   : "bg-stone-50 text-[#111827] border-stone-300"
               }`}>
                 <tr>
+                  {/* Explicit widths: without them the browser sizes columns
+                      by content, which let a long medical condition stretch
+                      that column and squeeze everything else. */}
                   <th className="py-3.5 px-5 w-14 text-center bg-inherit">No.</th>
-                  <th className="py-3.5 px-5 bg-inherit">Adviser</th>
-                  <th className="py-3.5 px-5 bg-inherit">Date & Time</th>
-                  <th className="py-3.5 px-5 bg-inherit">Plan Name</th>
-                  <th className="py-3.5 px-5 bg-inherit">Medical Condition</th>
-                  <th className="py-3.5 px-5 bg-inherit">Mapping Status</th>
+                  <th className="py-3.5 px-5 w-52 bg-inherit">Adviser</th>
+                  <th className="py-3.5 px-5 w-44 bg-inherit">Date &amp; Time</th>
+                  <th className="py-3.5 px-5 w-36 bg-inherit">Plan Name</th>
+                  <th className="py-3.5 px-5 w-40 bg-inherit">Medical Condition</th>
+                  <th className="py-3.5 px-5 w-32 bg-inherit">Mapping Status</th>
                   <th className="py-3.5 px-5 bg-inherit">Matched Question</th>
-                  <th className="py-3.5 px-5 bg-inherit">Source</th>
+                  <th className="py-3.5 px-5 w-32 bg-inherit">Source</th>
                 </tr>
               </thead>
               <tbody className={`divide-y font-semibold ${
                 theme === "dark" ? "divide-stone-800 text-stone-300" : "divide-stone-200 text-stone-900"
               }`}>
-                {filteredAuditLogs.map((log, index) => (
-                  <tr key={index} className="hover:bg-stone-550/5 transition-colors">
+                {filteredAuditLogs.map((log, index) => {
+                  const adviser = resolveAdviser(log.userEmail);
+                  const isExpanded = expandedRows.has(index);
+                  return (
+                  <Fragment key={index}>
+                  <tr
+                    onClick={() => toggleRow(index)}
+                    title={isExpanded ? "Hide mapping explanation" : "Show mapping explanation"}
+                    className="hover:bg-stone-500/5 transition-colors cursor-pointer"
+                  >
                     <td className="py-3 px-5 text-center font-mono text-[10px] opacity-60">{index + 1}</td>
-                    <td className={`py-3 px-5 font-bold text-[11px] flex items-center gap-1.5 ${
-                      theme === "dark" ? "text-[#1cbbf2]" : "text-[#111827]"
+                    {/* TACT ID first, then the advisor's real name from the
+                        user directory. Normal weight — this is reference
+                        data, not a heading. */}
+                    <td className={`py-3 px-5 text-[11px] font-medium ${
+                      theme === "dark" ? "text-stone-300" : "text-[#111827]"
                     }`}>
-                      <User className={`w-3.5 h-3.5 ${theme === "dark" ? "text-stone-500" : "text-stone-600"}`} />
-                      <span className="truncate max-w-32">{log.userEmail.split("@")[0]}</span>
+                      <span className="min-w-0">
+                        <span className={`font-mono text-[10px] mr-1.5 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                          {adviser.tactId}
+                        </span>
+                        <span className="break-words">{adviser.name}</span>
+                      </span>
                     </td>
                     <td className="py-3 px-5 text-[11px] whitespace-nowrap font-sans font-medium">
                       <span className={`flex items-center gap-1.5 ${theme === "dark" ? "text-stone-400" : "text-stone-550"}`}>
@@ -497,32 +640,86 @@ export function AuditPage({
                     <td className={`py-3 px-5 font-extrabold ${
                       theme === "dark" ? "text-stone-200" : "text-[#111827]"
                     }`}>{log.planName}</td>
-                    <td className="py-3 px-5 font-mono">
-                      <span className="text-[#117FDA] bg-[#117FDA]/5 dark:bg-[#117FDA]/10 px-2 py-0.5 rounded font-extrabold whitespace-nowrap">
-                        {log.pedInput}
-                      </span>
+                    {/* Plain text, wrapping. The blue badge treatment is
+                        reserved for status columns — using it here made an
+                        ordinary data value look like a state, and
+                        whitespace-nowrap forced the column wide. */}
+                    <td className={`py-3 px-5 text-[11px] font-medium break-words ${
+                      theme === "dark" ? "text-stone-200" : "text-[#111827]"
+                    }`}>
+                      {log.pedInput}
                     </td>
                     <td className="py-3 px-5">
-                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border whitespace-nowrap ${
-                        log.matchType === "P1" || log.matchType === "P0" || log.matchType === "EXACT" || log.matchType === "LIVE_MATCH" || log.matchType === "LIVE MATCH"
-                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-sans"
-                          : log.matchType === "ESCALATE"
-                            ? "bg-amber-500/15 text-amber-400 border-amber-500/30 font-sans"
-                            : "bg-blue-500/15 text-sky-400 border-blue-500/30 font-sans"
-                      }`}>
-                        {translateMatchTypeToLayman(log.matchType)}
-                      </span>
+                      {(() => {
+                        // Shared taxonomy (src/utils/matchTier.ts) — same
+                        // Level 1/2/3 + Needs Clarification / Not a Medical
+                        // Ailment scheme as the live Declaration Assistant
+                        // results screen and My Activity Journal.
+                        const tier = getMatchTierInfo(log.matchType);
+                        const badgeClass =
+                          tier.level === 1
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 font-sans"
+                            : tier.level === 2
+                              ? "bg-blue-500/15 text-sky-400 border-blue-500/30 font-sans"
+                              : tier.level === 3
+                                ? "bg-amber-500/15 text-amber-400 border-amber-500/30 font-sans"
+                                : "bg-stone-500/15 text-stone-400 border-stone-500/30 font-sans";
+                        return (
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border whitespace-nowrap ${badgeClass}`}>
+                            {tier.levelLabel}
+                          </span>
+                        );
+                      })()}
                     </td>
-                    <td className={`py-3 px-5 max-w-xs truncate font-bold ${
+                    {/* Wraps rather than truncating, and carries the
+                        expand affordance for the explanation below. */}
+                    <td className={`py-3 px-5 font-semibold ${
                       theme === "dark" ? "text-stone-200" : "text-[#111827]"
-                    }`} title={log.matchedQuestion}>
-                      {log.matchedQuestion}
+                    }`}>
+                      <div className="flex items-start gap-1.5">
+                        <ChevronRight
+                          className={`w-3.5 h-3.5 shrink-0 mt-0.5 transition-transform ${
+                            isExpanded ? "rotate-90" : ""
+                          } ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}
+                        />
+                        <span className="break-words">{log.matchedQuestion}</span>
+                      </div>
                     </td>
                     <td className="py-3 px-5 text-[10px] font-sans font-bold text-sky-455 pr-4 whitespace-nowrap">
                       {translateSourceToLayman(log.source)}
                     </td>
                   </tr>
-                ))}
+
+                  {/* Expanded detail — the engine's reasoning for this
+                      mapping. Previously only reachable as a `title`
+                      tooltip on a truncated cell, so it was effectively
+                      invisible. */}
+                  {isExpanded && (
+                    <tr className={theme === "dark" ? "bg-white/[0.02]" : "bg-stone-50"}>
+                      <td />
+                      <td colSpan={7} className="px-5 pb-4 pt-0 align-top">
+                        <div className={`rounded-lg border p-3 ${
+                          theme === "dark"
+                            ? "bg-white/[0.02] border-white/[0.06]"
+                            : "bg-white border-[#D2DFEC]"
+                        }`}>
+                          <span className={`block text-[9px] font-black uppercase tracking-wider mb-1 ${
+                            theme === "dark" ? "text-stone-500" : "text-stone-500"
+                          }`}>
+                            Why this mapping
+                          </span>
+                          <p className={`text-[11px] leading-relaxed font-sans font-medium ${
+                            theme === "dark" ? "text-stone-300" : "text-stone-700"
+                          }`}>
+                            {log.explanation || "No explanation was recorded for this lookup."}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -537,12 +734,15 @@ export function AuditPage({
 
           {/* Control Bar: Filters, Search, CSV Exporter */}
           <div className={`rounded-xl border p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
-            theme === 'dark' ? 'bg-[#14161a] border-stone-800' : 'bg-white border-stone-200 shadow-sm'
+            theme === 'dark' ? 'bg-white/[0.03] border-white/[0.08]' : 'bg-black/[0.02] border-black/[0.08]'
           }`}>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
               {/* Search Log Input */}
               <div className="relative">
-                <Search className="w-4 h-4 text-stone-500 absolute left-3.5 top-3 select-none" />
+                {/* Self-centering (top-1/2 + -translate-y-1/2), matching every
+                    other search input in the app, instead of a hardcoded
+                    top-3 offset that assumed one exact input height. */}
+                <Search className="w-4 h-4 text-stone-500 absolute left-3.5 top-1/2 -translate-y-1/2 select-none" />
                 <input
                   id="search-history-input"
                   type="text"
@@ -558,24 +758,30 @@ export function AuditPage({
               </div>
 
               {/* Filter Change Type */}
-              <select
-                id="filter-change-type-select"
-                value={historyActionFilter}
-                onChange={(e) => setHistoryActionFilter(e.target.value)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold focus:ring-0 focus:border-[#117FDA] border cursor-pointer ${
-                  theme === 'dark'
-                    ? 'bg-stone-950 border-stone-850 text-stone-300'
-                    : 'bg-white border-stone-200 text-stone-800'
-                }`}
-              >
-                <option value="All">All Actions</option>
-                <option value="Draft Created">Draft Created</option>
-                <option value="Insurer Edited">Insurer Edited</option>
-                <option value="Draft Approved">Draft Approved</option>
-                <option value="Draft Rejected">Draft Rejected</option>
-                <option value="New Draft Mock Verified">Verified Runs</option>
-                <option value="Change Restored">Restored Actions</option>
-              </select>
+              <div className="w-auto min-w-[180px]">
+                <CustomSelect
+                  id="filter-change-type-select"
+                  theme={theme === "dark" ? "dark" : "light"}
+                  value={historyActionFilter}
+                  onChange={setHistoryActionFilter}
+                  triggerClassName={`w-full flex items-center justify-between gap-2 pl-3.5 pr-8 py-2 rounded-xl text-xs font-bold border cursor-pointer relative ${
+                    theme === 'dark'
+                      ? 'bg-stone-950 border-stone-850 text-stone-300'
+                      : 'bg-white border-stone-200 text-stone-800'
+                  }`}
+                  options={[
+                    // Values are matched with startsWith against
+                    // log.actionType, so each is a prefix of the action
+                    // names the server writes.
+                    { value: "All", label: "All Actions" },
+                    { value: "Announcement", label: "Announcement Activity" },
+                    { value: "Flagged Response", label: "Flagged Response Activity" },
+                    { value: "User", label: "User Directory Activity" },
+                    { value: "PED Repository", label: "PED Repository Activity" },
+                    { value: "Page Visibility", label: "Page Visibility Activity" },
+                  ]}
+                />
+              </div>
             </div>
 
             {/* Dynamic CSV Downloader button */}
@@ -624,19 +830,19 @@ export function AuditPage({
               }}
               className="w-full md:w-auto px-4 py-2 border border-blue-500/40 text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md select-none"
             >
-              <Download className="w-4 h-4" /> Export CSV Spreadsheet
+              <Download className="w-4 h-4" /> Export
             </button>
           </div>
 
           {/* Audit Logs Table Ledger layout */}
           <div className={`rounded-2xl border overflow-hidden ${
-            theme === "dark" ? "bg-[#14161a] border-stone-800" : "bg-white border-stone-200 shadow-sm"
+            theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
           }`}>
             <div className="overflow-x-auto max-h-[600px]">
               <table id="change-history-table" className="w-full text-left border-collapse text-xs">
                 <thead className={`text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${
                   theme === "dark"
-                    ? "bg-[#14161a] text-stone-300 border-stone-800"
+                    ? "bg-[#132c46] text-stone-300 border-stone-800"
                     : "bg-stone-50 text-[#111827] border-stone-200"
                 }`}>
                   <tr>
@@ -659,10 +865,11 @@ export function AuditPage({
                     </tr>
                   ) : (
                     filteredChangeLogs.map((log) => {
-                      const isPromotedVal = log.actionType === "Draft Approved";
-                      const isRejectedVal = log.actionType === "Draft Rejected";
-                      const isCreatedVal = log.actionType === "Draft Created" || log.actionType === "New Draft Mock Verified";
-                      const isRestoredVal = log.actionType === "Change Restored";
+                      const isAddedVal = log.actionType.includes("Added");
+                      const isResolvedVal = log.actionType.includes("Resolved");
+                      const isEditedVal = log.actionType.includes("Edited");
+                      const isIgnoredVal = log.actionType.includes("Ignored");
+                      const isDeletedVal = log.actionType.includes("Deleted");
 
                       return (
                         <tr
@@ -693,15 +900,17 @@ export function AuditPage({
                           </td>
                           <td className="py-3.5 px-5">
                             <span className={`px-2 py-0.5 rounded text-[8.5px] uppercase font-black ${
-                              isPromotedVal
+                              isAddedVal
                                 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                : isRejectedVal
-                                ? "bg-rose-500/10 text-rose-450 border border-rose-500/20"
-                                : isCreatedVal
-                                ? "bg-violet-500/10 text-violet-400 border border-violet-500/20"
-                                : isRestoredVal
+                                : isResolvedVal
                                 ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/25"
-                                : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                : isEditedVal
+                                ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                : isIgnoredVal
+                                ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                                : isDeletedVal
+                                ? "bg-rose-500/10 text-rose-450 border border-rose-500/20"
+                                : "bg-stone-500/10 text-stone-400 border border-stone-500/20"
                             }`}>
                               {log.actionType}
                             </span>

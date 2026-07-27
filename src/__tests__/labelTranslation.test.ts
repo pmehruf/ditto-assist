@@ -8,6 +8,7 @@ import {
   translateMatchTypeToLayman,
   translateFallbackToLayman,
   translateSourceToLayman,
+  getSourceInfo,
 } from "../utils/labelTranslation";
 
 describe("translateMatchTypeToLayman", () => {
@@ -66,18 +67,45 @@ describe("translateSourceToLayman", () => {
   });
 
   it.each([
-    ["Deterministic Underwriting Rule", "Official Plan Rule"],
-    ["Deterministic Engine", "Official Plan Rule"],
-    ["Standard Policy Wording", "Official Plan Rule"],
-    ["Insurer Registry Match", "Official Plan Rule"],
-  ])("classifies %s as an official plan rule", (input) => {
-    expect(translateSourceToLayman(input)).toBe("Official Plan Rule");
+    "Deterministic Underwriting Rule",
+    "Deterministic Engine",
+  ])("classifies %s as a System Rule", (input) => {
+    expect(translateSourceToLayman(input)).toBe("System Rule");
   });
 
+  it("classifies a Gemini-based source as AI Generated", () => {
+    expect(translateSourceToLayman("Live Gemini API")).toBe("AI Generated");
+  });
+
+  // Regression coverage for a real bug: both of these are local/offline
+  // safety-net fallbacks (see App.tsx's executeLookupAll catch block and
+  // server.ts's /api/match catch block) that fire when the backend or the
+  // Gemini call itself is unreachable — no AI reasoning happens on this
+  // path. The previous keyword check (substring "deterministic"/"standard"/
+  // "registry") missed these, so the SOURCE column and the audit page's
+  // source filter both mislabeled them as AI-generated.
   it.each([
-    "Live Gemini API",
-    "Disaster Recovery Local Rules Fallback",
-  ])("classifies %s as a clinical assessment match (AI fallback)", (input) => {
-    expect(translateSourceToLayman(input)).toBe("Clinical Assessment Match");
+    "Match API Error Fallback",
+    "Disaster Recovery Local Rules",
+  ])("classifies the offline fallback source %s as a System Rule, not AI", (input) => {
+    expect(translateSourceToLayman(input)).toBe("System Rule");
+  });
+});
+
+describe("getSourceInfo", () => {
+  it("flags Gemini-based sources as AI-generated", () => {
+    expect(getSourceInfo("Live Gemini API")).toEqual({ isSystemRule: false, label: "AI Generated" });
+    expect(getSourceInfo("Clinical Guidance System AI")).toEqual({ isSystemRule: false, label: "AI Generated" });
+  });
+
+  it("flags deterministic and local-fallback sources as system rules", () => {
+    expect(getSourceInfo("Deterministic Engine")).toEqual({ isSystemRule: true, label: "System Rule" });
+    expect(getSourceInfo("Match API Error Fallback")).toEqual({ isSystemRule: true, label: "System Rule" });
+    expect(getSourceInfo("Disaster Recovery Local Rules")).toEqual({ isSystemRule: true, label: "System Rule" });
+  });
+
+  it("treats a missing source as a system rule by default", () => {
+    expect(getSourceInfo(null)).toEqual({ isSystemRule: true, label: "System Rule" });
+    expect(getSourceInfo(undefined)).toEqual({ isSystemRule: true, label: "System Rule" });
   });
 });

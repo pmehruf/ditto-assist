@@ -5,25 +5,34 @@
 
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle } from "lucide-react";
-import { UserProfile } from "../types/user";
+import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search } from "lucide-react";
+import { UserProfile, LoggedUser } from "../types/user";
+import { ChangeLogEntry } from "../types/changeLog";
+import { ClippedButton } from "./ClippedButton";
+import { CustomSelect } from "./CustomSelect";
+import { formatDisplayTimestamp } from "../utils/timestamps";
 
 interface ProfileAccessManagementProps {
   theme: "light" | "dark";
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
   effectiveTier: "General" | "Admin" | "Owner";
+  currentUser: LoggedUser | null;
+  setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
 
 const TIERS: UserProfile["tier"][] = ["General", "Admin", "Owner"];
-const STATUSES: UserProfile["status"][] = ["Active", "Pending First Login"];
+// Admin can add users, but can't mint a new Owner from this form — matches
+// the server-side check in POST /api/users.
+const ADMIN_ADDABLE_TIERS: UserProfile["tier"][] = ["General", "Admin"];
+const STATUSES: UserProfile["status"][] = ["Active", "Disabled"];
 
 const emptyDraft = (): UserProfile => ({
   email: "",
   name: "",
   tactId: "",
   tier: "General",
-  status: "Pending First Login"
+  status: "Active"
 });
 
 /**
@@ -38,9 +47,29 @@ const emptyDraft = (): UserProfile => ({
  * are still kept in sync here as a fast local cache / offline fallback, but
  * the server is authoritative.
  */
-export function ProfileAccessManagement({ theme, usersList, setUsersList, effectiveTier }: ProfileAccessManagementProps) {
+export function ProfileAccessManagement({ theme, usersList, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
   const isOwner = effectiveTier === "Owner";
+  // Admin can see and use "Add User" (same pattern as "Add Plan" on the
+  // Plan Management page); Edit/Delete stay visible for Admin but render
+  // disabled — Owner clearance is required to actually edit or remove an
+  // existing directory entry.
+  const canManage = effectiveTier === "Admin" || isOwner;
+
+  const logAction = (actionType: string, description: string) => {
+    setChangeLogs(prev => [
+      {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        userName: currentUser?.name || currentUser?.email || "Mehruf P (Owner)",
+        role: effectiveTier,
+        actionType,
+        planName: "User Directory",
+        description,
+      },
+      ...prev,
+    ]);
+  };
 
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -52,6 +81,30 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
   const [draft, setDraft] = useState<UserProfile | null>(null);
   const [addingNew, setAddingNew] = useState(false);
   const [newDraft, setNewDraft] = useState<UserProfile>(emptyDraft());
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredUsersList = usersList
+    .filter(user => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        user.name.toLowerCase().includes(q) ||
+        user.email.toLowerCase().includes(q) ||
+        user.tactId.toLowerCase().includes(q) ||
+        user.tier.toLowerCase().includes(q) ||
+        user.status.toLowerCase().includes(q)
+      );
+    })
+    // Latest to oldest by join time (users.created_at, set by the DB on
+    // insert). Entries with no createdAt (shouldn't normally happen — the
+    // column defaults to now() on insert — but the field is optional on the
+    // type since older/local-only records may predate this being wired up)
+    // sort to the end rather than crashing the comparator.
+    .sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : -Infinity;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : -Infinity;
+      return bTime - aTime;
+    });
 
   // Pull the server's copy of the directory on mount so this view (and the
   // shared usersList state) reflects whatever the Owner last saved, even if
@@ -125,6 +178,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
     const nextUsers = usersList.map(u => (u.email === editingEmail ? draft : u));
     const ok = await persistDirectory(nextUsers);
     if (ok) {
+      logAction("User Edited", `Updated directory entry for ${draft.name} (${draft.email}) — Tier: ${draft.tier}, Status: ${draft.status}.`);
       setEditingEmail(null);
       setDraft(null);
     }
@@ -132,8 +186,12 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
 
   const deleteUser = async (email: string) => {
     if (!window.confirm(`Remove ${email} from the user directory? This cannot be undone.`)) return;
+    const removedUser = usersList.find(u => u.email === email);
     const nextUsers = usersList.filter(u => u.email !== email);
-    await persistDirectory(nextUsers);
+    const ok = await persistDirectory(nextUsers);
+    if (ok) {
+      logAction("User Deleted", `Removed ${removedUser?.name || email} (${email}) from the user directory.`);
+    }
   };
 
   const saveNewUser = async () => {
@@ -145,11 +203,28 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
       setSaveError("A user with that email already exists in the directory.");
       return;
     }
-    const nextUsers = [...usersList, { ...newDraft, email: newDraft.email.trim().toLowerCase() }];
-    const ok = await persistDirectory(nextUsers);
-    if (ok) {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // Single-row create — works for both Admin and Owner (unlike the
+      // Owner-only, full-array PUT used for editing/removing an existing
+      // user). See server.ts's POST /api/users for why this is safe to
+      // expose to Admin.
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...newDraft, email: newDraft.email.trim().toLowerCase() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to add this user (HTTP ${res.status}).`);
+      setUsersList(prev => [...prev, body.user]);
+      logAction("User Added", `Added ${newDraft.name} (${newDraft.email}) to the user directory — Tier: ${newDraft.tier}.`);
       setAddingNew(false);
       setNewDraft(emptyDraft());
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to add this user. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -160,61 +235,121 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
   const inputClass = `w-full text-[11px] px-2 py-1 rounded-lg border outline-none font-semibold ${
     dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
   }`;
+  // Same look as inputClass, adapted for CustomSelect's trigger button
+  // (flex layout + room on the right for the chevron) so the Tier/Status
+  // dropdowns in this table match inputClass-styled text fields exactly.
+  const selectTriggerClass = `w-full flex items-center justify-between gap-1 text-[11px] pl-2 pr-6 py-1 rounded-lg border outline-none font-semibold relative ${
+    dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+  }`;
 
   const tierBadgeClass = (tier: UserProfile["tier"]) =>
     tier === "Owner"
       ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
       : tier === "Admin"
         ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
-        : "bg-stone-500/15 text-stone-400 border-stone-500/30";
+        // "General" text-stone-400 measured ~1.82:1 in Light theme — two
+        // shades of the same gray, essentially unreadable (Issue 14). Dark
+        // theme already passes, so only the light-theme text darkens here.
+        : dark
+          ? "bg-stone-500/15 text-stone-400 border-stone-500/30"
+          : "bg-stone-500/15 text-stone-700 border-stone-500/30";
 
   const statusBadgeClass = (status: UserProfile["status"]) =>
     status === "Active"
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-      : "bg-orange-500/15 text-orange-400 border-orange-500/30";
+      : "bg-stone-500/15 text-stone-400 border-stone-500/30";
 
   return (
     <div className={`rounded-2xl border p-5 transition-all ${
-      dark ? "bg-[#0b1328]/90 border-white/[0.04]" : "bg-white border-stone-200 shadow-xs"
+      dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
     }`}>
       <div className="space-y-4">
-        {/* Status row: sync state + add-user action */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {loading ? (
-              <span className={`text-[11px] font-bold flex items-center gap-1.5 ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                Loading directory from server...
-              </span>
-            ) : syncError ? (
-              <span className="text-[11px] font-bold flex items-center gap-1.5 text-amber-500">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                {syncError}
-              </span>
-            ) : (
-              <span className="text-[11px] font-bold flex items-center gap-1.5 text-emerald-500">
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                Synced with server directory
+        {/* Title row: sync state + count + search field on the left,
+            add-user action pinned to the far right via justify-between.
+            Search is now a fixed, normal-sized field rather than stretching
+            to fill the row. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
+              {loading ? (
+                <span className={`text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Loading directory from server...
+                </span>
+              ) : syncError ? (
+                <span className="text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap text-amber-500">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  {syncError}
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap text-emerald-500">
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  Synced with server directory
+                </span>
+              )}
+              {saving && (
+                <span className={`text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...
+                </span>
+              )}
+              {saveSuccess && (
+                <span className="text-[11px] font-bold whitespace-nowrap text-emerald-500">Saved.</span>
+              )}
+            </div>
+
+            {!loading && (
+              <span className={`text-[11px] font-bold whitespace-nowrap px-2 py-1 rounded-lg border shrink-0 ${
+                dark ? "bg-white/5 border-stone-800 text-stone-300" : "bg-stone-100 border-stone-200 text-stone-700"
+              }`}>
+                {usersList.length.toLocaleString()} {usersList.length === 1 ? "user" : "users"}
               </span>
             )}
-            {saving && (
-              <span className={`text-[11px] font-bold flex items-center gap-1.5 ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...
-              </span>
-            )}
-            {saveSuccess && (
-              <span className="text-[11px] font-bold text-emerald-500">Saved.</span>
-            )}
+
+            <div className="relative w-56 shrink-0">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search the directory..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={`w-full py-1.5 pl-8 pr-4 text-xs font-semibold rounded-lg border outline-none transition-all ${
+                  dark
+                    ? "bg-[#060A10] border-stone-850 text-white focus:border-sky-500"
+                    : "bg-white border-stone-250 text-stone-900 focus:border-sky-400 shadow-inner"
+                }`}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 hover:text-stone-100"
+                  title="Clear search"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
           </div>
 
-          {isOwner && !addingNew && (
-            <button
+          {canManage && !addingNew && (
+            <ClippedButton
+              type="button"
               onClick={() => { setAddingNew(true); setSaveError(null); }}
-              className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 bg-sky-600 hover:bg-sky-700 text-white"
+              cornerBg={dark ? "#0e2236" : "#ffffff"}
+              // Solid primary blue (var(--accent-solid), the app's
+              // theme-aware "solid button" color — deep blue in light mode,
+              // cyan in dark mode, same variable PrimaryCtaButton uses)
+              // rather than the previous pastel/muted chip look, per design
+              // feedback.
+              style={{
+                backgroundColor: "var(--accent-solid)",
+                borderColor: "var(--accent-solid)",
+                color: "var(--on-accent)",
+              }}
+              className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
             >
               <UserPlus className="w-3.5 h-3.5 shrink-0" />
               Add User
-            </button>
+            </ClippedButton>
           )}
         </div>
 
@@ -228,13 +363,14 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[820px]">
             <thead>
-              <tr className={`border-b ${dark ? "bg-[#060a12] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
+              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
                 <th className={thClass}>Name</th>
                 <th className={thClass}>Email</th>
                 <th className={thClass}>TACT ID</th>
                 <th className={thClass}>Tier</th>
                 <th className={thClass}>Status</th>
-                {isOwner && <th className={`${thClass} text-right`}>Actions</th>}
+                <th className={thClass}>Joined</th>
+                {canManage && <th className={`${thClass} text-right`}>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -250,29 +386,48 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                     <input className={inputClass} placeholder="e.g. TACT128" value={newDraft.tactId} onChange={e => setNewDraft(d => ({ ...d, tactId: e.target.value }))} />
                   </td>
                   <td className={tdClass}>
-                    <select className={inputClass} value={newDraft.tier} onChange={e => setNewDraft(d => ({ ...d, tier: e.target.value as UserProfile["tier"] }))}>
-                      {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <CustomSelect
+                      theme={theme}
+                      value={newDraft.tier}
+                      onChange={(val) => setNewDraft(d => ({ ...d, tier: val as UserProfile["tier"] }))}
+                      triggerClassName={selectTriggerClass}
+                      options={(isOwner ? TIERS : ADMIN_ADDABLE_TIERS).map(t => ({ value: t, label: t }))}
+                    />
                   </td>
                   <td className={tdClass}>
-                    <select className={inputClass} value={newDraft.status} onChange={e => setNewDraft(d => ({ ...d, status: e.target.value as UserProfile["status"] }))}>
-                      {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <CustomSelect
+                      theme={theme}
+                      value={newDraft.status}
+                      onChange={(val) => setNewDraft(d => ({ ...d, status: val as UserProfile["status"] }))}
+                      triggerClassName={selectTriggerClass}
+                      options={STATUSES.map(s => ({ value: s, label: s }))}
+                    />
+                  </td>
+                  <td className={`${tdClass} text-[10.5px] italic ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                    Not yet saved
                   </td>
                   <td className={`${tdClass} text-right`}>
                     <div className="flex items-center justify-end gap-1.5">
-                      <button onClick={saveNewUser} disabled={saving} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer transition-all active:scale-95 disabled:opacity-50" title="Save new user">
+                      <ClippedButton onClick={saveNewUser} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save new user">
                         <Save className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => { setAddingNew(false); setNewDraft(emptyDraft()); setSaveError(null); }} className="p-1.5 bg-stone-700 hover:bg-stone-600 text-stone-50 rounded-lg cursor-pointer transition-all active:scale-95" title="Cancel">
+                      </ClippedButton>
+                      <ClippedButton onClick={() => { setAddingNew(false); setNewDraft(emptyDraft()); setSaveError(null); }} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-stone-700 hover:bg-stone-600 text-stone-50" title="Cancel">
                         <X className="w-3.5 h-3.5" />
-                      </button>
+                      </ClippedButton>
                     </div>
                   </td>
                 </tr>
               )}
 
-              {usersList.map((user, idx) => {
+              {searchQuery && filteredUsersList.length === 0 && (
+                <tr>
+                  <td colSpan={canManage ? 7 : 6} className="py-10 text-center text-xs font-semibold text-stone-400">
+                    No directory entries match "{searchQuery}".
+                  </td>
+                </tr>
+              )}
+
+              {filteredUsersList.map((user, idx) => {
                 const isEditing = isOwner && editingEmail === user.email;
                 const row = isEditing && draft ? draft : user;
                 return (
@@ -289,21 +444,25 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                         <span className={`font-black ${dark ? "text-white" : "text-stone-900"}`}>{user.name}</span>
                       )}
                     </td>
-                    <td className={`${tdClass} font-mono text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                    <td className={`${tdClass} font-mono text-[10.5px] text-content-muted`}>
                       {user.email}
                     </td>
                     <td className={tdClass}>
                       {isEditing ? (
                         <input className={inputClass} value={row.tactId} onChange={e => setDraft(d => d && { ...d, tactId: e.target.value })} />
                       ) : (
-                        <span className="font-mono text-[10.5px]">{user.tactId}</span>
+                        <span className={`font-mono text-[10.5px] ${dark ? "text-stone-300" : "text-stone-700"}`}>{user.tactId}</span>
                       )}
                     </td>
                     <td className={tdClass}>
                       {isEditing ? (
-                        <select className={inputClass} value={row.tier} onChange={e => setDraft(d => d && { ...d, tier: e.target.value as UserProfile["tier"] })}>
-                          {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
+                        <CustomSelect
+                          theme={theme}
+                          value={row.tier}
+                          onChange={(val) => setDraft(d => d && { ...d, tier: val as UserProfile["tier"] })}
+                          triggerClassName={selectTriggerClass}
+                          options={TIERS.map(t => ({ value: t, label: t }))}
+                        />
                       ) : (
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${tierBadgeClass(user.tier)}`}>
                           {user.tier}
@@ -312,34 +471,53 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                     </td>
                     <td className={tdClass}>
                       {isEditing ? (
-                        <select className={inputClass} value={row.status} onChange={e => setDraft(d => d && { ...d, status: e.target.value as UserProfile["status"] })}>
-                          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                        <CustomSelect
+                          theme={theme}
+                          value={row.status}
+                          onChange={(val) => setDraft(d => d && { ...d, status: val as UserProfile["status"] })}
+                          triggerClassName={selectTriggerClass}
+                          options={STATUSES.map(s => ({ value: s, label: s }))}
+                        />
                       ) : (
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${statusBadgeClass(user.status)}`}>
                           {user.status}
                         </span>
                       )}
                     </td>
-                    {isOwner && (
+                    <td className={`${tdClass} text-[10.5px] whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                      {user.createdAt ? formatDisplayTimestamp(user.createdAt) : "—"}
+                    </td>
+                    {canManage && (
                       <td className={`${tdClass} text-right`}>
                         {isEditing ? (
                           <div className="flex items-center justify-end gap-1.5">
-                            <button onClick={saveEdit} disabled={saving} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg cursor-pointer transition-all active:scale-95 disabled:opacity-50" title="Save">
+                            <ClippedButton onClick={saveEdit} disabled={saving} cornerBg={dark ? "#0e2236" : "#ffffff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save">
                               <Save className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={cancelEdit} className="p-1.5 bg-stone-700 hover:bg-stone-600 text-stone-50 rounded-lg cursor-pointer transition-all active:scale-95" title="Cancel">
+                            </ClippedButton>
+                            <ClippedButton onClick={cancelEdit} cornerBg={dark ? "#0e2236" : "#ffffff"} className="p-1.5 bg-stone-700 hover:bg-stone-600 text-stone-50" title="Cancel">
                               <X className="w-3.5 h-3.5" />
-                            </button>
+                            </ClippedButton>
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1.5">
-                            <button onClick={() => startEdit(user)} className={`p-1.5 rounded-lg cursor-pointer transition-all active:scale-95 border ${dark ? "border-stone-800 hover:border-sky-500 hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "border-stone-200 hover:border-sky-400 hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Edit user">
+                            <ClippedButton
+                              onClick={() => startEdit(user)}
+                              disabled={!isOwner}
+                              cornerBg={dark ? "#0e2236" : "#ffffff"}
+                              className={`p-1.5 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`}
+                              title={isOwner ? "Edit user" : "Owner clearance required to edit users"}
+                            >
                               <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => deleteUser(user.email)} className={`p-1.5 rounded-lg cursor-pointer transition-all active:scale-95 border ${dark ? "border-stone-800 hover:border-red-500 hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "border-stone-200 hover:border-red-400 hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Remove user">
+                            </ClippedButton>
+                            <ClippedButton
+                              onClick={() => deleteUser(user.email)}
+                              disabled={!isOwner}
+                              cornerBg={dark ? "#0e2236" : "#ffffff"}
+                              className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`}
+                              title={isOwner ? "Remove user" : "Owner clearance required to remove users"}
+                            >
                               <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            </ClippedButton>
                           </div>
                         )}
                       </td>
@@ -351,10 +529,12 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
           </table>
         </div>
 
-        <p className={`text-[10.5px] font-semibold ${dark ? "text-stone-500" : "text-stone-500"}`}>
+        <p className="text-[10.5px] font-semibold text-content-muted">
           {isOwner
-            ? "Changes are saved to the server and apply to every advisor's session immediately."
-            : "Admin clearance grants read-only visibility into the directory. Owner clearance is required to add, edit, or remove users."}
+            ? "Changes are saved to the server."
+            : canManage
+              ? "Admin clearance lets you add new users. Editing or removing an existing user requires Owner clearance."
+              : "Admin clearance grants read-only visibility into the directory. Owner clearance is required to add, edit, or remove users."}
         </p>
       </div>
     </div>

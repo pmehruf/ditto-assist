@@ -4,8 +4,8 @@
  */
 
 import type { Dispatch, SetStateAction } from "react";
-import { User } from "lucide-react";
-import { UserProfile } from "../types/user";
+import { UserProfile, LoggedUser } from "../types/user";
+import { ChangeLogEntry } from "../types/changeLog";
 import { ProfileAccessManagement } from "../components/ProfileAccessManagement";
 
 interface ProfileAccessPageProps {
@@ -13,6 +13,8 @@ interface ProfileAccessPageProps {
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
   effectiveTier: "General" | "Admin" | "Owner";
+  currentUser: LoggedUser | null;
+  setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
 
 /**
@@ -26,30 +28,30 @@ interface ProfileAccessPageProps {
  * go through the server (GET/PUT /api/users in server.ts) so an Owner's edit
  * is reflected for every user, not just the editor's own browser/localStorage.
  */
-export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTier }: ProfileAccessPageProps) {
+export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessPageProps) {
   return (
-    <>
-      {/* PAGE-LEVEL HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
+    <div className="space-y-5 text-left">
+      {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
+          Studio, the reference implementation): flat, no card surface,
+          accent line + title sitting directly on the page. */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
         <div>
-          <h1 className={`text-xl md:text-2xl font-black tracking-tight flex items-center gap-2 ${
+          <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
             theme === "dark" ? "text-white" : "text-[#111827]"
           }`}>
-            <User className="w-5 h-5 shrink-0" style={{ color: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
-            <span>User Directory</span>
+            <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
+            <span>User Directory & Management</span>
           </h1>
-          <p className={`text-xs mt-1.5 font-semibold ${
-            theme === "dark" ? "text-stone-400" : "text-stone-600"
-          }`}>
+          <p className="text-xs mt-1 font-semibold text-content-muted">
             Organization-wide record of advisor accounts, TACT IDs, and clearance tiers.
             {effectiveTier === "Owner" ? " Edits here apply to every user immediately." : " Read-only — Owner clearance is required to make changes."}
           </p>
         </div>
       </div>
 
-      <div className="space-y-6 pb-6">
-        <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} />
+      <div className="space-y-5 pb-6">
+        <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
       </div>
-    </>
+    </div>
   );
 }

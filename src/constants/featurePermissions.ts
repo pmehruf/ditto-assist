@@ -23,11 +23,41 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Editor"
   },
   {
+    // ADVISORY ZONE — read-only reference, visible to every tier including
+    // General advisors (unlike Admin Zone features below, which are
+    // generalAccess: "None"). Viewer-only on purpose: there is nothing to
+    // edit on this page for any tier.
+    id: "advisory_zone",
+    name: "Plan Reference",
+    description: "Read-only reference of every plan's payment journey questions and specific illness list",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer"
+  },
+  {
     id: "resources",
     name: "Workspace Resources",
     description: "Helpful external documents, links, and training resources",
     defaultTier: "General",
     generalAccess: "Editor",
+    adminAccess: "Editor"
+  },
+  {
+    // Read-only calculator — Viewer-only like advisory_zone, visible to
+    // every tier including General advisors (no persisted data to edit).
+    id: "coverage_projection",
+    name: "Coverage Projection Studio",
+    description: "Illustrate Base Cover, Bonus, and Restoration Benefit projections across policy years for supported plans",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer"
+  },
+  {
+    id: "smoke_test",
+    name: "Smoke Test",
+    description: "Run the deterministic mapping engine against a curated list of common PEDs, per plan, to catch classification regressions",
+    defaultTier: "General",
+    generalAccess: "Viewer",
     adminAccess: "Editor"
   },
   {
@@ -48,8 +78,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   },
   {
     id: "plan_scope",
-    name: "Specific Illness Ledger",
-    description: "Advanced mapping schema configurations, question exclusions, and custom clinical exception flags",
+    name: "Plan Management",
+    description: "Add or edit insurance plans' declaration questionnaires and category-to-question mappings",
     defaultTier: "Admin",
     generalAccess: "None",
     adminAccess: "Editor"
@@ -69,6 +99,25 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     defaultTier: "Admin",
     generalAccess: "None",
     adminAccess: "Editor"
+  },
+  {
+    id: "ped_suggestions",
+    name: "PED Repository",
+    description: "Manage the application's PED repository and review AI-assisted mapping recommendations before they become part of the knowledge base",
+    defaultTier: "Admin",
+    generalAccess: "None",
+    adminAccess: "Editor"
+  },
+  {
+    // OWNER CONTROLS — page visibility kill switch. Owner-only in every
+    // sense: hasAccess() returns true for Owner before any other check, and
+    // both General and Admin are "None" here, so no other tier can reach it.
+    id: "owner_controls",
+    name: "Owner Controls",
+    description: "Show or hide individual pages from everyone except the Owner",
+    defaultTier: "Owner",
+    generalAccess: "None",
+    adminAccess: "None"
   },
   {
     id: "clear_activity",

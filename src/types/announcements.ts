@@ -35,7 +35,7 @@ export interface ReportedIssue {
 export interface QAAnnouncement {
   id: string;
   announcement: string;
-  effectiveDate?: string; // YYYY-MM-DD, optional — announcements without a date are treated as always-current
+  effectiveDate?: string; // YYYY-MM-DD, optional — when the policy/rule described actually takes effect (can be future-dated); announcements without a date are treated as always-current
   category: string;
   addedBy: string;
   rating?: number;
@@ -44,4 +44,23 @@ export interface QAAnnouncement {
   title?: string;
   /** Optional team/department the announcement is coming from. Only shown for "General Announcement" type. */
   from?: string;
+  /** YYYY-MM-DD, optional — when this notice was posted/published. Distinct
+   * from effectiveDate; defaults to today in the form but is editable. */
+  announcementDate?: string;
+}
+
+/** External link (SOP, QA Dashboard, etc.) surfaced in the Workspace Controls
+ * drawer's Resources section. Readable by everyone; add/edit/delete is
+ * gated to Admin/Owner server-side. */
+export interface ExternalResource {
+  id: string;
+  title: string;
+  url: string;
+  addedBy: string;
+  createdAt?: string;
+  /** Explicit icon choice (a lucide-react icon name, e.g. "DollarSign") made
+   * by the admin who added/edited this resource. Undefined means "no
+   * explicit choice" — the client falls back to its keyword-based guess
+   * (getResourceIcon in App.tsx). */
+  icon?: string;
 }

@@ -9,6 +9,9 @@ import { PLANS } from "../types";
 import { AuditLogEntry } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { parseGlobalLogTimestamp } from "../utils/timestamps";
+import { getMatchTierInfo } from "../utils/matchTier";
+import { translateSourceToLayman } from "../utils/labelTranslation";
+import { CustomSelect } from "../components/CustomSelect";
 
 interface MyActivityPageProps {
   auditLogs: AuditLogEntry[];
@@ -82,68 +85,52 @@ export function MyActivityPage({
   });
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-5 animate-fade-in">
       {/* PAGE-LEVEL HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-stone-200 dark:border-stone-800">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
         <div>
-          <h1 className="text-xl md:text-2xl font-black tracking-tight flex items-center gap-2">
-            <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
-            <span className={`bg-gradient-to-r ${
-              theme === "dark"
-                ? "from-cyan-400 via-sky-450 to-teal-400"
-                : "from-cyan-605 via-sky-505 to-indigo-600"
-            } bg-clip-text text-transparent`}>
-              My Activity Journal
-            </span>
-          </h1>
-          <p className={`text-xs mt-1.5 font-semibold ${
-            theme === "dark" ? "text-stone-400" : "text-stone-600"
+          <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
+            theme === "dark" ? "text-white" : "text-[#111827]"
           }`}>
+            <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
+            <span>My Activity Journal</span>
+          </h1>
+          <p className="text-xs mt-1 font-semibold text-content-muted">
             Analyze and search your history of medical declaration lookups and underwriting decisions.
           </p>
         </div>
       </div>
 
-      {/* QUICK STATS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div
-          style={{ backgroundColor: theme === "dark" ? "var(--panel-bg)" : "var(--surface)" }}
-          className={`p-4 rounded-xl border ${
-            theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-xs"
-          }`}
-        >
-          <p style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Total Lookups</p>
-          <p style={{ color: "var(--accent)" }} className="text-xl font-black mt-1">{myLogs.length}</p>
-        </div>
-        <div
-          style={{ backgroundColor: theme === "dark" ? "var(--panel-bg)" : "var(--surface)" }}
-          className={`p-4 rounded-xl border ${
-            theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-xs"
-          }`}
-        >
-          <p style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Filtered Matches</p>
-          <p style={{ color: "var(--accent)" }} className="text-xl font-black mt-1">{filteredMyLogs.length}</p>
-        </div>
-        <div
-          style={{ backgroundColor: theme === "dark" ? "var(--panel-bg)" : "var(--surface)" }}
-          className={`p-4 rounded-xl border ${
-            theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-xs"
-          }`}
-        >
-          <p style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Advisor Profile</p>
-          <p style={{ color: "var(--accent)" }} className={`text-xs font-bold mt-2 truncate`}>
-            {currentUser?.email || "advisor@joinditto.in"}
-          </p>
-        </div>
-      </div>
-
-      {/* SEARCH AND FILTERS */}
+      {/* SEARCH + STATS — merged into one card. Flat transparent-grey glass
+          card (was a teal/blue gradient wash) matching the neutral card
+          treatment from an earlier version of this page. The quick-stat
+          numbers used to live in their own separate row of cards with a
+          mismatched gradient direction (bg-gradient-to-br vs this card's
+          bg-gradient-to-r) — folded in here as a compact stat row instead,
+          with the Advisor Profile card dropped (the signed-in email is
+          already shown in the top nav bar). */}
       <div
-        style={{ backgroundColor: theme === "dark" ? "var(--panel-body)" : "var(--surface-elevated)" }}
-        className={`p-4 rounded-xl border flex flex-col md:flex-row gap-4 items-center justify-between ${
-          theme === "dark" ? "border-[#252A34]" : "border-stone-200 shadow-sm"
+        className={`p-4 rounded-xl border ${
+          theme === "dark"
+            ? "bg-white/[0.03] border-white/[0.08]"
+            : "bg-black/[0.02] border-black/[0.08]"
         }`}
       >
+        {/* Quick stats row */}
+        <div className={`flex items-center gap-6 pb-3.5 mb-3.5 border-b ${theme === "dark" ? "border-white/[0.06]" : "border-stone-200/70"}`}>
+          <div>
+            <p className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-zinc-400" : "text-stone-600"}`}>Total Lookups</p>
+            <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{myLogs.length}</p>
+          </div>
+          <div className={`w-px self-stretch ${theme === "dark" ? "bg-white/[0.06]" : "bg-stone-200/70"}`} />
+          <div>
+            <p className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-zinc-400" : "text-stone-600"}`}>Filtered Matches</p>
+            <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{filteredMyLogs.length}</p>
+          </div>
+        </div>
+
+        {/* Search + filters row */}
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
         {/* Live Filter Search Input */}
         <div className="relative w-full md:w-80 shrink-0">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
@@ -173,27 +160,29 @@ export function MyActivityPage({
         <div style={{ color: "var(--text-primary)" }} className="w-full flex flex-col sm:flex-row gap-3 items-center md:justify-end">
           {/* Plan Filter */}
           <div className="flex items-center gap-2">
-            <span style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Plan:</span>
-            <select
-              value={myActivityPlanFilter}
-              onChange={(e) => setMyActivityPlanFilter(e.target.value)}
-              className={`text-xs font-bold p-1.5 rounded-lg border outline-none cursor-pointer ${
-                theme === "dark"
-                  ? "bg-[#060A10] border-[#252A34] text-white focus:border-[#3B82F6]"
-                  : "bg-white border-stone-250 text-stone-850 shadow-xs"
-              }`}
-            >
-              <option value="All">All Plans</option>
-              {PLANS.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+            <span style={{ color: theme === "dark" ? "var(--text-primary)" : "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Plan:</span>
+            <div className="w-36">
+              <CustomSelect
+                theme={theme}
+                value={myActivityPlanFilter}
+                onChange={setMyActivityPlanFilter}
+                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-bold pl-2 pr-7 py-1.5 rounded-lg border outline-none cursor-pointer relative ${
+                  theme === "dark"
+                    ? "bg-[#060A10] border-[#252A34] text-white focus:border-[#3B82F6]"
+                    : "bg-white border-stone-250 text-stone-850 shadow-xs"
+                }`}
+                options={[
+                  { value: "All", label: "All Plans" },
+                  ...PLANS.map((p) => ({ value: p, label: p })),
+                ]}
+              />
+            </div>
           </div>
 
           {/* Date Range Filter */}
           <div className="flex flex-col sm:flex-row gap-2.5 items-start sm:items-center">
             <div className="flex items-center gap-1.5">
-              <span style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">From:</span>
+              <span style={{ color: theme === "dark" ? "var(--text-primary)" : "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">From:</span>
               <div className="relative">
                 <input
                   type="date"
@@ -223,7 +212,7 @@ export function MyActivityPage({
               </div>
             </div>
             <div className="flex items-center gap-1.5">
-              <span style={{ color: "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">To:</span>
+              <span style={{ color: theme === "dark" ? "var(--text-primary)" : "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">To:</span>
               <div className="relative">
                 <input
                   type="date"
@@ -269,11 +258,12 @@ export function MyActivityPage({
             )}
           </div>
         </div>
+        </div>
       </div>
 
-      {/* ACTIVITIES TABLE / ACCORDION */}
+      {/* ACTIVITIES TABLE / ACCORDION — same flat transparent-grey card. */}
       <div className={`rounded-xl border overflow-hidden ${
-        theme === "dark" ? "bg-[#12151A] border-[#252A34]" : "bg-white border-stone-200 shadow-sm"
+        theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
       }`}>
         {filteredMyLogs.length === 0 ? (
           <div className="p-16 text-center font-sans">
@@ -290,42 +280,52 @@ export function MyActivityPage({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead className={`text-[10px] font-bold uppercase tracking-wider border-b ${
+              <thead className={`text-[11px] font-bold uppercase tracking-wider border-b ${
                 theme === "dark"
-                  ? "bg-[#171B22] text-[#9CA3AF] border-[#252A34]"
+                  ? "bg-white/[0.02] text-[#9CA3AF] border-white/[0.08]"
                   : "bg-stone-100 text-stone-600 border-stone-200"
               }`}>
                 <tr>
-                  <th style={{ backgroundColor: "#106671", color: "#d0e3ed" }} className="py-3.5 px-4">Medical Term / PED Query</th>
-                  <th style={{ backgroundColor: "#106671", color: "#d0e3ed" }} className="py-3.5 px-4">Time</th>
-                  <th style={{ backgroundColor: "#106671", color: "#d0e3ed" }} className="py-3.5 px-4">Insurance Plan</th>
-                  <th style={{ backgroundColor: "#106671", color: "#d0e3ed" }} className="py-3.5 px-4">Match Outcome</th>
-                  <th style={{ backgroundColor: "#106671", color: "#d0e3ed" }} className="py-3.5 px-4 text-right">Action</th>
+                  <th className="py-3.5 px-4">Medical Term / PED Query</th>
+                  <th className="py-3.5 px-4">Time</th>
+                  <th className="py-3.5 px-4">Insurance Plan</th>
+                  <th className="py-3.5 px-4">Matched Question</th>
+                  <th className="py-3.5 px-4">Match Outcome</th>
+                  <th className="py-3.5 px-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className={`divide-y text-xs font-semibold ${
+              <tbody className={`divide-y text-sm font-semibold ${
                 theme === "dark" ? "divide-[#252A34] text-stone-200" : "divide-stone-200 text-stone-800"
               }`}>
-                {filteredMyLogs.map((log, idx) => {
+                {filteredMyLogs.map((log) => {
                   const isExpanded = expandedLogIndex === log.timestamp;
 
-                  // Visual status for map Types
-                  const matchColors: Record<string, string> = {
-                    perfect: theme === "dark"
-                      ? "bg-green-500/10 text-green-400 border border-green-500/10"
-                      : "bg-green-50 text-green-750 border border-green-200/50",
-                    approx: theme === "dark"
-                      ? "bg-amber-500/10 text-amber-400 border border-amber-500/10"
-                      : "bg-amber-50 text-amber-750 border border-amber-200/50",
-                    "not matched": theme === "dark"
-                      ? "bg-red-500/10 text-red-400 border border-red-500/10"
-                      : "bg-red-50 text-red-750 border border-red-200/50"
-                  };
-                  const matchLabel: Record<string, string> = {
-                    perfect: "Perfect Match",
-                    approx: "Approx Match",
-                    "not matched": "No Direct Match"
-                  };
+                  // Shared taxonomy (src/utils/matchTier.ts) — same Level
+                  // 1/2/3 + Needs Clarification / Not a Medical Ailment
+                  // scheme as the live Declaration Assistant results screen
+                  // and the admin Audit page. This replaces a previous
+                  // lookup keyed on "perfect"/"approx"/"not matched" —
+                  // values that never actually occur in real match_type
+                  // data (the real values are P0/P1/P2/FALLBACK/etc.), so
+                  // it always missed and silently printed the raw code
+                  // ("P1", "P2"...) instead of a readable label.
+                  const tier = getMatchTierInfo(log.matchType);
+                  const matchBadgeClass =
+                    tier.level === 1
+                      ? (theme === "dark"
+                          ? "bg-green-500/10 text-green-400 border border-green-500/10"
+                          : "bg-green-50 text-green-750 border border-green-200/50")
+                      : tier.level === 2
+                        ? (theme === "dark"
+                            ? "bg-sky-500/10 text-sky-400 border border-sky-500/10"
+                            : "bg-sky-50 text-sky-750 border border-sky-200/50")
+                        : tier.level === 3
+                          ? (theme === "dark"
+                              ? "bg-amber-500/10 text-amber-400 border border-amber-500/10"
+                              : "bg-amber-50 text-amber-750 border border-amber-200/50")
+                          : (theme === "dark"
+                              ? "bg-stone-500/10 text-stone-400 border border-stone-500/10"
+                              : "bg-stone-100 text-stone-600 border border-stone-200/50");
 
                   return (
                     <React.Fragment key={log.timestamp}>
@@ -342,12 +342,10 @@ export function MyActivityPage({
                         onClick={() => setExpandedLogIndex(isExpanded ? null : log.timestamp)}
                       >
                         <td
-                          style={idx === 0 ? { backgroundColor: "#b3dae0", color: "#151e25" } : idx < 6 ? { backgroundColor: "#b3dae0" } : undefined}
-                          className="py-4 px-4 font-bold text-[12px] max-w-xs truncate"
+                          className="py-4 px-4 font-bold text-[13.5px] max-w-xs truncate"
                         >
                           <div className="flex items-center gap-2">
                             <ChevronDown
-                              style={idx < 5 ? { color: "#106671" } : undefined}
                               className={`w-4 h-4 text-stone-400 shrink-0 transition-transform duration-200 ${
                                 isExpanded ? "rotate-180" : ""
                               }`}
@@ -356,8 +354,7 @@ export function MyActivityPage({
                           </div>
                         </td>
                         <td
-                          style={idx < 6 ? { backgroundColor: "#b3dae0" } : undefined}
-                          className="py-4 px-4 font-mono text-[10.5px] opacity-75"
+                          className="py-4 px-4 font-mono text-[12px]"
                         >
                           {(() => {
                             try {
@@ -377,30 +374,30 @@ export function MyActivityPage({
                           })()}
                         </td>
                         <td
-                          style={idx < 6 ? { backgroundColor: "#b3dae0" } : undefined}
-                          className="py-4 px-4 font-extrabold text-[11px] text-sky-500"
+                          className="py-4 px-4 font-extrabold text-[12.5px] text-sky-500"
                         >
                           {log.planName}
                         </td>
                         <td
-                          style={idx < 6 ? { backgroundColor: "#b3dae0" } : undefined}
+                          className="py-4 px-4 max-w-xs truncate font-medium text-[12.5px]"
+                          title={log.matchedQuestion || undefined}
+                        >
+                          {log.matchedQuestion || <span className="text-stone-400 font-normal">—</span>}
+                        </td>
+                        <td
                           className="py-4 px-4"
                         >
                           <span
-                            style={idx < 5 ? { backgroundColor: "#94b06c", color: "#000000", borderColor: "#106671" } : undefined}
-                            className={`px-2 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider ${
-                              matchColors[log.matchType] || matchColors.approx
-                            }`}
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider ${matchBadgeClass}`}
                           >
-                            {matchLabel[log.matchType] || log.matchType}
+                            {tier.levelLabel}
                           </span>
                         </td>
                         <td
-                          style={idx < 6 ? { backgroundColor: "#b3dae0" } : undefined}
                           className="py-4 px-4 text-right"
                         >
                           <button
-                            className={`text-[10px] font-bold px-2 py-1 rounded transition-all cursor-pointer ${
+                            className={`text-[11px] font-bold px-2 py-1 rounded transition-all cursor-pointer ${
                               theme === "dark"
                                 ? "text-[#3B82F6] hover:bg-[#3B82F6]/10"
                                 : "text-blue-600 hover:bg-blue-50"
@@ -413,15 +410,15 @@ export function MyActivityPage({
 
                       {isExpanded && (
                         <tr>
-                          <td colSpan={5} className={`p-5 font-sans whitespace-pre-wrap ${
+                          <td colSpan={6} className={`p-5 font-sans whitespace-pre-wrap ${
                             theme === "dark" ? "bg-stone-900/30" : "bg-stone-50/40"
                           }`}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs text-left leading-relaxed">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-sm text-left leading-relaxed">
 
                               {/* Left details pane */}
                               <div className="space-y-3.5">
                                 <div>
-                                  <p className="font-extrabold text-[9.5px] uppercase tracking-wider text-stone-400 mb-1">
+                                  <p className="font-extrabold text-[10.5px] uppercase tracking-wider text-stone-400 mb-1">
                                     Tested Medical Term
                                   </p>
                                   <p className={`text-sm font-bold ${
@@ -432,7 +429,7 @@ export function MyActivityPage({
                                 </div>
 
                                 <div>
-                                  <p className="font-extrabold text-[9.5px] uppercase tracking-wider text-stone-500 mb-1">
+                                  <p className="font-extrabold text-[10.5px] uppercase tracking-wider text-stone-500 mb-1">
                                     Matched Policy Clause / Proposal Question
                                   </p>
                                   <div className={`p-3 rounded-lg border leading-relaxed font-bold ${
@@ -448,7 +445,7 @@ export function MyActivityPage({
                               {/* Right clinical explanation details pane */}
                               <div className="space-y-3.5">
                                 <div>
-                                  <p className="font-extrabold text-[9.5px] uppercase tracking-wider text-stone-500 mb-1">
+                                  <p className="font-extrabold text-[10.5px] uppercase tracking-wider text-stone-500 mb-1">
                                     Clinical Underwriting Guidance & Explanation
                                   </p>
                                   <div className={`p-4 rounded-lg border font-medium ${
@@ -460,14 +457,10 @@ export function MyActivityPage({
                                   </div>
                                 </div>
 
-                                <div className="flex select-none flex-wrap gap-4 pt-1 font-mono text-[10px] text-stone-400">
+                                <div className="flex select-none flex-wrap gap-4 pt-1 font-mono text-[11px] text-stone-400">
                                   <div>
                                     <span className="font-bold uppercase tracking-wider">Engine: </span>
-                                    <span className="font-semibold text-stone-550">{log.source || "Deterministic Engine"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="font-bold uppercase tracking-wider">Consulted By: </span>
-                                    <span className="font-semibold text-stone-550">{log.userEmail}</span>
+                                    <span className="font-semibold text-stone-550">{translateSourceToLayman(log.source)}</span>
                                   </div>
                                 </div>
                               </div>
