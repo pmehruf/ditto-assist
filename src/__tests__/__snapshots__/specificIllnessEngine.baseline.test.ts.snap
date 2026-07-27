@@ -1383,6 +1383,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": null,
   },
   {
+    "ped": "covid19",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
     "ped": "congestion",
     "top_match_type": "no_match",
     "top_matched_illness": null,
@@ -1439,6 +1444,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "h. pylori",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "helicobacter pylori",
     "top_match_type": "no_match",
     "top_matched_illness": null,
   },
@@ -1588,6 +1598,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": null,
   },
   {
+    "ped": "c section",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
     "ped": "premature baby",
     "top_match_type": "no_match",
     "top_matched_illness": null,
@@ -1659,6 +1674,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "e-cigarette",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "ecigarette",
     "top_match_type": "no_match",
     "top_matched_illness": null,
   },
@@ -3003,6 +3023,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": "Appendicitis",
   },
   {
+    "ped": "appendicectomy",
+    "top_match_type": "procedure_mapped",
+    "top_matched_illness": "Appendicitis",
+  },
+  {
     "ped": "kidney stones",
     "top_match_type": "direct",
     "top_matched_illness": "Kidney / Urinary stones",
@@ -3183,6 +3208,26 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": "Osteoarthritis",
   },
   {
+    "ped": "knee replacement",
+    "top_match_type": "alias",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
+    "ped": "hip replacement",
+    "top_match_type": "alias",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
+    "ped": "total knee replacement",
+    "top_match_type": "alias",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
+    "ped": "total hip replacement",
+    "top_match_type": "alias",
+    "top_matched_illness": "Joint replacement surgery",
+  },
+  {
     "ped": "osteoporosis",
     "top_match_type": "direct",
     "top_matched_illness": "Osteoporosis",
@@ -3264,6 +3309,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "thyroid disorder",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "thyroidectomy",
     "top_match_type": "no_match",
     "top_matched_illness": null,
   },
@@ -3878,6 +3928,16 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": "Cataract",
   },
   {
+    "ped": "cataract surgery",
+    "top_match_type": "direct",
+    "top_matched_illness": "Cataract",
+  },
+  {
+    "ped": "cataract operation",
+    "top_match_type": "direct",
+    "top_matched_illness": "Cataract",
+  },
+  {
     "ped": "retinal detachment",
     "top_match_type": "alias",
     "top_matched_illness": "Retinal disorders",
@@ -4323,6 +4383,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": null,
   },
   {
+    "ped": "no preexisting disease",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
     "ped": "none",
     "top_match_type": "no_match",
     "top_matched_illness": null,
@@ -4688,6 +4753,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
     "top_matched_illness": null,
   },
   {
+    "ped": "nephrectomy",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
     "ped": "renal transplant history",
     "top_match_type": "no_match",
     "top_matched_illness": null,
@@ -4719,6 +4789,11 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "c-section delivery",
+    "top_match_type": "no_match",
+    "top_matched_illness": null,
+  },
+  {
+    "ped": "csection delivery",
     "top_match_type": "no_match",
     "top_matched_illness": null,
   },

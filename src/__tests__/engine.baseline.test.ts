@@ -33,9 +33,13 @@ describe("engine.ts deterministic classification (regression baseline)", () => {
   const planConfigs = getPlanConfig();
   const planNames = Object.keys(planConfigs);
 
-  it("covers all four known plans", () => {
+  it("covers all known plans", () => {
+    // Was hardcoded to the original four; Aspire and Reassure 2.0 were added
+    // since (see MASTER_ILLNESSES / types.ts plan config work), so this list
+    // needs to grow whenever a new plan is onboarded rather than silently
+    // going stale.
     expect(planNames.sort()).toEqual(
-      ["Activ Fit Preferred", "Activ One Max", "Care Supreme", "Optima Secure"].sort()
+      ["Activ Fit Preferred", "Activ One Max", "Aspire", "Care Supreme", "Optima Secure", "Reassure 2.0"].sort()
     );
   });
 

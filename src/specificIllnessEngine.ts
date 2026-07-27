@@ -50,7 +50,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Fissure, Fistula in ano, hemorrhoids (piles), Pilonidal Sinus, Ano-rectal & Perianal Abscess",
       "Optima Secure": "Fissure/fistula in anus, Haemorrhoids including Gout and rheumatism",
       "Care Supreme": "Fissure/Fistula in anus, Hemorrhoids/ Piles, Pilonidal Sinus, Gastric and Duodenal Ulcers",
-      "Activ One Max": "Fissure, Fistula in Ano, Hemorrhoids (Piles), Pilonidal Sinus, Ano-rectal & Perianal Abscess"
+      "Activ One Max": "Fissure, Fistula in Ano, Hemorrhoids (Piles), Pilonidal Sinus, Ano-rectal & Perianal Abscess",
+      "Aspire": "Hemorrhoids, fissure, fistula or abscess of anal and rectal region",
+      "Reassure 2.0": "Hemorrhoids, fissure, fistula or abscess of anal and rectal region"
     }
   },
   {
@@ -66,7 +68,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Fissure, Fistula in ano, hemorrhoids (piles), Pilonidal Sinus, Ano-rectal & Perianal Abscess",
       "Optima Secure": "Fissure/fistula in anus, Haemorrhoids including Gout and rheumatism",
       "Care Supreme": "Fissure/Fistula in anus, Hemorrhoids/ Piles, Pilonidal Sinus, Gastric and Duodenal Ulcers",
-      "Activ One Max": "Fissure, Fistula in Ano, Hemorrhoids (Piles), Pilonidal Sinus, Ano-rectal & Perianal Abscess"
+      "Activ One Max": "Fissure, Fistula in Ano, Hemorrhoids (Piles), Pilonidal Sinus, Ano-rectal & Perianal Abscess",
+      "Aspire": "Hemorrhoids, fissure, fistula or abscess of anal and rectal region",
+      "Reassure 2.0": "Hemorrhoids, fissure, fistula or abscess of anal and rectal region"
     }
   },
   {
@@ -98,7 +102,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Stone in Gall Bladder, Bile duct & other parts of Biliary System",
       "Optima Secure": "Diseases of gall bladder including cholecystitis",
       "Care Supreme": "Kidney Stone/ Ureteric Stone/ Lithotripsy/ Gall Bladder Stone",
-      "Activ One Max": "Stone in Gall Bladder, Bile duct & other parts of Biliary System"
+      "Activ One Max": "Stone in Gall Bladder, Bile duct & other parts of Biliary System",
+      "Aspire": "Pancreatitis and stones in biliary and urinary system",
+      "Reassure 2.0": "Pancreatitis and stones in biliary and urinary system"
     }
   },
   {
@@ -114,7 +120,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Pancreatitis",
       "Optima Secure": "Pancreatitis",
       "Care Supreme": "Pancreatitis or Liver disease (including but not limited to Cirrhosis / Hepatitis B or C / Willson's disease) or any other digestive track disorder",
-      "Activ One Max": "Pancreatitis"
+      "Activ One Max": "Pancreatitis",
+      "Aspire": "Pancreatitis and stones in biliary and urinary system",
+      "Reassure 2.0": "Pancreatitis and stones in biliary and urinary system"
     }
   },
   {
@@ -130,7 +138,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Gastric or Duodenal Erosions or Ulcers + Gastritis & Duodenitis & Colitis",
       "Optima Secure": "Ulcer and erosion of stomach and duodenum",
       "Care Supreme": "Fissure/Fistula in anus, Hemorrhoids/ Piles, Pilonidal Sinus, Gastric and Duodenal Ulcers",
-      "Activ One Max": "Gastric or Duodenal Erosions or Ulcers + Gastritis & Duodenitis & Colitis"
+      "Activ One Max": "Gastric or Duodenal Erosions or Ulcers + Gastritis & Duodenitis & Colitis",
+      "Aspire": "Ulcer, erosion or varices of gastro intestinal tract",
+      "Reassure 2.0": "Ulcer, erosion or varices of gastro intestinal tract"
     }
   },
   {
@@ -184,7 +194,7 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     category: "Gastroenterology",
     direct_names: ["appendicitis"],
     aliases: ["chronic appendicitis", "appendicular abscess", "appendicular lump", "recurrent appendicitis"],
-    procedures: ["appendectomy", "appendix surgery", "laparoscopic appendectomy"],
+    procedures: ["appendectomy", "appendicectomy", "appendix surgery", "laparoscopic appendectomy", "laparoscopic appendicectomy"],
     sub_conditions: [],
     is_broad_category: false,
     plan_schedules: {
@@ -207,7 +217,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Osteoarthritis",
       "Optima Secure": "Osteoarthritis and osteoporosis",
       "Care Supreme": "Osteoarthritis and Osteoporosis",
-      "Activ One Max": "Osteoarthritis"
+      "Activ One Max": "Osteoarthritis",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -223,7 +235,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Rheumatism, Rheumatoid Arthritis",
       "Optima Secure": "Fissure/fistula in anus, Haemorrhoids including Gout and rheumatism",
       "Care Supreme": "Rheumatism",
-      "Activ One Max": "Rheumatism, Rheumatoid Arthritis"
+      "Activ One Max": "Rheumatism, Rheumatoid Arthritis",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -239,7 +253,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Gout",
       "Optima Secure": "Fissure/fistula in anus, Haemorrhoids including Gout and rheumatism",
       "Care Supreme": "Gout",
-      "Activ One Max": "Gout"
+      "Activ One Max": "Gout",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -256,7 +272,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Spondilosis, Spondioarthritis, Spondylopathies",
       "Optima Secure": "Non infective Arthritis",
       "Care Supreme": "Spinal Disorders",
-      "Activ One Max": "Spondilosis, Spondioarthritis, Spondylopathies"
+      "Activ One Max": "Spondilosis, Spondioarthritis, Spondylopathies",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -273,7 +291,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Internal Derangement of Knee / Ligament or Tendon or Meniscus",
       "Optima Secure": "Ligament, Tendon and Meniscal tear",
       "Care Supreme": "Arthroscopic Knee Surgeries/ ACL Reconstruction/ Meniscal and Ligament Repair",
-      "Activ One Max": "Internal Derangement of Knee / Ligament or Tendon / Meniscus Tear"
+      "Activ One Max": "Internal Derangement of Knee / Ligament or Tendon / Meniscus Tear",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -289,7 +309,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Prolapse of the intervertebral disc",
       "Optima Secure": "Surgery for prolapsed inter vertebral disc",
       "Care Supreme": "Spinal Disorders",
-      "Activ One Max": "Prolapse of the intervertebral disc"
+      "Activ One Max": "Prolapse of the intervertebral disc",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -305,7 +327,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Osteoporosis",
       "Optima Secure": "Osteoarthritis and osteoporosis",
       "Care Supreme": "Osteoarthritis and Osteoporosis",
-      "Activ One Max": "Osteoporosis"
+      "Activ One Max": "Osteoporosis",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -322,7 +346,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Joint Replacement Surgery",
       "Optima Secure": "Joint replacement surgeries",
       "Care Supreme": "Joint Replacement Surgery",
-      "Activ One Max": "Joint Replacement Surgery"
+      "Activ One Max": "Joint Replacement Surgery",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
   {
@@ -339,7 +365,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Non infective arthritis",
       "Optima Secure": "Non infective Arthritis",
       "Care Supreme": "Arthritis (if non-infective)",
-      "Activ One Max": "Non infective arthritis"
+      "Activ One Max": "Non infective arthritis",
+      "Aspire": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair",
+      "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
 
@@ -357,7 +385,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Cataract",
       "Optima Secure": "Cataract and other disorders of lens and Retina",
       "Care Supreme": "Cataract",
-      "Activ One Max": "Cataract"
+      "Activ One Max": "Cataract",
+      "Aspire": "Cataract, glaucoma and retinal detachment",
+      "Reassure 2.0": "Cataract, glaucoma and retinal detachment"
     }
   },
   {
@@ -372,7 +402,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     plan_schedules: {
       "Activ Fit Preferred": "Glaucoma",
       "Optima Secure": "Glaucoma",
-      "Activ One Max": "Glaucoma"
+      "Activ One Max": "Glaucoma",
+      "Aspire": "Cataract, glaucoma and retinal detachment",
+      "Reassure 2.0": "Cataract, glaucoma and retinal detachment"
     }
   },
   {
@@ -403,7 +435,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     plan_schedules: {
       "Activ Fit Preferred": "All Cysts, Mass, Swelling, Lump, Granulomas, Polyps, Fibroids & Benign Tumour of the female genito urinary system", // wait, just placeholder if not mapped
       "Optima Secure": "Cataract and other disorders of lens and Retina",
-      "Activ One Max": "Cataract and other disorders of lens and Retina" // listed in Optima and Activ One
+      "Activ One Max": "Cataract and other disorders of lens and Retina", // listed in Optima and Activ One
+      "Aspire": "Cataract, glaucoma and retinal detachment",
+      "Reassure 2.0": "Cataract, glaucoma and retinal detachment"
     }
   },
 
@@ -421,7 +455,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Sinusitis",
       "Optima Secure": "Sinusitis, Rhinitis",
       "Care Supreme": "Nasal Septum Deviation, Sinusitis and realted disorders",
-      "Activ One Max": "Sinusitis"
+      "Activ One Max": "Sinusitis",
+      "Aspire": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses",
+      "Reassure 2.0": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses"
     }
   },
   {
@@ -452,7 +488,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Deviated Nasal Septum",
       "Optima Secure": "Surgery for Nasal septum deviation",
       "Care Supreme": "Nasal Septum Deviation, Sinusitis and realted disorders",
-      "Activ One Max": "Deviated Nasal Septum"
+      "Activ One Max": "Deviated Nasal Septum",
+      "Aspire": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses",
+      "Reassure 2.0": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses"
     }
   },
   {
@@ -468,7 +506,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Tonsillitis & Adenitis",
       "Optima Secure": "Tonsillitis",
       "Care Supreme": "Surgical treatments for Benign ear, nose and throat (ENT) disorders and surgeries",
-      "Activ One Max": "Tonsillitis & Adenitis"
+      "Activ One Max": "Tonsillitis & Adenitis",
+      "Aspire": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses",
+      "Reassure 2.0": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses"
     }
   },
   {
@@ -484,7 +524,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Otitis Media",
       "Optima Secure": "Tympanoplasty, Mastoidectomy / Nasal concha resection",
       "Care Supreme": "Surgical treatments for Benign ear, nose and throat (ENT) disorders and surgeries",
-      "Activ One Max": "Otitis Media"
+      "Activ One Max": "Otitis Media",
+      "Aspire": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses",
+      "Reassure 2.0": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses"
     }
   },
   {
@@ -517,7 +559,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Fibroids (Fibromyoma)",
       "Optima Secure": "Fibroids (fibromyoma)",
       "Care Supreme": "Hysterectomy for menorrhagia or Fibromyoma or prolapse of uterus",
-      "Activ One Max": "Fibroids (Fibromyoma)"
+      "Activ One Max": "Fibroids (Fibromyoma)",
+      "Aspire": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)",
+      "Reassure 2.0": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)"
     }
   },
   {
@@ -532,7 +576,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     plan_schedules: {
       "Activ Fit Preferred": "Polycystic Ovarian Disease",
       "Optima Secure": "Polycystic ovarian diseases",
-      "Activ One Max": "Polycystic Ovarian Disease"
+      "Activ One Max": "Polycystic Ovarian Disease",
+      "Aspire": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)",
+      "Reassure 2.0": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)"
     }
   },
   {
@@ -547,7 +593,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     plan_schedules: {
       "Activ Fit Preferred": "Endometriosis",
       "Optima Secure": "Endometriosis",
-      "Activ One Max": "Endometriosis"
+      "Activ One Max": "Endometriosis",
+      "Aspire": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)",
+      "Reassure 2.0": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)"
     }
   },
   {
@@ -579,7 +627,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Uterine Prolapse",
       "Optima Secure": "Prolapsed Uterus",
       "Care Supreme": "Hysterectomy for menorrhagia or Fibromyoma or prolapse of uterus",
-      "Activ One Max": "Uterine Prolapse"
+      "Activ One Max": "Uterine Prolapse",
+      "Aspire": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)",
+      "Reassure 2.0": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)"
     }
   },
   {
@@ -644,7 +694,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Stones in Urinary system (Stone in the Kidney, Ureter, Urinary Bladder)",
       "Optima Secure": "Calculus diseases of Urogenital system e.g. Kidneystone, Urinary Bladder Stone",
       "Care Supreme": "Kidney Stone/ Ureteric Stone/ Lithotripsy/ Gall Bladder Stone",
-      "Activ One Max": "Stones in Urinary System (Stone in the Kidney, Ureter, Urinary Bladder)"
+      "Activ One Max": "Stones in Urinary System (Stone in the Kidney, Ureter, Urinary Bladder)",
+      "Aspire": "Pancreatitis and stones in biliary and urinary system",
+      "Reassure 2.0": "Pancreatitis and stones in biliary and urinary system"
     }
   },
   {
@@ -660,7 +712,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Benign Hypertrophy / Enlargement of Prostate (BHP / BEP)",
       "Optima Secure": "Benign Hyperplasia of Prostate",
       "Care Supreme": "Benign Prostatic Hypertrophy",
-      "Activ One Max": "Benign Hypertrophy / Enlargement of Prostate (BHP / BEP)"
+      "Activ One Max": "Benign Hypertrophy / Enlargement of Prostate (BHP / BEP)",
+      "Aspire": "Hyperplasia of prostate, hydrocele and spermatocele",
+      "Reassure 2.0": "Hyperplasia of prostate, hydrocele and spermatocele"
     }
   },
   {
@@ -677,7 +731,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Hernia, Hydrocele",
       "Optima Secure": "Hernia / Hydrocele",
       "Care Supreme": "All types of Hernia & Hydrocele",
-      "Activ One Max": "Hernia, Hydrocele"
+      "Activ One Max": "Hernia, Hydrocele",
+      "Aspire": "Hernia of any site or type",
+      "Reassure 2.0": "Hernia of any site or type"
     }
   },
   {
@@ -692,7 +748,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     plan_schedules: {
       "Activ Fit Preferred": "Varicocoele / Spermatocoele",
       "Optima Secure": "Varicocele / Hydrocele/Rectocele",
-      "Activ One Max": "Varicocoele / Spermatocoele"
+      "Activ One Max": "Varicocoele / Spermatocoele",
+      "Aspire": "Hyperplasia of prostate, hydrocele and spermatocele",
+      "Reassure 2.0": "Hyperplasia of prostate, hydrocele and spermatocele"
     }
   },
 
@@ -711,7 +769,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Skin tumour (unless malignant)",
       "Optima Secure": "Skin tumors",
       "Care Supreme": "Internal tumours, skin tumours, cysts, nodules, polyps",
-      "Activ One Max": "Skin Tumour (unless malignant)"
+      "Activ One Max": "Skin Tumour (unless malignant)",
+      "Aspire": "All internal or external benign neoplasms/tumours, cyst, sinus, polyps, nodules, mass or lump",
+      "Reassure 2.0": "All internal or external benign neoplasms/tumours, cyst, sinus, polyps, nodules, mass or lump"
     }
   },
   {
@@ -727,7 +787,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Varicose veins, Varicose ulcers",
       "Optima Secure": "Surgery for varicose veins and varicose ulcers",
       "Care Supreme": "Varicose veins and varicose ulcers",
-      "Activ One Max": "Varicose Veins, Varicose Ulcers"
+      "Activ One Max": "Varicose Veins, Varicose Ulcers",
+      "Aspire": "Varicose veins of lower extremities",
+      "Reassure 2.0": "Varicose veins of lower extremities"
     }
   },
   {
@@ -761,7 +823,9 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ Fit Preferred": "Any swelling, tumour, cyst, nodule, ulcer, polyp Mass , Swelling, Lump, Granulomas, Benign Tumour anywhere in the body (unless malignant)",
       "Optima Secure": "Benign tumors, cysts, nodules, polyps including breast lumps",
       "Care Supreme": "Internal tumours, skin tumours, cysts, nodules, polyps including breast lumps (each of any kind) unless malignant",
-      "Activ One Max": "Any Swelling, Tumour, Cyst, Nodule, Ulcer, Polyp Mass, Swelling, Lump, Granulomas, Benign Tumour anywhere in the body (Unless Malignant)"
+      "Activ One Max": "Any Swelling, Tumour, Cyst, Nodule, Ulcer, Polyp Mass, Swelling, Lump, Granulomas, Benign Tumour anywhere in the body (Unless Malignant)",
+      "Aspire": "All internal or external benign neoplasms/tumours, cyst, sinus, polyps, nodules, mass or lump",
+      "Reassure 2.0": "All internal or external benign neoplasms/tumours, cyst, sinus, polyps, nodules, mass or lump"
     }
   }
 ];

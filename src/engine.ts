@@ -6,10 +6,47 @@
 import {
   TOP_PED_DICTIONARY,
   PED_BRIEFS,
+  CATEGORY_LABELS,
   PlanConfig,
   MatchOutput,
   SupportingFlags
 } from "./types.js";
+
+// Guarantees a valid, non-empty category label for the mapping explanation.
+// Every categoryKey used by TOP_PED_DICTIONARY should already have a
+// CATEGORY_LABELS entry (see types.ts), but this keeps the sentence builder
+// safe even if a new category is added there without a matching label.
+export function getCategoryLabel(categoryKey: string): string {
+  return CATEGORY_LABELS[categoryKey] || PED_BRIEFS[categoryKey] || "a condition covered under this plan's declaration framework";
+}
+
+// Universal Manifestation Routing Policy (secondary manifestations/
+// complications of a root disease): a handful of TOP_PED_DICTIONARY
+// entries are literally named as an organ-specific complication of a root
+// disease (e.g. "diabetic retinopathy" -> categoryKey "eye"), so the O(1)
+// dictionary routing stage in classifyDeterministic sends them straight to
+// that organ's question. Organ wording still wins when the plan actually
+// has a dedicated question for it (Question Wording Is Law / Specificity
+// Override) — this table is only consulted when it doesn't, so the
+// diagnosis falls back to the root disease's own question instead of the
+// generic 'Others' section, since the condition is still, in substance,
+// that disease. Keyed by the exact lowercased dictionary term.
+export const SECONDARY_MANIFESTATION_ROOT_CATEGORY: Record<string, { rootCategoryKey: string; rootLabel: string }> = {
+  "diabetic retinopathy": { rootCategoryKey: "diabetes", rootLabel: "Diabetes / High Blood Sugar" },
+  "diabetic retinopathy eye": { rootCategoryKey: "diabetes", rootLabel: "Diabetes / High Blood Sugar" },
+  "diabetic neuropathy nerve": { rootCategoryKey: "diabetes", rootLabel: "Diabetes / High Blood Sugar" },
+  "diabetic nephropathy kidney": { rootCategoryKey: "diabetes", rootLabel: "Diabetes / High Blood Sugar" },
+};
+
+// Ensures a reasoning string always ends with terminal punctuation before it
+// gets joined with the standard advisory footer sentence, so the two never
+// run together as one unpunctuated run-on (e.g. "...in this plan Please
+// cross-check..."). Also guards against empty/whitespace-only input.
+export function ensureSentenceEnding(text: string): string {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  return /[.!?…"'*_)\u{1F300}-\u{1FAFF}☀-➿]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
+}
 
 export function normalizeText(text: string): string {
   return String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -20,7 +57,14 @@ export function detectSupportingFlags(ped: string): SupportingFlags {
   return {
     tests: /test|investigation|scan|biopsy|lab|xray/i.test(text),
     medication: /medication|medicine|tablet|insulin|drug|treatment/i.test(text),
-    hospitalisation: /hospitali[sz]ation|admitted|admission|surgery|operation/i.test(text)
+    // Was just "surgery|operation" literally, so a named procedure like
+    // "Appendectomy" or "Knee replacement" never set this flag — meaning
+    // getApplicableUmbrellaQuestions() found zero applicable umbrella
+    // questions for it and fell back to showing ALL of them, instead of
+    // narrowing to just the surgery-specific one. Broadened to also catch
+    // procedure-suffix words (-ectomy, -ostomy, -otomy, -plasty, -pexy) and
+    // other common ways a surgical procedure gets named.
+    hospitalisation: /hospitali[sz]ation|admitted|admission|surgery|surgical|operation|procedure|replacement|transplant|angioplasty|amputation|\w+ectomy|\w+ostomy|\w+otomy|\w+plasty|\w+pexy/i.test(text)
   };
 }
 
@@ -89,19 +133,40 @@ export function checkNaturalLifeStages(pedText: string): MatchOutput | null {
     return null;
   }
 
+  // HARD FIREWALL: pregnancy-induced/gestational hypertension is a named
+  // hypertensive disorder (TOP_PED_DICTIONARY explicitly categorizes it as
+  // "hypertension"), not a natural physiological state — the bare "pregnan*"
+  // token below would otherwise swallow it as NON_AILMENT before the
+  // hypertension question is ever reached. Same bypass pattern as "ectopic".
+  if (/\b(pregnancy[\s-]induced hypertension|gestational hypertension)\b/i.test(text)) {
+    return null;
+  }
+
   // 2. Optimized regex (Includes menstruation and periods)
-  const nonAilmentRegex = /\b(menstruat(e|ion|ing)|my period(s)?|regular period(s)?|menopaus(e|al)|peri-?menopaus(e|al)|post-?menopaus(e|al)|puberty|healthy|none|normal|fit|perfect|nil|n\/?a|not\s*applicable|routine\s*checkup|general\s*checkup|master\s*health|executive\s*checkup|vaccin(ation|e|ed)|immuniz(ation|ed)|pregnan(cy|t)|childbirth|post-?partum|post-?natal|lactat(ion|ing)|breastfeed(ing)?)\b/i;
+  //
+  // "c-section"/"lscs"/"caesarean" and "no pre-existing disease" were added
+  // here to close a gap where TOP_PED_DICTIONARY tags them with the
+  // "natural_life_stage" categoryKey (see types.ts), but the dictionary tag
+  // alone is not enough to resolve them: the "natural_life_stage" categoryKey
+  // handler (below, and in the 0.7 dictionary-routing stage) delegates
+  // entirely to this function re-testing the raw PED text, ignoring how it
+  // got here. Without a literal trigger token here for these terms, the
+  // dictionary-tagged entries "c-section delivery", "csection delivery",
+  // "c - section", "c section", "no pre-existing disease", and
+  // "no preexisting disease" stayed unresolved (fell through to the AI
+  // fallback) even after being added to the dictionary.
+  const nonAilmentRegex = /\b(menstruat(e|ion|ing)|my period(s)?|regular period(s)?|menopaus(e|al)|peri-?menopaus(e|al)|post-?menopaus(e|al)|puberty|healthy|none|normal|fit|perfect|nil|n\/?a|not\s*applicable|no\s+pre-?existing|routine\s*checkup|general\s*checkup|master\s*health|executive\s*checkup|vaccin(ation|e|ed)|immuniz(ation|ed)|pregnan(cy|t)|childbirth|c\s*-?\s*section|caesarean|cesarean|lscs|post-?partum|post-?natal|lactat(ion|ing)|breastfeed(ing)?)\b/i;
 
   if (nonAilmentRegex.test(text)) {
     let shortExplanation = "a natural physiological state or routine event";
 
     if (/menopaus|puberty|lactat|breastfeed/i.test(text)) {
       shortExplanation = "a natural biological life stage or physiological transition";
-    } else if (/healthy|none|normal|fit|perfect|nil|n\/?a|applicable/i.test(text)) {
+    } else if (/healthy|none|normal|fit|perfect|nil|n\/?a|applicable|no\s+pre-?existing/i.test(text)) {
       shortExplanation = "an explicit declaration of normal health status or empty field placeholder";
     } else if (/checkup|vaccin|immuniz/i.test(text)) {
       shortExplanation = "a routine preventative wellness check or standard immunization event";
-    } else if (/pregnan|childbirth|post-?partum|post-?natal/i.test(text)) {
+    } else if (/pregnan|childbirth|c\s*-?\s*section|caesarean|cesarean|lscs|post-?partum|post-?natal/i.test(text)) {
       shortExplanation = "a natural physiological life event";
     }
 
@@ -333,8 +398,30 @@ export function finalizeOutput(output: MatchOutput, ped: string, config: PlanCon
   let explanationSuffix = "Please cross-check the Declaration Framework personally before taking the final disclosure call.";
   if (output.match_type === "FALLBACK") {
     explanationSuffix = "Check if the umbrella questions are applicable first‼️. If not applicable, declare under the 'Others Section' question.\n\nPlease cross-check the Declaration Framework personally before taking the final disclosure call.";
+  } else if (output.secondary_recommendation && output.secondary_recommendation.length > 0) {
+    // A genuine direct/category match (P0/P1) that ALSO carries a
+    // hospitalisation/surgery supporting flag — e.g. a named surgical
+    // procedure like "Angioplasty" that independently maps to a specific
+    // illness category (Cardiac/Heart Disease). Both facts are true at
+    // once, so say so explicitly instead of leaving the advisor to infer
+    // it from the umbrella panel alone: it's a surgical procedure (check
+    // the umbrella question(s) shown above too) AND, separately, the PED
+    // itself maps to the category question below. This used to render
+    // with a hardcoded "Fallback — Others Section" sub-label in the UI
+    // even though it's nowhere near the anyOther catch-all — see
+    // DeclarationAssistantResults.tsx, which now derives that sub-label
+    // from match_type instead of assuming FALLBACK whenever the umbrella
+    // panel is shown.
+    const pedDisplayName = String(ped || "").trim();
+    const pedSentenceCase = pedDisplayName ? pedDisplayName.charAt(0).toUpperCase() + pedDisplayName.slice(1) : "This PED";
+    explanationSuffix = `${pedSentenceCase} is flagged as a surgical/hospitalisation-related procedure — check the umbrella question(s) above first as well. Separately, as a diagnosed condition, it maps to the category question below.\n\nPlease cross-check the Declaration Framework personally before taking the final disclosure call.`;
   }
-  output.explanation = `${rawExp.trim()}\n\n${explanationSuffix}`;
+  // Always terminate the reasoning with a period before appending the
+  // standardized advisory footer, so the two never run together as one
+  // unpunctuated sentence (e.g. "...in this plan Please cross-check...").
+  // The UI renders this string with paragraph breaks preserved, so \n\n also
+  // gives a clear visual separation between reasoning and the footer.
+  output.explanation = `${ensureSentenceEnding(rawExp)}\n\n${explanationSuffix}`;
 
   return output;
 }
@@ -410,7 +497,13 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   // 0.5 FAST-PATH SAFETY FIREWALLS & SHIELDS (INTERCEPT BOTH DICTIONARY & REGEX FLOWS)
   
   // A. GLOBAL DIAGNOSTICS & TEST FIREWALL
-  if (!(/\b(stress test|treadmill test|tmt|tolerance test)\b/i.test(text)) &&
+  // "positive hiv test", "std profile", and "lipid profile high" are
+  // explicitly curated in TOP_PED_DICTIONARY as "hiv"/"hiv"/"lipid" —
+  // deliberate disease-category assignments — but each contains "test" or
+  // "profile", so without this carve-out they were always caught here first
+  // and sent to a generic test-result message instead of ever reaching that
+  // dictionary categorization.
+  if (!(/\b(stress test|treadmill test|tmt|tolerance test|positive hiv test|std profile|lipid profile high)\b/i.test(text)) &&
     /\b(test|scan|profile|usg|ultrasound|mri|x-?ray|checkup|report)\b/i.test(text)) {
     return makeOutput(
       pedText,
@@ -428,7 +521,14 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
 
   // C. HYPOGLYCAEMIA SHIELD
   if (/\bhypoglyc\w*/i.test(text)) {
-    if (/\b(diabet\w*|insulin|dm\b|t1d|t2d|hba1c)\b/i.test(text)) {
+    // "hypoglycemia episode" and "reactive hypoglycemia" are explicitly
+    // curated in TOP_PED_DICTIONARY as "diabetes" — production's own
+    // deliberate categorization — but neither phrase contains a
+    // diabetes-qualifying word for the generic pass-through check below, so
+    // without this exact-phrase carve-out they were always intercepted here
+    // and sent to FALLBACK instead of ever reaching that dictionary entry.
+    const isDictionaryCuratedHypoglycemia = /\b(hypoglycemia episode|reactive hypoglycemia)\b/i.test(text);
+    if (isDictionaryCuratedHypoglycemia || /\b(diabet\w*|insulin|dm\b|t1d|t2d|hba1c)\b/i.test(text)) {
       // let it fall through to normal checks or dictionary
     } else {
       return makeOutput(pedText, "FALLBACK", config.anyOther,
@@ -472,7 +572,18 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   if (config.overrides && config.overrides.requiresInsulinForDiabetes) {
     const isGestationalOrType2 = /\b(gestational|gdm|pregnancy[- ]diabetes|pregnancy induced|maternal|type 2|type-2|typeii|type ii|t2dm|t2d)\b/i.test(text);
     const hasInsulinOrType1 = /\b(type\s*1|type-1|typei|type i|t1dm|t1d|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(text);
-    if (isGestationalOrType2 && !hasInsulinOrType1) {
+    // "gestational hypertension" / "pregnancy induced hypertension" are named
+    // hypertensive disorders (TOP_PED_DICTIONARY categorizes them as
+    // "hypertension", not "diabetes"), but they share the qualifying words
+    // "gestational"/"pregnancy induced" with this diabetes-only shield's
+    // trigger list above. Without this exclusion, the shield swallowed them
+    // purely on keyword presence and produced a diabetes-lineage-restriction
+    // message for a condition that was never about diabetes at all. Only
+    // bypass when the text is exclusively about hypertension (no diabetes
+    // wording present), so genuine comorbid mentions ("gestational diabetes
+    // with hypertension") still correctly trigger the diabetes shield.
+    const isNamedHypertensionNotDiabetes = /\bhypertension\b/i.test(text) && !/\b(diabet\w*|blood sugar|dm\b)\b/i.test(text);
+    if (isGestationalOrType2 && !hasInsulinOrType1 && !isNamedHypertensionNotDiabetes) {
       return makeOutput(pedText, "FALLBACK", config.anyOther,
         `*${pedText} is a specific non-severe lineage category (Gestational or Type-2 Diabetes without insulin requirement).* This plan ("${planName}") has a specific, strict question that covers ONLY Type 1 Diabetes, diabetes on insulin, or connected with blindness/ulcers. Therefore, this condition does not map to the primary diabetes question and must be declared under the general section: "${config.anyOther}".`);
     }
@@ -502,8 +613,41 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
     }
   }
 
+  // B. Check Explicit Policy Wording (Chunking) — run BEFORE the dictionary
+  // routing below so an exact, verbatim wording match always wins as "P0"
+  // (Direct Match). Previously this ran *after* dictionary routing, so any
+  // PED with a TOP_PED_DICTIONARY entry (nearly all common PEDs, including
+  // "diabetes") short-circuited to "P1" (Category Match) even when its name
+  // was also literally one of the /-separated chunks in the plan's own
+  // question wording — e.g. "Diabetes" against "Diabetes / High blood sugar
+  // / Sugar in urine?" was tagged Category Match instead of Direct Match.
+  // Exact wording is the strongest possible signal, so it must be checked
+  // first regardless of whether a dictionary category also exists.
+  const cleanInputForChunking = text.replace(/[^\w\s]/g, "").trim();
+  if (cleanInputForChunking.length > 2) {
+    for (const question of config.questions) {
+      if (question === config.anyOther) continue;
+
+      const chunks = question.toLowerCase().split(/[/,()]|\bor\b/);
+      for (let chunk of chunks) {
+        chunk = chunk.replace(/^\s*\d+\.\s*/, "").replace(/[^\w\s]/g, "").trim();
+        if (chunk === cleanInputForChunking) {
+          return makeOutput(pedText, "P0", question,
+            `Exact condition match🎯: "${pedText}" is explicitly listed in this plan's questionnaire.`);
+        }
+      }
+    }
+  }
+
   // 0.7 O(1) DICTIONARY ROUTING
-  const cleanInput = text.replace(/[^\w\s]/g, "").trim();
+  // Punctuation is stripped above the dictionary-key level, but internal
+  // whitespace was not re-collapsed afterward — a term like "c - section"
+  // (hyphen flanked by spaces) stripped to "c  section" (double space),
+  // which could never equal a normally-spaced dictionary key. Collapsing
+  // runs of whitespace after stripping is purely additive: it only makes
+  // MORE inputs match an existing single-spaced key, never changes what an
+  // already-reachable key matches.
+  const cleanInput = text.replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
   const cleanInputLower = cleanInput.toLowerCase();
   let categoryKey = TOP_PED_DICTIONARY[cleanInputLower];
   if (!categoryKey) {
@@ -559,7 +703,7 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
       return checkNaturalLifeStages(pedText);
     }
     if (categoryKey === "acute_trauma") {
-      return makeOutput(pedText, "FALLBACK", config.anyOther, `"${pedText}" indicates an acute injury, physical treatment, or medical procedure rather than a specific illness category.`);
+      return makeOutput(pedText, "FALLBACK", config.anyOther, `"${pedText}" indicates an acute injury or physical trauma rather than a specific illness category. Declare it under this plan's hospitalisation/surgery umbrella question if applicable, otherwise under the 'Others Section'.`);
     }
     if (categoryKey === "benign_growth") {
       if (config.overrides && config.overrides.bypassBenignTumors) {
@@ -572,9 +716,26 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
     const targetQ = questionForCategory(config, categoryKey);
     if (targetQ) {
       if (targetQ === config.anyOther) {
-        const brief = PED_BRIEFS[categoryKey] ? `a ${PED_BRIEFS[categoryKey]}` : "a condition";
+        // Universal Manifestation Routing Policy: a few TOP_PED_DICTIONARY
+        // entries are literally named as an organ-specific complication of
+        // a root disease (e.g. "diabetic retinopathy" -> categoryKey
+        // "eye"). Organ wording still wins when the plan has a dedicated
+        // question for it (unchanged above) — this only covers the gap
+        // where it doesn't: instead of dropping straight to the generic
+        // 'Others' section, try the root disease's own question first,
+        // since the diagnosis is still, in substance, that disease.
+        const rootFallback = SECONDARY_MANIFESTATION_ROOT_CATEGORY[cleanInputLower];
+        if (rootFallback) {
+          const rootQ = questionForCategory(config, rootFallback.rootCategoryKey);
+          if (rootQ && rootQ !== config.anyOther) {
+            const categoryLabel = getCategoryLabel(categoryKey);
+            return makeOutput(pedText, "P1", rootQ,
+              `"${pedText}" is a complication of the condition covered by this plan's **${rootFallback.rootLabel}** question. This plan has no dedicated **${categoryLabel}** question, so it is declared there instead.`);
+          }
+        }
+        const categoryLabel = getCategoryLabel(categoryKey);
         return makeOutput(pedText, "FALLBACK", config.anyOther,
-          `*${pedText} is ${brief}.* This plan has no dedicated category question for it. Proceed with the 'Others' section.`);
+          `"${pedText}" falls under the **${categoryLabel}** category, but this plan has no dedicated declaration question for it. Proceed with the 'Others' section.`);
       }
       if (categoryKey === "diabetes" && config.overrides && config.overrides.requiresInsulinForDiabetes) {
         if (!/\b(type\s*1|type1|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(pedText)) {
@@ -582,44 +743,23 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
             `${pedText} does not meet the specific Type 1/Insulin-dependent qualifier for this plan's primary question.`);
         }
       }
-      const brief = PED_BRIEFS[categoryKey] ? `  ${PED_BRIEFS[categoryKey]}` : "";
+      // Mapping-focused reasoning: explain WHICH category the condition belongs
+      // to and WHY that routes it to the matched question, rather than a generic
+      // medical definition. This also guarantees a non-empty, grammatically
+      // complete sentence for every categoryKey (see getCategoryLabel above),
+      // fixing conditions like Spina Bifida that previously had no PED_BRIEFS
+      // entry and rendered "is a and it's a direct/category match".
+      const categoryLabel = getCategoryLabel(categoryKey);
       return makeOutput(pedText, "P1", targetQ,
-        `${pedText} is a${brief} and it's a direct/category match in this plan`);
+        `"${pedText}" falls under the **${categoryLabel}** category and is a category-level match to this plan's declaration question above.`);
     }
   }
 
-  // B. Check Explicit Policy Wording (Chunking)
-  if (cleanInput.length > 2) {
-    for (const question of config.questions) {
-      if (question === config.anyOther) continue;
-
-      const chunks = question.toLowerCase().split(/[/,()]|\bor\b/);
-      for (let chunk of chunks) {
-        chunk = chunk.replace(/^\s*\d+\.\s*/, "").replace(/[^\w\s]/g, "").trim();
-        if (chunk === cleanInput) {
-          return makeOutput(pedText, "P0", question,
-            `Exact condition match🎯: "${pedText}" is explicitly listed in this plan's questionnaire.`);
-        }
-      }
-    }
-  }
-
-  // 0.6 GLOBAL DIAGNOSTICS & TEST FIREWALL
-  if (!(/\b(stress test|treadmill test|tmt|tolerance test)\b/i.test(text)) &&
-    /\b(test|scan|profile|usg|ultrasound|mri|x-?ray|checkup|report)\b/i.test(text)) {
-    return makeOutput(
-      pedText,
-      "FALLBACK",
-      config.anyOther,
-      `"${pedText}" indicates a medical test, scan, or report rather than a formal diagnosis. Please declare the specific structural diagnosis this test revealed. If none, declare the test itself under the 'medical tests and investigations' section.`
-    );
-  }
-
-  // 1. ACUTE INFECTIOUS FIREWALL
-  if (/\b(malaria|dengue|typhoid|viral fever|flu|influenza|chikungunya|hepatitis a|cholera|food poisoning|gastroenteritis|pneumonia|measles|mumps|rubella|chickenpox|varicella|rotavirus|common cold)\b/i.test(text)) {
-    return makeOutput(pedText, "FALLBACK", config.anyOther,
-      `${pedText} is typically an acute/transient infection and should be declared under 'Any other disease' or 'Hospitalization/medication' sections if applicable.`);
-  }
+  // (Removed: byte-identical duplicates of shields 0.5A "GLOBAL DIAGNOSTICS &
+  // TEST FIREWALL" and 0.5B "ACUTE INFECTIOUS FIREWALL" used to sit here,
+  // numbered "0.6" and "1." — both were 100% dead code, since 0.5A/0.5B run
+  // earlier in the pipeline with no escape condition and always intercept
+  // first. Confirmed via full pipeline trace before removal.)
 
   // 1.5 COVID-19
   if (/\b(covid[\s-]?19?|post[\s-]covid|long[\s-]covid|covid complications|coronavirus)\b/i.test(text)) {
@@ -664,28 +804,17 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
     return makeOutput(pedText, "FALLBACK", config.anyOther, `${pedText} is a lipid disorder with no primary category question in this plan.`);
   }
 
-  // 4.5 HYPOGLYCAEMIA SHIELD
-  if (/\bhypoglyc\w*/i.test(text)) {
-    if (/\b(diabet\w*|insulin|dm\b|t1d|t2d|hba1c)\b/i.test(text)) {
-      // let it fall through to diabetes
-    } else {
-      return makeOutput(pedText, "FALLBACK", config.anyOther,
-        `*${pedText} is a low blood sugar episode, not a diabetes diagnosis.* ` +
-        `If this occurred in the context of diagnosed diabetes or insulin use, ` +
-        `declare diabetes under its relevant category instead.`);
-    }
-  }
+  // (Removed: a byte-identical duplicate of shield 0.5C "HYPOGLYCAEMIA
+  // SHIELD" used to sit here, numbered "4.5" — functionally dead, since
+  // 0.5C runs earlier with the identical regex and identical pass-through
+  // condition on the same unmutated `text`, so it could never reach a
+  // different verdict than 0.5C already had.)
 
   // 5. DIABETES
-  // 5.0 GESTATIONAL & TYPE 2 INSULIN-INDEPENDENT SHIELD
-  if (config.overrides && config.overrides.requiresInsulinForDiabetes) {
-    const isGestationalOrType2 = /\b(gestational|gdm|pregnancy[- ]diabetes|pregnancy induced|maternal|type 2|type-2|typeii|type ii|t2dm|t2d)\b/i.test(text);
-    const hasInsulinOrType1 = /\b(type\s*1|type-1|typei|type i|t1dm|t1d|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(text);
-    if (isGestationalOrType2 && !hasInsulinOrType1) {
-      return makeOutput(pedText, "FALLBACK", config.anyOther,
-        `*${pedText} is a specific non-severe lineage category (Gestational or Type-2 Diabetes without insulin requirement).* This plan ("${planName}") has a specific, strict question that covers ONLY Type 1 Diabetes, diabetes on insulin, or connected with blindness/ulcers. Therefore, this condition does not map to the primary diabetes question and must be declared under the general section: "${config.anyOther}".`);
-    }
-  }
+  // (Removed: a byte-identical duplicate of shield 0.5G "GESTATIONAL &
+  // TYPE 2 DIABETES INTERCEPT COUPLING" used to sit here, numbered "5.0" —
+  // dead for any plan with `requiresInsulinForDiabetes` set, since 0.5G runs
+  // earlier with the identical regex and identical override-flag condition.)
 
   // 5a. PREDIABETES — PLAN-AWARE ROUTING
   if (/\b(pre[- ]?diabet\w*|borderline diabetes|impaired fasting glucose|impaired glucose tolerance)\b/i.test(text)) {
@@ -703,38 +832,38 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
 
   // 5b. CONFIRMED DIABETES
   if (/\b(diabet\w*|dm\s*1|dm\s*2|t1dm|t2dm|t1d|t2d|type\s*1\s*dm|type\s*2\s*dm|high blood sugar|dm\b|high sugar|insulin dependent|diabetic foot|diabetic gangrene|diabetic neuropathy|diabetic retinopathy|hyperglycemia)\b/i.test(text)) {
+    // Diabetic foot/gangrene/neuropathy/retinopathy are complications OF diabetes,
+    // not diabetes itself — "is a diabetes or high blood sugar condition" is
+    // medically inaccurate for these. Name the affected organ/system so the
+    // advisor sees *why* an eye/nerve/foot condition is routed to the
+    // diabetes question instead of its own category question, rather than
+    // just being told it's "a complication" with no rationale.
+    const DIABETES_COMPLICATION_ORGANS: Record<string, string> = {
+      "diabetic retinopathy": "an eye",
+      "diabetic neuropathy": "a nerve",
+      "diabetic foot": "a foot/limb",
+      "diabetic gangrene": "a tissue/vascular",
+    };
+    const diabetesComplicationHit = Object.entries(DIABETES_COMPLICATION_ORGANS).find(([term]) => text.includes(term));
+    const diabetesDescription = diabetesComplicationHit
+      ? `${pedText} is ${diabetesComplicationHit[1]} complication caused by diabetes — not an independent ${diabetesComplicationHit[1].replace(/^an?\s+/, "")} condition`
+      : `${pedText} is a diabetes or high blood sugar condition`;
     if (config.overrides && config.overrides.requiresInsulinForDiabetes) {
       if (/\b(type\s*1|type1|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(text)) {
         q = questionForCategory(config, "diabetes");
-        if (q) return makeOutput(pedText, "P1", q, `${pedText} meets the high-severity diabetes qualifiers for this plan.`);
+        if (q) return makeOutput(pedText, "P1", q, `${diabetesDescription} and meets the high-severity diabetes qualifiers for this plan.`);
       }
       return makeOutput(pedText, "FALLBACK", config.anyOther,
         `${pedText} does not meet the specific Type 1/Insulin-dependent qualifier for this plan's primary question.`);
     }
     q = questionForCategory(config, "diabetes");
-    if (q) return makeOutput(pedText, "P1", q, `${pedText} is a diabetes or high blood sugar condition.`);
+    if (q) return makeOutput(pedText, "P1", q, `${diabetesDescription}.`);
   }
 
-  // 5.6 DVT / PULMONARY EMBOLISM SHIELD
-  if (/\b(deep vein thrombosis|dvt|pulmonary embolism|pulmonary thromboembolism|venous thromboembolism|vte|thromboembolism)\b/i.test(text)) {
-    return makeOutput(pedText, "FALLBACK", config.anyOther,
-      `*${pedText} is a thromboembolic or venous vascular condition, not a primary heart disease.* ` +
-      `DVT and pulmonary embolism are managed under vascular/coagulation medicine. ` +
-      `Cardiac involvement, when it occurs, is a downstream complication — not the condition's identity. ` +
-      `Declare under the 'Others' section.`);
-  }
-
-  // 5.7 GANGRENE SHIELD
-  if (/\bgangrene\b/i.test(text)) {
-    if (/\b(diabet\w*|foot|toe|peripheral artery|pad|arterial|vascular)\b/i.test(text)) {
-      // allow flow through to relevant category
-    } else {
-      return makeOutput(pedText, "FALLBACK", config.anyOther,
-        `*${pedText} is tissue death that can result from multiple causes* ` +
-        `(diabetes, arterial disease, or infection). ` +
-        `The underlying diagnosed condition should be declared in its relevant category.`);
-    }
-  }
+  // (Removed: byte-identical duplicates of shields 0.5D "DVT / PULMONARY
+  // EMBOLISM SHIELD" and 0.5E "GANGRENE SHIELD" used to sit here, numbered
+  // "5.6" and "5.7" — both dead for the same reason as the others above:
+  // 0.5D/0.5E run earlier with identical regex and conditions.)
 
   // 6. HEART / CARDIAC / VASCULAR
   if (/\b(coronary|cad|ihd|ischemic heart|ischaemic heart|heart attack|myocardial|angina|atrial fibrillation|afib|arrhythmia|cardiomyopathy|tachycardia|bradycardia|heart failure|chf|congestive heart|bypass|cabg|angioplasty|ptca|stent|valve disease|pacemaker|murmur|rheumatic heart|aortic aneurysm|peripheral vascular|pad|pvd|vascular disease|circulatory disorder|aortic stenosis|heart block|endocarditis|myocarditis)\b/i.test(text)) {
@@ -742,19 +871,45 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
     if (q) return makeOutput(pedText, "P1", q, `${pedText} is a cardiac or circulatory system condition.`);
   }
 
-  // 6.5 HYPOTENSION / LOW BP SHIELD
-  if (/\b(hypotension|low bp|low blood pressure|bp low|decreased bp)\b/i.test(text)) {
-    const lowBpQ = questionForCategory(config, "hypotension");
-    if (lowBpQ) {
-      return makeOutput(pedText, "P1", lowBpQ, `${pedText} is a direct category match for this plan's low blood pressure question.`);
-    }
-    return makeOutput(pedText, "FALLBACK", config.anyOther, `*${pedText} refers to low blood pressure.* The policy questions strictly target Hypertension (High Blood Pressure). Therefore, this condition must be declared under the 'Others' section.`);
-  }
+  // (Removed: a byte-identical duplicate of shield 0.5F "HYPOTENSION / LOW
+  // BP SHIELD" used to sit here, numbered "6.5" — dead for the same reason
+  // as the others above: 0.5F runs earlier with an identical, unconditional
+  // regex match.)
 
   // 7. HYPERTENSION
   if (/\b(hyperten\w*|htn|high bp|high blood pressure|essential hypertension|bp high|elevated bp)\b/i.test(text)) {
     q = questionForCategory(config, "hypertension");
-    if (q) return makeOutput(pedText, "P1", q, `${pedText} is classified under Hypertension/High Blood Pressure.`);
+    if (q) {
+      // Universal Manifestation Routing Policy: a named complication
+      // (retinopathy, nephropathy, etc.) is diagnosis wording for a
+      // specific organ disease first — if THIS plan has a dedicated
+      // question whose wording covers that organ, it wins (Specificity
+      // Override / Question Wording Is Law), same as any other organ
+      // condition. Hypertension is only the fallback home for it when the
+      // plan has no such dedicated question — never automatic just
+      // because hypertension is the underlying cause.
+      const HYPERTENSION_COMPLICATION_ORGANS: Record<string, { organCategoryKey: string; organLabel: string; organQuestionName: string }> = {
+        "retinopathy": { organCategoryKey: "eye", organLabel: "an eye", organQuestionName: "eye disease" },
+        "nephropathy": { organCategoryKey: "kidney", organLabel: "a kidney", organQuestionName: "kidney disease" },
+        "encephalopathy": { organCategoryKey: "neuro", organLabel: "a brain/neurological", organQuestionName: "neurological" },
+        "cardiomyopathy": { organCategoryKey: "heart", organLabel: "a cardiac", organQuestionName: "heart disease" },
+        "heart disease": { organCategoryKey: "heart", organLabel: "a cardiac", organQuestionName: "heart disease" },
+      };
+      const complicationHit = Object.entries(HYPERTENSION_COMPLICATION_ORGANS).find(([term]) => text.includes(term));
+      if (complicationHit) {
+        const [, info] = complicationHit;
+        const organQ = info.organCategoryKey === "eye"
+          ? questionForCategory(config, "eye") || questionForCategory(config, "eyeEnt")
+          : questionForCategory(config, info.organCategoryKey);
+        if (organQ && organQ !== config.anyOther) {
+          return makeOutput(pedText, "P1", organQ,
+            `${pedText} is ${info.organLabel} complication of hypertension. This plan's ${info.organQuestionName} question explicitly covers it, so it is declared there rather than under Hypertension / High Blood Pressure.`);
+        }
+        return makeOutput(pedText, "P1", q,
+          `${pedText} is ${info.organLabel} complication caused by hypertension. This plan has no dedicated ${info.organQuestionName} question, so it is declared under the Hypertension / High Blood Pressure question instead.`);
+      }
+      return makeOutput(pedText, "P1", q, `${pedText} is classified under Hypertension/High Blood Pressure.`);
+    }
   }
 
   // 8a. SEVERE NEUROLOGICAL
@@ -764,7 +919,26 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   }
 
   // 8b. MILD / PERIPHERAL NEUROLOGICAL
-  if (/\b(migraine|carpal tunnel|sciatica|radiculopathy|essential tremor|neuropathy|bell's palsy|trigeminal neuralgia|nerve pain)\b/i.test(text)) {
+  // Spine-qualified radiculopathy (cervical/lumbar/thoracic) is nerve-root
+  // compression caused by disc/vertebral pathology — an orthopedic/spinal
+  // condition, not a primary nerve disorder. The musculoskeletal regex
+  // (section 18 below) explicitly lists "cervical radiculopathy" for this
+  // reason, but bare "radiculopathy" here was matching first and returning
+  // before section 18 ever ran. Skip this section for the spine-qualified
+  // phrasing so it falls through to musculoskeletal; unqualified
+  // "radiculopathy" still routes here.
+  //
+  // Sciatica is the same pattern: TOP_PED_DICTIONARY explicitly categorizes
+  // it as "musculoskeletal" (lumbar nerve-root compression, usually from a
+  // herniated disc — not a primary nerve disorder either), and that exact
+  // term now also appears in section 18's regex. Only the bare exact term
+  // reached the dictionary's correct categorization; any qualified phrasing
+  // ("sciatica pain", "chronic sciatica", "lumbar sciatica") was matching
+  // the bare "sciatica" alternative here first. Skip this section for any
+  // sciatica phrasing so it falls through to musculoskeletal instead.
+  const isSpineRadiculopathy = /\b(cervical|lumbar|thoracic|spinal)\s+radiculopathy\b/i.test(text);
+  const isSciatica = /\bsciatica\b/i.test(text);
+  if (!isSpineRadiculopathy && !isSciatica && /\b(migraine|carpal tunnel|radiculopathy|essential tremor|neuropathy|bell's palsy|trigeminal neuralgia|nerve pain)\b/i.test(text)) {
     let targetCategory = "psychiatric";
     const psychQ = questionForCategory(config, "psychiatric") || "";
 
@@ -941,19 +1115,28 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   }
 
   // 18. MUSCULOSKELETAL
-  if (/\b(osteoarthritis|osteoarthrosis|arthritis|spondylitis|spondylosis|cervical spondylosis|lumbar spondylosis|slipped disc|disc bulge|fractur(e|es|ed)|joint replacement|acl|pcl|mcl|lcl|meniscus|rotator cuff|ligaments?|ligament tear|cartilage damage|sprain|strain|dislocation|orthopedic|orthopaedic|spinal disorder|disc prolapse|disc herniation|cervical radiculopathy|avascular necrosis|fibromyalgia|plantar fasciitis|torn meniscus|frozen shoulder|tennis elbow|gout|scoliosis|kyphosis|polio|osteoporosis|osteopenia|osteomyelitis|bone disease)\b/i.test(text)) {
+  if (/\b(osteoarthritis|osteoarthrosis|arthritis|spondylitis|spondylosis|cervical spondylosis|lumbar spondylosis|slipped disc|disc bulge|fractur(e|es|ed)|joint replacement|acl|pcl|mcl|lcl|meniscus|rotator cuff|ligaments?|ligament tear|cartilage damage|sprain|strain|dislocation|orthopedic|orthopaedic|spinal disorder|disc prolapse|disc herniation|cervical radiculopathy|sciatica|avascular necrosis|fibromyalgia|plantar fasciitis|torn meniscus|frozen shoulder|tennis elbow|gout|scoliosis|kyphosis|polio|osteoporosis|osteopenia|osteomyelitis|bone disease)\b/i.test(text)) {
     q = questionForCategory(config, "musculoskeletal");
     if (q) return makeOutput(pedText, "P1", q, `${pedText} is a musculoskeletal or orthopedic condition.`);
   }
 
   // 19. SKIN
-  if (/\b(psoriasis|eczema|dermatitis|skin|fungal infection|cellulitis|boils|abscess|melasma|rosacea|herpes zoster|shingles|scabies|vitiligo|pilonidal|urticaria|alopecia|sebaceous cyst|corn|keloid|ringworm|wart|hives|rash|lipoma|papilloma|skin tag)\b/i.test(text)) {
+  // "lipoma" and "papilloma" were listed here too, ahead of the generic
+  // benign-growth regex (section 22A below) — a lipoma is a fatty tumour and
+  // a papilloma is a wart-like growth, both explicitly categorized
+  // "benign_growth" in TOP_PED_DICTIONARY, not primary dermatological
+  // disease. Since this section runs first, any non-exact phrasing of
+  // either term ("lipoma on back", "multiple lipomas") was always routed to
+  // the plain Skin question instead of the neoplasm/benign-growth question
+  // the dictionary assigns to the exact term. Removed here so both terms
+  // fall through to section 22A, which already lists them.
+  if (/\b(psoriasis|eczema|dermatitis|skin|fungal infection|cellulitis|boils|abscess|melasma|rosacea|herpes zoster|shingles|scabies|vitiligo|pilonidal|urticaria|alopecia|sebaceous cyst|corn|keloid|ringworm|wart|hives|rash|skin tag)\b/i.test(text)) {
     if (/\bpsoriasis\b/i.test(text)) {
       const qSkin = questionForCategory(config, "autoimmune") || questionForCategory(config, "skin");
       if (qSkin) return makeOutput(pedText, "P1", qSkin, `${pedText} is a skin condition with autoimmune classification.`);
     }
     q = questionForCategory(config, "skin");
-    if (q) return makeOutput(pedText, "P1", q, `${pedText} is a skin or dermatological condition.`);
+    if (q) return makeOutput(pedText, "P1", q, `${pedText} is a dermatological condition and falls under this plan's Skin category question.`);
   }
 
   // 20. EYE
@@ -1018,8 +1201,30 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   }
 
   // 24. ISOLATED PROCEDURES & ACUTE TRAUMA
-  if (/\b(heat stroke|sun stroke|stitch(es)?|suture(s)?|wound(s|\s*cleaning)?|cut(s)?|burn(s)?|laceration(s)?|abrasion(s)?|bruise(s)?|contusion(s)?|bite(s)?|sting(s)?|cast|plaster|splint|sling|bandaged?|surgery|operation|procedure|treatment|hospitali[sz]ation|hospitali[sz]ed|admitted|admission|accident|trauma|injur(y|ies)|first aid|er visit|emergency room|amputation|injection|iv(\s*drip)?|physiotherapy|\w*ectomy)\b/i.test(text)) {
-    return makeOutput(pedText, "FALLBACK", config.anyOther, `"${pedText}" indicates an acute injury, physical treatment, or medical procedure rather than a specific illness category.`);
+  //
+  // Was a single giant regex lumping surgical procedures (surgery,
+  // amputation, any *-ectomy) in with pure acute injuries (cuts, burns,
+  // bites) under one generic message. That's wrong for two reasons a real
+  // procedure name (e.g. "Appendectomy") deserves better than an injury: a
+  // surgical procedure has a specific umbrella question it maps to (see
+  // detectSupportingFlags/getApplicableUmbrellaQuestions above, which now
+  // also recognizes procedure-suffix words), and it was very likely
+  // performed FOR a diagnosed condition (e.g. Appendicitis) that itself may
+  // map to a specific plan question — worth checking separately from the
+  // procedure itself. Common named procedures with an unambiguous single
+  // underlying diagnosis (appendectomy, cholecystectomy, tonsillectomy,
+  // hysterectomy, thyroidectomy, cataract surgery, knee/hip replacement,
+  // etc.) are now caught earlier via TOP_PED_DICTIONARY and never reach this
+  // rule at all — this is the catch-all for procedures/surgeries that
+  // aren't in that dictionary (generic "surgery", "operation", less common
+  // named procedures) and for genuine acute injuries/trauma, which still
+  // need two different messages.
+  if (/\b(surger(y|ies)|surgical|operation|amputation|\w*ectomy|\w*ostomy|\w*otomy|\w*plasty|\w*pexy|replacement|transplant|angioplasty)\b/i.test(text)) {
+    return makeOutput(pedText, "FALLBACK", config.anyOther,
+      `*"${pedText}" is a surgical procedure*, not a specific illness category by itself. Declare it under this plan's hospitalisation/surgery umbrella question.\n\nAlso identify the underlying diagnosed condition this procedure was performed for (e.g. the illness or injury it treated) and check separately whether *that* diagnosis maps to one of this plan's specific medical questions — the procedure itself is usually secondary to the diagnosis driving it.`);
+  }
+  if (/\b(heat stroke|sun stroke|stitch(es)?|suture(s)?|wound(s|\s*cleaning)?|cut(s)?|burn(s)?|laceration(s)?|abrasion(s)?|bruise(s)?|contusion(s)?|bite(s)?|sting(s)?|cast|plaster|splint|sling|bandaged?|procedure|treatment|hospitali[sz]ation|hospitali[sz]ed|admitted|admission|accident|trauma|injur(y|ies)|first aid|er visit|emergency room|injection|iv(\s*drip)?|physiotherapy)\b/i.test(text)) {
+    return makeOutput(pedText, "FALLBACK", config.anyOther, `"${pedText}" indicates an acute injury or physical trauma rather than a specific illness category. Declare it under this plan's hospitalisation/surgery umbrella question if applicable, otherwise under the 'Others Section'.`);
   }
 
   return null;
