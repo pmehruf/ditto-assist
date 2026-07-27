@@ -8,20 +8,67 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Import types & engine logic
-import { getPlanConfig, MatchOutput } from "./src/types.js";
+import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, guessCategoryMap, TOP_PED_DICTIONARY } from "./src/types.js";
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanQuestion } from "./src/engine.js";
+import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
 import { getGoogleAuthUrl, exchangeCodeForIdentity } from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
+import { getDb } from "./src/server/db/client.js";
+import { createRepositories, normalizeCondition } from "./src/server/db/repositories/index.js";
+import type { UsersRepository } from "./src/server/db/repositories/index.js";
 
 dotenv.config();
 
 const app = express();
+
+// Cloud Run (and most PaaS hosts) always sit behind a reverse proxy that
+// terminates TLS and forwards the real client IP via X-Forwarded-For.
+// Without this, express-rate-limit v7 either throws a validation error on
+// every request or buckets all traffic under the proxy's single IP instead
+// of the real caller's — silently defeating the rate limiter. `1` trusts
+// exactly one hop (the platform's own proxy), which matches Cloud Run.
+app.set("trust proxy", 1);
+
+// Baseline security headers (audit fix, see Production_Readiness_Audit.md
+// Finding 7). CSP is deliberately left off for now rather than guessed at:
+// this app renders a lot of inline `style={{...}}` props (see e.g.
+// AnnouncementLogPage.tsx) and loads Google Fonts via an @import in
+// index.html, both of which a default/strict CSP would silently break with
+// no error visible outside a real browser's console — and this environment
+// has no way to browser-test that before shipping it. Tightening CSP is a
+// good follow-up, but it needs a dedicated pass with real browser
+// verification rather than a blind guess that could break rendering.
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// Rate limiting (audit fix, see Production_Readiness_Audit.md Finding 7):
+// every /api/* route gets a generous baseline limit; the Gemini-backed and
+// codebase-mutation endpoints (previously reachable with zero auth AND zero
+// rate limiting — see Finding 4) get a much tighter one, since those are
+// the ones an attacker could otherwise use to run up API costs or spam
+// writes.
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const expensiveActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please wait a few minutes and try again." },
+});
+app.use("/api", apiLimiter);
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(attachUser);
@@ -49,8 +96,54 @@ function getAiClient(): GoogleGenAI {
   return aiClient;
 }
 
+/** Converts a DB-stored plan_configs row (tagged questions array) into the
+ * flat PlanConfig shape engine.ts expects — mirrors how the client used to
+ * derive this in App.tsx's (now-retired) planConfigs merge useMemo. */
+function dbRowToPlanConfig(row: {
+  questions: unknown;
+  anyOther: string;
+  hasUmbrella: boolean;
+  umbrellaQuestions: unknown;
+  categoryMap: unknown;
+  overrides: unknown;
+}) {
+  const taggedQuestions = (row.questions as Array<{ text: string; tag: string }>) || [];
+  // Matches the hardcoded PlanConfig shape: `questions` holds every Specific
+  // + the Catch-all text (umbrella questions are tracked separately).
+  const questions = taggedQuestions.filter((q) => q.tag !== "Umbrella").map((q) => q.text);
+  return {
+    questions,
+    anyOther: row.anyOther,
+    hasUmbrella: row.hasUmbrella,
+    umbrellaQuestions: (row.umbrellaQuestions as string[]) || [],
+    categoryMap: (row.categoryMap as Record<string, string | number>) || {},
+    overrides: (row.overrides as PlanOverridesShape) || undefined,
+  };
+}
+type PlanOverridesShape = { excludePrediabetes?: boolean; requiresInsulinForDiabetes?: boolean; bypassBenignTumors?: boolean };
+
+// ─────────────────────────────────────────────────────────────────────────
+// Three-level lookup memory — versioning constants.
+//
+//   L1  Deterministic Engine  (engine.ts — unchanged, always wins)
+//   L2  AI Memory             (ai_memory table — cache + human governance)
+//   L3  Gemini                (only on an L1 + L2 miss)
+//
+// ENGINE_VERSION is part of the L2 cache key. Bump it whenever the
+// deterministic engine's classification behaviour changes (new/edited regex
+// section, dictionary routing, shields, post-guards). Bumping naturally
+// invalidates every previously cached AI answer — the new key simply misses,
+// so a condition the updated engine can now resolve deterministically stops
+// being served from a stale AI cache entry.
+//
+// PROMPT_VERSION is recorded per entry so the queue can show which prompt
+// produced an answer; bump it when the /api/match prompt text changes.
+// ─────────────────────────────────────────────────────────────────────────
+const ENGINE_VERSION = "2026-07-18.1";
+const PROMPT_VERSION = "match-v1";
+
 // 1. API Route: Match PED to Policy questionnaire
-app.post("/api/match", async (req, res) => {
+app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
     const { planName, ped } = req.body;
 
@@ -58,14 +151,33 @@ app.post("/api/match", async (req, res) => {
       return res.status(400).json({ error: "Missing planName or ped in request body" });
     }
 
+    const {
+      planConfigs: planConfigsRepo,
+      pedMappingOverrides: pedOverridesRepo,
+      aiMemory: aiMemoryRepo,
+    } = createRepositories(getDb());
+    await ensurePedOverridesLoaded(pedOverridesRepo);
+
     const PLAN_CONFIG = getPlanConfig();
-    const config = PLAN_CONFIG[planName];
+    let config = PLAN_CONFIG[planName];
+
+    // DB-authored plans (added or edited via the Add/Edit Plan wizard) are
+    // the live source of truth and take precedence over the hardcoded
+    // bootstrap defaults — this is what lets a newly-added plan be matched
+    // against immediately, with no code change or redeploy.
+    try {
+      const dbPlan = await planConfigsRepo.get(planName);
+      if (dbPlan) config = dbRowToPlanConfig(dbPlan);
+    } catch (err) {
+      console.error("Failed to load DB plan config (falling back to hardcoded defaults if any exist):", err);
+    }
 
     if (!config) {
       return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
     }
 
-    // A. Check Deterministic Engine first!
+    // ── LEVEL 1 ── Deterministic Engine. Highest priority, unchanged.
+    // If this resolves, we return immediately: no AI Memory read, no Gemini.
     let output = classifyDeterministic(ped, planName, config);
 
     if (output) {
@@ -79,7 +191,81 @@ app.post("/api/match", async (req, res) => {
       });
     }
 
-    // B. Call Gemini API Fallback
+    // ── LEVEL 2 ── AI Memory. Consulted only because L1 could not classify
+    // this PED. A hit means Gemini is NOT called again for this
+    // (condition, plan, engineVersion) triple. This layer can never override
+    // an L1 result — L1 has already returned above if it matched.
+    const normalizedPed = normalizeCondition(ped);
+    let cached: Awaited<ReturnType<typeof aiMemoryRepo.findCached>> = undefined;
+    try {
+      cached = await aiMemoryRepo.findCached(normalizedPed, planName, ENGINE_VERSION);
+    } catch (err: any) {
+      // A cache failure must never break a lookup — fall through to Gemini.
+      // Called out loudly because the fallback is invisible from the UI: the
+      // advisor still gets an answer, so a broken L2 looks like "working"
+      // while silently re-billing Gemini on every repeat lookup.
+      const missingTable = /relation .*ai_memory.* does not exist/i.test(err?.message || "");
+      console.error(
+        missingTable
+          ? "[AI MEMORY] Table 'ai_memory' is missing — L2 cache is INACTIVE (every lookup will call Gemini and nothing will reach AI Mapping Review). Run: npm run db:migrate"
+          : "[AI MEMORY] Cache read failed (continuing to Gemini):",
+        missingTable ? "" : err
+      );
+    }
+
+    if (cached && cached.status !== "archived") {
+      const storedResult = (cached.aiResponse as { result?: MatchOutput } | null)?.result;
+
+      // Guard: a cached answer is only reusable if the question it points at
+      // still exists in this plan. Plan questions can be edited after an
+      // entry was cached; serving a question that no longer exists would be
+      // worse than re-asking. Anything else is treated as a cache miss.
+      const pointsAtLiveQuestion =
+        !!storedResult &&
+        (storedResult.matched_question === config.anyOther ||
+          config.questions.includes(storedResult.matched_question) ||
+          ["Unable to Conclude", "Invalid Medical Term", "No questions applicable"].includes(
+            storedResult.matched_question
+          ));
+
+      if (cached.status === "rejected") {
+        // An admin rejected this AI answer. Do NOT re-ask Gemini (that's the
+        // whole point of recording the rejection) and do NOT serve the
+        // rejected mapping — tell the advisor it needs manual review.
+        try {
+          await aiMemoryRepo.touch(cached.id);
+        } catch (_) {}
+        return res.json({
+          ped_input: ped,
+          match_type: "FALLBACK",
+          matched_question: config.anyOther,
+          explanation:
+            `*"${ped}" has been flagged for manual review.*\n\n` +
+            `A previous AI-suggested mapping for this condition was reviewed and rejected, so no automated ` +
+            `mapping is available. Please confirm the correct declaration with your Mentor/Guide before proceeding, ` +
+            `and declare under the 'Others Section' if no specific question applies.`,
+          confused_questions: [],
+          source: "AI Memory (Rejected — Manual Review Required)",
+        });
+      }
+
+      if (pointsAtLiveQuestion) {
+        try {
+          await aiMemoryRepo.touch(cached.id);
+        } catch (_) {}
+        return res.json({
+          ...storedResult,
+          source:
+            cached.status === "approved"
+              ? "AI Memory (Approved)"
+              : "AI Memory (Pending Approval)",
+        });
+      }
+      // else: stale question reference — fall through and re-ask Gemini.
+    }
+
+    // ── LEVEL 3 ── Gemini. Reached only on an L1 + L2 miss. The answer is
+    // recorded into AI Memory as 'pending' below so this costs one call, once.
     const ai = getAiClient();
     const numberedQuestions = config.questions.map((q, i) => `${i + 1}. ${q}`);
 
@@ -124,6 +310,9 @@ app.post("/api/match", async (req, res) => {
     const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
     let response: any = null;
     let lastError: any = null;
+    // Which model actually produced the answer — recorded on the AI Memory
+    // entry so the queue's detail panel can show it.
+    let usedModel: string = modelsToTry[0];
 
     for (const model of modelsToTry) {
       let attempts = 0;
@@ -168,6 +357,7 @@ app.post("/api/match", async (req, res) => {
               }
             }
           });
+          usedModel = model;
           break; // Succeeded! Break out of retry loop
         } catch (err: any) {
           lastError = err;
@@ -233,6 +423,32 @@ app.post("/api/match", async (req, res) => {
     parsedOutput = applyPostGuards(parsedOutput, ped, planName, config);
     const finalResult = finalizeOutput(parsedOutput, ped, config, config.questions);
 
+    // Record into AI Memory (L2) as 'pending', entering the Unknown Condition
+    // Queue for manual review. `result` is what future cache hits replay to
+    // the advisor; `raw` keeps Gemini's untouched JSON for the queue's detail
+    // panel. Write failures are logged but never fail the lookup — worst case
+    // the next identical lookup re-asks Gemini.
+    try {
+      await aiMemoryRepo.recordPending({
+        condition: String(ped),
+        normalizedCondition: normalizedPed,
+        planName,
+        engineVersion: ENGINE_VERSION,
+        promptVersion: PROMPT_VERSION,
+        geminiModel: usedModel || modelsToTry[0],
+        aiResponse: { result: finalResult, raw: result },
+        status: "pending",
+      });
+    } catch (err: any) {
+      const missingTable = /relation .*ai_memory.* does not exist/i.test(err?.message || "");
+      console.error(
+        missingTable
+          ? "[AI MEMORY] Table 'ai_memory' is missing — this Gemini answer was NOT recorded and will not appear in AI Mapping Review. Run: npm run db:migrate"
+          : "[AI MEMORY] Write failed (result still returned to user):",
+        missingTable ? "" : err
+      );
+    }
+
     return res.json({
       ...finalResult,
       source: "Live Gemini API"
@@ -259,105 +475,75 @@ app.post("/api/match", async (req, res) => {
   }
 });
 
-// Dynamic route to let the advisor save newly discovered conditions permanently to the codebase
-app.post("/api/add-ped-mapping", async (req, res) => {
+// Dynamic route to let an advisor record a newly-discovered PED -> category
+// mapping.
+//
+// NOTE (audit fix, see Production_Readiness_Audit.md Finding 5): this used
+// to splice the raw request body directly into src/types.ts and
+// src/constants/scriptDictionary.ts via fs.writeFileSync on the live
+// server. That was (a) a code-injection-shaped risk — pedLower/category
+// were written into a .ts file with no character validation, so a value
+// containing a `"` could corrupt or inject into source that a dev server
+// re-evaluates on reload — and (b) silently useless in production, since
+// the deployed server runs the pre-built dist/server.cjs bundle, which a
+// runtime write to src/types.ts can never change.
+//
+// DB-backed as of the ped_mapping_overrides table (src/server/db/schema.ts):
+// a correction made here is (a) written to Postgres so it survives a
+// restart/redeploy, and (b) merged into the in-memory TOP_PED_DICTIONARY
+// immediately, so it affects every /api/match call from this moment on
+// without waiting for the lazy ensurePedOverridesLoaded() load to happen
+// again (that only runs once per process).
+const PED_INPUT_MAX_LENGTH = 200;
+
+app.post("/api/add-ped-mapping", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
     const { ped, category } = req.body;
-    if (!ped || !category) {
+
+    if (typeof ped !== "string" || typeof category !== "string" || !ped.trim() || !category.trim()) {
       return res.status(400).json({ error: "Missing required parameters: ped and category" });
     }
 
-    const pedLower = ped.trim().toLowerCase();
     const pedClean = ped.trim();
-
-    console.log(`[Persisting PED] "${pedClean}" into Category "${category}"`);
-
-    // 1. Update src/types.ts (TOP_PED_DICTIONARY)
-    const typesPath = path.join(process.cwd(), "src", "types.ts");
-    if (fs.existsSync(typesPath)) {
-      let typesContent = fs.readFileSync(typesPath, "utf-8");
-      
-      // Ensure key doesn't already exist in TOP_PED_DICTIONARY (by word-boundary or quote bounds)
-      const alreadyInDict = typesContent.includes(`"${pedLower}":`) || typesContent.includes(`'${pedLower}':`);
-      if (!alreadyInDict) {
-        const targetStr = `"gerd": "digestive"`;
-        if (typesContent.includes(targetStr)) {
-          // Replace "gerd": "digestive" with "gerd": "digestive",\n  "new_ped": "category"
-          typesContent = typesContent.replace(
-            targetStr,
-            `"gerd": "digestive",\n  "${pedLower}": "${category}"`
-          );
-          fs.writeFileSync(typesPath, typesContent, "utf-8");
-          console.log(`Success: Added "${pedLower}": "${category}" to TOP_PED_DICTIONARY in types.ts`);
-        } else {
-          console.warn("Could not find reference anchor in types.ts: " + targetStr);
-        }
-      } else {
-        console.log(`PED "${pedLower}" is already mapped in types.ts`);
-      }
-    } else {
-      console.error("types.ts does not exist at " + typesPath);
+    if (pedClean.length > PED_INPUT_MAX_LENGTH) {
+      return res.status(400).json({ error: `ped must be ${PED_INPUT_MAX_LENGTH} characters or fewer.` });
+    }
+    if (!Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, category)) {
+      return res.status(400).json({ error: `Unknown category "${category}".` });
     }
 
-    // 2. Update src/constants/scriptDictionary.ts (SCRIPT_DICTIONARY)
-    const appPath = path.join(process.cwd(), "src", "constants", "scriptDictionary.ts");
-    if (fs.existsSync(appPath)) {
-      let appContent = fs.readFileSync(appPath, "utf-8");
+    const { users: usersRepo, pedMappingOverrides } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    await pedMappingOverrides.upsert(pedClean, category, `${req.user!.name} (${callerTier})`);
 
-      const alreadyInScript = appContent.includes(`"${pedClean}"`) || appContent.includes(`'${pedClean}'`);
-      if (!alreadyInScript) {
-        const targetStr = `"hba1c 6.5"`;
-        if (appContent.includes(targetStr)) {
-          // Replace "hba1c 6.5" with "hba1c 6.5",\n  "new_ped"
-          appContent = appContent.replace(
-            targetStr,
-            `"hba1c 6.5",\n  "${pedClean}"`
-          );
-          fs.writeFileSync(appPath, appContent, "utf-8");
-          console.log(`Success: Added "${pedClean}" to SCRIPT_DICTIONARY in scriptDictionary.ts`);
-        } else {
-          console.warn("Could not find reference anchor in scriptDictionary.ts: " + targetStr);
-        }
-      } else {
-        console.log(`PED "${pedClean}" is already listed in scriptDictionary.ts`);
-      }
-    } else {
-      console.error("scriptDictionary.ts does not exist at " + appPath);
-    }
+    // Make sure the full override set has been loaded at least once before
+    // patching in this one — otherwise, if this is the very first override
+    // touched this process, marking the loader "done" here would cause any
+    // *other* pre-existing overrides to never get merged in this process's
+    // lifetime.
+    await ensurePedOverridesLoaded(pedMappingOverrides);
+    TOP_PED_DICTIONARY[pedClean.trim().toLowerCase()] = category;
+
+    console.log(`[PED mapping] "${req.user?.email}" recorded "${pedClean}" -> category "${category}" (persisted)`);
 
     return res.json({ success: true, ped: pedClean, category });
   } catch (err: any) {
     console.error("Error in add-ped-mapping API: ", err);
-    return res.status(500).json({ error: `Internal codebase modification failure: ${err.message}` });
+    return res.status(500).json({ error: `Internal error while recording the mapping: ${err.message}` });
   }
 });
 
 // AI Workflow for Add Plan
-app.post("/api/ai-plan-workflow", async (req, res) => {
+app.post("/api/ai-plan-workflow", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
     const { planName, insurerName, questions = [], illnessSchedules = [] } = req.body;
     
-    // Fallback results initialized
+    // Fallback results initialized — CATEGORY_AUTO_MAP_RULES (src/types.ts)
+    // is the single source of truth for these keyword rules; it used to be
+    // copy-pasted here and (twice, slightly differently) in App.tsx.
     let categoryMappings = questions.map((q: any) => {
       const text = q.text || "";
-      let mappedCategory: string | null = null;
-      if (/diabet|sugar|glucose/i.test(text)) mappedCategory = "diabetes";
-      else if (/hyperten|blood pressure\b|bp high|bp\s+high/i.test(text)) mappedCategory = "hypertension";
-      else if (/lipid|cholesterol|triglyceride/i.test(text)) mappedCategory = "lipid";
-      else if (/asthma|lung|tuberculosis|tb|respiratory|pleura|bronchitis|copd/i.test(text)) mappedCategory = "respiratory";
-      else if (/stroke|paralysis|epilepsy|fits|seizure|neurolog|brain|spinal cord/i.test(text)) mappedCategory = "neuro";
-      else if (/psychiatr|mental|depress|anxiety|insomnia/i.test(text)) mappedCategory = "psychiatric";
-      else if (/ulcer|digestive|stomach|intestine|piles|fissure|fistula|appendix/i.test(text)) mappedCategory = "digestive";
-      else if (/liver|jaundice|gall|hepatitis/i.test(text)) mappedCategory = "liver";
-      else if (/kidney|renal|urinary|prostate|dialysis/i.test(text)) mappedCategory = "kidney";
-      else if (/reproduct|ovarian|uterus|cervix|prostate|pcod|semen/i.test(text)) mappedCategory = "reproductive";
-      else if (/thyroid|endocrine|gland|goiter|pituitary/i.test(text)) mappedCategory = "endocrine";
-      else if (/blood disorder|anaemia|anemia|haemophilia|thalassaemia|genetic/i.test(text)) mappedCategory = "blood";
-      else if (/skin|psoriasis|dermatitis|keloid/i.test(text)) mappedCategory = "skin";
-      else if (/cancer|tumour|tumor|cyst|polyp|growth/i.test(text)) mappedCategory = "neoplasm";
-      else if (/autoimmune|sle|lupus|rheumatoid arthritis/i.test(text)) mappedCategory = "autoimmune";
-      else if (/ear|nose|throat|tonsil|sinus/i.test(text)) mappedCategory = "ent";
-      else if (/eye|vision|cataract|glaucoma/i.test(text)) mappedCategory = "eye";
+      const mappedCategory = CATEGORY_AUTO_MAP_RULES.find((r) => r.regex.test(text))?.key ?? null;
 
       return {
         question: text,
@@ -378,20 +564,25 @@ app.post("/api/ai-plan-workflow", async (req, res) => {
       };
     });
 
-    // Attempt Gemini call
+    // Attempt Gemini call — usedAi tells the caller (Plan Management's
+    // "Refine with AI" button) whether this actually ran Gemini or silently
+    // fell back to the same keyword rules "Suggest" already ran, so the UI
+    // can be honest about it instead of implying a refinement happened when
+    // it didn't (e.g. no GEMINI_API_KEY configured).
+    let usedAi = false;
     try {
       if (process.env.GEMINI_API_KEY) {
         const ai = getAiClient();
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: `Analyze this health insurance plan questionnaire and its custom waiting period schedules.
-          
+
           Plan Name: "${planName}"
           Insurer: "${insurerName}"
-          
+
           Questions:
           ${JSON.stringify(questions, null, 2)}
-          
+
           Custom Waiting Period Illness Schedules:
           ${JSON.stringify(illnessSchedules, null, 2)}
 
@@ -399,7 +590,42 @@ app.post("/api/ai-plan-workflow", async (req, res) => {
           1. "categoryMappings": array of objects, each having { "question": string, "mappedCategory": string | null, "confidence": "HIGH"|"MEDIUM"|"LOW", "explanation": string }
           2. "illnessMappings": array of objects, each having { "illnessId": string, "illnessName": string, "isValid": boolean, "notes": string }
 
-          Map question to one of these flat category keys: 'diabetes', 'hypertension', 'lipid', 'respiratory', 'neuro', 'psychiatric', 'digestive', 'liver', 'kidney', 'reproductive', 'endocrine', 'blood', 'skin', 'neoplasm', 'autoimmune', 'ent', 'eye'.
+          Map question to one of these flat category keys: ${CATEGORY_AUTO_MAP_RULES.map((r) => `'${r.key}'`).join(", ")}.
+
+          STRICT MAPPING RULES — a wrong mapping here silently misroutes real
+          medical declarations, so err toward "null" over a guess:
+          - Only assign a category to a question if that question's own text
+            explicitly names the condition(s) belonging to that category, or
+            unambiguously and specifically covers the whole category (e.g. a
+            question literally saying "any disorder of Blood and/or
+            Immunity" covers "autoimmune" generally). A category is NOT a
+            match just because the question's general theme is loosely
+            related, or because the question happens to name ONE narrow
+            condition that could also be filed under that category — narrow
+            named conditions belong to their OWN specific category, not the
+            broader one. Example: a question listing "...Crohn's disease,
+            Ulcerative colitis..." inside an unrelated compound list of named
+            diseases (cancer, heart attack, organ failure, etc.) should map
+            those two conditions to "digestive", NOT to "autoimmune" —
+            "autoimmune" would only apply if the question's wording itself
+            is a general immunity/autoimmune question.
+          - A single compound question can and often does correctly map to
+            MULTIPLE categories (once per condition group it explicitly
+            names) — map each one independently based on that specific
+            wording, not the question's overall theme.
+          - If NO question in this plan genuinely, specifically covers a
+            category, set "mappedCategory": null for it rather than forcing
+            it onto the closest-sounding question — the app already defaults
+            any unmapped category to this plan's own catch-all/"any other"
+            question, which is the CORRECT outcome when no dedicated
+            question exists. A missing mapping is always safer than a wrong
+            one.
+          - Set "confidence": "LOW" whenever the match relies on inference
+            rather than an explicit word/phrase in the question text, and
+            quote the exact phrase that justifies the mapping in
+            "explanation" (or state there is none, if "mappedCategory" is
+            null).
+
           Ensure validity checks verify if waiting periods are explicit. Output valid JSON only.`,
           config: {
             responseMimeType: "application/json",
@@ -411,6 +637,7 @@ app.post("/api/ai-plan-workflow", async (req, res) => {
           const parsed = JSON.parse(response.text.trim());
           if (parsed.categoryMappings) categoryMappings = parsed.categoryMappings;
           if (parsed.illnessMappings) illnessMappings = parsed.illnessMappings;
+          usedAi = true;
         }
       }
     } catch (gErr) {
@@ -420,7 +647,8 @@ app.post("/api/ai-plan-workflow", async (req, res) => {
     return res.json({
       success: true,
       categoryMappings,
-      illnessMappings
+      illnessMappings,
+      usedAi,
     });
   } catch (err: any) {
     console.error("AI workflow API execution error:", err);
@@ -502,8 +730,14 @@ app.post("/api/auth/logout", (req, res) => {
 // USER DIRECTORY — server-backed source of truth for the org's user list
 // (email, name, tactId, tier, status). This is what makes an Owner's edit
 // in the UI "actually reflect in the core for all users": the record lives
-// in data/users.json on the server, not in one browser's localStorage, so
+// in the `users` table (Postgres), not in one browser's localStorage, so
 // every client that fetches GET /api/users afterward sees the same data.
+//
+// This used to be data/users.json on the server's local disk. That was a
+// production-durability gap: most hosts (serverless/containers) have an
+// ephemeral or read-only filesystem, so writes either didn't persist across
+// restarts or failed outright. Moved into Postgres alongside the other four
+// audit resources for the same reason those were migrated in Fix 5.
 //
 // Authorization here is intentionally simple and matches the rest of this
 // app's trust model (see session.ts's comment about role checks being a
@@ -511,38 +745,21 @@ app.post("/api/auth/logout", (req, res) => {
 // req.user (the verified Google session) tells us WHO is calling; we look
 // their tier up in the directory itself to decide WHAT they can do.
 // ─────────────────────────────────────────────────────────────────────────
-const usersDataPath = path.join(process.cwd(), "data", "users.json");
 
 interface DirectoryUser {
   email: string;
   name: string;
   tactId: string;
   tier: "General" | "Admin" | "Owner";
-  status: "Active" | "Pending First Login";
-}
-
-function readUsersFile(): DirectoryUser[] {
-  try {
-    if (!fs.existsSync(usersDataPath)) return [];
-    const parsed = JSON.parse(fs.readFileSync(usersDataPath, "utf-8"));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (err) {
-    console.error("Failed to read data/users.json:", err);
-    return [];
-  }
-}
-
-function writeUsersFile(users: DirectoryUser[]): void {
-  fs.mkdirSync(path.dirname(usersDataPath), { recursive: true });
-  fs.writeFileSync(usersDataPath, JSON.stringify(users, null, 2) + "\n", "utf-8");
+  status: "Active" | "Disabled";
 }
 
 /** Users not yet present in the directory default to "General" — matches the
  * client's existing fallback for a first-time Google sign-in. */
-function getCallerTier(req: any, users: DirectoryUser[]): "General" | "Admin" | "Owner" {
+async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<"General" | "Admin" | "Owner"> {
   const email = (req.user?.email as string | undefined)?.toLowerCase();
   if (!email) return "General";
-  const match = users.find((u) => u.email.toLowerCase() === email);
+  const match = await usersRepo.findByEmail(email);
   return match?.tier ?? "General";
 }
 
@@ -553,43 +770,1299 @@ function isValidDirectoryUser(u: any): u is DirectoryUser {
     typeof u.name === "string" &&
     typeof u.tactId === "string" &&
     (u.tier === "General" || u.tier === "Admin" || u.tier === "Owner") &&
-    (u.status === "Active" || u.status === "Pending First Login")
+    (u.status === "Active" || u.status === "Disabled")
   );
 }
 
 // Admin and Owner can view the directory; anyone else is refused.
-app.get("/api/users", requireAuth, (req, res) => {
-  const users = readUsersFile();
-  const callerTier = getCallerTier(req, users);
-  if (callerTier !== "Admin" && callerTier !== "Owner") {
-    return res.status(403).json({ error: "The user directory is restricted to Admin and Owner roles." });
+app.get("/api/users", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Admin" && callerTier !== "Owner") {
+      return res.status(403).json({ error: "The user directory is restricted to Admin and Owner roles." });
+    }
+    const users = await usersRepo.list();
+    return res.json({ users });
+  } catch (err: any) {
+    console.error("Failed to list the user directory:", err);
+    return res.status(500).json({ error: `Failed to load the user directory: ${err.message}` });
   }
-  return res.json({ users });
 });
 
 // Only Owner can edit — Admin gets a read-only view in the UI, enforced
 // again here so the restriction can't be bypassed by calling the API directly.
-app.put("/api/users", requireAuth, (req, res) => {
-  const existingUsers = readUsersFile();
-  const callerTier = getCallerTier(req, existingUsers);
-  if (callerTier !== "Owner") {
-    return res.status(403).json({ error: "Only the Owner role can edit the user directory." });
-  }
-
-  const { users } = req.body;
-  if (!Array.isArray(users) || !users.every(isValidDirectoryUser)) {
-    return res.status(400).json({ error: "Invalid users payload." });
-  }
-  if (!users.some((u: DirectoryUser) => u.tier === "Owner")) {
-    return res.status(400).json({ error: "At least one user must remain an Owner." });
-  }
-
+app.put("/api/users", requireAuth, async (req, res) => {
   try {
-    writeUsersFile(users);
-    return res.json({ success: true, users });
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Owner") {
+      return res.status(403).json({ error: "Only the Owner role can edit the user directory." });
+    }
+
+    const { users } = req.body;
+    if (!Array.isArray(users) || !users.every(isValidDirectoryUser)) {
+      return res.status(400).json({ error: "Invalid users payload." });
+    }
+    if (!users.some((u: DirectoryUser) => u.tier === "Owner")) {
+      return res.status(400).json({ error: "At least one user must remain an Owner." });
+    }
+
+    // Rebuild each row from only the known directory fields before writing.
+    // GET /api/users returns full DB rows (including createdAt/lastLogin,
+    // JSON-serialized as strings), the client round-trips whatever it was
+    // given back through edits/deletes/adds, and a stray string in a
+    // timestamp column crashes Drizzle's insert (it calls .toISOString() on
+    // the value, which strings don't have) — never trust the client to send
+    // back exactly the columns meant to be written.
+    const cleanUsers: DirectoryUser[] = users.map((u: DirectoryUser) => ({
+      email: u.email,
+      name: u.name,
+      tactId: u.tactId,
+      tier: u.tier,
+      status: u.status,
+    }));
+
+    const saved = await usersRepo.replaceAll(cleanUsers);
+    return res.json({ success: true, users: saved });
   } catch (err: any) {
-    console.error("Failed to write data/users.json:", err);
+    console.error("Failed to persist the user directory:", err);
     return res.status(500).json({ error: "Failed to persist the user directory." });
+  }
+});
+
+// Admin AND Owner can add a new directory entry (mirrors "Add Plan" staying
+// enabled for Admin on the Plan Management page) — unlike the PUT route
+// above, this only ever inserts one new row via a single-row create(), so an
+// Admin calling it can't smuggle in edits/deletes to other users the way a
+// full-array PUT would allow. Editing/removing an EXISTING user is still
+// Owner-only, enforced by the PUT/DELETE-via-PUT route above.
+app.post("/api/users", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Admin" && callerTier !== "Owner") {
+      return res.status(403).json({ error: "Only Admin and Owner roles can add users to the directory." });
+    }
+
+    const { email, name, tactId, tier, status } = req.body;
+    if (!isValidDirectoryUser({ email, name, tactId, tier, status })) {
+      return res.status(400).json({ error: "email, name, tactId, tier, and status are all required." });
+    }
+    // Admin can add users, but shouldn't be able to mint a new Owner from
+    // this lightweight endpoint — that's still an Owner-only directory edit.
+    if (callerTier === "Admin" && tier === "Owner") {
+      return res.status(403).json({ error: "Only the Owner role can grant Owner clearance." });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await usersRepo.findByEmail(normalizedEmail);
+    if (existing) {
+      return res.status(409).json({ error: "A user with that email already exists in the directory." });
+    }
+
+    const row = await usersRepo.create({
+      email: normalizedEmail,
+      name: name.trim(),
+      tactId: tactId.trim(),
+      tier,
+      status,
+    });
+    return res.json({ success: true, user: row });
+  } catch (err: any) {
+    console.error("Failed to add a new directory entry:", err);
+    return res.status(500).json({ error: "Failed to add this user." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUDIT FEATURES — search history, change logs, announcements, flagged
+// issues. These four resources have had a complete Drizzle schema,
+// repository layer, and unit test suite (src/server/db/) since Phase 4, but
+// were never wired to any API route — every one of these features actually
+// ran on the calling browser's own localStorage (audit fix, see
+// Production_Readiness_Audit.md Finding 3). That meant an Admin publishing
+// an announcement, or an Owner resolving a flagged issue, only ever updated
+// their own browser; nobody else's session would see it. These routes make
+// Postgres (via getDb()/createRepositories()) the actual shared source of
+// truth, matching the pattern already used correctly by GET/PUT /api/users
+// above: identity always comes from the verified session (req.user), never
+// from the request body, and tier is always re-derived server-side from
+// data/users.json rather than trusted from the client.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Requires Admin or Owner tier; sends a 403 and returns false otherwise. */
+async function requireAdminOrOwner(req: any, res: any, action: string): Promise<boolean> {
+  const { users: usersRepo } = createRepositories(getDb());
+  const callerTier = await getCallerTier(req, usersRepo);
+  if (callerTier !== "Admin" && callerTier !== "Owner") {
+    res.status(403).json({ error: `${action} requires Admin or Owner tier.` });
+    return false;
+  }
+  return true;
+}
+
+// --- Search History (powers the Audit tab's full list and My Activity's self-filtered view) ---
+
+app.get("/api/search-history", requireAuth, async (req, res) => {
+  try {
+    const requestedEmail = typeof req.query.userEmail === "string" ? req.query.userEmail.toLowerCase() : undefined;
+    const isSelf = !!requestedEmail && requestedEmail === req.user!.email.toLowerCase();
+
+    // Anyone may view their OWN search history (My Activity); viewing
+    // everyone's (Audit tab, no userEmail filter, or someone else's email)
+    // requires Admin/Owner, same as the featurePermissions matrix intends.
+    if (!isSelf && !(await requireAdminOrOwner(req, res, "Viewing other users' search history"))) return;
+
+    const { searchHistory } = createRepositories(getDb());
+    const rows = await searchHistory.list({
+      userEmail: requestedEmail,
+      planName: typeof req.query.planName === "string" ? req.query.planName : undefined,
+      from: typeof req.query.from === "string" ? req.query.from : undefined,
+      to: typeof req.query.to === "string" ? req.query.to : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list search history:", err);
+    return res.status(500).json({ error: `Failed to load search history: ${err.message}` });
+  }
+});
+
+app.post("/api/search-history", requireAuth, async (req, res) => {
+  try {
+    const { planName, pedInput, matchedQuestion, matchType, source, explanation } = req.body;
+    if (![planName, pedInput, matchedQuestion, matchType, source, explanation].every((v) => typeof v === "string" && v.length > 0)) {
+      return res.status(400).json({ error: "planName, pedInput, matchedQuestion, matchType, source, and explanation are all required strings." });
+    }
+    const { searchHistory } = createRepositories(getDb());
+    const row = await searchHistory.create({
+      userEmail: req.user!.email, // identity always from the verified session, never the request body
+      planName,
+      pedInput,
+      matchedQuestion,
+      matchType,
+      source,
+      explanation,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to record search history entry:", err);
+    return res.status(500).json({ error: `Failed to save this lookup to history: ${err.message}` });
+  }
+});
+
+app.delete("/api/search-history", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Owner") {
+      return res.status(403).json({ error: "Only the Owner role can clear activity history." });
+    }
+    const { searchHistory } = createRepositories(getDb());
+    await searchHistory.clearAll();
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to clear search history:", err);
+    return res.status(500).json({ error: `Failed to clear search history: ${err.message}` });
+  }
+});
+
+// --- Change Logs (Audit tab's "Modification History" sub-tab) ---
+
+app.get("/api/change-logs", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Viewing the modification history"))) return;
+    const { changeLogs } = createRepositories(getDb());
+    const rows = await changeLogs.list({
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list change logs:", err);
+    return res.status(500).json({ error: `Failed to load modification history: ${err.message}` });
+  }
+});
+
+app.post("/api/change-logs", requireAuth, async (req, res) => {
+  try {
+    const { actionType, planName, description, snapshot } = req.body;
+    if (![actionType, planName, description].every((v) => typeof v === "string" && v.length > 0)) {
+      return res.status(400).json({ error: "actionType, planName, and description are required strings." });
+    }
+    const { users: usersRepo, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const row = await changeLogs.create({
+      userName: req.user!.name,
+      role: callerTier,
+      actionType,
+      planName,
+      description,
+      snapshot: snapshot ?? null,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to record change log entry:", err);
+    return res.status(500).json({ error: `Failed to record this action: ${err.message}` });
+  }
+});
+
+// --- Announcements (QA Announcement Log tab; readable by everyone, writable by Admin/Owner) ---
+
+app.get("/api/announcements", requireAuth, async (req, res) => {
+  try {
+    const { announcements } = createRepositories(getDb());
+    const rows = await announcements.list({
+      category: typeof req.query.category === "string" ? req.query.category : undefined,
+    });
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list announcements:", err);
+    return res.status(500).json({ error: `Failed to load announcements: ${err.message}` });
+  }
+});
+
+app.post("/api/announcements", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Creating announcements"))) return;
+    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate } = req.body;
+    if (typeof announcement !== "string" || !announcement.trim() || typeof category !== "string" || !category.trim()) {
+      return res.status(400).json({ error: "announcement and category are required." });
+    }
+    const { users: usersRepo, announcements } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const row = await announcements.create({
+      announcement,
+      category,
+      addedBy: `${req.user!.name} (${callerTier})`,
+      effectiveDate: effectiveDate || null,
+      rating: typeof rating === "number" ? rating : null,
+      type: type === "General Announcement" ? "General Announcement" : "QA Announcement",
+      validTillDate: validTillDate || null,
+      title: title || null,
+      fromTeam: fromTeam || null,
+      // Distinct from effectiveDate (see schema.ts) — when this notice was
+      // posted, not when the policy it describes takes effect.
+      announcementDate: announcementDate || null,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to create announcement:", err);
+    return res.status(500).json({ error: `Failed to publish this announcement: ${err.message}` });
+  }
+});
+
+app.put("/api/announcements/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Editing announcements"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
+
+    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate } = req.body;
+    const { announcements } = createRepositories(getDb());
+    const row = await announcements.update(id, {
+      ...(announcement !== undefined ? { announcement } : {}),
+      ...(category !== undefined ? { category } : {}),
+      ...(effectiveDate !== undefined ? { effectiveDate } : {}),
+      ...(rating !== undefined ? { rating } : {}),
+      ...(type !== undefined ? { type } : {}),
+      ...(validTillDate !== undefined ? { validTillDate } : {}),
+      ...(title !== undefined ? { title } : {}),
+      ...(fromTeam !== undefined ? { fromTeam } : {}),
+      ...(announcementDate !== undefined ? { announcementDate } : {}),
+    });
+    if (!row) return res.status(404).json({ error: "Announcement not found." });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update announcement:", err);
+    return res.status(500).json({ error: `Failed to update this announcement: ${err.message}` });
+  }
+});
+
+app.delete("/api/announcements/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Deleting announcements"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
+    const { announcements } = createRepositories(getDb());
+    await announcements.delete(id);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete announcement:", err);
+    return res.status(500).json({ error: `Failed to delete this announcement: ${err.message}` });
+  }
+});
+
+// --- External Resources (Workspace Controls drawer; readable by everyone, writable by Admin/Owner) ---
+
+app.get("/api/external-resources", requireAuth, async (req, res) => {
+  try {
+    const { externalResources } = createRepositories(getDb());
+    const rows = await externalResources.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list external resources:", err);
+    return res.status(500).json({ error: `Failed to load resource links: ${err.message}` });
+  }
+});
+
+app.post("/api/external-resources", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Adding resource links"))) return;
+    const { title, url, icon } = req.body;
+    if (typeof title !== "string" || !title.trim() || typeof url !== "string" || !url.trim()) {
+      return res.status(400).json({ error: "title and url are required." });
+    }
+    let normalizedUrl = url.trim();
+    if (!/^https?:\/\//i.test(normalizedUrl)) normalizedUrl = `https://${normalizedUrl}`;
+    const { users: usersRepo, externalResources } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const row = await externalResources.create({
+      title: title.trim(),
+      url: normalizedUrl,
+      addedBy: `${req.user!.name} (${callerTier})`,
+      // Empty string / omitted = "no explicit choice" (client guesses from
+      // title); anything else is trusted as a lucide-react icon name — an
+      // unrecognized name just falls back to the generic link icon
+      // client-side, so no server-side allow-list is needed here.
+      icon: typeof icon === "string" && icon.trim() ? icon.trim() : null,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to create external resource:", err);
+    return res.status(500).json({ error: `Failed to add this resource link: ${err.message}` });
+  }
+});
+
+app.put("/api/external-resources/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Editing resource links"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
+
+    const { title, url, icon } = req.body;
+    let normalizedUrl: string | undefined;
+    if (url !== undefined) {
+      normalizedUrl = String(url).trim();
+      if (!/^https?:\/\//i.test(normalizedUrl)) normalizedUrl = `https://${normalizedUrl}`;
+    }
+    const { externalResources } = createRepositories(getDb());
+    const row = await externalResources.update(id, {
+      ...(title !== undefined ? { title: String(title).trim() } : {}),
+      ...(normalizedUrl !== undefined ? { url: normalizedUrl } : {}),
+      // icon is explicitly settable back to "auto" — sending "" clears a
+      // previously-chosen icon, distinct from omitting the field entirely
+      // (which leaves whatever was there untouched).
+      ...(icon !== undefined ? { icon: typeof icon === "string" && icon.trim() ? icon.trim() : null } : {}),
+    });
+    if (!row) return res.status(404).json({ error: "Resource link not found." });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update external resource:", err);
+    return res.status(500).json({ error: `Failed to update this resource link: ${err.message}` });
+  }
+});
+
+app.delete("/api/external-resources/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Deleting resource links"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
+    const { externalResources } = createRepositories(getDb());
+    await externalResources.delete(id);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete external resource:", err);
+    return res.status(500).json({ error: `Failed to delete this resource link: ${err.message}` });
+  }
+});
+
+// POST (not PUT) specifically so this never collides with the
+// "/api/external-resources/:id" routes above — a PUT to ".../reorder"
+// would otherwise be swallowed by the :id route with id="reorder".
+app.post("/api/external-resources/reorder", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Reordering resource links"))) return;
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds) || orderedIds.some((id: unknown) => !Number.isInteger(id))) {
+      return res.status(400).json({ error: "orderedIds must be an array of integer ids." });
+    }
+    const { externalResources } = createRepositories(getDb());
+    await externalResources.reorder(orderedIds);
+    const rows = await externalResources.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to reorder external resources:", err);
+    // Drizzle's own error message is just "Failed query: ... params: ...";
+    // the actual Postgres error (constraint violation, type mismatch, etc.)
+    // is nested in `.cause` — surface that too so this is debuggable from
+    // the UI alone, without needing the server's terminal output.
+    const detail = err.cause?.message || err.message;
+    return res.status(500).json({ error: `Failed to save the new order: ${detail}` });
+  }
+});
+
+// --- PED Directory (Lookup page autocomplete dropdown; admin-facing name
+// "PED Directory". The physical table is now `ped_directory` (renamed from
+// `ped_suggestions` via migration 0010 to match the UI); the route path
+// (/api/ped-suggestions) and the `pedSuggestions` repository binding were
+// deliberately left as-is to avoid an app-wide rename churn) ---
+// This table itself only feeds the suggestion list an advisor sees while
+// typing a PED. Read by everyone; writes are gated to Admin/Owner, same
+// pattern as external resources. Admin UI lives at
+// PedSuggestionsManagement.tsx. The optional `category` field an admin can
+// assign here IS live: POST/PUT below also call promotePedMappingOverride,
+// which upserts ped_mapping_overrides and merges into TOP_PED_DICTIONARY —
+// the actual matching engine — for every plan. DELETE calls
+// unmapPedMappingOverride to remove that live effect, too.
+app.get("/api/ped-suggestions", requireAuth, async (req, res) => {
+  try {
+    const { pedSuggestions } = createRepositories(getDb());
+    const rows = await pedSuggestions.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list PED suggestions:", err);
+    return res.status(500).json({ error: `Failed to load PED suggestions: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Page visibility — Owner-only show/hide switch.
+//
+// GET is open to every signed-in user because the client needs the hidden
+// set to render its navigation. PUT is Owner-only: not Admin, not Editor —
+// this is deliberately the narrowest gate in the app.
+//
+// The "never hide from the Owner" guarantee is enforced client-side in
+// hasAccess() (App.tsx), which short-circuits to true for Owner before the
+// hidden set is ever consulted.
+// ─────────────────────────────────────────────────────────────────────────
+app.get("/api/page-visibility", requireAuth, async (req, res) => {
+  try {
+    const { pageVisibility } = createRepositories(getDb());
+    const rows = await pageVisibility.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list page visibility:", err);
+    return res.status(500).json({ error: `Failed to load page visibility: ${err.message}` });
+  }
+});
+
+app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, pageVisibility, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Owner") {
+      return res.status(403).json({ error: "Only the Owner can change page visibility." });
+    }
+
+    const featureId = String(req.params.featureId);
+    const { hidden } = req.body;
+    if (typeof hidden !== "boolean") {
+      return res.status(400).json({ error: "hidden must be a boolean." });
+    }
+
+    const row = await pageVisibility.setHidden(featureId, hidden, `${req.user!.name} (${callerTier})`);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Page Visibility Changed",
+        planName: null,
+        description: `Set page "${featureId}" to ${hidden ? "Hidden" : "Visible"} for non-Owner users.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for page visibility:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update page visibility:", err);
+    return res.status(500).json({ error: `Failed to update page visibility: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// AI Mapping Review — the review surface over ai_memory (L2).
+//
+// GET/PATCH .../:id (edit) still govern the CACHE ONLY. PATCH .../:id/status
+// additionally attempts to promote an approved entry into
+// ped_mapping_overrides/TOP_PED_DICTIONARY — see the comment directly above
+// that route for exactly when promotion does and doesn't happen.
+// ─────────────────────────────────────────────────────────────────────────
+app.get("/api/ai-memory", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Viewing AI Mapping Review"))) return;
+    const { aiMemory } = createRepositories(getDb());
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const planName = typeof req.query.planName === "string" ? req.query.planName : undefined;
+    const validStatuses = ["pending", "approved", "rejected", "archived"];
+    const rows = await aiMemory.list({
+      status: status && validStatuses.includes(status) ? (status as any) : undefined,
+      planName,
+    });
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list AI memory entries:", err);
+    return res.status(500).json({ error: `Failed to load AI Mapping Review: ${err.message}` });
+  }
+});
+
+// Approve / reject / archive.
+//
+// Approving now also attempts to PROMOTE the cached answer into
+// ped_mapping_overrides (the same live table PED Library edits and the
+// Lookup page's "teach it" flow write to) — but only when it's safe to
+// generalize: the AI's answer is a single (condition, plan) pair naming one
+// plan-specific question, while ped_mapping_overrides is a plan-AGNOSTIC
+// categoryKey read by every plan. Promotion is skipped (status still
+// changes) when:
+//   - match_type isn't P1/P2 (FALLBACK/ESCALATE/INVALID had no specific
+//     question chosen — nothing to generalize), or
+//   - the matched_question can't be traced back to exactly one categoryKey
+//     in this plan's categoryMap (ambiguous — could misroute other plans).
+// Rejecting an entry that was previously approved-and-promoted un-promotes
+// it, so correcting a mistake here actually fixes live classification
+// instead of leaving a wrong override behind.
+app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Reviewing AI mapping recommendations"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid entry id." });
+
+    const { status } = req.body;
+    const allowed = ["pending", "approved", "rejected", "archived"];
+    if (typeof status !== "string" || !allowed.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${allowed.join(", ")}` });
+    }
+
+    const { aiMemory, users: usersRepo, planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const reviewer = `${req.user!.name} (${callerTier})`;
+
+    const existing = await aiMemory.get(id);
+    if (!existing) return res.status(404).json({ error: "Entry not found." });
+
+    const row = await aiMemory.setStatus(id, status as any, reviewer);
+
+    let promotion: { promoted: boolean; categoryKey?: string; reason?: string } = { promoted: false };
+    if (status === "approved") {
+      try {
+        const storedResult = (existing.aiResponse as { result?: MatchOutput } | null)?.result;
+        const PLAN_CONFIG = getPlanConfig();
+        let config = PLAN_CONFIG[existing.planName];
+        try {
+          const dbPlan = await planConfigsRepo.get(existing.planName);
+          if (dbPlan) config = dbRowToPlanConfig(dbPlan);
+        } catch (err) {
+          console.error("Failed to load DB plan config for AI Mapping Review promotion:", err);
+        }
+
+        if (!storedResult || !config) {
+          promotion = { promoted: false, reason: "Plan configuration or cached answer unavailable." };
+        } else if (storedResult.match_type !== "P1" && storedResult.match_type !== "P2") {
+          promotion = { promoted: false, reason: `Answer type "${storedResult.match_type}" has no specific question to generalize.` };
+        } else if (storedResult.matched_question === config.anyOther) {
+          promotion = { promoted: false, reason: "Answer routes to this plan's general fallback, not a specific category." };
+        } else {
+          const categoryKey = inferCategoryKeyForQuestion(config, storedResult.matched_question);
+          if (categoryKey) {
+            await promotePedMappingOverride(pedOverridesRepo, existing.condition, categoryKey, reviewer);
+            promotion = { promoted: true, categoryKey };
+          } else {
+            promotion = { promoted: false, reason: "Could not confidently infer a single category from this plan's answer — assign one manually via PED Library or the Lookup page's \"teach it\" flow if this mapping should apply to every plan." };
+          }
+        }
+      } catch (err) {
+        console.error("Failed to promote approved AI Mapping Review entry into live mapping overrides:", err);
+        promotion = { promoted: false, reason: "Promotion failed unexpectedly — see server logs." };
+      }
+    } else if (status === "rejected" && existing.status === "approved") {
+      try {
+        await unmapPedMappingOverride(pedOverridesRepo, existing.condition, reviewer);
+      } catch (err) {
+        console.error("Failed to unmap rejected AI Mapping Review entry from live mapping overrides:", err);
+      }
+    }
+
+    // Audit trail — the same shared modification history every other
+    // admin action writes to.
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "AI Mapping Reviewed",
+        planName: existing.planName,
+        description: `Set "${existing.condition}" (${existing.planName}) to ${status} in AI Mapping Review${
+          promotion.promoted
+            ? ` — promoted to live category "${promotion.categoryKey}" for every plan.`
+            : status === "approved" && promotion.reason
+            ? ` (not promoted: ${promotion.reason})`
+            : "."
+        }`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for AI memory review:", logErr);
+    }
+
+    return res.json({ entry: row, promotion });
+  } catch (err: any) {
+    console.error("Failed to update AI memory status:", err);
+    return res.status(500).json({ error: `Failed to update this entry: ${err.message}` });
+  }
+});
+
+// Admin edit of the cached answer before approving (e.g. correcting the
+// matched question or explanation). Only the response payload is editable —
+// the cache key fields are immutable.
+app.patch("/api/ai-memory/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Editing AI mapping recommendations"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid entry id." });
+
+    const { aiResponse } = req.body;
+    if (!aiResponse || typeof aiResponse !== "object") {
+      return res.status(400).json({ error: "aiResponse object is required." });
+    }
+
+    const { aiMemory } = createRepositories(getDb());
+    const row = await aiMemory.updateResponse(id, aiResponse);
+    if (!row) return res.status(404).json({ error: "Entry not found." });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to edit AI memory entry:", err);
+    return res.status(500).json({ error: `Failed to edit this entry: ${err.message}` });
+  }
+});
+
+/**
+ * Writes a PED Repository mutation to the shared change log (Modification
+ * History). Previously these three routes mutated the repository silently, so
+ * the one surface meant to answer "who changed what" had a blind spot over
+ * the PED Repository.
+ *
+ * Never throws: an audit-trail failure must not roll back or fail the
+ * user's actual edit, which has already been committed by the time this runs.
+ * Same fire-and-forget-but-logged pattern used by the page-visibility route.
+ */
+async function logPedRepositoryChange(
+  changeLogs: ReturnType<typeof createRepositories>["changeLogs"],
+  req: any,
+  callerTier: string,
+  actionType: string,
+  description: string
+): Promise<void> {
+  try {
+    await changeLogs.create({
+      userName: req.user!.name,
+      role: callerTier,
+      actionType,
+      // The change log's planName is NOT NULL and this registry is
+      // plan-agnostic, so it's labelled rather than left blank.
+      planName: "PED Repository",
+      description,
+      snapshot: null,
+    });
+  } catch (logErr) {
+    console.error(`Failed to write change log for ${actionType}:`, logErr);
+  }
+}
+
+app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Adding PED suggestions"))) return;
+    const { term, category } = req.body;
+    if (typeof term !== "string" || !term.trim()) {
+      return res.status(400).json({ error: "term is required." });
+    }
+    if (category !== undefined && category !== null && typeof category !== "string") {
+      return res.status(400).json({ error: "category must be a string." });
+    }
+    // Validated against CATEGORY_LABELS now that a category assigned here is
+    // live (see promotePedMappingOverride below) — previously this field was
+    // display-only so an arbitrary string was harmless; now it would silently
+    // fail to resolve for every plan if it doesn't match a real categoryKey.
+    const categoryClean = category ? String(category).trim() : null;
+    if (categoryClean && !Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, categoryClean)) {
+      return res.status(400).json({ error: `Unknown category "${categoryClean}".` });
+    }
+    const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const addedBy = `${req.user!.name} (${callerTier})`;
+    const row = await pedSuggestions.create({
+      term: term.trim(),
+      // Empty string from a "no category" select option is stored as null,
+      // not "" — keeps "no category assigned yet" unambiguous.
+      category: categoryClean,
+      addedBy,
+    });
+
+    // Live effect: a categorized PED Library entry now actually routes
+    // through the deterministic engine for every plan, not just the
+    // autocomplete dropdown.
+    if (row.category) {
+      try {
+        await promotePedMappingOverride(pedOverridesRepo, row.term, row.category, addedBy);
+      } catch (err) {
+        console.error("Failed to promote new PED Library entry into live mapping overrides:", err);
+      }
+    }
+
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Added",
+      `Added "${row.term}" to the PED Repository${row.category ? ` under category "${row.category}" — now live in classification` : " with no category assigned"}.`);
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to create PED suggestion:", err);
+    const detail = err.cause?.message || err.message;
+    return res.status(500).json({ error: `Failed to add this PED suggestion: ${detail}` });
+  }
+});
+
+app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Editing PED suggestions"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
+    const { term, category } = req.body;
+    if (term !== undefined && (typeof term !== "string" || !term.trim())) {
+      return res.status(400).json({ error: "term must be a non-empty string." });
+    }
+    if (category !== undefined && category !== null && typeof category !== "string") {
+      return res.status(400).json({ error: "category must be a string." });
+    }
+    const categoryClean = category !== undefined ? (category ? String(category).trim() : null) : undefined;
+    if (categoryClean && !Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, categoryClean)) {
+      return res.status(400).json({ error: `Unknown category "${categoryClean}".` });
+    }
+    const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
+    // Capture the pre-edit state so the history entry can show what changed,
+    // and so a renamed term or cleared category can unmap its OLD live
+    // mapping (see below) — the DB row will no longer reflect it once
+    // updated.
+    const before = await pedSuggestions.get(id);
+
+    const row = await pedSuggestions.update(id, {
+      ...(term !== undefined ? { term: term.trim() } : {}),
+      ...(categoryClean !== undefined ? { category: categoryClean } : {}),
+    });
+    if (!row) return res.status(404).json({ error: "PED suggestion not found." });
+
+    const callerTier = await getCallerTier(req, usersRepo);
+    const addedBy = `${req.user!.name} (${callerTier})`;
+
+    // Live effect: keep ped_mapping_overrides in sync with this edit.
+    //  - Renaming the term or clearing its category orphans the OLD live
+    //    mapping (it's keyed on pedText) — unmap it so a stale override
+    //    doesn't linger under text that's no longer shown anywhere.
+    //  - A term with a category (new or unchanged) is (re-)promoted so the
+    //    engine reflects exactly what's shown in the table.
+    try {
+      const termChanged = before && before.term !== row.term;
+      const categoryCleared = before && before.category && !row.category;
+      if (before?.category && (termChanged || categoryCleared)) {
+        await unmapPedMappingOverride(pedOverridesRepo, before.term, addedBy);
+      }
+      if (row.category) {
+        await promotePedMappingOverride(pedOverridesRepo, row.term, row.category, addedBy);
+      }
+    } catch (err) {
+      console.error("Failed to sync edited PED Library entry into live mapping overrides:", err);
+    }
+
+    const changes: string[] = [];
+    if (before && before.term !== row.term) changes.push(`term "${before.term}" → "${row.term}"`);
+    if (before && before.category !== row.category) {
+      changes.push(`category "${before.category || "none"}" → "${row.category || "none"}"${row.category ? " — now live in classification" : ""}`);
+    }
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Edited",
+      changes.length > 0
+        ? `Edited PED Repository entry "${row.term}": ${changes.join("; ")}.`
+        : `Saved PED Repository entry "${row.term}" with no field changes.`);
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update PED suggestion:", err);
+    const detail = err.cause?.message || err.message;
+    return res.status(500).json({ error: `Failed to update this PED suggestion: ${detail}` });
+  }
+});
+
+app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Deleting PED suggestions"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
+    const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
+    // Read before deleting — afterwards there is nothing left to name.
+    const before = await pedSuggestions.get(id);
+    await pedSuggestions.delete(id);
+
+    const callerTier = await getCallerTier(req, usersRepo);
+    const addedBy = `${req.user!.name} (${callerTier})`;
+
+    // Live effect: a categorized entry was actually routing PEDs through the
+    // engine, so deleting it here must also stop that — otherwise "delete"
+    // would only remove the directory listing while the mapping kept firing.
+    if (before?.category) {
+      try {
+        await unmapPedMappingOverride(pedOverridesRepo, before.term, addedBy);
+      } catch (err) {
+        console.error("Failed to unmap deleted PED Library entry from live mapping overrides:", err);
+      }
+    }
+
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Deleted",
+      `Deleted "${before?.term ?? `entry #${id}`}" from the PED Repository${before?.category ? ` (category "${before.category}") — no longer live in classification` : ""}.`);
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete PED suggestion:", err);
+    return res.status(500).json({ error: `Failed to delete this PED suggestion: ${err.message}` });
+  }
+});
+
+// --- Smoke Test page — Admin/Owner-added custom PED entries, additional to
+// the hardcoded 50+ baseline list (COMMON_SMOKE_TEST_PEDS, client-side
+// constant, never touches the DB). Readable by everyone (the page itself is
+// visible to every tier), writes gated to Admin/Owner — same pattern as
+// PED Directory above. ---
+
+app.get("/api/smoke-test-peds", requireAuth, async (req, res) => {
+  try {
+    const { smokeTestPeds } = createRepositories(getDb());
+    const rows = await smokeTestPeds.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list custom smoke-test PEDs:", err);
+    return res.status(500).json({ error: `Failed to load custom smoke-test PEDs: ${err.message}` });
+  }
+});
+
+app.post("/api/smoke-test-peds", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Adding custom smoke-test PEDs"))) return;
+    const { term } = req.body;
+    if (typeof term !== "string" || !term.trim()) {
+      return res.status(400).json({ error: "term is required." });
+    }
+    const { users: usersRepo, smokeTestPeds } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const row = await smokeTestPeds.create({
+      term: term.trim(),
+      addedBy: `${req.user!.name} (${callerTier})`,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to add custom smoke-test PED:", err);
+    return res.status(500).json({ error: `Failed to add this PED: ${err.message}` });
+  }
+});
+
+app.delete("/api/smoke-test-peds/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Deleting custom smoke-test PEDs"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid smoke-test PED id." });
+    const { smokeTestPeds } = createRepositories(getDb());
+    await smokeTestPeds.delete(id);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete custom smoke-test PED:", err);
+    return res.status(500).json({ error: `Failed to delete this PED: ${err.message}` });
+  }
+});
+
+// Bulk-classifies a list of PEDs against one plan in a single request —
+// deliberately its own endpoint rather than looping the client over
+// /api/match, for two reasons: /api/match is rate-limited to 30 requests
+// per 15 minutes (expensiveActionLimiter), which a 50+ PED smoke test would
+// blow through instantly: and this is a deterministic-engine health check,
+// not a real user lookup, so it intentionally does NOT fall through to the
+// Gemini AI fallback the way /api/match does — an unresolved PED is
+// reported as `resolved: false` (the same signal
+// src/__tests__/engine.baseline.test.ts records for its snapshot), which is
+// itself the useful finding: it means this PED would silently go to AI in
+// production. Still resolves the plan config exactly like /api/match (DB
+// overrides included), so results reflect live plan-editing changes.
+app.post("/api/smoke-test", requireAuth, async (req, res) => {
+  try {
+    const { planName, peds } = req.body;
+    if (!planName || typeof planName !== "string") {
+      return res.status(400).json({ error: "planName is required." });
+    }
+    if (!Array.isArray(peds) || peds.length === 0) {
+      return res.status(400).json({ error: "peds must be a non-empty array." });
+    }
+
+    const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo } = createRepositories(getDb());
+    await ensurePedOverridesLoaded(pedOverridesRepo);
+
+    const PLAN_CONFIG = getPlanConfig();
+    let config = PLAN_CONFIG[planName];
+    try {
+      const dbPlan = await planConfigsRepo.get(planName);
+      if (dbPlan) config = dbRowToPlanConfig(dbPlan);
+    } catch (err) {
+      console.error("Failed to load DB plan config for smoke test (falling back to hardcoded defaults if any exist):", err);
+    }
+
+    if (!config) {
+      return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
+    }
+
+    const results = peds.map((ped: string) => {
+      let output = classifyDeterministic(ped, planName, config);
+      if (!output) {
+        return { ped, resolved: false as const };
+      }
+      output = sanitizeOutput(output, ped, config);
+      output = applyPostGuards(output, ped, planName, config);
+      const finalResult = finalizeOutput(output, ped, config, config.questions);
+      return {
+        ped,
+        resolved: true as const,
+        match_type: finalResult.match_type,
+        matched_question: finalResult.matched_question,
+        question_number: finalResult.question_number,
+        explanation: finalResult.explanation,
+      };
+    });
+
+    return res.json({ results });
+  } catch (err: any) {
+    console.error("Smoke test run failed:", err);
+    return res.status(500).json({ error: `Smoke test run failed: ${err.message}` });
+  }
+});
+
+// --- Flagged Issues (Flagged Responses tab) ---
+
+// --- Plan Configs (declaration questionnaires; readable by everyone so the
+// plan picker + matching work for every tier, writable by Admin/Owner) ---
+// This is the *live* source of truth for /api/match — see the merge in the
+// match route above. Adding a plan here means it goes live for matching
+// immediately, no code change/redeploy required.
+
+function validatePlanQuestions(questions: any): questions is Array<{ text: string; tag: string }> {
+  return (
+    Array.isArray(questions) &&
+    questions.length > 0 &&
+    questions.every(
+      (q) =>
+        q &&
+        typeof q.text === "string" &&
+        q.text.trim() &&
+        ["Specific", "Umbrella", "Catch-all"].includes(q.tag)
+    )
+  );
+}
+
+/** Unlike questions, an empty Specific Illness List is valid (most plans
+ * won't have one entered yet) — this only rejects malformed entries, not
+ * an empty array. `category` is optional, matching the hardcoded
+ * SPECIFIC_ILLNESSES dictionary's `{ category?: string; illness: string }`
+ * shape it's designed to be interchangeable with. */
+function validateSpecificIllnesses(list: any): list is Array<{ category?: string; illness: string }> {
+  return (
+    Array.isArray(list) &&
+    list.every(
+      (item) =>
+        item &&
+        typeof item.illness === "string" &&
+        item.illness.trim() &&
+        (item.category === undefined || item.category === null || typeof item.category === "string")
+    )
+  );
+}
+
+/** Derives anyOther / hasUmbrella / umbrellaQuestions from a single tagged
+ * questions array, rather than trusting separately-supplied fields that
+ * could drift out of sync with the tags (single source of truth, matching
+ * the tag-based model App.tsx's planQuestionsState already used). */
+function deriveQuestionFields(questions: Array<{ text: string; tag: string }>) {
+  const umbrellaQuestions = questions.filter((q) => q.tag === "Umbrella").map((q) => q.text);
+  const anyOther = questions.find((q) => q.tag === "Catch-all")?.text || "Any other disease / condition not mentioned above?";
+  return {
+    umbrellaQuestions,
+    hasUmbrella: umbrellaQuestions.length > 0,
+    anyOther,
+  };
+}
+
+app.get("/api/plan-configs", requireAuth, async (req, res) => {
+  try {
+    const { planConfigs } = createRepositories(getDb());
+    const rows = await planConfigs.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list plan configs:", err);
+    return res.status(500).json({ error: `Failed to load plans: ${err.message}` });
+  }
+});
+
+app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Adding a plan"))) return;
+
+    const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses } = req.body;
+
+    if (typeof planName !== "string" || !planName.trim()) {
+      return res.status(400).json({ error: "planName is required." });
+    }
+    if (typeof insurerName !== "string" || !insurerName.trim()) {
+      return res.status(400).json({ error: "insurerName is required." });
+    }
+    if (!validatePlanQuestions(questions)) {
+      return res.status(400).json({ error: "questions must be a non-empty array of { text, tag } entries, and must include at least one." });
+    }
+    if (!categoryMap || typeof categoryMap !== "object" || Array.isArray(categoryMap)) {
+      return res.status(400).json({ error: "categoryMap must be an object of { categoryKey: questionText }." });
+    }
+    if (specificIllnesses !== undefined && !validateSpecificIllnesses(specificIllnesses)) {
+      return res.status(400).json({ error: "specificIllnesses must be an array of { category?, illness } entries with a non-empty illness." });
+    }
+
+    const { umbrellaQuestions, hasUmbrella, anyOther } = deriveQuestionFields(questions);
+
+    const { users: usersRepo, planConfigs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const row = await planConfigs.upsert({
+      planName: planName.trim(),
+      insurerName: insurerName.trim(),
+      questions,
+      categoryMap,
+      anyOther,
+      hasUmbrella,
+      umbrellaQuestions,
+      specificIllnesses: Array.isArray(specificIllnesses) ? specificIllnesses : [],
+      overrides: overrides && typeof overrides === "object" ? overrides : null,
+      addedBy: `${req.user!.name} (${callerTier})`,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to create plan config:", err);
+    return res.status(500).json({ error: `Failed to save this plan: ${err.message}` });
+  }
+});
+
+app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Editing a plan"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+
+    const { insurerName, questions, categoryMap, overrides, specificIllnesses } = req.body;
+    const update: Record<string, unknown> = {};
+
+    if (insurerName !== undefined) {
+      if (typeof insurerName !== "string" || !insurerName.trim()) {
+        return res.status(400).json({ error: "insurerName cannot be empty." });
+      }
+      update.insurerName = insurerName.trim();
+    }
+    if (questions !== undefined) {
+      if (!validatePlanQuestions(questions)) {
+        return res.status(400).json({ error: "questions must be a non-empty array of { text, tag } entries." });
+      }
+      update.questions = questions;
+      Object.assign(update, deriveQuestionFields(questions));
+    }
+    if (categoryMap !== undefined) {
+      if (!categoryMap || typeof categoryMap !== "object" || Array.isArray(categoryMap)) {
+        return res.status(400).json({ error: "categoryMap must be an object of { categoryKey: questionText }." });
+      }
+      update.categoryMap = categoryMap;
+    }
+    if (specificIllnesses !== undefined) {
+      if (!validateSpecificIllnesses(specificIllnesses)) {
+        return res.status(400).json({ error: "specificIllnesses must be an array of { category?, illness } entries with a non-empty illness." });
+      }
+      update.specificIllnesses = specificIllnesses;
+    }
+    if (overrides !== undefined) {
+      update.overrides = overrides && typeof overrides === "object" ? overrides : null;
+    }
+
+    const { planConfigs } = createRepositories(getDb());
+    const row = await planConfigs.update(planName, update);
+    if (!row) return res.status(404).json({ error: "Plan not found." });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update plan config:", err);
+    return res.status(500).json({ error: `Failed to update this plan: ${err.message}` });
+  }
+});
+
+app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Deleting a plan"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+    const { planConfigs } = createRepositories(getDb());
+    await planConfigs.delete(planName);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete plan config:", err);
+    return res.status(500).json({ error: `Failed to delete this plan: ${err.message}` });
+  }
+});
+
+app.get("/api/flagged-issues", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrOwner(req, res, "Viewing flagged responses"))) return;
+    const validStatuses = ["Pending", "Urgent", "Resolved", "Ignored"];
+    const status = typeof req.query.status === "string" && validStatuses.includes(req.query.status)
+      ? (req.query.status as "Pending" | "Urgent" | "Resolved" | "Ignored")
+      : undefined;
+    const { flaggedIssues } = createRepositories(getDb());
+    const rows = await flaggedIssues.list({
+      status,
+      planName: typeof req.query.planName === "string" ? req.query.planName : undefined,
+    });
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list flagged issues:", err);
+    return res.status(500).json({ error: `Failed to load flagged responses: ${err.message}` });
+  }
+});
+
+app.post("/api/flagged-issues", requireAuth, async (req, res) => {
+  try {
+    const { planName, pedInput, matchedQuestion, matchType, source, explanation, issueNotes } = req.body;
+    if (![planName, pedInput, matchedQuestion, matchType, source, explanation, issueNotes].every((v) => typeof v === "string" && v.length > 0)) {
+      return res.status(400).json({ error: "planName, pedInput, matchedQuestion, matchType, source, explanation, and issueNotes are all required strings." });
+    }
+    const { users: usersRepo, flaggedIssues } = createRepositories(getDb());
+    const directoryEntry = await usersRepo.findByEmail(req.user!.email);
+    const row = await flaggedIssues.create({
+      userEmail: req.user!.email,
+      userName: req.user!.name,
+      userTactId: directoryEntry?.tactId || "UNKNOWN",
+      planName,
+      pedInput,
+      matchedQuestion,
+      matchType,
+      source,
+      explanation,
+      issueNotes,
+    });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to report flagged issue:", err);
+    return res.status(500).json({ error: `Failed to submit this report: ${err.message}` });
+  }
+});
+
+app.put("/api/flagged-issues/:id", requireAuth, async (req, res) => {
+  try {
+    // Resolve/Ignore + notes are Admin+Owner actions in the UI (only
+    // permanent delete is Owner-only — see the DELETE route below).
+    if (!(await requireAdminOrOwner(req, res, "Resolving flagged responses"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid flagged issue id." });
+
+    const { status, ownerNotes } = req.body;
+    const validStatuses = ["Pending", "Urgent", "Resolved", "Ignored"];
+    if (status !== undefined && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `status must be one of ${validStatuses.join(", ")}.` });
+    }
+
+    const { flaggedIssues } = createRepositories(getDb());
+    const row = await flaggedIssues.update(id, {
+      ...(status !== undefined ? { status } : {}),
+      ...(ownerNotes !== undefined ? { ownerNotes } : {}),
+      resolvedAt: status === "Resolved" ? new Date().toISOString() : undefined,
+    });
+    if (!row) return res.status(404).json({ error: "Flagged issue not found." });
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update flagged issue:", err);
+    return res.status(500).json({ error: `Failed to update this report: ${err.message}` });
+  }
+});
+
+app.delete("/api/flagged-issues/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Owner") {
+      return res.status(403).json({ error: "Only the Owner role can permanently delete flagged reports." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid flagged issue id." });
+    const { flaggedIssues } = createRepositories(getDb());
+    await flaggedIssues.delete(id);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete flagged issue:", err);
+    return res.status(500).json({ error: `Failed to delete this report: ${err.message}` });
+  }
+});
+
+// Returns the CALLER's OWN directory record only — unlike GET /api/users,
+// this is intentionally not restricted to Admin/Owner, because a user is
+// always allowed to know their own role. This is what the client's login
+// bootstrap uses to resolve tier server-side (audit fix, see
+// Production_Readiness_Audit.md Findings 1 & 9): resolving "am I an
+// Admin?" against the full directory would otherwise require already being
+// an Admin to read it — a General-tier user's first request would 403.
+// `user: null` here means "authenticated via Google, but not yet
+// provisioned in the directory" — the client routes that into the
+// first-time-setup flow.
+app.get("/api/me", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const match = await usersRepo.findByEmail(req.user!.email);
+    return res.json({ user: match ?? null });
+  } catch (err: any) {
+    console.error("Failed to look up the caller's directory record:", err);
+    return res.status(500).json({ error: `Failed to load your profile: ${err.message}` });
+  }
+});
+
+// Self-service "complete my profile" for a brand-new @joinditto.in sign-in
+// that GET /api/me didn't find in the directory yet. Deliberately narrow:
+// callers can only ever create THEIR OWN record (email comes from the
+// verified session, never the request body), always at "General" tier —
+// an Owner promotes people afterward via PUT /api/users. This is what makes
+// first-time setup actually provision the user server-side instead of only
+// ever touching the completing browser's own localStorage (audit fix, see
+// Production_Readiness_Audit.md Finding 9): before this, a new hire's
+// profile-completion never reached data/users.json, so they'd be asked to
+// "complete setup" again on every new device, and no Owner/Admin would ever
+// see them in the User Management directory.
+app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
+  try {
+    const { name, tactId } = req.body;
+    if (typeof name !== "string" || !name.trim() || typeof tactId !== "string" || !tactId.trim()) {
+      return res.status(400).json({ error: "name and tactId are required." });
+    }
+
+    const { users: usersRepo } = createRepositories(getDb());
+    const email = req.user!.email.toLowerCase();
+    const existing = await usersRepo.findByEmail(email);
+    if (existing) {
+      return res.status(409).json({ error: "This account is already set up. Please refresh and sign in again." });
+    }
+
+    const newUser = await usersRepo.create({
+      email,
+      name: name.trim(),
+      tactId: tactId.trim(),
+      tier: "General",
+      status: "Active",
+    });
+    return res.json({ user: newUser });
+  } catch (err: any) {
+    // Surface the underlying cause instead of a generic string. Every other
+    // route in this file already returns err.message, and masking it here
+    // made a first-time-setup failure undiagnosable from the UI — the only
+    // clue was this server-side log line.
+    console.error("Failed to save first-time profile setup:", err);
+    return res.status(500).json({ error: `Failed to save your profile: ${err.message}` });
   }
 });
 
@@ -676,6 +2149,21 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Global error-handling middleware (audit fix, see
+  // Production_Readiness_Audit.md Finding 8). Must be registered last —
+  // Express only routes an error to handlers registered after the point
+  // where it occurred. Every route above already wraps its own logic in
+  // try/catch, but this is the backstop for anything that isn't (a thrown
+  // error in middleware, an unexpected synchronous throw, etc.): it always
+  // returns a generic message instead of falling through to Express's
+  // default handler, which can leak stack traces to the client.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Unhandled error:", err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: "An unexpected server error occurred. Please try again." });
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running at http://localhost:${PORT}`);

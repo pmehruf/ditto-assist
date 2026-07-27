@@ -14,7 +14,9 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/server/db/migrate.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:seed:users": "tsx src/server/db/seedUsers.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:backfill:ai-memory": "tsx scripts/backfillAiMemory.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -24,7 +26,9 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
     "google-auth-library": "^10.9.0",
+    "helmet": "^7.1.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "postgres": "^3.4.9",
