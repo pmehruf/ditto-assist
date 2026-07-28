@@ -16,6 +16,12 @@ import { PedSuggestionsRepository } from "./pedSuggestionsRepository.js";
 import { SmokeTestPedsRepository } from "./smokeTestPedsRepository.js";
 import { AiMemoryRepository } from "./aiMemoryRepository.js";
 import { PageVisibilityRepository } from "./pageVisibilityRepository.js";
+import { CategoriesRepository } from "./categoriesRepository.js";
+import { PedRepositoryRepository } from "./pedRepositoryRepository.js";
+import { PedAliasesRepository } from "./pedAliasesRepository.js";
+import { PlanOverridesRepository } from "./planOverridesRepository.js";
+import { MappingHistoryRepository } from "./mappingHistoryRepository.js";
+import { CollisionsRepository } from "./collisionsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -69,6 +75,24 @@ export type { CreateAiMemoryEntry, AiMemoryStatus } from "./aiMemoryRepository.j
 
 export { PageVisibilityRepository } from "./pageVisibilityRepository.js";
 
+export { CategoriesRepository } from "./categoriesRepository.js";
+export type { CreateCategoryEntry, UpdateCategoryEntry } from "./categoriesRepository.js";
+
+export { PedRepositoryRepository } from "./pedRepositoryRepository.js";
+export type { CreatePedEntry, UpdatePedEntry } from "./pedRepositoryRepository.js";
+
+export { PedAliasesRepository } from "./pedAliasesRepository.js";
+export type { CreatePedAliasEntry } from "./pedAliasesRepository.js";
+
+export { PlanOverridesRepository } from "./planOverridesRepository.js";
+export type { CreatePlanOverrideEntry } from "./planOverridesRepository.js";
+
+export { MappingHistoryRepository } from "./mappingHistoryRepository.js";
+export type { CreateMappingHistoryEntry } from "./mappingHistoryRepository.js";
+
+export { CollisionsRepository } from "./collisionsRepository.js";
+export type { CollisionType, CreateCollisionEntry } from "./collisionsRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -88,6 +112,12 @@ export interface Repositories {
   smokeTestPeds: SmokeTestPedsRepository;
   aiMemory: AiMemoryRepository;
   pageVisibility: PageVisibilityRepository;
+  categories: CategoriesRepository;
+  pedRepository: PedRepositoryRepository;
+  pedAliases: PedAliasesRepository;
+  planOverrides: PlanOverridesRepository;
+  mappingHistory: MappingHistoryRepository;
+  collisions: CollisionsRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -104,5 +134,11 @@ export function createRepositories(db: AnyDb): Repositories {
     smokeTestPeds: new SmokeTestPedsRepository(db),
     aiMemory: new AiMemoryRepository(db),
     pageVisibility: new PageVisibilityRepository(db),
+    categories: new CategoriesRepository(db),
+    pedRepository: new PedRepositoryRepository(db),
+    pedAliases: new PedAliasesRepository(db),
+    planOverrides: new PlanOverridesRepository(db),
+    mappingHistory: new MappingHistoryRepository(db),
+    collisions: new CollisionsRepository(db),
   };
 }

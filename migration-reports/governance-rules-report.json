@@ -1,0 +1,463 @@
+{
+  "generatedAt": "2026-07-28T15:22:35.196Z",
+  "mode": "apply",
+  "ruleAudit": {
+    "actionVerbSuffixHits": 25,
+    "actionVerbSuffixSample": [
+      {
+        "pedId": 591,
+        "pedCode": "PED-000591",
+        "canonicalName": "c section history",
+        "hitField": "canonicalName",
+        "hitText": "c section history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 659,
+        "pedCode": "PED-000659",
+        "canonicalName": "childbirth history",
+        "hitField": "canonicalName",
+        "hitText": "childbirth history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 718,
+        "pedCode": "PED-000718",
+        "canonicalName": "dialysis patient",
+        "hitField": "canonicalName",
+        "hitText": "dialysis patient",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 741,
+        "pedCode": "PED-000741",
+        "canonicalName": "dka history",
+        "hitField": "canonicalName",
+        "hitText": "dka history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 589,
+        "pedCode": "PED-000589",
+        "canonicalName": "hysterectomy history",
+        "hitField": "canonicalName",
+        "hitText": "hysterectomy history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 656,
+        "pedCode": "PED-000656",
+        "canonicalName": "menopause status",
+        "hitField": "canonicalName",
+        "hitText": "menopause status",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 753,
+        "pedCode": "PED-000753",
+        "canonicalName": "mi history",
+        "hitField": "canonicalName",
+        "hitText": "mi history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 714,
+        "pedCode": "PED-000714",
+        "canonicalName": "nephrectomy history",
+        "hitField": "canonicalName",
+        "hitText": "nephrectomy history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 650,
+        "pedCode": "PED-000650",
+        "canonicalName": "nil medical history",
+        "hitField": "canonicalName",
+        "hitText": "nil medical history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 716,
+        "pedCode": "PED-000716",
+        "canonicalName": "renal transplant history",
+        "hitField": "canonicalName",
+        "hitText": "renal transplant history",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 630,
+        "pedCode": "PED-000630",
+        "canonicalName": "smoker status",
+        "hitField": "canonicalName",
+        "hitText": "smoker status",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 662,
+        "pedCode": "PED-000662",
+        "canonicalName": "vaccination done",
+        "hitField": "canonicalName",
+        "hitText": "vaccination done",
+        "reason": "action-verb/status suffix in canonical name"
+      },
+      {
+        "pedId": 589,
+        "pedCode": "PED-000589",
+        "canonicalName": "hysterectomy history",
+        "hitField": "alias",
+        "hitText": "hysterectomy history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 591,
+        "pedCode": "PED-000591",
+        "canonicalName": "c section history",
+        "hitField": "alias",
+        "hitText": "c section history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 630,
+        "pedCode": "PED-000630",
+        "canonicalName": "smoker status",
+        "hitField": "alias",
+        "hitText": "smoker status",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 650,
+        "pedCode": "PED-000650",
+        "canonicalName": "nil medical history",
+        "hitField": "alias",
+        "hitText": "nil medical history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 656,
+        "pedCode": "PED-000656",
+        "canonicalName": "menopause status",
+        "hitField": "alias",
+        "hitText": "menopause status",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 659,
+        "pedCode": "PED-000659",
+        "canonicalName": "childbirth history",
+        "hitField": "alias",
+        "hitText": "childbirth history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 662,
+        "pedCode": "PED-000662",
+        "canonicalName": "vaccination done",
+        "hitField": "alias",
+        "hitText": "vaccination done",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 714,
+        "pedCode": "PED-000714",
+        "canonicalName": "nephrectomy history",
+        "hitField": "alias",
+        "hitText": "nephrectomy history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 716,
+        "pedCode": "PED-000716",
+        "canonicalName": "renal transplant history",
+        "hitField": "alias",
+        "hitText": "renal transplant history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 718,
+        "pedCode": "PED-000718",
+        "canonicalName": "dialysis patient",
+        "hitField": "alias",
+        "hitText": "dialysis patient",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 741,
+        "pedCode": "PED-000741",
+        "canonicalName": "dka history",
+        "hitField": "alias",
+        "hitText": "dka history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 753,
+        "pedCode": "PED-000753",
+        "canonicalName": "mi history",
+        "hitField": "alias",
+        "hitText": "mi history",
+        "reason": "action-verb/status suffix in alias"
+      },
+      {
+        "pedId": 37,
+        "pedCode": "PED-000037",
+        "canonicalName": "Cystoscopy",
+        "hitField": "alias",
+        "hitText": "Cystoscopy done",
+        "reason": "action-verb/status suffix in alias"
+      }
+    ],
+    "knownMisspellingHits": 26,
+    "knownMisspellingSample": [
+      {
+        "pedId": 109,
+        "pedCode": "PED-000109",
+        "canonicalName": "Gullian Barre syndrome",
+        "hitField": "canonicalName",
+        "hitText": "Gullian Barre syndrome",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 139,
+        "pedCode": "PED-000139",
+        "canonicalName": "Headcahe",
+        "hitField": "canonicalName",
+        "hitText": "Headcahe",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 112,
+        "pedCode": "PED-000112",
+        "canonicalName": "Hemmoroids",
+        "hitField": "canonicalName",
+        "hitText": "Hemmoroids",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 124,
+        "pedCode": "PED-000124",
+        "canonicalName": "Pilodinal sinus",
+        "hitField": "canonicalName",
+        "hitText": "Pilodinal sinus",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 131,
+        "pedCode": "PED-000131",
+        "canonicalName": "Thalaseemia",
+        "hitField": "canonicalName",
+        "hitText": "Thalaseemia",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 129,
+        "pedCode": "PED-000129",
+        "canonicalName": "Tymnoplasty",
+        "hitField": "canonicalName",
+        "hitText": "Tymnoplasty",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 118,
+        "pedCode": "PED-000118",
+        "canonicalName": "Weils disease",
+        "hitField": "canonicalName",
+        "hitText": "Weils disease",
+        "reason": "curated known misspelling used as canonical name"
+      },
+      {
+        "pedId": 6,
+        "pedCode": "PED-000006",
+        "canonicalName": "Absence seizure",
+        "hitField": "alias",
+        "hitText": "Abscence seizure",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 16,
+        "pedCode": "PED-000016",
+        "canonicalName": "Appendicitis",
+        "hitField": "alias",
+        "hitText": "Apendicitis",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 41,
+        "pedCode": "PED-000041",
+        "canonicalName": "Food poisoning",
+        "hitField": "alias",
+        "hitText": "Foos poisoning",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 44,
+        "pedCode": "PED-000044",
+        "canonicalName": "Gynecomastia",
+        "hitField": "alias",
+        "hitText": "Gynocomastia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 44,
+        "pedCode": "PED-000044",
+        "canonicalName": "Gynecomastia",
+        "hitField": "alias",
+        "hitText": "Gyneacomastia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "canonicalName": "High cholesterol",
+        "hitField": "alias",
+        "hitText": "Cholestrerol",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "canonicalName": "High cholesterol",
+        "hitField": "alias",
+        "hitText": "Hyperlipidimia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "canonicalName": "High cholesterol",
+        "hitField": "alias",
+        "hitText": "Hyperlipidmia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "canonicalName": "High cholesterol",
+        "hitField": "alias",
+        "hitText": "Dyslipidimia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "canonicalName": "High cholesterol",
+        "hitField": "alias",
+        "hitText": "Dyslipidmia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 62,
+        "pedCode": "PED-000062",
+        "canonicalName": "Infertility",
+        "hitField": "alias",
+        "hitText": "Infertillity",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 92,
+        "pedCode": "PED-000092",
+        "canonicalName": "Tonsillitis",
+        "hitField": "alias",
+        "hitText": "Tonsilitis",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 109,
+        "pedCode": "PED-000109",
+        "canonicalName": "Gullian Barre syndrome",
+        "hitField": "alias",
+        "hitText": "Gullian Barre syndrome",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 112,
+        "pedCode": "PED-000112",
+        "canonicalName": "Hemmoroids",
+        "hitField": "alias",
+        "hitText": "Hemmoroids",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 118,
+        "pedCode": "PED-000118",
+        "canonicalName": "Weils disease",
+        "hitField": "alias",
+        "hitText": "Weils disease",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 124,
+        "pedCode": "PED-000124",
+        "canonicalName": "Pilodinal sinus",
+        "hitField": "alias",
+        "hitText": "Pilodinal sinus",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 129,
+        "pedCode": "PED-000129",
+        "canonicalName": "Tymnoplasty",
+        "hitField": "alias",
+        "hitText": "Tymnoplasty",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 131,
+        "pedCode": "PED-000131",
+        "canonicalName": "Thalaseemia",
+        "hitField": "alias",
+        "hitText": "Thalaseemia",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      },
+      {
+        "pedId": 139,
+        "pedCode": "PED-000139",
+        "canonicalName": "Headcahe",
+        "hitField": "alias",
+        "hitText": "Headcahe",
+        "reason": "curated known misspelling — should be hidden (isVisible=false), not shown"
+      }
+    ],
+    "note": "Conservative, curated audit — not exhaustive (especially rule 2, the misspelling list). Not auto-applied: review each hit, since bulk-renaming/hiding risks misjudging abbreviations or legitimate short forms. Extend this script's KNOWN_MISSPELLINGS / ACTION_SUFFIX_RE and re-run with --apply once specific items are confirmed."
+  },
+  "checkpointBFixes": {
+    "cva": {
+      "action": "documented only — no code/data change",
+      "reason": "ped_repository already correctly categorizes Cerebrovascular Accident as neurological. Legacy's TOP_PED_DICTIONARY 'acute_trauma' mapping was the bug; this migration's cutover itself is the fix. Approved as an intentional behavioral improvement (Checkpoint B, 2026-07-28)."
+    },
+    "bellsPalsy": {
+      "pedId": 351,
+      "pedCode": "PED-000351",
+      "action": "recategorized to neuro_mild"
+    },
+    "ulcerActivFitPreferred": {
+      "pedIds": [
+        387,
+        386,
+        79,
+        1161,
+        1184
+      ],
+      "pedNames": [
+        "Duodenal ulcer",
+        "Gastric ulcer",
+        "Peptic ulcer disease",
+        "Stomach ulcer",
+        "Ulcer"
+      ],
+      "excludedAsComplications": [
+        {
+          "pedId": 738,
+          "canonicalName": "Diabetic foot ulcer"
+        }
+      ],
+      "action": "plan_override upserted (categoryKey=neoplasm) for each; excluded PEDs' override removed if a prior run added one",
+      "note": "Refined 2026-07-28 after user review: 'Diabetic foot ulcer' (and any future 'diabetic ...ulcer' PED) is excluded — legacy routes it as a diabetes complication, never reaching the AFP ulcer rule, so including it would have broadened the rule rather than preserved it."
+    },
+    "cystoscopy": {
+      "pedId": 37,
+      "pedCode": "PED-000037",
+      "action": "renamed to 'Cystoscopy' + recategorized to investigation_procedure + 'Cystoscopy done' alias hidden",
+      "approvedAsIntentionalBugFix": true,
+      "note": "Approved 2026-07-28: legacy retains a separate, now-stale TOP_PED_DICTIONARY entry ('cystoscopy done' -> kidney) that only the exact hidden alias text reaches — this is expected to surface as a category_mismatch in scripts/validatePedMigration.ts until Phase 5 cutover retires the legacy dictionary; the DB-backed investigation_procedure routing is correct."
+    }
+  }
+}

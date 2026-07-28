@@ -15,9 +15,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Import types & engine logic
-import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, guessCategoryMap, TOP_PED_DICTIONARY } from "./src/types.js";
-import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanQuestion } from "./src/engine.js";
+import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, guessCategoryMap } from "./src/types.js";
+import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanQuestion, type DbDictionarySource } from "./src/engine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
+import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup } from "./src/server/pedRuntimeCache.js";
+import type { Repositories } from "./src/server/db/repositories/index.js";
+import { dbRowToPlanConfig } from "./src/server/planConfigUtils.js";
 import { getGoogleAuthUrl, exchangeCodeForIdentity } from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
@@ -96,31 +99,11 @@ function getAiClient(): GoogleGenAI {
   return aiClient;
 }
 
-/** Converts a DB-stored plan_configs row (tagged questions array) into the
- * flat PlanConfig shape engine.ts expects — mirrors how the client used to
- * derive this in App.tsx's (now-retired) planConfigs merge useMemo. */
-function dbRowToPlanConfig(row: {
-  questions: unknown;
-  anyOther: string;
-  hasUmbrella: boolean;
-  umbrellaQuestions: unknown;
-  categoryMap: unknown;
-  overrides: unknown;
-}) {
-  const taggedQuestions = (row.questions as Array<{ text: string; tag: string }>) || [];
-  // Matches the hardcoded PlanConfig shape: `questions` holds every Specific
-  // + the Catch-all text (umbrella questions are tracked separately).
-  const questions = taggedQuestions.filter((q) => q.tag !== "Umbrella").map((q) => q.text);
-  return {
-    questions,
-    anyOther: row.anyOther,
-    hasUmbrella: row.hasUmbrella,
-    umbrellaQuestions: (row.umbrellaQuestions as string[]) || [],
-    categoryMap: (row.categoryMap as Record<string, string | number>) || {},
-    overrides: (row.overrides as PlanOverridesShape) || undefined,
-  };
-}
-type PlanOverridesShape = { excludePrediabetes?: boolean; requiresInsulinForDiabetes?: boolean; bypassBenignTumors?: boolean };
+// dbRowToPlanConfig / PlanOverridesShape moved to
+// src/server/planConfigUtils.ts (imported above) — a script that only needs
+// this one pure helper (scripts/validatePedMigration.ts, Phase 4) can no
+// longer accidentally import server.ts's top-level app.listen()/Vite
+// dev-server side effects along with it.
 
 // ─────────────────────────────────────────────────────────────────────────
 // Three-level lookup memory — versioning constants.
@@ -142,6 +125,40 @@ type PlanOverridesShape = { excludePrediabetes?: boolean; requiresInsulinForDiab
 const ENGINE_VERSION = "2026-07-18.1";
 const PROMPT_VERSION = "match-v1";
 
+// ─────────────────────────────────────────────────────────────────────────
+// PED Repository DB migration, Phase 3 (PED_REPOSITORY_DB_MIGRATION_DESIGN.md
+// §3/§4) — runtime cutover feature flag. Defaults to "legacy" (today's
+// exact behavior: TOP_PED_DICTIONARY + the 4 hardcoded plan-specific
+// blocks in engine.ts) so nothing about production behavior changes just
+// from this code shipping. Only an explicit `PED_SOURCE=db` env var flips
+// classifyDeterministic over to reading src/server/pedRuntimeCache.ts's
+// DB-backed alias/plan-override cache instead. Per the rollback strategy in
+// the design doc, flipping this back to "legacy" (env var change + restart,
+// no deploy) is the cheapest rollback path if the DB-backed path ever
+// misbehaves — that's the whole reason this is a flag and not a code
+// branch decided at build time. Stays on "legacy" until Phase 4's cutover
+// validation report has been reviewed and Checkpoint B is explicitly
+// signed off.
+const PED_SOURCE: "legacy" | "db" = process.env.PED_SOURCE === "db" ? "db" : "legacy";
+
+/**
+ * Builds the optional 4th argument for classifyDeterministic. Returns null
+ * on the default "legacy" flag setting (classifyDeterministic behaves
+ * exactly as it always has) or if the DB-backed cache hasn't loaded for any
+ * reason — a failed/slow DB cache load must never break matching, so this
+ * degrades to the legacy path rather than throwing.
+ */
+async function getDbSource(repos: Pick<Repositories, "pedAliases" | "pedRepository" | "categories" | "planOverrides">): Promise<DbDictionarySource | null> {
+  if (PED_SOURCE !== "db") return null;
+  try {
+    await ensurePedRuntimeCacheLoaded(repos);
+    return { aliasLookup: getDbAliasLookup(), planOverrideLookup: dbPlanOverrideLookup };
+  } catch (err) {
+    console.error("Failed to build DB-backed classifyDeterministic source (falling back to legacy dictionary):", err);
+    return null;
+  }
+}
+
 // 1. API Route: Match PED to Policy questionnaire
 app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
@@ -151,12 +168,14 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       return res.status(400).json({ error: "Missing planName or ped in request body" });
     }
 
+    const repos = createRepositories(getDb());
     const {
       planConfigs: planConfigsRepo,
       pedMappingOverrides: pedOverridesRepo,
       aiMemory: aiMemoryRepo,
-    } = createRepositories(getDb());
+    } = repos;
     await ensurePedOverridesLoaded(pedOverridesRepo);
+    const dbSource = await getDbSource(repos);
 
     const PLAN_CONFIG = getPlanConfig();
     let config = PLAN_CONFIG[planName];
@@ -178,7 +197,8 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
 
     // ── LEVEL 1 ── Deterministic Engine. Highest priority, unchanged.
     // If this resolves, we return immediately: no AI Memory read, no Gemini.
-    let output = classifyDeterministic(ped, planName, config);
+    // `dbSource` is null unless PED_SOURCE=db — see getDbSource above.
+    let output = classifyDeterministic(ped, planName, config, dbSource);
 
     if (output) {
       // Deterministic processing path
@@ -514,15 +534,10 @@ app.post("/api/add-ped-mapping", requireAuth, expensiveActionLimiter, async (req
 
     const { users: usersRepo, pedMappingOverrides } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    await pedMappingOverrides.upsert(pedClean, category, `${req.user!.name} (${callerTier})`);
-
-    // Make sure the full override set has been loaded at least once before
-    // patching in this one — otherwise, if this is the very first override
-    // touched this process, marking the loader "done" here would cause any
-    // *other* pre-existing overrides to never get merged in this process's
-    // lifetime.
-    await ensurePedOverridesLoaded(pedMappingOverrides);
-    TOP_PED_DICTIONARY[pedClean.trim().toLowerCase()] = category;
+    // Routed through the shared helper (also used by PED Library and AI
+    // Mapping Review) so this and every other live-override write path stay
+    // on one tested, correctly-normalized write path — see pedMappingLive.ts.
+    await promotePedMappingOverride(pedMappingOverrides, pedClean, category, `${req.user!.name} (${callerTier})`);
 
     console.log(`[PED mapping] "${req.user?.email}" recorded "${pedClean}" -> category "${category}" (persisted)`);
 
@@ -1699,8 +1714,10 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "peds must be a non-empty array." });
     }
 
-    const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo } = createRepositories(getDb());
+    const smokeTestRepos = createRepositories(getDb());
+    const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo } = smokeTestRepos;
     await ensurePedOverridesLoaded(pedOverridesRepo);
+    const dbSource = await getDbSource(smokeTestRepos);
 
     const PLAN_CONFIG = getPlanConfig();
     let config = PLAN_CONFIG[planName];
@@ -1716,7 +1733,7 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     }
 
     const results = peds.map((ped: string) => {
-      let output = classifyDeterministic(ped, planName, config);
+      let output = classifyDeterministic(ped, planName, config, dbSource);
       if (!output) {
         return { ped, resolved: false as const };
       }
@@ -2136,6 +2153,40 @@ app.get("/assets/.aistudio/GUIDE%20MASCOT.png", (req, res) => {
 
 // Configure Vite integration or static file rendering
 async function startServer() {
+  // PED Repository DB migration — Phase 5 cutover (2026-07-28): log which
+  // classification source is active on every boot, and — when PED_SOURCE=db
+  // — eagerly warm the DB-backed runtime cache here rather than waiting for
+  // the first inbound /api/match request. This makes a broken DB connection
+  // or an empty/unseeded cache visible in the boot log immediately, instead
+  // of being discovered silently by the first advisor's failed lookup (which
+  // would otherwise look like a normal "no match" and fall through to AI
+  // Memory/Gemini without anyone noticing the cache never loaded).
+  console.log(
+    `[PED Repository] Runtime source: ${
+      PED_SOURCE === "db"
+        ? "PostgreSQL (ped_repository / ped_aliases / plan_overrides — governed PED Repository)"
+        : "legacy (TOP_PED_DICTIONARY + hardcoded regex blocks in engine.ts)"
+    }`
+  );
+  if (PED_SOURCE === "db") {
+    try {
+      const repos = createRepositories(getDb());
+      await ensurePedRuntimeCacheLoaded(repos);
+      const aliasCount = getDbAliasLookup().size;
+      console.log(`[PED Repository] DB-backed runtime cache initialized: ${aliasCount} aliases loaded and ready.`);
+      if (aliasCount === 0) {
+        console.warn(
+          "[PED Repository] WARNING: DB-backed cache loaded with 0 aliases — classifyDeterministic will resolve nothing deterministically and every lookup will fall through to AI Memory/Gemini. Check DATABASE_URL and confirm scripts/seedPedRepository.ts --apply has been run against this database."
+        );
+      }
+    } catch (err) {
+      console.error(
+        "[PED Repository] Failed to warm the DB-backed runtime cache at startup (per-request calls will retry lazily; classifyDeterministic falls back to the legacy dictionary on any DB-source error, so this does not block matching, but should be investigated):",
+        err
+      );
+    }
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

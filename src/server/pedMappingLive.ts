@@ -4,7 +4,7 @@
  */
 
 import { TOP_PED_DICTIONARY, type PlanConfig } from "../types.js";
-import { questionForCategory } from "../engine.js";
+import { questionForCategory, normalizeDictionaryKey } from "../engine.js";
 
 /**
  * Live PED -> classification mapping helpers, shared by:
@@ -64,7 +64,13 @@ export function __resetPedOverridesLoadedForTests() {
 // decide whether deleting a term needs an explicit suppressing override (the
 // static entry can't be removed from code at runtime) or can just delete its
 // override row outright (nothing left to suppress).
-const STATIC_PED_DICTIONARY_KEYS = new Set(Object.keys(TOP_PED_DICTIONARY));
+//
+// Normalized with normalizeDictionaryKey (not just trim+lowercase): a few
+// static entries are literally authored with punctuation in types.ts (e.g.
+// "c-section delivery"), but classifyDeterministic only ever looks things up
+// by the punctuation-stripped key. Comparing raw keys here would wrongly
+// treat those entries as "override-only" and silently fail to suppress them.
+const STATIC_PED_DICTIONARY_KEYS = new Set(Object.keys(TOP_PED_DICTIONARY).map((k) => normalizeDictionaryKey(k)));
 
 // Sentinel category value: not a real categoryKey (no CATEGORY_LABELS entry,
 // never appears in any plan's categoryMap), so engine.ts's 0.7 dictionary
@@ -92,7 +98,7 @@ export async function promotePedMappingOverride(
 ): Promise<void> {
   await pedMappingOverridesRepo.upsert(pedText, category, addedBy);
   await ensurePedOverridesLoaded(pedMappingOverridesRepo);
-  TOP_PED_DICTIONARY[pedText.trim().toLowerCase()] = category;
+  TOP_PED_DICTIONARY[normalizeDictionaryKey(pedText)] = category;
 }
 
 /**
@@ -108,7 +114,7 @@ export async function unmapPedMappingOverride(
   pedText: string,
   addedBy: string
 ): Promise<void> {
-  const key = pedText.trim().toLowerCase();
+  const key = normalizeDictionaryKey(pedText);
   await ensurePedOverridesLoaded(pedMappingOverridesRepo);
   if (STATIC_PED_DICTIONARY_KEYS.has(key)) {
     await pedMappingOverridesRepo.upsert(pedText, UNMAPPED_OVERRIDE_SENTINEL, addedBy);

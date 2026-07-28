@@ -14,6 +14,8 @@ import { translateSourceToLayman, getSourceInfo } from "../utils/labelTranslatio
 import { getMatchTierInfo } from "../utils/matchTier";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
+import { SortableTh } from "../components/SortableTh";
+import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
 
 interface AuditPageProps {
   theme: "light" | "dark";
@@ -184,6 +186,19 @@ export function AuditPage({
     });
   }, [auditLogs, auditSearch, auditPlanFilter, auditStatusFilter, auditTypeFilter, auditStartDate, auditEndDate]);
 
+  const { sorted: sortedAuditLogs, sort: auditLogsSort, toggleSort: toggleAuditLogsSort } = useSortableData(
+    filteredAuditLogs,
+    {
+      adviser: stringComparator((log: AuditLogEntry) => resolveAdviser(log.userEmail).name),
+      timestamp: dateComparator((log: AuditLogEntry) => parseGlobalLogTimestamp(log.timestamp)),
+      planName: stringComparator((log: AuditLogEntry) => log.planName),
+      pedInput: stringComparator((log: AuditLogEntry) => log.pedInput),
+      matchType: stringComparator((log: AuditLogEntry) => getMatchTierInfo(log.matchType).levelLabel),
+      matchedQuestion: stringComparator((log: AuditLogEntry) => log.matchedQuestion),
+      source: stringComparator((log: AuditLogEntry) => translateSourceToLayman(log.source)),
+    }
+  );
+
   const auditChartData = useMemo(() => {
     // Bucketed through the shared taxonomy (src/utils/matchTier.ts) so this
     // chart's categories always agree with the badges shown in this same
@@ -229,6 +244,18 @@ export function AuditPage({
       return matchSearch && matchType;
     });
   }, [changeLogs, historySearch, historyActionFilter]);
+
+  const { sorted: sortedChangeLogs, sort: changeLogsSort, toggleSort: toggleChangeLogsSort } = useSortableData(
+    filteredChangeLogs,
+    {
+      timestamp: dateComparator((log: ChangeLogEntry) => log.timestamp),
+      userName: stringComparator((log: ChangeLogEntry) => log.userName),
+      role: stringComparator((log: ChangeLogEntry) => log.role),
+      actionType: stringComparator((log: ChangeLogEntry) => log.actionType),
+      planName: stringComparator((log: ChangeLogEntry) => log.planName),
+      description: stringComparator((log: ChangeLogEntry) => log.description),
+    }
+  );
 
   return (
     <div className="space-y-5">
@@ -595,19 +622,19 @@ export function AuditPage({
                       by content, which let a long medical condition stretch
                       that column and squeeze everything else. */}
                   <th className="py-3.5 px-5 w-14 text-center bg-inherit">No.</th>
-                  <th className="py-3.5 px-5 w-52 bg-inherit">Adviser</th>
-                  <th className="py-3.5 px-5 w-44 bg-inherit">Date &amp; Time</th>
-                  <th className="py-3.5 px-5 w-36 bg-inherit">Plan Name</th>
-                  <th className="py-3.5 px-5 w-40 bg-inherit">Medical Condition</th>
-                  <th className="py-3.5 px-5 w-32 bg-inherit">Mapping Status</th>
-                  <th className="py-3.5 px-5 bg-inherit">Matched Question</th>
-                  <th className="py-3.5 px-5 w-32 bg-inherit">Source</th>
+                  <SortableTh label="Adviser" sortKey="adviser" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-52 bg-inherit" />
+                  <SortableTh label="Date & Time" sortKey="timestamp" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-44 bg-inherit" />
+                  <SortableTh label="Plan Name" sortKey="planName" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-36 bg-inherit" />
+                  <SortableTh label="Medical Condition" sortKey="pedInput" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-40 bg-inherit" />
+                  <SortableTh label="Mapping Status" sortKey="matchType" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-32 bg-inherit" />
+                  <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 bg-inherit" />
+                  <SortableTh label="Source" sortKey="source" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-32 bg-inherit" />
                 </tr>
               </thead>
               <tbody className={`divide-y font-semibold ${
                 theme === "dark" ? "divide-stone-800 text-stone-300" : "divide-stone-200 text-stone-900"
               }`}>
-                {filteredAuditLogs.map((log, index) => {
+                {sortedAuditLogs.map((log, index) => {
                   const adviser = resolveAdviser(log.userEmail);
                   const isExpanded = expandedRows.has(index);
                   return (
@@ -846,12 +873,12 @@ export function AuditPage({
                     : "bg-stone-50 text-[#111827] border-stone-200"
                 }`}>
                   <tr>
-                    <th className="py-3.5 px-5">Timestamp</th>
-                    <th className="py-3.5 px-5">User</th>
-                    <th className="py-3.5 px-5">Role</th>
-                    <th className="py-3.5 px-5">Action Event</th>
-                    <th className="py-3.5 px-5">Plan</th>
-                    <th className="py-3.5 px-5">Description Record</th>
+                    <SortableTh label="Timestamp" sortKey="timestamp" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
+                    <SortableTh label="User" sortKey="userName" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
+                    <SortableTh label="Role" sortKey="role" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
+                    <SortableTh label="Action Event" sortKey="actionType" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
+                    <SortableTh label="Plan" sortKey="planName" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
+                    <SortableTh label="Description Record" sortKey="description" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
                   </tr>
                 </thead>
                 <tbody className={`divide-y font-semibold ${
@@ -864,7 +891,7 @@ export function AuditPage({
                       </td>
                     </tr>
                   ) : (
-                    filteredChangeLogs.map((log) => {
+                    sortedChangeLogs.map((log) => {
                       const isAddedVal = log.actionType.includes("Added");
                       const isResolvedVal = log.actionType.includes("Resolved");
                       const isEditedVal = log.actionType.includes("Edited");

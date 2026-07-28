@@ -1,0 +1,17 @@
+{
+  "categoriesUpserted": 34,
+  "pedsCreated": 1196,
+  "aliasesCreated": 1351,
+  "aliasCollisions": [],
+  "planOverridesCreated": 24,
+  "planOverridesSkipped": [
+    {
+      "planName": "Care Supreme",
+      "term": "Colitis",
+      "reason": "unresolved — no planOverrideResolutions entry, or its resolvesToTerm doesn't match a real created PED"
+    }
+  ],
+  "collisionsCreated": 15,
+  "collisionsSkipped": [],
+  "mappingHistoryCreated": 1196
+}

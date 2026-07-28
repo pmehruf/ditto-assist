@@ -12,6 +12,8 @@ import { parseGlobalLogTimestamp } from "../utils/timestamps";
 import { getMatchTierInfo } from "../utils/matchTier";
 import { translateSourceToLayman } from "../utils/labelTranslation";
 import { CustomSelect } from "../components/CustomSelect";
+import { SortableTh } from "../components/SortableTh";
+import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
 
 interface MyActivityPageProps {
   auditLogs: AuditLogEntry[];
@@ -83,6 +85,17 @@ export function MyActivityPage({
 
     return matchesSearch && matchesPlan && matchesDate;
   });
+
+  const { sorted: sortedMyLogs, sort: myLogsSort, toggleSort: toggleMyLogsSort } = useSortableData(
+    filteredMyLogs,
+    {
+      pedInput: stringComparator((log: AuditLogEntry) => log.pedInput),
+      timestamp: dateComparator((log: AuditLogEntry) => parseGlobalLogTimestamp(log.timestamp)),
+      planName: stringComparator((log: AuditLogEntry) => log.planName),
+      matchedQuestion: stringComparator((log: AuditLogEntry) => log.matchedQuestion),
+      matchType: stringComparator((log: AuditLogEntry) => getMatchTierInfo(log.matchType).label),
+    }
+  );
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -286,18 +299,18 @@ export function MyActivityPage({
                   : "bg-stone-100 text-stone-600 border-stone-200"
               }`}>
                 <tr>
-                  <th className="py-3.5 px-4">Medical Term / PED Query</th>
-                  <th className="py-3.5 px-4">Time</th>
-                  <th className="py-3.5 px-4">Insurance Plan</th>
-                  <th className="py-3.5 px-4">Matched Question</th>
-                  <th className="py-3.5 px-4">Match Outcome</th>
+                  <SortableTh label="Medical Term / PED Query" sortKey="pedInput" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
+                  <SortableTh label="Time" sortKey="timestamp" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
+                  <SortableTh label="Insurance Plan" sortKey="planName" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
+                  <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
+                  <SortableTh label="Match Outcome" sortKey="matchType" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
                   <th className="py-3.5 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className={`divide-y text-sm font-semibold ${
                 theme === "dark" ? "divide-[#252A34] text-stone-200" : "divide-stone-200 text-stone-800"
               }`}>
-                {filteredMyLogs.map((log) => {
+                {sortedMyLogs.map((log) => {
                   const isExpanded = expandedLogIndex === log.timestamp;
 
                   // Shared taxonomy (src/utils/matchTier.ts) — same Level

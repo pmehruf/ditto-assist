@@ -24,10 +24,13 @@ import {
   MASTER_ILLNESSES,
   matchSpecificIllness,
   SpecificIllnessMatchResult,
+  MasterIllnessDefinition,
 } from "../specificIllnessEngine";
 import { DbPlanConfigEntry, SpecificIllnessEntry } from "../types/plans";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { SortableTh } from "./SortableTh";
+import { useSortableData, stringComparator, numberComparator } from "../utils/useSortableData";
 
 interface SpecificIllnessLedgerProps {
   theme: "light" | "dark";
@@ -220,6 +223,24 @@ export function SpecificIllnessLedger({
       return haystack.includes(q);
     });
   }, [catalogSearch, catalogCategory]);
+
+  // The Aliases/Procedures/Sub-Conditions/Applicable-Plans columns each hold
+  // a list, not a single value, so "sort by this column" sorts by how many
+  // entries that row has (most first on ascending... well, smallest first —
+  // toggle to descending for "most first"), which is the only well-defined
+  // ordering for a list column.
+  const { sorted: sortedCatalog, sort: catalogSort, toggleSort: toggleCatalogSort } = useSortableData(
+    filteredCatalog,
+    {
+      parent_illness: stringComparator((def: MasterIllnessDefinition) => def.parent_illness),
+      aliases: numberComparator((def: MasterIllnessDefinition) => def.aliases.length),
+      procedures: numberComparator((def: MasterIllnessDefinition) => def.procedures.length),
+      sub_conditions: numberComparator((def: MasterIllnessDefinition) => def.sub_conditions.length),
+      plan_schedules: numberComparator((def: MasterIllnessDefinition) =>
+        BASE_PLANS.filter((plan) => Boolean(def.plan_schedules[plan])).length
+      ),
+    }
+  );
 
   const cardClass = `rounded-2xl border transition-all ${
     dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
@@ -663,15 +684,15 @@ export function SpecificIllnessLedger({
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                    <th className="pb-2 pr-4 font-black">Specific Illness (Parent)</th>
-                    <th className="pb-2 pr-4 font-black">Diagnostic Aliases / Synonyms (Rule 1)</th>
-                    <th className="pb-2 pr-4 font-black">Surgical Procedures (Rule 2)</th>
-                    <th className="pb-2 pr-4 font-black">Sub-Conditions (Rule 3)</th>
-                    <th className="pb-2 font-black">Applicable Plans (Rule 5)</th>
+                    <SortableTh label="Specific Illness (Parent)" sortKey="parent_illness" activeSort={catalogSort} onSort={toggleCatalogSort} className="pb-2 pr-4 font-black" />
+                    <SortableTh label="Diagnostic Aliases / Synonyms (Rule 1)" sortKey="aliases" activeSort={catalogSort} onSort={toggleCatalogSort} className="pb-2 pr-4 font-black" />
+                    <SortableTh label="Surgical Procedures (Rule 2)" sortKey="procedures" activeSort={catalogSort} onSort={toggleCatalogSort} className="pb-2 pr-4 font-black" />
+                    <SortableTh label="Sub-Conditions (Rule 3)" sortKey="sub_conditions" activeSort={catalogSort} onSort={toggleCatalogSort} className="pb-2 pr-4 font-black" />
+                    <SortableTh label="Applicable Plans (Rule 5)" sortKey="plan_schedules" activeSort={catalogSort} onSort={toggleCatalogSort} className="pb-2 font-black" />
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${dark ? "divide-white/[0.05]" : "divide-stone-150"}`}>
-                  {filteredCatalog.map((def) => (
+                  {sortedCatalog.map((def) => (
                     <tr key={def.id} className="align-top">
                       <td className="py-3 pr-4 max-w-[13rem]">
                         <p className={`text-sm font-bold ${dark ? "text-white" : "text-stone-900"}`}>{def.parent_illness}</p>

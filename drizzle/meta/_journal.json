@@ -120,6 +120,20 @@
             "when": 1784400000000,
             "tag": "0016_add_page_visibility",
             "breakpoints": true
+        },
+        {
+            "idx": 17,
+            "version": "7",
+            "when": 1784500000000,
+            "tag": "0017_ped_repository_db_migration",
+            "breakpoints": true
+        },
+        {
+            "idx": 18,
+            "version": "7",
+            "when": 1784600000000,
+            "tag": "0018_ped_governance_rules",
+            "breakpoints": true
         }
     ]
 }

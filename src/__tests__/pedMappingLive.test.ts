@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { TOP_PED_DICTIONARY, type PlanConfig } from "../types";
-import { classifyDeterministic } from "../engine";
+import { TOP_PED_DICTIONARY, getPlanConfig, type PlanConfig } from "../types";
+import { classifyDeterministic, normalizeDictionaryKey, questionForCategory } from "../engine";
 import {
   ensurePedOverridesLoaded,
   promotePedMappingOverride,
@@ -31,7 +31,13 @@ import {
  */
 
 // In-memory stand-in for PedMappingOverridesRepository, matching only the
-// methods pedMappingLive.ts actually calls.
+// methods pedMappingLive.ts actually calls. Normalizes with
+// normalizeDictionaryKey — the SAME function the real repository uses (see
+// src/server/db/repositories/pedMappingOverridesRepository.ts) — so a test
+// written against this fake would have caught the punctuation-normalization
+// mismatch bug (2026-07-28: a PED Library category edit for any punctuated
+// term, e.g. "C-Section", silently never took effect because the override
+// was stored under a different key than classifyDeterministic looks up).
 function fakeRepo() {
   const rows = new Map<string, string>(); // normalized pedText -> category
   const upsertCalls: Array<{ pedText: string; category: string; addedBy: string }> = [];
@@ -44,13 +50,13 @@ function fakeRepo() {
       return Object.fromEntries(rows);
     },
     async upsert(pedText: string, category: string, addedBy: string) {
-      const key = pedText.trim().toLowerCase();
+      const key = normalizeDictionaryKey(pedText);
       rows.set(key, category);
       upsertCalls.push({ pedText: key, category, addedBy });
       return { id: 1, pedText: key, category, addedBy, createdAt: new Date() };
     },
     async deleteByPedText(pedText: string) {
-      const key = pedText.trim().toLowerCase();
+      const key = normalizeDictionaryKey(pedText);
       rows.delete(key);
       deleteCalls.push(key);
     },
@@ -59,6 +65,15 @@ function fakeRepo() {
 
 const NONSENSE_TERM = "zzqx testpromo nonsense condition";
 const NONSENSE_KEY = NONSENSE_TERM.toLowerCase();
+// Deliberately loaded with the exact kind of punctuation real PED terms
+// commonly carry (hyphen, apostrophe, comma, parens, exclamation) — this is
+// what the normalization-mismatch regression test below promotes.
+// Deliberately avoids the word "test" (as its own token) — that word alone
+// trips a real, unrelated medical-tests/diagnostics shield elsewhere in the
+// pipeline and would return a FALLBACK match before ever reaching the
+// dictionary stage this test is targeting.
+const PUNCTUATED_NONSENSE_TERM = "Zzqx-Foobaz's Promo, (Nonsense) Condition!";
+const PUNCTUATED_NONSENSE_KEY = normalizeDictionaryKey(PUNCTUATED_NONSENSE_TERM);
 const TEST_CATEGORY_KEY = "__test_promo_category__";
 
 const fakePlanConfig: PlanConfig = {
@@ -75,6 +90,7 @@ describe("pedMappingLive", () => {
     // TOP_PED_DICTIONARY object — it's mutated in place by design, so tests
     // must clean up after themselves.
     delete TOP_PED_DICTIONARY[NONSENSE_KEY];
+    delete TOP_PED_DICTIONARY[PUNCTUATED_NONSENSE_KEY];
     __resetPedOverridesLoadedForTests();
   });
 
@@ -127,6 +143,97 @@ describe("pedMappingLive", () => {
       // proving the dictionary stage was actually skipped, not just routed
       // to a different (still-live) answer.
       expect(classifyDeterministic(NONSENSE_TERM, "Fake Plan", fakePlanConfig)).toBeNull();
+    });
+  });
+
+  describe("normalization matches engine.ts's dictionary lookup key (regression, 2026-07-28)", () => {
+    // Bug: promotePedMappingOverride/the repository used to normalize with
+    // plain trim+lowercase, while classifyDeterministic's dictionary stage
+    // looks things up via normalizeDictionaryKey (also strips punctuation,
+    // deleting it rather than turning it into a space). Any PED term with a
+    // hyphen, apostrophe, comma, or parens — extremely common in real PED
+    // text ("C-Section", "Non-Hodgkin's Lymphoma") — got stored under a key
+    // the engine would never actually look up, so the override silently did
+    // nothing: exactly the symptom reported ("changes... still giving the
+    // old result").
+    it("promoting a punctuated term still makes classifyDeterministic resolve it", async () => {
+      const repo = fakeRepo();
+      expect(classifyDeterministic(PUNCTUATED_NONSENSE_TERM, "Fake Plan", fakePlanConfig)).toBeNull();
+
+      await promotePedMappingOverride(repo, PUNCTUATED_NONSENSE_TERM, TEST_CATEGORY_KEY, "Tester");
+
+      const output = classifyDeterministic(PUNCTUATED_NONSENSE_TERM, "Fake Plan", fakePlanConfig);
+      expect(output?.matched_question).toBe("Q_TARGET_FOR_TEST_CATEGORY");
+    });
+
+    it("the repository row and the in-memory TOP_PED_DICTIONARY key agree for a punctuated term", async () => {
+      const repo = fakeRepo();
+      await promotePedMappingOverride(repo, PUNCTUATED_NONSENSE_TERM, TEST_CATEGORY_KEY, "Tester");
+
+      expect(repo.rows.get(PUNCTUATED_NONSENSE_KEY)).toBe(TEST_CATEGORY_KEY);
+      expect(TOP_PED_DICTIONARY[PUNCTUATED_NONSENSE_KEY]).toBe(TEST_CATEGORY_KEY);
+    });
+
+    it("unmapping a punctuated term normalizes the same way, so it actually finds and removes the row", async () => {
+      const repo = fakeRepo();
+      await promotePedMappingOverride(repo, PUNCTUATED_NONSENSE_TERM, TEST_CATEGORY_KEY, "Tester");
+
+      await unmapPedMappingOverride(repo, PUNCTUATED_NONSENSE_TERM, "Tester");
+
+      expect(repo.deleteCalls).toContain(PUNCTUATED_NONSENSE_KEY);
+      expect(TOP_PED_DICTIONARY[PUNCTUATED_NONSENSE_KEY]).toBeUndefined();
+    });
+  });
+
+  describe("plan-specific overrides (engine.ts stage 0.4) respect live PED Library edits (regression, 2026-07-28)", () => {
+    // Reported bug: re-categorizing Obstructive Sleep Apnea from Congenital
+    // to Respiratory in the PED Library took effect on every plan EXCEPT
+    // Activ Fit Preferred, which kept returning the old Congenital result.
+    // Root cause: classifyDeterministic has a handful of plan-specific
+    // hardcoded routes (stage 0.4, before the dictionary stage) for terms
+    // whose exact wording a plan's proposal form calls out under a specific
+    // question — OSA -> genetic and DVT/PE/varicose-vein family -> heart for
+    // Activ Fit Preferred, Crohn's/colitis/IBD -> blood for Care Supreme,
+    // RA/ankylosing spondylitis -> musculoskeletal for Optima Secure. These
+    // always fired before ever consulting TOP_PED_DICTIONARY, so no PED
+    // Library edit or AI Mapping Review promotion could ever reach them.
+    const configs = getPlanConfig();
+
+    afterEach(() => {
+      delete TOP_PED_DICTIONARY[normalizeDictionaryKey("obstructive sleep apnea")];
+    });
+
+    it("promoting OSA to a new category changes the result on Activ Fit Preferred too, not just other plans", async () => {
+      // Deliberately does not assume what TOP_PED_DICTIONARY's current
+      // static default for OSA is (it was "genetic" when this bug was
+      // reported and fixed; it has since been corrected at the source to
+      // "respiratory" — see types.ts). Asserting a specific starting
+      // category here would make this test start failing every time that
+      // static default is edited, for reasons unrelated to the bug it
+      // guards against. Instead: promote to "psychiatric" specifically
+      // because it's guaranteed to differ from either the old or new
+      // static default, so this test proves the override mechanism itself
+      // works regardless of what today's compiled default happens to be.
+      const repo = fakeRepo();
+      const before = classifyDeterministic("obstructive sleep apnea", "Activ Fit Preferred", configs["Activ Fit Preferred"]);
+
+      await promotePedMappingOverride(repo, "obstructive sleep apnea", "psychiatric", "Tester");
+
+      const after = classifyDeterministic("obstructive sleep apnea", "Activ Fit Preferred", configs["Activ Fit Preferred"]);
+      expect(after?.matched_question).toBe(questionForCategory(configs["Activ Fit Preferred"], "psychiatric"));
+      expect(after?.matched_question).not.toBe(before?.matched_question);
+    });
+
+    it("terms nobody has re-categorized still resolve via the plan's original hardcoded routing (no false positives from the dictionary's plan-agnostic default)", () => {
+      // "pulmonary embolism" has its own TOP_PED_DICTIONARY default
+      // ("vascular_fallback") that is deliberately DIFFERENT from what
+      // Activ Fit Preferred routes it to ("heart" — this plan's proposal
+      // wording explicitly lists peripheral vascular disease under its
+      // heart question). Naively preferring any truthy dictionary value
+      // over the hardcoded default would break this on every untouched
+      // term — this test guards against that regression.
+      const out = classifyDeterministic("pulmonary embolism", "Activ Fit Preferred", configs["Activ Fit Preferred"]);
+      expect(out?.matched_question).toMatch(/heart|vascular/i);
     });
   });
 

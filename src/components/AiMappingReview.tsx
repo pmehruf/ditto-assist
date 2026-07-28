@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { SortableTh } from "./SortableTh";
+import { useSortableData, stringComparator, dateComparator, numberComparator } from "../utils/useSortableData";
 
 export type AiMemoryStatus = "pending" | "approved" | "rejected" | "archived";
 
@@ -182,6 +184,19 @@ export function AiMappingReview({
     );
   }, [entries, search]);
 
+  const { sorted, sort: entriesSort, toggleSort: toggleEntriesSort } = useSortableData(
+    filtered,
+    {
+      condition: stringComparator((e: AiMemoryEntry) => e.condition),
+      planName: stringComparator((e: AiMemoryEntry) => e.planName),
+      matched_question: stringComparator((e: AiMemoryEntry) => e.aiResponse?.result?.matched_question),
+      status: stringComparator((e: AiMemoryEntry) => e.status),
+      createdAt: dateComparator((e: AiMemoryEntry) => e.createdAt),
+      lastAccessedAt: dateComparator((e: AiMemoryEntry) => e.lastAccessedAt),
+      accessCount: numberComparator((e: AiMemoryEntry) => e.accessCount),
+    }
+  );
+
   // Same CSV-building logic as the Activity Log's "Export CSV" (App.tsx's
   // downloadCSV) — kept local here rather than threaded down as a prop
   // since this component already owns and fetches its own entries.
@@ -215,7 +230,7 @@ export function AiMappingReview({
   // JSON is reduced to just the fields already surfaced in the UI so the
   // export reads like the table, not a database dump.
   const exportRows = () =>
-    filtered.map((e) => ({
+    sorted.map((e) => ({
       Condition: e.condition,
       "Normalized Condition": e.normalizedCondition,
       Plan: e.planName,
@@ -359,13 +374,13 @@ export function AiMappingReview({
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>
-              <th className="py-2 pr-3">Condition</th>
-              <th className="py-2 pr-3">Plan</th>
-              <th className="py-2 pr-3">Suggested Route</th>
-              <th className="py-2 pr-3">Status</th>
-              <th className="py-2 pr-3 whitespace-nowrap">Created</th>
-              <th className="py-2 pr-3 whitespace-nowrap">Last Used</th>
-              <th className="py-2 pr-3 text-center whitespace-nowrap">Uses</th>
+              <SortableTh label="Condition" sortKey="condition" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
+              <SortableTh label="Plan" sortKey="planName" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
+              <SortableTh label="Suggested Route" sortKey="matched_question" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
+              <SortableTh label="Status" sortKey="status" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
+              <SortableTh label="Created" sortKey="createdAt" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" />
+              <SortableTh label="Last Used" sortKey="lastAccessedAt" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" />
+              <SortableTh label="Uses" sortKey="accessCount" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" align="center" />
               <th className="py-2 text-right">Actions</th>
             </tr>
           </thead>
@@ -376,14 +391,14 @@ export function AiMappingReview({
                   Loading queue...
                 </td>
               </tr>
-            ) : filtered.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-10 text-center text-xs italic text-stone-500">
                   No entries for this filter. Conditions appear here automatically when the AI fallback runs.
                 </td>
               </tr>
             ) : (
-              filtered.map((entry) => {
+              sorted.map((entry) => {
                 const result = entry.aiResponse?.result;
                 const isOpen = expandedId === entry.id;
                 const isBusy = busyId === entry.id;

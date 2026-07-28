@@ -6,12 +6,20 @@
 import { asc, eq } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { pedMappingOverrides, type PedMappingOverrideRow } from "../schema.js";
+import { normalizeDictionaryKey } from "../../../engine.js";
 
 /**
  * Data Access Layer for admin-curated PED -> category corrections that sit
  * on top of the hardcoded TOP_PED_DICTIONARY (types.ts). Checked *before*
  * the static dictionary in /api/match so an admin's correction takes effect
  * for every future search of that exact PED text, without a code change.
+ *
+ * Normalization here MUST exactly match engine.ts's dictionary-routing
+ * lookup key (normalizeDictionaryKey: lowercased, punctuation deleted,
+ * whitespace collapsed) — not just trim+lowercase. A row stored under the
+ * wrong normalization (e.g. "c-section" with the hyphen kept) is silently
+ * unreachable: classifyDeterministic looks up "csection" and never finds it,
+ * so the override appears to do nothing even though it saved successfully.
  */
 export class PedMappingOverridesRepository {
   constructor(private readonly db: AnyDb) {}
@@ -30,7 +38,7 @@ export class PedMappingOverridesRepository {
   }
 
   async upsert(pedText: string, category: string, addedBy: string): Promise<PedMappingOverrideRow> {
-    const normalized = pedText.trim().toLowerCase();
+    const normalized = normalizeDictionaryKey(pedText);
     const [row] = await this.db
       .insert(pedMappingOverrides)
       .values({ pedText: normalized, category, addedBy })
@@ -50,7 +58,7 @@ export class PedMappingOverridesRepository {
    * by the PED text itself (e.g. "Diabetes") without needing its row id
    * looked up first. No-op if no override exists for that text. */
   async deleteByPedText(pedText: string): Promise<void> {
-    const normalized = pedText.trim().toLowerCase();
+    const normalized = normalizeDictionaryKey(pedText);
     await this.db.delete(pedMappingOverrides).where(eq(pedMappingOverrides.pedText, normalized));
   }
 }

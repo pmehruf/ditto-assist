@@ -52,6 +52,39 @@ export function normalizeText(text: string): string {
   return String(text || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// The EXACT key TOP_PED_DICTIONARY is looked up by at stage 0.7 (dictionary
+// routing, below) — lowercased, punctuation DELETED (not replaced with a
+// space: "c-section" -> "csection", not "c section"), internal whitespace
+// collapsed. Exported so every write path that adds a live PED->category
+// mapping (server.ts's promotePedMappingOverride, the pedMappingOverrides
+// repository, the /api/add-ped-mapping "teach it" flow) can key its override
+// with the SAME normalization the read path uses — otherwise a term with any
+// punctuation (hyphens, apostrophes, parentheses — "C-Section", "Non-Hodgkin's
+// Lymphoma") gets stored under a key classifyDeterministic will never
+// actually look up, so the override silently never fires.
+export function normalizeDictionaryKey(pedText: string): string {
+  return String(pedText || "").toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Snapshot of TOP_PED_DICTIONARY's compiled values, captured at module load
+// — before pedMappingLive.ts's ensurePedOverridesLoaded ever runs (that's
+// lazy, on the first request that needs it) and before any in-place merge of
+// DB overrides. Used by the plan-specific override blocks in
+// classifyDeterministic (stage 0.4) below to tell "TOP_PED_DICTIONARY still
+// holds this term's original compiled default" apart from "an admin has
+// actually changed this term's category via PED Library / AI Mapping
+// Review since then" — those two cases must be handled differently there.
+// A naive "does TOP_PED_DICTIONARY have a truthy entry for this term"
+// check is NOT enough: several plan-specific blocks intentionally route a
+// term family to a DIFFERENT category than the term's own generic
+// dictionary default (e.g. "pulmonary embolism"/"varicose vein" default to
+// the plan-agnostic "vascular_fallback" category, which has no dedicated
+// question on most plans, while Activ Fit Preferred's proposal wording
+// explicitly calls these out under its heart/peripheral-vascular-disease
+// question) — that divergence is deliberate, not a bug, and must be
+// preserved for terms nobody has actually re-categorized yet.
+const STATIC_DICTIONARY_SNAPSHOT: Record<string, string> = { ...TOP_PED_DICTIONARY };
+
 export function detectSupportingFlags(ped: string): SupportingFlags {
   const text = normalizeText(ped);
   return {
@@ -426,7 +459,39 @@ export function finalizeOutput(output: MatchOutput, ped: string, config: PlanCon
   return output;
 }
 
-export function classifyDeterministic(ped: string, planName: string, config: PlanConfig): MatchOutput | null {
+// PED Repository DB migration, Phase 3 (PED_REPOSITORY_DB_MIGRATION_DESIGN.md
+// §4) — the optional `dbSource` param below. Defined structurally here
+// (not imported from src/server/pedRuntimeCache.ts) to avoid a circular
+// import: that module imports the repositories, which import
+// normalizeDictionaryKey from THIS file. TypeScript's structural typing
+// means server.ts can still pass pedRuntimeCache's Map/function straight in
+// with no shared type import needed.
+export interface DbDictionarySource {
+  /** normalizeDictionaryKey(text) -> the PED it resolves to, mirroring
+   * TOP_PED_DICTIONARY's shape but carrying pedId too (needed for the
+   * plan-override lookup below). */
+  aliasLookup: Map<string, { pedId: number; categoryKey: string | null }>;
+  /** (planName, pedId) -> this plan's category override for that PED, if
+   * any — the generic DB-backed replacement for the 4 hardcoded
+   * "0.4 PLAN-SPECIFIC OVERRIDES & INTERCEPTS" blocks below. */
+  planOverrideLookup: (planName: string, pedId: number) => { categoryKey: string; reason: string | null } | null;
+}
+
+/**
+ * `dbSource` is entirely optional and additive — every existing call site
+ * (tests, server.ts today) that omits it gets byte-for-byte identical
+ * behavior to before this parameter existed: TOP_PED_DICTIONARY and the 4
+ * hardcoded plan-specific blocks below are untouched and remain the
+ * default/fallback path. Only a caller that explicitly passes a populated
+ * `dbSource` (server.ts, gated behind `PED_SOURCE=db`) exercises the
+ * DB-backed lookup instead. See PED_REPOSITORY_DB_MIGRATION_DESIGN.md §4.
+ */
+export function classifyDeterministic(
+  ped: string,
+  planName: string,
+  config: PlanConfig,
+  dbSource?: DbDictionarySource | null
+): MatchOutput | null {
   const text = normalizeText(ped);
   const pedText = String(ped || "").trim();
   let q = "";
@@ -436,29 +501,91 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   if (lifeStageCheck) return lifeStageCheck;
 
   // 0.4 PLAN-SPECIFIC OVERRIDES & INTERCEPTS
+  //
+  // Each block below hardcodes a categoryKey for a family of terms whose
+  // exact wording this one plan's proposal form calls out under a specific
+  // question. They fire before the dictionary stage (0.7), so historically
+  // they completely shadowed TOP_PED_DICTIONARY/ped_mapping_overrides for
+  // these terms on these plans: a PED Library edit (e.g. re-categorizing
+  // Obstructive Sleep Apnea from Congenital to Respiratory) would save
+  // successfully and take effect on every other plan, but this plan would
+  // silently keep returning the old hardcoded result forever — reported
+  // 2026-07-28 ("still gave previous mapping result on lookup" for OSA on
+  // what turned out to be Activ Fit Preferred).
+  //
+  // Fix: look up the term's CURRENT live category in TOP_PED_DICTIONARY
+  // first (the same source PED Library edits write into) and use that if
+  // present; only fall back to the historical hardcoded category (and its
+  // plan-specific explanation) when no live entry exists for this exact
+  // term. This makes every future PED Library / AI Mapping Review edit
+  // reach these plans too, without losing the original intent (accurate
+  // routing that matches each plan's actual proposal-form wording) for
+  // terms nobody has ever touched.
+  const dictKeyForPed = normalizeDictionaryKey(pedText);
+  const currentDictCategory = TOP_PED_DICTIONARY[dictKeyForPed];
+  // Only "live" if it's actually different from the term's original
+  // compiled default — see STATIC_DICTIONARY_SNAPSHOT above for why.
+  const liveOverrideCategory =
+    currentDictCategory !== undefined && currentDictCategory !== STATIC_DICTIONARY_SNAPSHOT[dictKeyForPed]
+      ? currentDictCategory
+      : undefined;
+
+  // DB-BACKED GENERIC PLAN OVERRIDE (Phase 3) — the eventual replacement
+  // for the 4 hardcoded blocks below (PED_REPOSITORY_DB_MIGRATION_DESIGN.md
+  // §4), reachable only when a caller explicitly passes `dbSource`
+  // (server.ts, gated behind PED_SOURCE=db). Takes precedence over the
+  // hardcoded blocks when this exact term resolves to a real ped_repository
+  // row that has a plan_overrides row for (planName, pedId); otherwise
+  // falls straight through to the hardcoded blocks below, unchanged. With
+  // no `dbSource` (every existing call site today), this whole branch is
+  // skipped and behavior is identical to before this parameter existed.
+  if (dbSource) {
+    const dbEntry = dbSource.aliasLookup.get(dictKeyForPed);
+    if (dbEntry) {
+      const dbOverride = dbSource.planOverrideLookup(planName, dbEntry.pedId);
+      if (dbOverride) {
+        const qTarget = questionForCategory(config, dbOverride.categoryKey);
+        if (qTarget) {
+          return makeOutput(
+            pedText,
+            "P1",
+            qTarget,
+            `👉 *${pedText}* maps to the ${getCategoryLabel(dbOverride.categoryKey)} question in this plan${dbOverride.reason ? ` — ${dbOverride.reason}` : ""} (PED Repository, plan override).`
+          );
+        }
+      }
+    }
+  }
+
   if (planName === "Activ Fit Preferred") {
     // 1. Sleep Apnea / OSA override to congenital/genetic question in AFP
     if (/\b(obstructive sleep apnea|sleep apnea|osa)\b/i.test(text)) {
-      const qGenetic = questionForCategory(config, "genetic");
-      if (qGenetic) {
+      const targetCategory = liveOverrideCategory || "genetic";
+      const qTarget = questionForCategory(config, targetCategory);
+      if (qTarget) {
         return makeOutput(
           pedText,
           "P1",
-          qGenetic,
-          `👉 *${pedText}* maps to the congenital/genetic/disability question in this plan (which explicitly names Obstructive Sleep Apnea).`
+          qTarget,
+          liveOverrideCategory && liveOverrideCategory !== "genetic"
+            ? `👉 *${pedText}* maps to the ${CATEGORY_LABELS[liveOverrideCategory] || liveOverrideCategory} question in this plan, per its current PED Library category.`
+            : `👉 *${pedText}* maps to the congenital/genetic/disability question in this plan (which explicitly names Obstructive Sleep Apnea).`
         );
       }
     }
 
     // 2. DVT, PE, and varicose veins override of the general vascular/venous condition shield to heart (peripheral vascular disease) question in AFP
     if (/\b(deep vein thrombosis|dvt|pulmonary embolism|pulmonary thromboembolism|venous thromboembolism|vte|varicose veins?|lymphedema|raynaud disease|raynaud phenomenon)\b/i.test(text)) {
-      const qHeart = questionForCategory(config, "heart");
-      if (qHeart) {
+      const targetCategory = liveOverrideCategory || "heart";
+      const qTarget = questionForCategory(config, targetCategory);
+      if (qTarget) {
         return makeOutput(
           pedText,
           "P1",
-          qHeart,
-          `👉 *${pedText}* maps to the heart/peripheral vascular disease question in this plan (which explicitly lists peripheral vascular disease).`
+          qTarget,
+          liveOverrideCategory && liveOverrideCategory !== "heart"
+            ? `👉 *${pedText}* maps to the ${CATEGORY_LABELS[liveOverrideCategory] || liveOverrideCategory} question in this plan, per its current PED Library category.`
+            : `👉 *${pedText}* maps to the heart/peripheral vascular disease question in this plan (which explicitly lists peripheral vascular disease).`
         );
       }
     }
@@ -467,13 +594,16 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   if (planName === "Care Supreme") {
     // Crohn's, Ulcerative Colitis, and IBD override to Blood and / or Immunity question in Care Supreme
     if (/\b(crohn|colitis|ulcerative colitis|ibd)\b/i.test(text)) {
-      const qBlood = questionForCategory(config, "blood");
-      if (qBlood) {
+      const targetCategory = liveOverrideCategory || "blood";
+      const qTarget = questionForCategory(config, targetCategory);
+      if (qTarget) {
         return makeOutput(
           pedText,
           "P1",
-          qBlood,
-          `👉 *${pedText}* maps to the Blood and / or Immunity question in this plan (which explicitly names Crohn's disease and Ulcerative Colitis).`
+          qTarget,
+          liveOverrideCategory && liveOverrideCategory !== "blood"
+            ? `👉 *${pedText}* maps to the ${CATEGORY_LABELS[liveOverrideCategory] || liveOverrideCategory} question in this plan, per its current PED Library category.`
+            : `👉 *${pedText}* maps to the Blood and / or Immunity question in this plan (which explicitly names Crohn's disease and Ulcerative Colitis).`
         );
       }
     }
@@ -482,13 +612,16 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   if (planName === "Optima Secure") {
     // Autoimmune joint diseases override to Musculoskeletal question in Optima Secure
     if (/\b(rheumatoid arthritis|ra\b|ankylosing spondylitis|psoriatic arthritis|reactive arthritis|reiter syndrome)\b/i.test(text)) {
-      const qMusculo = questionForCategory(config, "musculoskeletal");
-      if (qMusculo) {
+      const targetCategory = liveOverrideCategory || "musculoskeletal";
+      const qTarget = questionForCategory(config, targetCategory);
+      if (qTarget) {
         return makeOutput(
           pedText,
           "P1",
-          qMusculo,
-          `👉 *${pedText}* maps to the musculoskeletal/arthritis question in this plan.`
+          qTarget,
+          liveOverrideCategory && liveOverrideCategory !== "musculoskeletal"
+            ? `👉 *${pedText}* maps to the ${CATEGORY_LABELS[liveOverrideCategory] || liveOverrideCategory} question in this plan, per its current PED Library category.`
+            : `👉 *${pedText}* maps to the musculoskeletal/arthritis question in this plan.`
         );
       }
     }
@@ -647,10 +780,16 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
   // runs of whitespace after stripping is purely additive: it only makes
   // MORE inputs match an existing single-spaced key, never changes what an
   // already-reachable key matches.
-  const cleanInput = text.replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
-  const cleanInputLower = cleanInput.toLowerCase();
-  let categoryKey = TOP_PED_DICTIONARY[cleanInputLower];
-  if (!categoryKey) {
+  const cleanInputLower = normalizeDictionaryKey(text);
+  // DB-BACKED DICTIONARY LOOKUP (Phase 3): when `dbSource` is provided,
+  // prefer its alias Map over TOP_PED_DICTIONARY — `normalized_alias` is
+  // always written via this exact same normalizeDictionaryKey (see
+  // pedAliasesRepository.ts), so no case-insensitive scan fallback is
+  // needed the way the legacy branch below has one. Falls through to
+  // TOP_PED_DICTIONARY when dbSource is absent (every existing call site
+  // today) or this exact key isn't in the DB-backed alias set yet.
+  let categoryKey = dbSource ? dbSource.aliasLookup.get(cleanInputLower)?.categoryKey ?? undefined : TOP_PED_DICTIONARY[cleanInputLower];
+  if (!categoryKey && !dbSource) {
     const matchedKey = Object.keys(TOP_PED_DICTIONARY).find(k => k.toLowerCase() === cleanInputLower);
     if (matchedKey) {
       categoryKey = TOP_PED_DICTIONARY[matchedKey];
@@ -704,6 +843,50 @@ export function classifyDeterministic(ped: string, planName: string, config: Pla
     }
     if (categoryKey === "acute_trauma") {
       return makeOutput(pedText, "FALLBACK", config.anyOther, `"${pedText}" indicates an acute injury or physical trauma rather than a specific illness category. Declare it under this plan's hospitalisation/surgery umbrella question if applicable, otherwise under the 'Others Section'.`);
+    }
+    // Governed-data equivalent of the legacy "8b. MILD / PERIPHERAL
+    // NEUROLOGICAL" regex fallback (see below): mild/peripheral nerve
+    // conditions (Bell's palsy, migraine, carpal tunnel syndrome, essential
+    // tremor, trigeminal neuralgia, nerve pain) are deliberately routed away
+    // from the severe "neuro" question (Stroke/Paralysis/Epilepsy) to avoid
+    // over-flagging a generally mild, often self-resolving condition as
+    // high-severity. Reproduces stage 8b's exact fallback logic — prefer the
+    // plan's "psychiatric" question only if its own wording actually covers
+    // "nervous" conditions, else fall back to the plan's "neuro" question —
+    // but keyed off a governed ped_repository.categoryKey ("neuro_mild")
+    // instead of a hardcoded PED-name regex list, per Checkpoint B decision
+    // (2026-07-28): preserve the exact underwriting intent, move it to data.
+    if (categoryKey === "neuro_mild") {
+      let mildTarget = "psychiatric";
+      const psychQ = questionForCategory(config, "psychiatric") || "";
+      if (!psychQ.toLowerCase().includes("nervous")) {
+        mildTarget = "neuro";
+      }
+      const qMild = questionForCategory(config, mildTarget);
+      if (qMild) {
+        return makeOutput(
+          pedText,
+          "P1",
+          qMild,
+          `${pedText} is a mild or peripheral nerve condition routed to the general nervous system question to avoid high-severity stroke flags (PED Repository governed category).`
+        );
+      }
+    }
+    // Governed-data equivalent of the legacy "23. DIAGNOSTICS" regex
+    // fallback: a diagnostic/investigative procedure (e.g. Cystoscopy) is not
+    // itself a disease diagnosis, so it should never be forced into a disease
+    // category question — it belongs under this plan's medical
+    // tests/investigations umbrella question instead. Per Checkpoint B
+    // decision (2026-07-28): the repository should store the bare procedure
+    // name only ("Cystoscopy", not "Cystoscopy done"), and its routing comes
+    // from this categoryKey rather than being assigned a disease category.
+    if (categoryKey === "investigation_procedure") {
+      return makeOutput(
+        pedText,
+        "FALLBACK",
+        config.anyOther,
+        `"${pedText}" is a diagnostic or investigative procedure, not a formal disease diagnosis. Please declare the specific structural diagnosis this procedure revealed, if any. If none, check if this plan's umbrella medical tests/investigations question applies first; otherwise declare it under the 'Others' section (PED Repository governed category).`
+      );
     }
     if (categoryKey === "benign_growth") {
       if (config.overrides && config.overrides.bypassBenignTumors) {

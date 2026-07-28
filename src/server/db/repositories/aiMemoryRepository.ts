@@ -161,4 +161,16 @@ export class AiMemoryRepository {
   async delete(id: number): Promise<void> {
     await this.db.delete(aiMemory).where(eq(aiMemory.id, id));
   }
+
+  /**
+   * Links this cached suggestion to the ped_repository row it was promoted
+   * into (PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.6) — set once, at
+   * approval time, alongside whatever promotes the suggestion into the live
+   * mapping. Left null for suggestions that are still pending or were
+   * rejected.
+   */
+  async linkPed(id: number, pedId: number): Promise<AiMemoryRow | undefined> {
+    const [row] = await this.db.update(aiMemory).set({ pedId }).where(eq(aiMemory.id, id)).returning();
+    return row;
+  }
 }

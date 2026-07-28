@@ -1,0 +1,663 @@
+{
+  "generatedAt": "2026-07-28T10:49:33.521Z",
+  "categoryConflicts": [
+    {
+      "normalizedKey": "osa",
+      "displayTerms": [
+        "osa",
+        "OSA"
+      ],
+      "disagreement": [
+        {
+          "source": "ped_directory",
+          "category": "genetic"
+        },
+        {
+          "source": "static_dictionary",
+          "category": "respiratory"
+        }
+      ],
+      "resolution": null
+    }
+  ],
+  "ambiguousSynonymGroups": [
+    {
+      "groupMembers": [
+        "Allergic",
+        "Allergic condition"
+      ],
+      "presentMembers": [
+        "Allergic",
+        "Allergic condition"
+      ],
+      "disagreement": [
+        {
+          "term": "Allergic",
+          "normalizedKey": "allergic",
+          "category": "allergy"
+        },
+        {
+          "term": "Allergic condition",
+          "normalizedKey": "allergic condition",
+          "category": "ambiguous_symptom"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Aplastic anaemia",
+        "Aplastic anemia"
+      ],
+      "presentMembers": [
+        "Aplastic anaemia",
+        "Aplastic anemia"
+      ],
+      "disagreement": [
+        {
+          "term": "Aplastic anaemia",
+          "normalizedKey": "aplastic anaemia",
+          "category": null
+        },
+        {
+          "term": "Aplastic anemia",
+          "normalizedKey": "aplastic anemia",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Benign prostatic hyperplasia",
+        "BPH surgery",
+        "Prostatomegaly",
+        "Prostataomegaly",
+        "BPH"
+      ],
+      "presentMembers": [
+        "Benign prostatic hyperplasia",
+        "BPH surgery",
+        "Prostatomegaly",
+        "Prostataomegaly",
+        "BPH"
+      ],
+      "disagreement": [
+        {
+          "term": "Benign prostatic hyperplasia",
+          "normalizedKey": "benign prostatic hyperplasia",
+          "category": "reproductive"
+        },
+        {
+          "term": "BPH surgery",
+          "normalizedKey": "bph surgery",
+          "category": "reproductive"
+        },
+        {
+          "term": "Prostatomegaly",
+          "normalizedKey": "prostatomegaly",
+          "category": "reproductive"
+        },
+        {
+          "term": "Prostataomegaly",
+          "normalizedKey": "prostataomegaly",
+          "category": null
+        },
+        {
+          "term": "BPH",
+          "normalizedKey": "bph",
+          "category": "reproductive"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Charcot Marie Tooth disease",
+        "Charcot-marie-tooth disease"
+      ],
+      "presentMembers": [
+        "Charcot Marie Tooth disease",
+        "Charcot-marie-tooth disease"
+      ],
+      "disagreement": [
+        {
+          "term": "Charcot Marie Tooth disease",
+          "normalizedKey": "charcot marie tooth disease",
+          "category": "neuro"
+        },
+        {
+          "term": "Charcot-marie-tooth disease",
+          "normalizedKey": "charcotmarietooth disease",
+          "category": null
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Cholelithiasis",
+        "Gallstones",
+        "Gallbladder stone",
+        "Gall bladder stone",
+        "Cholelithiasis surgery"
+      ],
+      "presentMembers": [
+        "Cholelithiasis",
+        "Gallstones",
+        "Gallbladder stone",
+        "Gall bladder stone",
+        "Cholelithiasis surgery"
+      ],
+      "disagreement": [
+        {
+          "term": "Cholelithiasis",
+          "normalizedKey": "cholelithiasis",
+          "category": null
+        },
+        {
+          "term": "Gallstones",
+          "normalizedKey": "gallstones",
+          "category": null
+        },
+        {
+          "term": "Gallbladder stone",
+          "normalizedKey": "gallbladder stone",
+          "category": "digestive"
+        },
+        {
+          "term": "Gall bladder stone",
+          "normalizedKey": "gall bladder stone",
+          "category": "digestive"
+        },
+        {
+          "term": "Cholelithiasis surgery",
+          "normalizedKey": "cholelithiasis surgery",
+          "category": "digestive"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "End stage renal disease",
+        "End-stage renal disease",
+        "ESRD"
+      ],
+      "presentMembers": [
+        "End stage renal disease",
+        "End-stage renal disease",
+        "ESRD"
+      ],
+      "disagreement": [
+        {
+          "term": "End stage renal disease",
+          "normalizedKey": "end stage renal disease",
+          "category": "kidney"
+        },
+        {
+          "term": "End-stage renal disease",
+          "normalizedKey": "endstage renal disease",
+          "category": null
+        },
+        {
+          "term": "ESRD",
+          "normalizedKey": "esrd",
+          "category": "kidney"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Epstein barr virus",
+        "Epstein-barr virus"
+      ],
+      "presentMembers": [
+        "Epstein barr virus",
+        "Epstein-barr virus"
+      ],
+      "disagreement": [
+        {
+          "term": "Epstein barr virus",
+          "normalizedKey": "epstein barr virus",
+          "category": "acute_infection"
+        },
+        {
+          "term": "Epstein-barr virus",
+          "normalizedKey": "epsteinbarr virus",
+          "category": null
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Gestational diabetes mellitus",
+        "Gestational diabetes",
+        "GDM"
+      ],
+      "presentMembers": [
+        "Gestational diabetes mellitus",
+        "Gestational diabetes",
+        "GDM"
+      ],
+      "disagreement": [
+        {
+          "term": "Gestational diabetes mellitus",
+          "normalizedKey": "gestational diabetes mellitus",
+          "category": null
+        },
+        {
+          "term": "Gestational diabetes",
+          "normalizedKey": "gestational diabetes",
+          "category": "diabetes"
+        },
+        {
+          "term": "GDM",
+          "normalizedKey": "gdm",
+          "category": "diabetes"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Haemochromatosis",
+        "Hemochromatosis"
+      ],
+      "presentMembers": [
+        "Haemochromatosis",
+        "Hemochromatosis"
+      ],
+      "disagreement": [
+        {
+          "term": "Haemochromatosis",
+          "normalizedKey": "haemochromatosis",
+          "category": null
+        },
+        {
+          "term": "Hemochromatosis",
+          "normalizedKey": "hemochromatosis",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Haemophilia",
+        "Hemophilia"
+      ],
+      "presentMembers": [
+        "Haemophilia",
+        "Hemophilia"
+      ],
+      "disagreement": [
+        {
+          "term": "Haemophilia",
+          "normalizedKey": "haemophilia",
+          "category": null
+        },
+        {
+          "term": "Hemophilia",
+          "normalizedKey": "hemophilia",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "HbA1c high",
+        "High HbA1c"
+      ],
+      "presentMembers": [
+        "HbA1c high",
+        "High HbA1c"
+      ],
+      "disagreement": [
+        {
+          "term": "HbA1c high",
+          "normalizedKey": "hba1c high",
+          "category": "diabetes"
+        },
+        {
+          "term": "High HbA1c",
+          "normalizedKey": "high hba1c",
+          "category": null
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Herniated Disc",
+        "Slipped disc",
+        "Disc prolapse"
+      ],
+      "presentMembers": [
+        "Herniated Disc",
+        "Slipped disc",
+        "Disc prolapse"
+      ],
+      "disagreement": [
+        {
+          "term": "Herniated Disc",
+          "normalizedKey": "herniated disc",
+          "category": "musculoskeletal"
+        },
+        {
+          "term": "Slipped disc",
+          "normalizedKey": "slipped disc",
+          "category": "musculoskeletal"
+        },
+        {
+          "term": "Disc prolapse",
+          "normalizedKey": "disc prolapse",
+          "category": null
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Iron deficiency anaemia",
+        "Iron deficiency anemia"
+      ],
+      "presentMembers": [
+        "Iron deficiency anaemia",
+        "Iron deficiency anemia"
+      ],
+      "disagreement": [
+        {
+          "term": "Iron deficiency anaemia",
+          "normalizedKey": "iron deficiency anaemia",
+          "category": null
+        },
+        {
+          "term": "Iron deficiency anemia",
+          "normalizedKey": "iron deficiency anemia",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Non Hodgkin lymphoma",
+        "Non-hodgkin's lymphoma",
+        "NHL"
+      ],
+      "presentMembers": [
+        "Non Hodgkin lymphoma",
+        "Non-hodgkin's lymphoma",
+        "NHL"
+      ],
+      "disagreement": [
+        {
+          "term": "Non Hodgkin lymphoma",
+          "normalizedKey": "non hodgkin lymphoma",
+          "category": "neoplasm"
+        },
+        {
+          "term": "Non-hodgkin's lymphoma",
+          "normalizedKey": "nonhodgkins lymphoma",
+          "category": null
+        },
+        {
+          "term": "NHL",
+          "normalizedKey": "nhl",
+          "category": "neoplasm"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Obstructive sleep apnea",
+        "Obstructive sleep apnoea",
+        "Sleep apnea",
+        "OSA"
+      ],
+      "presentMembers": [
+        "Obstructive sleep apnea",
+        "Obstructive sleep apnoea",
+        "Sleep apnea",
+        "OSA"
+      ],
+      "disagreement": [
+        {
+          "term": "Obstructive sleep apnea",
+          "normalizedKey": "obstructive sleep apnea",
+          "category": "respiratory"
+        },
+        {
+          "term": "Obstructive sleep apnoea",
+          "normalizedKey": "obstructive sleep apnoea",
+          "category": null
+        },
+        {
+          "term": "Sleep apnea",
+          "normalizedKey": "sleep apnea",
+          "category": "respiratory"
+        },
+        {
+          "term": "OSA",
+          "normalizedKey": "osa",
+          "category": null
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Phaeochromocytoma",
+        "Pheochromocytoma"
+      ],
+      "presentMembers": [
+        "Phaeochromocytoma",
+        "Pheochromocytoma"
+      ],
+      "disagreement": [
+        {
+          "term": "Phaeochromocytoma",
+          "normalizedKey": "phaeochromocytoma",
+          "category": null
+        },
+        {
+          "term": "Pheochromocytoma",
+          "normalizedKey": "pheochromocytoma",
+          "category": "endocrine"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Polycythaemia vera",
+        "Polycythemia vera"
+      ],
+      "presentMembers": [
+        "Polycythaemia vera",
+        "Polycythemia vera"
+      ],
+      "disagreement": [
+        {
+          "term": "Polycythaemia vera",
+          "normalizedKey": "polycythaemia vera",
+          "category": null
+        },
+        {
+          "term": "Polycythemia vera",
+          "normalizedKey": "polycythemia vera",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Seizure disorder",
+        "Seizures",
+        "Fits"
+      ],
+      "presentMembers": [
+        "Seizure disorder",
+        "Seizures",
+        "Fits"
+      ],
+      "disagreement": [
+        {
+          "term": "Seizure disorder",
+          "normalizedKey": "seizure disorder",
+          "category": "neuro"
+        },
+        {
+          "term": "Seizures",
+          "normalizedKey": "seizures",
+          "category": "neuro"
+        },
+        {
+          "term": "Fits",
+          "normalizedKey": "fits",
+          "category": null
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Sickle cell anaemia",
+        "Sickle cell anemia"
+      ],
+      "presentMembers": [
+        "Sickle cell anaemia",
+        "Sickle cell anemia"
+      ],
+      "disagreement": [
+        {
+          "term": "Sickle cell anaemia",
+          "normalizedKey": "sickle cell anaemia",
+          "category": null
+        },
+        {
+          "term": "Sickle cell anemia",
+          "normalizedKey": "sickle cell anemia",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Thalassaemia",
+        "Thalassemia",
+        "Thalaseemia"
+      ],
+      "presentMembers": [
+        "Thalassaemia",
+        "Thalassemia",
+        "Thalaseemia"
+      ],
+      "disagreement": [
+        {
+          "term": "Thalassaemia",
+          "normalizedKey": "thalassaemia",
+          "category": null
+        },
+        {
+          "term": "Thalassemia",
+          "normalizedKey": "thalassemia",
+          "category": "blood"
+        },
+        {
+          "term": "Thalaseemia",
+          "normalizedKey": "thalaseemia",
+          "category": "blood"
+        }
+      ]
+    },
+    {
+      "groupMembers": [
+        "Transient ischaemic attack",
+        "Transient ischemic attack",
+        "TIA"
+      ],
+      "presentMembers": [
+        "Transient ischaemic attack",
+        "Transient ischemic attack",
+        "TIA"
+      ],
+      "disagreement": [
+        {
+          "term": "Transient ischaemic attack",
+          "normalizedKey": "transient ischaemic attack",
+          "category": null
+        },
+        {
+          "term": "Transient ischemic attack",
+          "normalizedKey": "transient ischemic attack",
+          "category": "neuro"
+        },
+        {
+          "term": "TIA",
+          "normalizedKey": "tia",
+          "category": "neuro"
+        }
+      ]
+    }
+  ],
+  "duplicatePeds": [
+    {
+      "normalizedKey": "graves disease",
+      "rows": [
+        {
+          "term": "Graves disease",
+          "sourceId": 487,
+          "source": "ped_directory"
+        },
+        {
+          "term": "Graves' disease",
+          "sourceId": 488,
+          "source": "ped_directory"
+        }
+      ]
+    },
+    {
+      "normalizedKey": "preeclampsia",
+      "rows": [
+        {
+          "term": "Pre-eclampsia",
+          "sourceId": 927,
+          "source": "ped_directory"
+        },
+        {
+          "term": "Preeclampsia",
+          "sourceId": 929,
+          "source": "ped_directory"
+        }
+      ]
+    },
+    {
+      "normalizedKey": "rotator cuff tear",
+      "rows": [
+        {
+          "term": "Rotator Cuff Tear",
+          "sourceId": 1259,
+          "source": "ped_directory"
+        },
+        {
+          "term": "Rotator cuff tear",
+          "sourceId": 1004,
+          "source": "ped_directory"
+        }
+      ]
+    }
+  ],
+  "skipped": [],
+  "planOverrideConflicts": [
+    {
+      "planName": "Activ Fit Preferred",
+      "term": "OSA",
+      "reason": "This term is also in an unresolved category conflict — resolve that first."
+    },
+    {
+      "planName": "Activ Fit Preferred",
+      "term": "Pulmonary thromboembolism",
+      "reason": "This term does not appear in TOP_PED_DICTIONARY, ped_directory, or ped_mapping_overrides at all — nothing to attach a plan override to yet."
+    },
+    {
+      "planName": "Activ Fit Preferred",
+      "term": "VTE",
+      "reason": "This term does not appear in TOP_PED_DICTIONARY, ped_directory, or ped_mapping_overrides at all — nothing to attach a plan override to yet."
+    },
+    {
+      "planName": "Care Supreme",
+      "term": "Colitis",
+      "reason": "This term does not appear in TOP_PED_DICTIONARY, ped_directory, or ped_mapping_overrides at all — nothing to attach a plan override to yet."
+    }
+  ],
+  "protectedLookalikeConflicts": []
+}

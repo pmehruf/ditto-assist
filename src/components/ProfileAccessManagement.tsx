@@ -11,6 +11,8 @@ import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { formatDisplayTimestamp } from "../utils/timestamps";
+import { SortableTh } from "./SortableTh";
+import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
 
 interface ProfileAccessManagementProps {
   theme: "light" | "dark";
@@ -105,6 +107,22 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
       const bTime = b.createdAt ? new Date(b.createdAt).getTime() : -Infinity;
       return bTime - aTime;
     });
+
+  // Click-to-sort layered on top of the default latest-to-oldest order
+  // above: with no column clicked (sort === null), useSortableData passes
+  // filteredUsersList through unchanged, so the existing "newest join first"
+  // default is preserved exactly. Clicking a header overrides it.
+  const { sorted: sortedUsersList, sort: usersSort, toggleSort: toggleUsersSort } = useSortableData(
+    filteredUsersList,
+    {
+      name: stringComparator((user: UserProfile) => user.name),
+      email: stringComparator((user: UserProfile) => user.email),
+      tactId: stringComparator((user: UserProfile) => user.tactId),
+      tier: stringComparator((user: UserProfile) => user.tier),
+      status: stringComparator((user: UserProfile) => user.status),
+      createdAt: dateComparator((user: UserProfile) => user.createdAt),
+    }
+  );
 
   // Pull the server's copy of the directory on mount so this view (and the
   // shared usersList state) reflects whatever the Owner last saved, even if
@@ -364,12 +382,12 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
           <table className="w-full border-collapse min-w-[820px]">
             <thead>
               <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
-                <th className={thClass}>Name</th>
-                <th className={thClass}>Email</th>
-                <th className={thClass}>TACT ID</th>
-                <th className={thClass}>Tier</th>
-                <th className={thClass}>Status</th>
-                <th className={thClass}>Joined</th>
+                <SortableTh label="Name" sortKey="name" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <SortableTh label="Joined" sortKey="createdAt" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 {canManage && <th className={`${thClass} text-right`}>Actions</th>}
               </tr>
             </thead>
@@ -427,7 +445,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                 </tr>
               )}
 
-              {filteredUsersList.map((user, idx) => {
+              {sortedUsersList.map((user, idx) => {
                 const isEditing = isOwner && editingEmail === user.email;
                 const row = isEditing && draft ? draft : user;
                 return (

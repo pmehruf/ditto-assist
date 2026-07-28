@@ -261,6 +261,161 @@ export type PedMappingOverrideRow = typeof pedMappingOverrides.$inferSelect;
 export type NewPedMappingOverrideRow = typeof pedMappingOverrides.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// categories — category (declaration-question-family) definitions. Source
+// of truth for what used to be the hardcoded CATEGORY_LABELS object in
+// types.ts (see PED_REPOSITORY_DB_MIGRATION_DESIGN.md). category_key is kept
+// as the primary key, not a new integer id, because a large amount of
+// existing application code already speaks in these exact string keys
+// (engine.ts, plan_configs.categoryMap JSONB) — reusing the string avoids an
+// app-wide int-id rewrite everywhere else.
+// ─────────────────────────────────────────────────────────────────────────
+export const categories = pgTable("categories", {
+  categoryKey: text("category_key").primaryKey(),
+  label: text("label").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type CategoryRow = typeof categories.$inferSelect;
+export type NewCategoryRow = typeof categories.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// ped_repository — master disease registry
+// (PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.2). Stable internal `id` /
+// `ped_code` identity, independent of the display name, so renames or
+// spelling corrections never break ped_aliases, plan_overrides,
+// mapping_history, or collision_repository rows that point at this PED.
+//
+// No DB-level FK constraints on the integer/text reference columns below,
+// consistent with the rest of this schema (plan_configs.planName,
+// pedMappingOverrides.category, etc. are also unconstrained text) —
+// relationships are documented in comments and enforced in the
+// repository/route layer, not the database.
+// ─────────────────────────────────────────────────────────────────────────
+export const pedStatusEnum = pgEnum("ped_status", ["draft", "approved", "deprecated"]);
+
+export const pedRepository = pgTable("ped_repository", {
+  id: serial("id").primaryKey(),
+  // "PED-000421" — formatted from `id` by the repository layer immediately
+  // after insert (Postgres RETURNING gives us `id`, then a single UPDATE
+  // sets pedCode = 'PED-' || lpad(id::text, 6, '0')). Stored, not computed
+  // at read time, so it stays a stable, directly-queryable value.
+  pedCode: text("ped_code").notNull().unique(),
+  canonicalName: text("canonical_name").notNull(),
+  // References categories.categoryKey. Nullable until reviewed/categorized.
+  categoryKey: text("category_key"),
+  status: pedStatusEnum("status").notNull().default("draft"),
+  // Self-reference for future dedup/merge tooling (two rows later found to
+  // be the same disease) — not used by any code path yet; included now so
+  // the column exists before real data accumulates.
+  mergedIntoId: integer("merged_into_id"),
+  notes: text("notes"),
+  addedBy: text("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PedRepositoryRow = typeof pedRepository.$inferSelect;
+export type NewPedRepositoryRow = typeof pedRepository.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// ped_aliases — every searchable text variant for a ped_repository row,
+// including one is_primary row mirroring canonical_name. normalized_alias
+// (via normalizeDictionaryKey, src/engine.ts) is the actual runtime lookup
+// key the deterministic engine's dictionary stage queries; its uniqueness
+// constraint is what enforces "Alias Collision" at the database level — two
+// PEDs can never claim the same normalized text.
+// ─────────────────────────────────────────────────────────────────────────
+export const pedAliases = pgTable("ped_aliases", {
+  id: serial("id").primaryKey(),
+  pedId: integer("ped_id").notNull(),
+  aliasText: text("alias_text").notNull(),
+  normalizedAlias: text("normalized_alias").notNull().unique(),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  // Governance rules (2026-07-28): the repository is a professional medical
+  // terminology repository — misspellings, typing errors, and OCR mistakes
+  // must still resolve via search (normalizeDictionaryKey lookup, unchanged),
+  // but must never be shown in a dropdown, search suggestion, or lookup
+  // result. `isVisible=false` marks an alias as a hidden normalization-only
+  // entry: it stays in `normalizedAlias` for matching (classifyDeterministic
+  // reads every alias regardless of this flag — see pedRuntimeCache.ts,
+  // deliberately unfiltered), but any admin UI listing a PED's aliases
+  // should filter this out. Defaults true so every existing/new alias is
+  // visible unless explicitly hidden.
+  isVisible: boolean("is_visible").notNull().default(true),
+  addedBy: text("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PedAliasRow = typeof pedAliases.$inferSelect;
+export type NewPedAliasRow = typeof pedAliases.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// plan_overrides — per-plan category overrides for a specific PED,
+// replacing the 4 hardcoded "0.4 PLAN-SPECIFIC OVERRIDES & INTERCEPTS"
+// blocks in engine.ts (Activ Fit Preferred: OSA -> genetic, DVT/PE family
+// -> heart; Care Supreme: Crohn's/colitis/IBD -> blood; Optima Secure:
+// RA/ankylosing spondylitis -> musculoskeletal). One row per (planName,
+// pedId) — a term FAMILY previously matched by a single regex becomes one
+// row per distinct PED in that family, since they're clinically distinct
+// conditions, not aliases of one PED.
+// ─────────────────────────────────────────────────────────────────────────
+export const planOverrides = pgTable(
+  "plan_overrides",
+  {
+    id: serial("id").primaryKey(),
+    planName: text("plan_name").notNull(),
+    pedId: integer("ped_id").notNull(),
+    // References categories.categoryKey — the category THIS plan uses for
+    // this PED, which may differ from the PED's own default categoryKey.
+    categoryKey: text("category_key").notNull(),
+    reason: text("reason"),
+    addedBy: text("added_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("plan_overrides_plan_ped_idx").on(table.planName, table.pedId)]
+);
+
+export type PlanOverrideRow = typeof planOverrides.$inferSelect;
+export type NewPlanOverrideRow = typeof planOverrides.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// mapping_history — structured, queryable audit trail for PED/category/
+// mapping changes specifically (distinct from change_logs above, which
+// stays for plan/announcement/user admin actions). Stores structured
+// before/after values rather than a free-text description, so it can
+// answer "what was this PED's category on a given date" without parsing
+// prose.
+// ─────────────────────────────────────────────────────────────────────────
+export const mappingHistoryEntityEnum = pgEnum("mapping_history_entity_type", [
+  "ped",
+  "alias",
+  "category",
+  "plan_override",
+  "plan_config",
+]);
+
+export const mappingHistory = pgTable("mapping_history", {
+  id: serial("id").primaryKey(),
+  // Nullable — a category- or plan-level event has no single PED.
+  pedId: integer("ped_id"),
+  entityType: mappingHistoryEntityEnum("entity_type").notNull(),
+  // e.g. "created" | "updated" | "category_changed" | "approved" |
+  // "rejected" | "alias_added" | "alias_removed" | "unmapped".
+  action: text("action").notNull(),
+  previousValue: jsonb("previous_value"),
+  newValue: jsonb("new_value"),
+  reason: text("reason"),
+  performedBy: text("performed_by").notNull(),
+  performedAt: timestamp("performed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type MappingHistoryRow = typeof mappingHistory.$inferSelect;
+export type NewMappingHistoryRow = typeof mappingHistory.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // ped_directory — the Lookup page's autocomplete dropdown source list,
 // admin-facing name "PED Directory" (renamed from ped_suggestions to match
 // the UI; the exported TS binding/repository/API route path were left as
@@ -344,6 +499,13 @@ export type NewSmokeTestPedRow = typeof smokeTestPeds.$inferInsert;
 // engine changes, previously cached AI answers are naturally invalidated
 // (a new key misses and re-asks) rather than silently serving a stale
 // mapping that the updated engine might now resolve differently.
+//
+// Extended for the PED repository DB migration (see
+// PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.6 — this table doubles as the
+// "AI Mapping Review" workflow's backing store; extended in place rather
+// than migrated to a separate table). `confidence` is meaningful for
+// AI-generated suggestions only — an approved mapping is treated as
+// authoritative and does not get an artificial confidence score.
 // ─────────────────────────────────────────────────────────────────────────
 export const aiMemory = pgTable(
   "ai_memory",
@@ -371,6 +533,15 @@ export const aiMemory = pgTable(
     // Bumped on every cache hit — surfaces which unknown conditions are
     // frequently searched and therefore worth promoting into L1 by hand.
     accessCount: integer("access_count").notNull().default(0),
+    // "HIGH" | "MEDIUM" | "LOW" — set only for AI-generated suggestions,
+    // never for manually-approved mappings (those have no score at all).
+    confidence: text("confidence"),
+    // Pulled out of the raw aiResponse JSON for clean filtering/joins,
+    // rather than requiring a JSON path query on every read.
+    suggestedCategoryKey: text("suggested_category_key"),
+    // References ped_repository.id — linked once/if this suggestion is
+    // approved and promoted; null while pending or if rejected.
+    pedId: integer("ped_id"),
   },
   // Array form (drizzle-orm >= 0.44); the older object form is deprecated.
   (table) => [
@@ -385,6 +556,64 @@ export const aiMemory = pgTable(
 
 export type AiMemoryRow = typeof aiMemory.$inferSelect;
 export type NewAiMemoryRow = typeof aiMemory.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// collision_repository — institutional memory of alias/category/plan/AI/
+// regression collisions (PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.8).
+// Advisory-only for the initial PED repository DB migration: nothing in
+// engine.ts consults this table at match time yet. `severity`/`active`
+// already let a later change decide which rows to actively enforce against
+// (block a known-bad mapping) without another schema change — see
+// "Approved Decisions" #1 in the design doc.
+//
+// The 5 collision types share one table rather than 5, since they share
+// the same shape (a PED, a rejected outcome, an optional approved outcome,
+// a reason) — collisionType is the discriminator:
+//   alias      - multiple aliases resolving to the same canonical PED
+//   category   - multiple plausible categories for the same PED, one
+//                approved and the others explicitly rejected with reasoning
+//   plan       - different plans legitimately map the same PED differently
+//                due to their own question wording (see plan_overrides)
+//   ai         - an AI suggestion that differed from an already-approved
+//                mapping; the suggestion stays in ai_memory history but
+//                must never silently override the approved row
+//   regression - a known-incorrect mapping that must never recur (e.g.
+//                Migraine -> Stroke, DVT -> Heart Disease, OSA -> Blood
+//                Disorder) — permanent guardrails
+// ─────────────────────────────────────────────────────────────────────────
+export const collisionTypeEnum = pgEnum("collision_type", [
+  "alias",
+  "category",
+  "plan",
+  "ai",
+  "regression",
+]);
+
+export const collisionSeverityEnum = pgEnum("collision_severity", ["guardrail", "advisory"]);
+
+export const collisionRepository = pgTable("collision_repository", {
+  id: serial("id").primaryKey(),
+  collisionType: collisionTypeEnum("collision_type").notNull(),
+  // Nullable — a regression entry can describe a term that was rejected
+  // before it ever became a real ped_repository row.
+  pedId: integer("ped_id"),
+  // References categories.categoryKey.
+  rejectedCategoryKey: text("rejected_category_key"),
+  approvedCategoryKey: text("approved_category_key"),
+  // For collisionType "plan".
+  relatedPlanName: text("related_plan_name"),
+  // References ai_memory.id — for collisionType "ai".
+  relatedAiMemoryId: integer("related_ai_memory_id"),
+  description: text("description").notNull(),
+  severity: collisionSeverityEnum("severity").notNull().default("advisory"),
+  // Lets a stale guardrail be retired without deleting history.
+  active: boolean("active").notNull().default(true),
+  addedBy: text("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type CollisionRepositoryRow = typeof collisionRepository.$inferSelect;
+export type NewCollisionRepositoryRow = typeof collisionRepository.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // page_visibility — Owner-only kill switch for hiding a page from everyone

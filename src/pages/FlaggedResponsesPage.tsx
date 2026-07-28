@@ -10,6 +10,8 @@ import { ReportedIssue } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "../components/ClippedButton";
+import { SortableTh } from "../components/SortableTh";
+import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
 
 interface FlaggedResponsesPageProps {
   theme: "light" | "dark";
@@ -166,6 +168,20 @@ export function FlaggedResponsesPage({
     });
   }, [reportedIssues, reportedIssuesFilter]);
 
+  const { sorted: sortedIssues, sort: issuesSort, toggleSort: toggleIssuesSort } = useSortableData(
+    filteredIssues,
+    {
+      userName: stringComparator((issue: ReportedIssue) => issue.userName),
+      planName: stringComparator((issue: ReportedIssue) => issue.planName),
+      timestamp: dateComparator((issue: ReportedIssue) => issue.timestamp),
+      pedInput: stringComparator((issue: ReportedIssue) => issue.pedInput),
+      matchedQuestion: stringComparator((issue: ReportedIssue) => issue.matchedQuestion),
+      matchType: stringComparator((issue: ReportedIssue) => issue.matchType),
+      issueNotes: stringComparator((issue: ReportedIssue) => issue.issueNotes),
+      status: stringComparator((issue: ReportedIssue) => issue.status),
+    }
+  );
+
   const thClass = `px-3 py-2.5 text-left text-[9.5px] font-black uppercase tracking-wider whitespace-nowrap ${
     dark ? "text-stone-400" : "text-stone-500"
   }`;
@@ -270,18 +286,18 @@ export function FlaggedResponsesPage({
               <table className="w-full border-collapse min-w-[950px]">
                 <thead>
                   <tr className={`border-b ${dark ? "bg-[#132c46] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
-                    <th className={thClass}>Flagged By</th>
-                    <th className={thClass}>Plan</th>
-                    <th className={thClass}>Timestamp</th>
-                    <th className={thClass}>PED</th>
-                    <th className={thClass}>Matched Question</th>
-                    <th className={thClass}>Category</th>
-                    <th className={thClass}>Comment</th>
-                    <th className={`${thClass} text-right`}>Status / Actions</th>
+                    <SortableTh label="Flagged By" sortKey="userName" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="Plan" sortKey="planName" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="Timestamp" sortKey="timestamp" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="PED" sortKey="pedInput" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="Category" sortKey="matchType" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="Comment" sortKey="issueNotes" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
+                    <SortableTh label="Status / Actions" sortKey="status" activeSort={issuesSort} onSort={toggleIssuesSort} className={`${thClass} text-right`} align="right" />
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredIssues.map((issue, idx) => {
+                  {sortedIssues.map((issue, idx) => {
                     const isOpen = issue.status !== "Resolved" && issue.status !== "Ignored";
                     return (
                       <tr

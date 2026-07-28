@@ -11,6 +11,8 @@ import { ChangeLogEntry } from "../types/changeLog";
 import { CATEGORY_LABELS } from "../types.js";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { SortableTh } from "./SortableTh";
+import { useSortableData, stringComparator } from "../utils/useSortableData";
 
 interface PedSuggestionEntry {
   id: number;
@@ -226,13 +228,25 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
 
   const hasActiveFilter = Boolean(searchQuery) || categoryFilter !== "all";
 
-  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
+  // Sorting happens on the full filtered list, BEFORE the pagination slice
+  // below — sorting only the current page would just reorder 50 rows at a
+  // time instead of actually ordering the directory.
+  const { sorted: sortedEntries, sort: entriesSort, toggleSort: toggleEntriesSort } = useSortableData(
+    filteredEntries,
+    {
+      term: stringComparator((e: PedSuggestionEntry) => e.term),
+      category: stringComparator((e: PedSuggestionEntry) => (e.category ? CATEGORY_LABELS[e.category] || e.category : null)),
+      addedBy: stringComparator((e: PedSuggestionEntry) => e.addedBy),
+    }
+  );
+
+  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
   const clampedPage = Math.min(page, totalPages);
-  const pageEntries = filteredEntries.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
+  const pageEntries = sortedEntries.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, categoryFilter]);
+  }, [searchQuery, categoryFilter, entriesSort]);
 
   // Exports the currently filtered list (respects both search and the
   // category filter, so an admin can narrow first and download just that
@@ -243,7 +257,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = ["Term", "Category", "Added By", "Created At"];
-    const rows = filteredEntries.map(e => [
+    const rows = sortedEntries.map(e => [
       e.term,
       e.category ? (CATEGORY_LABELS[e.category] || e.category) : "Uncategorized",
       e.addedBy,
@@ -488,9 +502,9 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
           <table className="w-full border-collapse min-w-[640px]">
             <thead>
               <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
-                <th className={thClass}>Term</th>
-                <th className={thClass}>Category</th>
-                <th className={thClass}>Added By</th>
+                <SortableTh label="Term" sortKey="term" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
+                <SortableTh label="Category" sortKey="category" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
+                <SortableTh label="Added By" sortKey="addedBy" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 {canManage && <th className={`${thClass} text-right`}>Actions</th>}
               </tr>
             </thead>

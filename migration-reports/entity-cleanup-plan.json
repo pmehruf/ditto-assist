@@ -1,0 +1,369 @@
+{
+  "generatedAt": "2026-07-28T15:50:42.083Z",
+  "actionPhraseCleanup": {
+    "totalItems": 12,
+    "byTreatment": {
+      "rename": 6,
+      "merge_into": 6
+    },
+    "items": [
+      {
+        "pedId": 591,
+        "pedCode": "PED-000591",
+        "currentCanonicalName": "c section history",
+        "hitText": "c section history",
+        "hitField": "canonicalName",
+        "proposedTarget": "C-section",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"C-section\"; keep \"c section history\" as a hidden (isVisible=false) normalization alias."
+      },
+      {
+        "pedId": 659,
+        "pedCode": "PED-000659",
+        "currentCanonicalName": "childbirth history",
+        "hitText": "childbirth history",
+        "hitField": "canonicalName",
+        "proposedTarget": "Childbirth",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"Childbirth\"; keep \"childbirth history\" as a hidden (isVisible=false) normalization alias."
+      },
+      {
+        "pedId": 718,
+        "pedCode": "PED-000718",
+        "currentCanonicalName": "dialysis patient",
+        "hitText": "dialysis patient",
+        "hitField": "canonicalName",
+        "proposedTarget": "Dialysis",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 410,
+        "mergeIntoPedCode": "PED-000410",
+        "mergeIntoCanonicalName": "Dialysis",
+        "note": "\"Dialysis\" already exists as PED-000410 (\"Dialysis\"). Proposal: fold this PED's aliases into that one (as hidden normalization aliases where they're action-phrase text), mark this PED merged_into_id, never leave two PEDs for the same concept."
+      },
+      {
+        "pedId": 741,
+        "pedCode": "PED-000741",
+        "currentCanonicalName": "dka history",
+        "hitText": "dka history",
+        "hitField": "canonicalName",
+        "proposedTarget": "DKA",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"DKA\"; keep \"dka history\" as a hidden (isVisible=false) normalization alias."
+      },
+      {
+        "pedId": 589,
+        "pedCode": "PED-000589",
+        "currentCanonicalName": "hysterectomy history",
+        "hitText": "hysterectomy history",
+        "hitField": "canonicalName",
+        "proposedTarget": "Hysterectomy",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 590,
+        "mergeIntoPedCode": "PED-000590",
+        "mergeIntoCanonicalName": "hysterectomy",
+        "note": "\"Hysterectomy\" already exists as PED-000590 (\"hysterectomy\"). Proposal: fold this PED's aliases into that one (as hidden normalization aliases where they're action-phrase text), mark this PED merged_into_id, never leave two PEDs for the same concept."
+      },
+      {
+        "pedId": 656,
+        "pedCode": "PED-000656",
+        "currentCanonicalName": "menopause status",
+        "hitText": "menopause status",
+        "hitField": "canonicalName",
+        "proposedTarget": "Menopause",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"Menopause\"; keep \"menopause status\" as a hidden (isVisible=false) normalization alias."
+      },
+      {
+        "pedId": 753,
+        "pedCode": "PED-000753",
+        "currentCanonicalName": "mi history",
+        "hitText": "mi history",
+        "hitField": "canonicalName",
+        "proposedTarget": "MI",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 315,
+        "mergeIntoPedCode": "PED-000315",
+        "mergeIntoCanonicalName": "MI",
+        "note": "\"MI\" already exists as PED-000315 (\"MI\"). Proposal: fold this PED's aliases into that one (as hidden normalization aliases where they're action-phrase text), mark this PED merged_into_id, never leave two PEDs for the same concept."
+      },
+      {
+        "pedId": 714,
+        "pedCode": "PED-000714",
+        "currentCanonicalName": "nephrectomy history",
+        "hitText": "nephrectomy history",
+        "hitField": "canonicalName",
+        "proposedTarget": "Nephrectomy",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 715,
+        "mergeIntoPedCode": "PED-000715",
+        "mergeIntoCanonicalName": "nephrectomy",
+        "note": "\"Nephrectomy\" already exists as PED-000715 (\"nephrectomy\"). Proposal: fold this PED's aliases into that one (as hidden normalization aliases where they're action-phrase text), mark this PED merged_into_id, never leave two PEDs for the same concept."
+      },
+      {
+        "pedId": 650,
+        "pedCode": "PED-000650",
+        "currentCanonicalName": "nil medical history",
+        "hitText": "nil medical history",
+        "hitField": "canonicalName",
+        "proposedTarget": "no pre-existing disease",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 651,
+        "mergeIntoPedCode": "PED-000651",
+        "mergeIntoCanonicalName": "no pre-existing disease",
+        "note": "Retired per governance decision (2026-07-28): \"Nil medical history\" is a declaration status, not a medical entity. Merged into PED-000651 (\"no pre-existing disease\") — the app's existing no-pre-existing-disease flow — as a hidden search-only phrase, not a canonical PED."
+      },
+      {
+        "pedId": 716,
+        "pedCode": "PED-000716",
+        "currentCanonicalName": "renal transplant history",
+        "hitText": "renal transplant history",
+        "hitField": "canonicalName",
+        "proposedTarget": "Renal transplant",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"Renal transplant\"; keep \"renal transplant history\" as a hidden (isVisible=false) normalization alias."
+      },
+      {
+        "pedId": 630,
+        "pedCode": "PED-000630",
+        "currentCanonicalName": "smoker status",
+        "hitText": "smoker status",
+        "hitField": "canonicalName",
+        "proposedTarget": "Smoker",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 150,
+        "mergeIntoPedCode": "PED-000150",
+        "mergeIntoCanonicalName": "smoker",
+        "note": "\"Smoker\" already exists as PED-000150 (\"smoker\"). Proposal: fold this PED's aliases into that one (as hidden normalization aliases where they're action-phrase text), mark this PED merged_into_id, never leave two PEDs for the same concept."
+      },
+      {
+        "pedId": 662,
+        "pedCode": "PED-000662",
+        "currentCanonicalName": "vaccination done",
+        "hitText": "vaccination done",
+        "hitField": "canonicalName",
+        "proposedTarget": "Vaccination",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"Vaccination\"; keep \"vaccination done\" as a hidden (isVisible=false) normalization alias."
+      }
+    ]
+  },
+  "misspellingCleanup": {
+    "totalItems": 19,
+    "byTreatment": {
+      "rename": 1,
+      "merge_into": 6,
+      "hide_alias_only": 12
+    },
+    "items": [
+      {
+        "pedId": 109,
+        "pedCode": "PED-000109",
+        "currentCanonicalName": "Gullian Barre syndrome",
+        "hitText": "Gullian Barre syndrome",
+        "hitField": "canonicalName",
+        "proposedTarget": "Guillain-Barre syndrome",
+        "treatment": "rename",
+        "note": "No collision found. Proposal: rename canonical_name to \"Guillain-Barre syndrome\"; keep \"Gullian Barre syndrome\" as a hidden (isVisible=false) normalization alias."
+      },
+      {
+        "pedId": 139,
+        "pedCode": "PED-000139",
+        "currentCanonicalName": "Headcahe",
+        "hitText": "Headcahe",
+        "hitField": "canonicalName",
+        "proposedTarget": "Headache",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 577,
+        "mergeIntoPedCode": "PED-000577",
+        "mergeIntoCanonicalName": "Headache",
+        "note": "Correctly-spelled \"Headache\" already exists as PED-000577. Proposal: fold this PED's aliases into that one as hidden normalization aliases, mark this PED merged_into_id."
+      },
+      {
+        "pedId": 112,
+        "pedCode": "PED-000112",
+        "currentCanonicalName": "Hemmoroids",
+        "hitText": "Hemmoroids",
+        "hitField": "canonicalName",
+        "proposedTarget": "Hemorrhoids",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 49,
+        "mergeIntoPedCode": "PED-000049",
+        "mergeIntoCanonicalName": "Haemorrhoids",
+        "note": "Correctly-spelled \"Hemorrhoids\" already exists as PED-000049. Proposal: fold this PED's aliases into that one as hidden normalization aliases, mark this PED merged_into_id."
+      },
+      {
+        "pedId": 124,
+        "pedCode": "PED-000124",
+        "currentCanonicalName": "Pilodinal sinus",
+        "hitText": "Pilodinal sinus",
+        "hitField": "canonicalName",
+        "proposedTarget": "Pilonidal sinus",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 518,
+        "mergeIntoPedCode": "PED-000518",
+        "mergeIntoCanonicalName": "Pilonidal sinus",
+        "note": "Correctly-spelled \"Pilonidal sinus\" already exists as PED-000518. Proposal: fold this PED's aliases into that one as hidden normalization aliases, mark this PED merged_into_id."
+      },
+      {
+        "pedId": 131,
+        "pedCode": "PED-000131",
+        "currentCanonicalName": "Thalaseemia",
+        "hitText": "Thalaseemia",
+        "hitField": "canonicalName",
+        "proposedTarget": "Thalassemia",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 488,
+        "mergeIntoPedCode": "PED-000488",
+        "mergeIntoCanonicalName": "Thalassemia",
+        "note": "Correctly-spelled \"Thalassemia\" already exists as PED-000488. Proposal: fold this PED's aliases into that one as hidden normalization aliases, mark this PED merged_into_id."
+      },
+      {
+        "pedId": 129,
+        "pedCode": "PED-000129",
+        "currentCanonicalName": "Tymnoplasty",
+        "hitText": "Tymnoplasty",
+        "hitField": "canonicalName",
+        "proposedTarget": "Tympanoplasty",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 130,
+        "mergeIntoPedCode": "PED-000130",
+        "mergeIntoCanonicalName": "tympanoplasty",
+        "note": "Correctly-spelled \"Tympanoplasty\" already exists as PED-000130. Proposal: fold this PED's aliases into that one as hidden normalization aliases, mark this PED merged_into_id."
+      },
+      {
+        "pedId": 118,
+        "pedCode": "PED-000118",
+        "currentCanonicalName": "Weils disease",
+        "hitText": "Weils disease",
+        "hitField": "canonicalName",
+        "proposedTarget": "Leptospirosis",
+        "treatment": "merge_into",
+        "mergeIntoPedId": 1033,
+        "mergeIntoPedCode": "PED-001033",
+        "mergeIntoCanonicalName": "Leptospirosis",
+        "additionalVisibleAliasText": "Weil's disease",
+        "note": "\"Leptospirosis\" already exists as PED-001033. Merging per governance decision (2026-07-28): \"Weils disease\" hidden, \"Weil's disease\" added as a visible clinical synonym on PED-001033."
+      },
+      {
+        "pedId": 6,
+        "pedCode": "PED-000006",
+        "currentCanonicalName": "Absence seizure",
+        "hitText": "Abscence seizure",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000006 (\"Absence seizure\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 16,
+        "pedCode": "PED-000016",
+        "currentCanonicalName": "Appendicitis",
+        "hitText": "Apendicitis",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000016 (\"Appendicitis\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 41,
+        "pedCode": "PED-000041",
+        "currentCanonicalName": "Food poisoning",
+        "hitText": "Foos poisoning",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000041 (\"Food poisoning\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 44,
+        "pedCode": "PED-000044",
+        "currentCanonicalName": "Gynecomastia",
+        "hitText": "Gynocomastia",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000044 (\"Gynecomastia\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 44,
+        "pedCode": "PED-000044",
+        "currentCanonicalName": "Gynecomastia",
+        "hitText": "Gyneacomastia",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000044 (\"Gynecomastia\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "currentCanonicalName": "High cholesterol",
+        "hitText": "Cholestrerol",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000051 (\"High cholesterol\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "currentCanonicalName": "High cholesterol",
+        "hitText": "Hyperlipidimia",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000051 (\"High cholesterol\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "currentCanonicalName": "High cholesterol",
+        "hitText": "Hyperlipidmia",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000051 (\"High cholesterol\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "currentCanonicalName": "High cholesterol",
+        "hitText": "Dyslipidimia",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000051 (\"High cholesterol\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 51,
+        "pedCode": "PED-000051",
+        "currentCanonicalName": "High cholesterol",
+        "hitText": "Dyslipidmia",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000051 (\"High cholesterol\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 62,
+        "pedCode": "PED-000062",
+        "currentCanonicalName": "Infertility",
+        "hitText": "Infertillity",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000062 (\"Infertility\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      },
+      {
+        "pedId": 92,
+        "pedCode": "PED-000092",
+        "currentCanonicalName": "Tonsillitis",
+        "hitText": "Tonsilitis",
+        "hitField": "alias",
+        "proposedTarget": null,
+        "treatment": "hide_alias_only",
+        "note": "Already an alias of the correctly-named PED-000092 (\"Tonsillitis\") — no rename needed, just set isVisible=false so it stops appearing in dropdowns/search suggestions while still matching search."
+      }
+    ]
+  }
+}
