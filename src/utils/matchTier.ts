@@ -125,15 +125,16 @@ export function getMatchTierInfo(matchType: string | null | undefined): MatchTie
   const upper = (matchType || "").toUpperCase().trim();
   switch (upper) {
     case "P0":
-    // Legacy value from before the P0/P1/P2 scheme — some historical
-    // search_history rows may still carry it.
     case "EXACT":
+      // "EXACT" is a legacy value from before the P0/P1/P2 scheme — some
+      // historical search_history rows may still carry it.
       return TIERS.direct;
     case "P1":
     case "P2":
-    // Legacy value for the same reason as "EXACT" above.
     case "LIVE_MATCH":
     case "LIVE MATCH":
+      // "LIVE_MATCH"/"LIVE MATCH" are legacy values for the same reason as
+      // "EXACT" above.
       return TIERS.category;
     case "FALLBACK":
       return TIERS.fallback;

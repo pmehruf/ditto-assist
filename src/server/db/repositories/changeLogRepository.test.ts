@@ -22,7 +22,7 @@ describe("ChangeLogRepository", () => {
 
   const baseEntry = {
     userName: "Alice",
-    role: "Owner",
+    role: "Developer",
     actionType: "Draft Approved",
     planName: "Plan A",
     description: "Approved the draft PED mapping.",

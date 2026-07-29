@@ -146,9 +146,21 @@ function getMatchTierInfo(
 // markers visible as literal asterisks. This renders **bold** segments as
 // real emphasis and strips stray single-asterisk wrapping so reasoning text
 // reads as polished, professional prose.
-// ─────────────────────────────────────────────
+//
+// Also defensively unescapes literal "\n" (backslash + n, two characters —
+// NOT an actual newline) into a real newline before rendering. Gemini's
+// ESCALATE/FALLBACK/INVALID explanation templates (server.ts) instruct it to
+// place paragraph breaks using this backslash-n pattern; the parent <p> here
+// already has `whiteSpace: "pre-line"` so a REAL newline renders as a line
+// break correctly, but a model response that reproduces the instruction's
+// escape sequence too literally (rather than emitting an actual newline
+// character inside its JSON string) leaves the raw "\n" visible as text
+// instead of breaking the line. The server-side prompt templates were fixed
+// to no longer show Gemini a doubly-escaped example, but this normalizes any
+// stray literal "\n" that still comes through, since model output isn't
+// perfectly deterministic.
 function renderExplanationText(text: string): React.ReactNode {
-  const cleaned = String(text || "");
+  const cleaned = String(text || "").replace(/\\n/g, "\n");
   const parts = cleaned.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {

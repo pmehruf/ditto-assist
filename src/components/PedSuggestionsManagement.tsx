@@ -30,7 +30,7 @@ interface PedSuggestionEntry {
 
 interface PedSuggestionsManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Owner";
+  effectiveTier: "General" | "Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -54,7 +54,7 @@ const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS)
  *   System (Cleanup)       — added by a maintenance/cleanup migration
  *   AI Generated (Pending) — created from an AI answer, awaiting review
  *   AI Generated (Approved)— same entry after an admin approved it
- *   <name> (Admin/Owner)   — hand-added by a person
+ *   <name> (Admin/Developer)   — hand-added by a person
  *
  * The AI variants deliberately keep the "AI Generated" prefix after
  * approval: approval changes the review STATE, never the fact that the entry
@@ -124,8 +124,8 @@ function renderAddedBy(addedBy: string, dark: boolean) {
  * effect.
  *
  * Read access is open to any signed-in user via GET /api/ped-suggestions;
- * writes are gated to Admin/Owner both client- and server-side
- * (requireAdminOrOwner in server.ts) — unlike Plan Management and User
+ * writes are gated to Admin/Developer both client- and server-side
+ * (requireAdminOrDeveloper in server.ts) — unlike Plan Management and User
  * Directory, Admin gets full, non-disabled edit/delete rights here,
  * matching what the backend already permits.
  *
@@ -134,14 +134,14 @@ function renderAddedBy(addedBy: string, dark: boolean) {
  */
 export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, setChangeLogs }: PedSuggestionsManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Owner";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
       {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        userName: currentUser?.name || currentUser?.email || "Mehruf P (Owner)",
+        userName: currentUser?.name || currentUser?.email || "Mehruf P (Developer)",
         role: effectiveTier,
         actionType,
         planName: "PED Directory",
@@ -193,7 +193,6 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
   useEffect(() => {
     loadEntries();
     // Runs once on mount only — writes below update `entries` locally in lockstep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Distinct categories actually present in the loaded list (plus whether
@@ -649,7 +648,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
             Showing {filteredEntries.length === 0 ? 0 : (clampedPage - 1) * PAGE_SIZE + 1}
             {"–"}
             {Math.min(clampedPage * PAGE_SIZE, filteredEntries.length)} of {filteredEntries.length.toLocaleString()}
-            {hasActiveFilter ? " matching entries" : " entries"}. {canManage ? "Changes are saved to the server, feed the Lookup page dropdown for every advisor, and — when a category is assigned — go live in classification for every plan." : "Admin or Owner clearance is required to add, edit, or remove entries."}
+            {hasActiveFilter ? " matching entries" : " entries"}. {canManage ? "Changes are saved to the server, feed the Lookup page dropdown for every advisor, and — when a category is assigned — go live in classification for every plan." : "Admin or Developer clearance is required to add, edit, or remove entries."}
           </p>
           {totalPages > 1 && (
             <div className="flex items-center gap-1.5 shrink-0">

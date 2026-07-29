@@ -11,7 +11,6 @@ import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 
 interface LookupIntroPageProps {
   theme: "light" | "dark";
-  isDark: boolean;
   setShowIntro: (value: boolean) => void;
 }
 
@@ -22,7 +21,7 @@ interface LookupIntroPageProps {
  * deliberately stay in App.tsx (see ResourcesPage.tsx for why — moving them
  * here would break the AnimatePresence exit animation).
  */
-export function LookupIntroPage({ theme, isDark, setShowIntro }: LookupIntroPageProps) {
+export function LookupIntroPage({ theme, setShowIntro }: LookupIntroPageProps) {
   return (
     <div
       style={{ marginTop: "2px", marginBottom: "4px" }}

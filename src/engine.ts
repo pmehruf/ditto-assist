@@ -139,8 +139,148 @@ export function questionForCategory(config: PlanConfig, category: string): strin
   return "";
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// PLAN DECISION ENGINE — approved architecture, 2026-07-29.
+//
+// Formalizes the one part of classifyDeterministic that is genuinely
+// "insurer-specific routing for an already-resolved category," as its own
+// named, reusable step — per the architecture review's Rule 2/3/5 and the
+// approved "Plan Decision Engine" component. It answers exactly one
+// question: given a category this plan config already knows about, what
+// does THIS plan want to do with it? There are three possible outcomes,
+// and — this is the key finding from the architecture review, confirmed
+// against real plan configs — all three already exist in today's data;
+// this function only gives them an explicit name and shape instead of
+// leaving the distinction implicit inside one long if/else chain:
+//
+//   - "direct_question": config.categoryMap[category] resolves to a real,
+//     specific declaration question (not the plan's catch-all). Rule 2.
+//   - "explicit_catchall": config.categoryMap[category] resolves to
+//     EXACTLY config.anyOther — i.e. someone deliberately configured this
+//     category to fall to the plan's catch-all question. This is not a
+//     gap; it's real, existing, intentional config (see the "covid" /
+//     "lipid" / "skin" entries in types.ts, one of which has an explicit
+//     comment: doing this instead of leaving the category unmapped is
+//     exactly what stops the condition from silently falling through to
+//     Gemini). Rule 3 — never invoke Gemini when this is the outcome.
+//   - "no_mapping": config.categoryMap has no entry at all for this
+//     category on this plan. classifyDeterministic's caller should keep
+//     evaluating its other deterministic sections (the shared regex/shield
+//     sections below), NOT immediately treat this as "Others" — "no
+//     mapping" here means "this plan config doesn't cover this category,"
+//     not "the input is unclassifiable."
+//
+// This function receives raw `pedText`/`cleanInputLower` alongside the
+// category because two existing, pre-migration nuances need to be
+// preserved exactly and can only be evaluated with the original text: the
+// "secondary manifestation" root-disease rescue (e.g. "diabetic
+// retinopathy" falling back to the Diabetes question when this plan has no
+// dedicated Eye question) folds into "direct_question" since it still
+// returns a real, specific question — just for a related root category.
+//
+// Deliberately NOT covered here (by design, not oversight): the ~13
+// hardcoded categoryKey special cases above this call site in
+// classifyDeterministic (vascular_fallback, acute_infection, allergy,
+// neuro_mild, investigation_procedure, etc.) and the diabetes
+// insulin-qualifier post-check. Those are either universal, plan-agnostic
+// category behaviors that pre-empt plan-specific routing entirely, or a
+// per-condition qualifier applied AFTER a direct-question outcome — both
+// stay exactly where they already are, unchanged, rather than being
+// force-fit into this 3-outcome shape.
+// ─────────────────────────────────────────────────────────────────────────
+export type PlanDecisionOutcome =
+  | { kind: "direct_question"; question: string; explanation: string }
+  | { kind: "explicit_catchall"; question: string; explanation: string }
+  | { kind: "no_mapping" };
+
+export function resolvePlanDecision(
+  categoryKey: string,
+  config: PlanConfig,
+  pedText: string,
+  cleanInputLower: string
+): PlanDecisionOutcome {
+  const targetQ = questionForCategory(config, categoryKey);
+  if (!targetQ) {
+    return { kind: "no_mapping" };
+  }
+
+  if (targetQ === config.anyOther) {
+    const rootFallback = SECONDARY_MANIFESTATION_ROOT_CATEGORY[cleanInputLower];
+    if (rootFallback) {
+      const rootQ = questionForCategory(config, rootFallback.rootCategoryKey);
+      if (rootQ && rootQ !== config.anyOther) {
+        const categoryLabel = getCategoryLabel(categoryKey);
+        return {
+          kind: "direct_question",
+          question: rootQ,
+          explanation: `"${pedText}" is a complication of the condition covered by this plan's **${rootFallback.rootLabel}** question. This plan has no dedicated **${categoryLabel}** question, so it is declared there instead.`,
+        };
+      }
+    }
+    const categoryLabel = getCategoryLabel(categoryKey);
+    return {
+      kind: "explicit_catchall",
+      question: config.anyOther,
+      explanation: `"${pedText}" falls under the **${categoryLabel}** category, but this plan has no dedicated declaration question for it. Proceed with the 'Others' section.`,
+    };
+  }
+
+  const categoryLabel = getCategoryLabel(categoryKey);
+  return {
+    kind: "direct_question",
+    question: targetQ,
+    explanation: `"${pedText}" falls under the **${categoryLabel}** category and is a category-level match to this plan's declaration question above.`,
+  };
+}
+
 export function findQuestion(config: PlanConfig, pattern: RegExp): string {
   return config.questions.find(q => pattern.test(normalizeText(q))) || "";
+}
+
+export interface PlanDecisionOverride {
+  applied: boolean;
+  matchType: MatchOutput["match_type"];
+  matchedQuestion: string;
+  explanation: string | null;
+}
+
+/**
+ * Shared HIGH-confidence override rule (2026-07-29, explicit user request):
+ * when Gemini (or a replayed AI Memory cache entry) reports a category with
+ * HIGH confidence and this plan's Plan Decision Engine has an unambiguous
+ * mapping for that category that differs from the question currently
+ * selected, use the Plan Decision Engine's routing instead — mirroring how
+ * a repository-resolved category is handled (resolvePlanDecision's
+ * "direct_question" -> P1 / "explicit_catchall" -> FALLBACK mapping above).
+ *
+ * Used from BOTH call sites that can hand a condition back to an advisor:
+ * the live Gemini path (server.ts Level 3) and the AI Memory cache replay
+ * path (server.ts Level 2) — a cached answer recorded before this rule
+ * existed, or before a plan's category mapping was corrected, must be
+ * corrected on replay too, not just on the next fresh Gemini call. This
+ * never writes anything back into ped_repository/ped_aliases/categories —
+ * it only decides which answer to show for this one lookup.
+ */
+export function applyHighConfidenceCategoryOverride(
+  currentQuestion: string,
+  currentMatchType: MatchOutput["match_type"],
+  identifiedCategory: string | null | undefined,
+  confidence: string | null | undefined,
+  config: PlanConfig,
+  pedText: string
+): PlanDecisionOverride {
+  const noOp: PlanDecisionOverride = { applied: false, matchType: currentMatchType, matchedQuestion: currentQuestion, explanation: null };
+  if (!identifiedCategory || (confidence ?? "").toUpperCase() !== "HIGH") return noOp;
+
+  const planDecision = resolvePlanDecision(identifiedCategory, config, pedText, normalizeDictionaryKey(pedText));
+  if (planDecision.kind === "no_mapping" || planDecision.question === currentQuestion) return noOp;
+
+  return {
+    applied: true,
+    matchType: planDecision.kind === "direct_question" ? "P1" : "FALLBACK",
+    matchedQuestion: planDecision.question,
+    explanation: planDecision.explanation,
+  };
 }
 
 export function makeOutput(ped: string, matchType: MatchOutput["match_type"], question: string, explanation: string): MatchOutput {
@@ -896,46 +1036,33 @@ export function classifyDeterministic(
       if (neoplasmQ) return makeOutput(pedText, "P1", neoplasmQ, `${pedText} is a generic tumour, cyst, polyp, or growth explicitly covered under this plan's primary question.`);
     }
 
-    const targetQ = questionForCategory(config, categoryKey);
-    if (targetQ) {
-      if (targetQ === config.anyOther) {
-        // Universal Manifestation Routing Policy: a few TOP_PED_DICTIONARY
-        // entries are literally named as an organ-specific complication of
-        // a root disease (e.g. "diabetic retinopathy" -> categoryKey
-        // "eye"). Organ wording still wins when the plan has a dedicated
-        // question for it (unchanged above) — this only covers the gap
-        // where it doesn't: instead of dropping straight to the generic
-        // 'Others' section, try the root disease's own question first,
-        // since the diagnosis is still, in substance, that disease.
-        const rootFallback = SECONDARY_MANIFESTATION_ROOT_CATEGORY[cleanInputLower];
-        if (rootFallback) {
-          const rootQ = questionForCategory(config, rootFallback.rootCategoryKey);
-          if (rootQ && rootQ !== config.anyOther) {
-            const categoryLabel = getCategoryLabel(categoryKey);
-            return makeOutput(pedText, "P1", rootQ,
-              `"${pedText}" is a complication of the condition covered by this plan's **${rootFallback.rootLabel}** question. This plan has no dedicated **${categoryLabel}** question, so it is declared there instead.`);
-          }
-        }
-        const categoryLabel = getCategoryLabel(categoryKey);
-        return makeOutput(pedText, "FALLBACK", config.anyOther,
-          `"${pedText}" falls under the **${categoryLabel}** category, but this plan has no dedicated declaration question for it. Proceed with the 'Others' section.`);
-      }
+    // PLAN DECISION ENGINE (approved architecture, 2026-07-29): given this
+    // already-resolved category, ask the plan-specific decision step what
+    // it wants to do with it. See resolvePlanDecision's doc comment above
+    // for why this is exactly the pre-existing behavior, just named and
+    // structured explicitly rather than left as an inline if/else.
+    const planDecision = resolvePlanDecision(categoryKey, config, pedText, cleanInputLower);
+    if (planDecision.kind === "explicit_catchall") {
+      return makeOutput(pedText, "FALLBACK", planDecision.question, planDecision.explanation);
+    }
+    if (planDecision.kind === "direct_question") {
+      // Plan-specific qualifier: diabetes is only routed to this plan's
+      // primary diabetes question when the wording explicitly requires a
+      // Type-1/insulin-dependent/complication-level qualifier — applied
+      // AFTER the Plan Decision Engine's own outcome, since it isn't about
+      // whether a mapping exists, but whether THIS specific condition
+      // qualifies for the mapping that does.
       if (categoryKey === "diabetes" && config.overrides && config.overrides.requiresInsulinForDiabetes) {
         if (!/\b(type\s*1|type1|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(pedText)) {
           return makeOutput(pedText, "FALLBACK", config.anyOther,
             `${pedText} does not meet the specific Type 1/Insulin-dependent qualifier for this plan's primary question.`);
         }
       }
-      // Mapping-focused reasoning: explain WHICH category the condition belongs
-      // to and WHY that routes it to the matched question, rather than a generic
-      // medical definition. This also guarantees a non-empty, grammatically
-      // complete sentence for every categoryKey (see getCategoryLabel above),
-      // fixing conditions like Spina Bifida that previously had no PED_BRIEFS
-      // entry and rendered "is a and it's a direct/category match".
-      const categoryLabel = getCategoryLabel(categoryKey);
-      return makeOutput(pedText, "P1", targetQ,
-        `"${pedText}" falls under the **${categoryLabel}** category and is a category-level match to this plan's declaration question above.`);
+      return makeOutput(pedText, "P1", planDecision.question, planDecision.explanation);
     }
+    // planDecision.kind === "no_mapping": this plan's config doesn't cover
+    // this category at all — fall through to the shared regex/shield
+    // sections below, unchanged from pre-refactor behavior.
   }
 
   // (Removed: byte-identical duplicates of shields 0.5A "GLOBAL DIAGNOSTICS &

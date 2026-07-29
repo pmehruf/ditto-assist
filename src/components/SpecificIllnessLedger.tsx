@@ -40,7 +40,7 @@ interface SpecificIllnessLedgerProps {
   /** Current DB-backed plan rows, so the editor can preload a plan's
    * existing specificIllnesses when selected. */
   dbPlanConfigs: DbPlanConfigEntry[];
-  /** Whether the signed-in user may save changes (Admin/Owner) — read-only
+  /** Whether the signed-in user may save changes (Admin/Developer) — read-only
    * users still see the catalog/sandbox, just not the editor's controls. */
   canEdit: boolean;
   /** Persists a plan's full specificIllnesses list. Defined in

@@ -30,7 +30,7 @@ export type UpdateFlaggedIssueEntry = Partial<
 
 /**
  * Data Access Layer for reported/flagged mismatches (flagged_issues table),
- * i.e. the "Flagged Outputs" workflow: a user reports a bad match, an Owner
+ * i.e. the "Flagged Outputs" workflow: a user reports a bad match, a Developer
  * triages it through Pending -> Urgent/Resolved/Ignored.
  */
 export class FlaggedIssuesRepository {
@@ -48,7 +48,7 @@ export class FlaggedIssuesRepository {
     return row;
   }
 
-  /** Owner-only triage action: change status and/or add owner notes. */
+  /** Developer-only triage action: change status and/or add owner notes. */
   async update(id: number, entry: UpdateFlaggedIssueEntry): Promise<FlaggedIssueRow | undefined> {
     const [row] = await this.db
       .update(flaggedIssues)
@@ -66,7 +66,7 @@ export class FlaggedIssuesRepository {
     return row;
   }
 
-  /** Owner-only: permanently deletes a flagged issue report. */
+  /** Developer-only: permanently deletes a flagged issue report. */
   async delete(id: number): Promise<void> {
     await this.db.delete(flaggedIssues).where(eq(flaggedIssues.id, id));
   }

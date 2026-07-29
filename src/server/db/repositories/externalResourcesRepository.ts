@@ -13,14 +13,14 @@ export type UpdateExternalResourceEntry = Partial<Omit<NewExternalResourceRow, "
 /**
  * Data Access Layer for the external resource links (Payment SOP, QA
  * Dashboard, etc.) surfaced in the Workspace Controls drawer. Read by
- * everyone; writes are gated to Admin/Owner in the API route layer.
+ * everyone; writes are gated to Admin/Developer in the API route layer.
  */
 export class ExternalResourcesRepository {
   constructor(private readonly db: AnyDb) {}
 
   async list(): Promise<ExternalResourceRow[]> {
     // Manual display order first (ties broken by id/creation order), not
-    // newest-first — Admin/Owner control the order via reorder() below.
+    // newest-first — Admin/Developer control the order via reorder() below.
     return this.db
       .select()
       .from(externalResources)

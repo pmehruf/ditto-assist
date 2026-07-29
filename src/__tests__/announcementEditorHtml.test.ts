@@ -108,4 +108,35 @@ describe("markupToEditableHtml", () => {
     const html = markupToEditableHtml("[click](javascript:alert(1))", "dark");
     expect(html).not.toContain("href=\"javascript:");
   });
+
+  // v2 rebuild: underline + inline code (previously missing entirely — the
+  // editor had no toolbar button and the grammar had no token for either).
+  it("renders underline", () => {
+    expect(markupToEditableHtml("~underlined~", "dark")).toBe("<div><u>underlined</u></div>");
+  });
+
+  it("renders inline code verbatim, without recursing bold/italic parsing inside it", () => {
+    expect(markupToEditableHtml("`const x = *not bold*`", "dark")).toBe(
+      "<div><code>const x = *not bold*</code></div>"
+    );
+  });
+
+  // v2 rebuild: escaping fix for the "pasted content becomes bold" bug — a
+  // literal delimiter character in plain text is stored backslash-escaped
+  // (see announcementEditorHtml.ts's escapeLiteral/file header) and must be
+  // shown to the author as their original literal character, never as a
+  // visible backslash or as real formatting.
+  it("unescapes a literal escaped asterisk back to a plain character (not bold)", () => {
+    expect(markupToEditableHtml("call \\*now\\*", "dark")).toBe("<div>call *now*</div>");
+  });
+
+  it("unescapes a literal escaped underscore back to a plain character (not italic)", () => {
+    expect(markupToEditableHtml("config\\_value", "dark")).toBe("<div>config_value</div>");
+  });
+
+  it("leaves a real (unescaped) token alone right next to literal escaped characters", () => {
+    expect(markupToEditableHtml("*bold* and \\*not bold\\*", "dark")).toBe(
+      "<div><b>bold</b> and *not bold*</div>"
+    );
+  });
 });

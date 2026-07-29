@@ -11,8 +11,8 @@ import { DEFAULT_FEATURE_PERMISSIONS } from "../constants/featurePermissions";
  * Pages that can be hidden.
  *
  * Excluded on purpose:
- *  - owner_controls  — hiding this page would be meaningless (the Owner sees
- *                      it regardless) and confusing, so it isn't offered.
+ *  - owner_controls  — hiding this page would be meaningless (the Developer
+ *                      sees it regardless) and confusing, so it isn't offered.
  *  - clear_activity  — an action permission, not a navigable page.
  */
 const NON_HIDEABLE = new Set(["owner_controls", "clear_activity"]);
@@ -26,10 +26,10 @@ interface OwnerControlsPageProps {
 }
 
 /**
- * Owner Controls — page visibility kill switch.
+ * Developer Controls — page visibility kill switch.
  *
- * Purpose: let the Owner hide a page from everyone else while work on it is
- * in progress, without touching tiers or the permissions registry.
+ * Purpose: let the Developer hide a page from everyone else while work on it
+ * is in progress, without touching tiers or the permissions registry.
  *
  * Deliberately minimal — every page is simply Visible or Hidden. It does NOT
  * consider tiers, roles, or per-user rules; `featurePermissions` still
@@ -37,10 +37,10 @@ interface OwnerControlsPageProps {
  * independent on purpose, so hiding something temporarily can never corrupt
  * the real access model.
  *
- * HARD GUARANTEE: hiding never applies to the Owner. hasAccess() in App.tsx
- * returns true for Owner before the hidden set is consulted, so the Owner
- * always sees every page — including this one. That makes it impossible to
- * lock yourself out.
+ * HARD GUARANTEE: hiding never applies to the Developer. hasAccess() in
+ * App.tsx returns true for Developer before the hidden set is consulted, so
+ * the Developer always sees every page — including this one. That makes it
+ * impossible to lock yourself out.
  */
 export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerControlsPageProps) {
   const dark = theme === "dark";
@@ -127,7 +127,7 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Owner Controls</span>
+            <span>Developer Controls</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Hide pages from everyone else while work is in progress. Hidden pages remain fully visible to you.

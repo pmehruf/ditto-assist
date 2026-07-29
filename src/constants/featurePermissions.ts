@@ -109,13 +109,15 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Editor"
   },
   {
-    // OWNER CONTROLS — page visibility kill switch. Owner-only in every
-    // sense: hasAccess() returns true for Owner before any other check, and
-    // both General and Admin are "None" here, so no other tier can reach it.
+    // OWNER CONTROLS — page visibility kill switch. Developer-only in every
+    // sense: hasAccess() returns true for Developer before any other check,
+    // and both General and Admin are "None" here, so no other tier can reach it.
+    // (Internal feature id "owner_controls" kept as-is — it's a stored DB key,
+    // not a UI label; renaming it would require migrating page_visibility rows.)
     id: "owner_controls",
-    name: "Owner Controls",
-    description: "Show or hide individual pages from everyone except the Owner",
-    defaultTier: "Owner",
+    name: "Developer Controls",
+    description: "Show or hide individual pages from everyone except the Developer",
+    defaultTier: "Developer",
     generalAccess: "None",
     adminAccess: "None"
   },
@@ -123,7 +125,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     id: "clear_activity",
     name: "Clear Activity & Mismatch Logs",
     description: "Erase history of user lookups and resolve/purge active mismatch records",
-    defaultTier: "Owner",
+    defaultTier: "Developer",
     generalAccess: "None",
     adminAccess: "None"
   }

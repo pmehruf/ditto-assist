@@ -178,7 +178,7 @@ export function AnnouncementLogPage({
                   Active Announcements ({qaAnnouncements.length})
                 </h3>
                 <span className="text-[10px] font-mono text-content-muted">
-                  Active Sort: Absolute Proximity Rank
+                  Active Sort: Newest First
                 </span>
               </div>
 
@@ -198,15 +198,20 @@ export function AnnouncementLogPage({
                     No active announcements. Use the form on the left to add one.
                   </div>
                 ) : (
+                  // Newest first, by Announcement Date (when the notice was
+                  // posted — the same date shown to advisors and used to
+                  // decide which announcements they see), not proximity to
+                  // today's effective date. `qaAnnouncements` already arrives
+                  // from GET /api/announcements ordered newest-created-first
+                  // (see announcementsRepository.ts's `orderBy(desc(createdAt))`),
+                  // and Array.prototype.sort is stable, so entries sharing the
+                  // same Announcement Date keep that creation-order tiebreak
+                  // automatically — no separate secondary sort key needed.
                   [...qaAnnouncements]
                     .sort((a, b) => {
-                      const today = new Date();
-                      const getDaysDiff = (dateStr: string) => {
-                        const targetDate = new Date(dateStr);
-                        const diffTime = targetDate.getTime() - today.getTime();
-                        return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                      };
-                      return Math.abs(getDaysDiff(a.effectiveDate)) - Math.abs(getDaysDiff(b.effectiveDate));
+                      const aTime = a.announcementDate ? new Date(a.announcementDate).getTime() : 0;
+                      const bTime = b.announcementDate ? new Date(b.announcementDate).getTime() : 0;
+                      return bTime - aTime;
                     })
                     .map((item) => {
                       const today = new Date();
@@ -311,13 +316,13 @@ export function AnnouncementLogPage({
                                         {
                                           id: `log-${Date.now()}`,
                                           timestamp: new Date().toISOString(),
-                                          userName: currentUser?.name || "Mehruf P (Owner)",
+                                          userName: currentUser?.name || "Mehruf P (Developer)",
                                           // Phase 1.4 resolution: `role` never existed on LoggedUser (only `tier`
                                           // does), so `(currentUser as any)?.role` was always `undefined` and this
-                                          // always fell back to "Owner" — provably, for every possible currentUser.
+                                          // always fell back to "Developer" — provably, for every possible currentUser.
                                           // Simplified to the constant it always evaluated to; this is a type-safety
                                           // cleanup only, with byte-identical runtime behavior to before.
-                                          role: "Owner",
+                                          role: "Developer",
                                           actionType: "Announcement Deleted",
                                           planName: item.category,
                                           description: `Deleted "${item.type || 'QA Announcement'}" announcement: "${item.announcement.substring(0, 50)}..."`

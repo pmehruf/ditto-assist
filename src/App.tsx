@@ -8,31 +8,20 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
-  CheckCircle2,
   AlertCircle,
   AlertTriangle,
   XCircle,
   RefreshCw,
-  Check,
-  Copy,
-  Search,
-  Filter,
-  Info,
   LogOut,
   Sun,
   Moon,
   User,
-  Activity,
-  ArrowRight,
   ArrowLeft,
   PanelLeftOpen,
   PanelLeftClose,
   Clock,
-  Menu,
-  Target,
   Flag,
   History,
-  Eye,
   Home,
   Megaphone,
   Link2,
@@ -87,13 +76,8 @@ import { DeclarationMapIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
-import { DittoMascot } from "./components/mascots/DittoMascot";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
-import { QAAnnouncementForm } from "./components/forms/QAAnnouncementForm";
-import { renderFormattedAnnouncement } from "./utils/renderFormattedAnnouncement";
-import { parseGlobalLogTimestamp, formatDisplayTimestamp } from "./utils/timestamps";
-import { translateMatchTypeToLayman, translateFallbackToLayman, translateSourceToLayman } from "./utils/labelTranslation";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
 
@@ -194,13 +178,13 @@ const RESOURCE_ICON_MAP: Record<string, typeof Link2> = Object.fromEntries(
  * wins if it's a recognized name, otherwise falls back to the keyword-based
  * guess from getResourceIcon so existing/unset resources keep working. */
 /**
- * Features that are Owner-only as a matter of code, not configuration.
+ * Features that are Developer-only as a matter of code, not configuration.
  *
  * These bypass the featurePermissions registry entirely (see hasAccess).
  * Nothing an Admin can edit — and no stale localStorage permission list —
  * can grant access to anything in this set.
  */
-const OWNER_ONLY_FEATURES = new Set(["owner_controls"]);
+const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls"]);
 
 function resolveResourceIcon(resource: { title: string; icon?: string }) {
   if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
@@ -219,11 +203,11 @@ export default function App() {
   // API (see QAAnnouncementForm.tsx and AnnouncementLogPage.tsx).
   const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>([]);
 
-  // Owner-hidden pages (feature ids). Fetched for every signed-in user
-  // because the nav needs it; only the Owner can change it. See hasAccess()
-  // — the Owner short-circuit runs before this is consulted.
+  // Developer-hidden pages (feature ids). Fetched for every signed-in user
+  // because the nav needs it; only the Developer can change it. See hasAccess()
+  // — the Developer short-circuit runs before this is consulted.
   const [hiddenPages, setHiddenPages] = useState<string[]>([]);
-  const [announcementsLoadError, setAnnouncementsLoadError] = useState<string | null>(null);
+  const [, setAnnouncementsLoadError] = useState<string | null>(null);
 
   const mapAnnouncementRow = (row: any): QAAnnouncement => ({
     id: String(row.id),
@@ -271,7 +255,7 @@ export default function App() {
 
   // External resource links (Payment SOP, QA Dashboard, etc.) shown in the
   // Workspace Controls drawer's Resources section — readable by every
-  // signed-in user, writable by Admin/Owner only (enforced server-side).
+  // signed-in user, writable by Admin/Developer only (enforced server-side).
   const [externalResources, setExternalResources] = useState<ExternalResource[]>([]);
   const [externalResourcesLoadError, setExternalResourcesLoadError] = useState<string | null>(null);
 
@@ -300,7 +284,7 @@ export default function App() {
   // is the *live* source of truth for new/edited plans — /api/match reads
   // from the same table server-side. Readable by every signed-in user
   // (needed for the plan picker + matching to work for General tier too);
-  // writes gated to Admin/Owner both here and server-side.
+  // writes gated to Admin/Developer both here and server-side.
   const [dbPlanConfigs, setDbPlanConfigs] = useState<DbPlanConfigEntry[]>([]);
   const [dbPlanConfigsLoadError, setDbPlanConfigsLoadError] = useState<string | null>(null);
 
@@ -352,6 +336,12 @@ export default function App() {
         .map((row: any) => row.term)
         .filter((t: unknown): t is string => typeof t === "string" && t.trim().length > 0);
       if (terms.length > 0) {
+        // setDynamicSuggestions is declared later in this component (see the
+        // dynamicSuggestions useState below), but fetchPedSuggestions is only
+        // ever invoked from inside a useEffect (after mount), by which point
+        // every hook in this render has already initialized. No temporal-dead-
+        // zone risk in practice.
+        // eslint-disable-next-line react-hooks/immutability
         setDynamicSuggestions(terms);
       }
     } catch (err: unknown) {
@@ -360,7 +350,7 @@ export default function App() {
   };
 
   // Add/edit/delete state for the Resources section of the Workspace
-  // Controls drawer (Admin/Owner only — enforced server-side too).
+  // Controls drawer (Admin/Developer only — enforced server-side too).
   const [newResourceTitle, setNewResourceTitle] = useState("");
   const [newResourceUrl, setNewResourceUrl] = useState("");
   // "" = auto (keyword-guessed from title); anything else is an explicit
@@ -372,7 +362,7 @@ export default function App() {
   const [editResourceTitle, setEditResourceTitle] = useState("");
   const [editResourceUrl, setEditResourceUrl] = useState("");
   const [editResourceIcon, setEditResourceIcon] = useState("");
-  // Off by default — Admin/Owner see a plain link list just like everyone
+  // Off by default — Admin/Developer see a plain link list just like everyone
   // else until they explicitly opt into managing entries via the "Manage
   // Resources" toggle in the drawer.
   const [isManagingResources, setIsManagingResources] = useState(false);
@@ -549,8 +539,6 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [noticeIndex, activeAnnouncements]);
 
-  const [isMismatchesExpanded, setIsMismatchesExpanded] = useState<boolean>(false);
-
   // Scroll to the top when switching views/pages or loading the application
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
@@ -595,7 +583,7 @@ export default function App() {
   // Users Database (mocking production directory)
   const [usersList, setUsersList] = usePersistentState<UserProfile[]>("ditto_users_list", () => {
     return [
-      { email: "mehruf.p@joinditto.in", name: "Mehruf P", tactId: "TACT-101", tier: "Owner", status: "Active" },
+      { email: "mehruf.p@joinditto.in", name: "Mehruf P", tactId: "TACT-101", tier: "Developer", status: "Active" },
       { email: "rebecca.s@joinditto.in", name: "Rebecca S", tactId: "TACT-102", tier: "Admin", status: "Active" },
       { email: "shashank@joinditto.in", name: "Shashank J", tactId: "TACT-103", tier: "General", status: "Active" }
     ];
@@ -684,7 +672,7 @@ export default function App() {
   }, [isMenuOpen, isRightSidebarOpen]);
 
   // Draft plans submitted for approval
-  const [draftPlans, setDraftPlans] = usePersistentState<DraftPlan[]>(
+  const [draftPlans] = usePersistentState<DraftPlan[]>(
     "ditto_draft_plans",
     () => [
       {
@@ -763,29 +751,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbPlanConfigs]);
 
-  // Questions index records for approved draft plans
-  const [promotedPlans, setPromotedPlans] = usePersistentState<Record<string, string[]>>(
-    "ditto_promoted_plans_questions",
-    () => ({})
-  );
-
-  // Master Insurer Metadata layer
-  const [insurerMetadata, setInsurerMetadata] = usePersistentState<Record<string, string>>(
-    "ditto_insurer_metadata",
-    () => ({
-      "Optima Secure": "HDFC ERGO",
-      "Care Supreme": "Care Health Insurance",
-      "Activ One Max": "Aditya Birla Health Insurance",
-      "Activ Fit Preferred": "Aditya Birla Health Insurance",
-      "Activ One Safeguard [DRAFT]": "Aditya Birla Health Insurance",
-      "Care Elite Protect [DRAFT]": "Care Health Insurance"
-    })
-  );
-
   // Master Change Log State ("Modification History" sub-tab under Audit).
   //
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
-  // to be persisted only to this browser's own localStorage, so an Owner
+  // to be persisted only to this browser's own localStorage, so an Developer
   // triaging a flagged issue (or an Admin editing an announcement) never
   // showed up in the modification history seen by anyone else — the audit
   // trail wasn't actually a trail. GET/POST /api/change-logs (backed by the
@@ -857,7 +826,7 @@ export default function App() {
   const [historyActionFilter, setHistoryActionFilter] = useState("All");
 
   // Master Question tags map (keeps legacy lists compatible but tags them elegantly)
-  const [planQuestionsState, setPlanQuestionsState] = useState<Record<string, Array<{ text: string, tag: "Specific" | "Umbrella" | "Catch-all" }>>>((() => {
+  const [planQuestionsState] = useState<Record<string, Array<{ text: string, tag: "Specific" | "Umbrella" | "Catch-all" }>>>((() => {
     // Always re-derive base plan questions from getPlanConfig() as the live source of truth.
     // This prevents stale localStorage data from overriding the correct question lists.
     const base = getPlanConfig();
@@ -923,18 +892,27 @@ export default function App() {
   }, [planQuestionsState]);
 
   // Master Simulated Role State
-  const [simulatedRole, setSimulatedRole] = usePersistentState<"General" | "Admin" | "Owner" | null>(
+  const [simulatedRole, setSimulatedRole] = usePersistentState<"General" | "Admin" | "Developer" | null>(
     "ditto_simulated_role",
     () => null,
     {
       serialize: (value) => value as string,
-      deserialize: (raw) => raw as "General" | "Admin" | "Owner" | null,
+      // Migrates a stale pre-rename (2026-07-29) "Owner" value left over in a
+      // browser's localStorage from before the Owner->Developer tier rename.
+      // Without this, effectiveTier (below) reads the literal string "Owner"
+      // straight out of localStorage forever — it's a client-side override
+      // that never goes through the database, so the db:migrate enum rename
+      // has no effect on it. Anyone who had "View as: Owner" simulation
+      // active before the rename would otherwise be stuck seeing "Owner"
+      // everywhere and failing every `=== "Developer"` check, regardless of
+      // their real DB tier, until they manually cleared the key.
+      deserialize: (raw) => (raw === "Owner" ? "Developer" : (raw as "General" | "Admin" | "Developer" | null)),
       removeWhenFalsy: true,
     }
   );
 
   // NOTE (audit fix, see Production_Readiness_Audit.md Findings 1 & 6): this
-  // used to hardcode a single Owner email as a bypass and silently defaulted
+  // used to hardcode a single Developer email as a bypass and silently defaulted
   // every other signed-in user to "General" tier regardless of what the
   // user directory actually said — meaning even a real Admin never got
   // Admin-level `effectiveTier` unless they were the hardcoded email or
@@ -943,16 +921,16 @@ export default function App() {
   // when the session bootstraps below, and kept in sync by the effect that
   // watches `usersList`) — trust it instead of re-deriving tier from a
   // client-side special case.
-  const baseUserTier: "General" | "Admin" | "Owner" = currentUser?.tier ?? "General";
+  const baseUserTier: "General" | "Admin" | "Developer" = currentUser?.tier ?? "General";
   const effectiveTier = simulatedRole || baseUserTier;
 
   // Fetches change logs (Modification History) from the server. Only
-  // Admin/Owner can read this server-side (see requireAdminOrOwner in
+  // Admin/Developer can read this server-side (see requireAdminOrDeveloper in
   // server.ts) — matches the Audit tab's own gating, so General-tier users
   // simply never issue this fetch.
   useEffect(() => {
     if (!currentUser) return;
-    if (effectiveTier !== "Admin" && effectiveTier !== "Owner") return;
+    if (effectiveTier !== "Admin" && effectiveTier !== "Developer") return;
     fetch("/api/change-logs")
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
@@ -968,14 +946,14 @@ export default function App() {
   }, [currentUser?.email, effectiveTier]);
 
   // Dynamic Feature Permissions Governance State
-  const [featurePermissions, setFeaturePermissions] = usePersistentState<FeaturePermission[]>(
+  const [featurePermissions] = usePersistentState<FeaturePermission[]>(
     "ditto_feature_permissions",
     () => DEFAULT_FEATURE_PERMISSIONS
   );
 
   // Unified dynamic hasAccess governance function
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
-    const isRealOwner = currentUser?.tier === "Owner";
+    const isRealDeveloper = currentUser?.tier === "Developer";
 
     // ── OWNER-ONLY HARD GATE ────────────────────────────────────────────
     // Decided in code, NOT via the featurePermissions registry, and it
@@ -985,27 +963,27 @@ export default function App() {
     // localStorage-backed (usePersistentState), so any browser that saved
     // its permission list before a new feature id existed will not contain
     // that id — and the `if (!perm) return true` fallback further down then
-    // grants it to EVERYONE. That is exactly how Owner Controls briefly
+    // grants it to EVERYONE. That is exactly how Developer Controls briefly
     // became visible to Admin/General users. Anything that must never be
     // reachable by a lower tier belongs in this list, not in the registry.
-    if (OWNER_ONLY_FEATURES.has(featureId)) {
-      // True for a real Owner even while previewing a lower tier via
+    if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
+      // True for a real Developer even while previewing a lower tier via
       // "View As" — otherwise hiding a page mid-preview could leave them
       // with no route back to these toggles.
-      return isRealOwner;
+      return isRealDeveloper;
     }
 
     const tier = effectiveTier;
 
-    // Owner-hidden page — checked BEFORE the tier grants below so it applies
-    // uniformly. A real Owner not simulating another tier is exempt; a real
-    // Owner who IS simulating sees exactly what that tier sees, so "View As"
+    // Developer-hidden page — checked BEFORE the tier grants below so it applies
+    // uniformly. A real Developer not simulating another tier is exempt; a real
+    // Developer who IS simulating sees exactly what that tier sees, so "View As"
     // stays an honest preview of the hiding they just configured.
-    if (hiddenPages.includes(featureId) && !(isRealOwner && tier === "Owner")) {
+    if (hiddenPages.includes(featureId) && !(isRealDeveloper && tier === "Developer")) {
       return false;
     }
 
-    if (tier === "Owner") return true;
+    if (tier === "Developer") return true;
 
     // Resolve against the saved registry first, then fall back to the
     // shipped defaults.
@@ -1031,12 +1009,12 @@ export default function App() {
   };
 
   // EVICTION GUARD — if the page the user is currently on becomes
-  // inaccessible (typically because the Owner just hid it), bounce them
+  // inaccessible (typically because the Developer just hid it), bounce them
   // Home. Without this the nav button disappears but the tab body keeps
   // rendering, because the route blocks below key off activeTab alone.
   //
-  // Cannot strand a real Owner: hasAccess() always grants them
-  // "owner_controls", so the Owner Controls page stays reachable even if the
+  // Cannot strand a real Developer: hasAccess() always grants them
+  // "owner_controls", so the Developer Controls page stays reachable even if the
   // guard bounces them out of a page they hid while previewing via "View As".
   useEffect(() => {
     if (activeTab === "lookup") return;
@@ -1049,7 +1027,7 @@ export default function App() {
   // Destructive-action confirmation state.
   //
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 2): this used
-  // to be an "Owner Passcode" gate — a 4-digit code stored in localStorage
+  // to be an "Developer Passcode" gate — a 4-digit code stored in localStorage
   // (defaulting to the literal string "1234") and compared to the user's
   // input entirely in the browser. That provided no real access control:
   // anyone could read the correct value out of localStorage, or simply
@@ -1081,9 +1059,6 @@ export default function App() {
       onConfirmAction();
     }
   };
-
-  // Derived legacy support for general admin checks
-  const currentUserRole = effectiveTier === "Admin" || effectiveTier === "Owner" ? "admin" : "advisor";
 
   // Plan Configurations dynamically expanded with promoted and draft plans!
   const planConfigs = useMemo(() => {
@@ -1149,8 +1124,6 @@ export default function App() {
     return base;
   }, [draftPlans, productionPlans, planQuestionsState, dbPlanConfigs]);
 
-  const [dictionaryVersion, setDictionaryVersion] = useState<number>(0);
-
   // Theme support — dark default, toggleable dark mode, persistently saved
   const [theme, setTheme] = usePersistentState<"light" | "dark">(
     "ditto_crm_theme",
@@ -1187,7 +1160,7 @@ export default function App() {
   // from the server when someone happened to open the Profile Access tab.
   // A newly-provisioned (or newly re-tiered) user's very first login on a
   // fresh browser would resolve against that stale/local copy instead of
-  // the real directory — e.g. a brand-new hire added by an Owner on a
+  // the real directory — e.g. a brand-new hire added by an Developer on a
   // different machine would incorrectly land in the first-time-setup flow.
   // GET /api/me (server.ts) returns the caller's own, server-authoritative
   // directory record, resolved from their verified session email — every
@@ -1232,7 +1205,7 @@ export default function App() {
           setActiveTab("lookup");
         } else if (existingUser) {
           // A directory record exists but status isn't "Active" — this
-          // means an Owner has Disabled the account (this used to also
+          // means an Developer has Disabled the account (this used to also
           // catch "Pending First Login", which no longer exists as a
           // status). Don't route this into first-time-setup: that flow
           // would just 409 anyway (the server refuses to re-provision an
@@ -1681,9 +1654,8 @@ export default function App() {
     }
     return final.sort();
   });
-  const [mappingUpdateStatus, setMappingUpdateStatus] = useState<Record<string, { status: "idle" | "loading" | "success" | "error"; error?: string }>>({});
-  const [userAdvisoryToggle, setUserAdvisoryToggle] = useState<boolean | null>(null);
-  const [advisoryHasBeenExpanded, setAdvisoryHasBeenExpanded] = useState<boolean>(false);
+  const [, setUserAdvisoryToggle] = useState<boolean | null>(null);
+  const [, setAdvisoryHasBeenExpanded] = useState<boolean>(false);
   const [resultsFocusMode, setResultsFocusMode] = useState<boolean>(false);
 
   const [lookupPeds, setLookupPeds] = useState<string[]>([]);
@@ -1694,15 +1666,13 @@ export default function App() {
   }>>([]);
   const [isLookupLoading, setIsLookupLoading] = useState<boolean>(false);
   const isResultsActive = (resultsFocusMode && lookupResults.length > 0) || isLookupLoading;
-  const [copiedPedMap, setCopiedPedMap] = useState<Record<string, boolean>>({});
-
 
   // Reported Mismatch Issues (Flagged Responses).
   //
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded seed persisted to this browser's own localStorage —
   // so a flagged report only ever existed in the reporting advisor's own
-  // browser, and an Owner's resolve/ignore/delete only ever updated their
+  // browser, and an Developer's resolve/ignore/delete only ever updated their
   // own browser too. FlaggedResponsesPage now fetches GET /api/flagged-issues
   // (backed by the flagged_issues table) on mount, and every create (below)
   // /resolve/ignore/delete (FlaggedResponsesPage.tsx) round-trips through
@@ -1727,7 +1697,6 @@ export default function App() {
   // Custom non-blocking confirmation states to avoid iframe-blocked confirm Window dialogs
   const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<string | null>(null);
   const [editingAnnouncementId, setEditingAnnouncementId] = useState<string | null>(null);
-  const [confirmingResetDefaults, setConfirmingResetDefaults] = useState<boolean>(false);
 
   const pedInputRef = useRef<HTMLInputElement>(null);
 
@@ -1744,7 +1713,7 @@ export default function App() {
   // entries with no sharing across users or devices — meaning "Audit" never
   // actually audited anyone but the viewing browser. GET/POST/DELETE
   // /api/search-history (backed by the search_history table) is now the
-  // shared source of truth: Admin/Owner fetch everyone's history (for the
+  // shared source of truth: Admin/Developer fetch everyone's history (for the
   // Audit tab), everyone else fetches only their own (for My Activity) —
   // matching the server-side authorization already enforced by that route.
   const mapSearchHistoryRow = (row: any): AuditLogEntry => ({
@@ -1760,7 +1729,7 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const isPrivileged = effectiveTier === "Admin" || effectiveTier === "Owner";
+    const isPrivileged = effectiveTier === "Admin" || effectiveTier === "Developer";
     const url = isPrivileged
       ? "/api/search-history"
       : `/api/search-history?userEmail=${encodeURIComponent(currentUser.email)}`;
@@ -1808,139 +1777,6 @@ export default function App() {
       });
   };
 
-  const handleClearAuditHistory = () => {
-    confirmDestructiveAction("Clear all activity audit logs permanently", () => {
-      fetch("/api/search-history", { method: "DELETE" })
-        .then(async (res) => {
-          const body = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-          setAuditLogs([]);
-        })
-        .catch((err) => {
-          console.error("Failed to clear search history on the server:", err);
-        });
-    });
-  };
-
-  const ALL_CATEGORIES = [
-    { key: "diabetes", label: "Diabetes & Metabolic" },
-    { key: "hypertension", label: "Hypertension / High BP" },
-    { key: "lipid", label: "Cholesterol / Lipid" },
-    { key: "respiratory", label: "Asthma / Respiratory" },
-    { key: "neuro", label: "Neurological Diseases" },
-    { key: "psychiatric", label: "Psychiatric / Mental" },
-    { key: "digestive", label: "Digestive / Gastrointestinal" },
-    { key: "liver", label: "Liver & Gall Bladder" },
-    { key: "endocrine", label: "Thyroid & Endocrine" },
-    { key: "kidney", label: "Kidney / Renal" },
-    { key: "reproductive", label: "Reproductive Organs" },
-    { key: "blood", label: "Blood Disorders" },
-    { key: "skin", label: "Skin & Dermatology" },
-    { key: "neoplasm", label: "Cancer & Growth Tumours" },
-    { key: "autoimmune", label: "Autoimmune & Immunity" },
-    { key: "ent", label: "ENT (Ear, Nose, Throat)" },
-    { key: "eye", label: "Ocular & Eye Disorders" },
-    { key: "covid", label: "Covid-19" },
-    { key: "genetic", label: "Genetic / Congenital" },
-    { key: "musculoskeletal", label: "Musculoskeletal / Joint" },
-    { key: "hiv", label: "HIV / AIDS / STD" },
-    { key: "acute_infection", label: "Acute Infections & Fever" },
-    { key: "acute_trauma", label: "Acute Trauma & Cuts" },
-    { key: "ambiguous_symptom", label: "Ambiguous Subjective Symptoms" },
-    { key: "lifestyle", label: "Habits (Smoking / Drinking)" },
-    { key: "natural_life_stage", label: "Natural Stage (Pregnancy, General Checkups)" }
-  ];
-
-  const findCategoryForQuestion = (plan: string, matchedQuestion: string): string => {
-    const config = planConfigs[plan];
-    if (!config || !config.categoryMap) return "ambiguous_symptom";
-    
-    for (const [cat, qText] of Object.entries(config.categoryMap)) {
-      if (typeof qText === "string" && qText === matchedQuestion) {
-        return cat;
-      }
-      if (typeof qText === "number" && config.questions[qText] === matchedQuestion) {
-        return cat;
-      }
-    }
-    return "ambiguous_symptom";
-  };
-
-  const handlePersistMapping = async (ped: string, category: string) => {
-    const pedClean = ped.trim();
-    if (!pedClean || !category) return;
-
-    setMappingUpdateStatus(prev => ({
-      ...prev,
-      [pedClean]: { status: "loading" }
-    }));
-
-    try {
-      const response = await fetch("/api/add-ped-mapping", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ped: pedClean, category })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to commit mapping to codebase");
-      }
-
-      // The server has already persisted this to ped_mapping_overrides and
-      // applied it to its own in-memory dictionary (see /api/add-ped-mapping
-      // in server.ts) — this local mutation just makes the correction show
-      // up instantly in *this* browser's suggestion dropdown without a
-      // reload, it's a UX nicety, not the source of durability anymore.
-      const pedLower = pedClean.toLowerCase().replace(/[^\w\s]/g, "").trim();
-      TOP_PED_DICTIONARY[pedLower] = category;
-      setDictionaryVersion(prev => prev + 1);
-
-      setMappingUpdateStatus(prev => ({
-        ...prev,
-        [pedClean]: { status: "success" }
-      }));
-    } catch (err: unknown) {
-      console.error("Failed to commit mapping: ", err);
-      const message = err instanceof Error ? err.message : "Codebase persistence failure";
-      setMappingUpdateStatus(prev => ({
-        ...prev,
-        [pedClean]: { status: "error", error: message }
-      }));
-    }
-  };
-
-  // Synchronize dynamic backgrounds for plans to look elegant in Light/Dark
-  const getPlanTheme = (plan: string) => {
-    switch (plan) {
-      case "Optima Secure":
-        return { 
-          bgClass: "bg-red-50 text-red-800 border-red-300 dark:bg-rose-950/20 dark:text-rose-300 dark:border-rose-900",
-          badgeClass: "bg-red-500 text-white",
-          borderHex: "#F43F5E"
-        };
-      case "Care Supreme":
-        return { 
-          bgClass: "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900",
-          badgeClass: "bg-amber-500 text-amber-950 font-bold",
-          borderHex: "#D97706"
-        };
-      case "Activ One Max":
-      case "Activ Fit Preferred":
-        return { 
-          bgClass: "bg-blue-50 text-[#117FDA] border-blue-100 dark:bg-blue-950/20 dark:text-sky-350 dark:border-blue-900/45",
-          badgeClass: "bg-[#117FDA] text-white",
-          borderHex: "#117FDA"
-        };
-      default:
-        return { 
-          bgClass: "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-900",
-          badgeClass: "bg-emerald-600 text-white",
-          borderHex: "#059669"
-        };
-    }
-  };
-
   // Redirects to the real, server-side Google OAuth flow (src/server/auth/).
   // Domain restriction to @joinditto.in is enforced server-side on the
   // callback -- this client only kicks off the redirect.
@@ -1966,7 +1802,7 @@ export default function App() {
     // Identity (email/name) is already server-verified via the real Google
     // session. POST /api/me/first-time-setup (server.ts) is what actually
     // provisions this person into the shared, server-side directory —
-    // always at "General" tier; an Owner promotes people afterward via User
+    // always at "General" tier; an Developer promotes people afterward via User
     // Management. (Audit fix, see Production_Readiness_Audit.md Finding 9:
     // this used to only ever write to the completing browser's own
     // localStorage, so the new user never appeared in the real directory
@@ -2034,7 +1870,6 @@ export default function App() {
     };
     const timerId = scheduleNextMidnightReset();
     return () => clearTimeout(timerId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ==========================================
@@ -2131,13 +1966,6 @@ export default function App() {
     }, 100);
   };
 
-  const handlePreFillDemoData = () => {
-    setSelectedPlan("Optima Secure");
-    const demoConditions = ["Diabetes Type 2", "Hypertension", "Asthma"];
-    setLookupPeds(demoConditions);
-    executeLookupAll(demoConditions, "Optima Secure");
-  };
-
   const handleAddLookupPed = (pedText: string) => {
     const trimmed = pedText.trim();
     if (!trimmed) return;
@@ -2196,21 +2024,6 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  // Convert stars or simple markdown to clean highlighted spans
-  const formatMarkdownText = (text: string) => {
-    if (!text) return "";
-    const split = text.split(/(\*\*?[^*]+\*\*?)/g);
-    return split.map((part, i) => {
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return <strong key={i} className="font-bold text-stone-900 dark:text-white">{part.slice(2, -2)}</strong>;
-      }
-      if (part.startsWith("*") && part.endsWith("*")) {
-        return <strong key={i} className="font-bold text-[#117FDA] dark:text-[#60a5fa] bg-blue-500/5 dark:bg-blue-500/10 px-1 rounded">{part.slice(1, -1)}</strong>;
-      }
-      return part;
-    });
   };
 
   // Verifying the real Google session with the server — avoid flashing the
@@ -2897,7 +2710,7 @@ export default function App() {
           )}
 
           {/* OWNER ZONE — its own group below Admin Zone. Only ever renders
-              for the Owner (hasAccess short-circuits on tier), so no other
+              for the Developer (hasAccess short-circuits on tier), so no other
               user sees this divider or heading at all. */}
           {hasAccess("owner_controls", "Viewer") && (
             <>
@@ -2907,7 +2720,7 @@ export default function App() {
               />
 
               <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
-                Owner Zone
+                Developer Zone
               </span>
 
               <button
@@ -2922,7 +2735,7 @@ export default function App() {
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
                 <ShieldAlert className="w-4 h-4 shrink-0 text-blue-300" />
-                <span>Owner Controls</span>
+                <span>Developer Controls</span>
                 {hiddenPages.length > 0 && (
                   <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
                     {hiddenPages.length}
@@ -3250,7 +3063,7 @@ export default function App() {
                 </button>
               )}
 
-              {/* Owner Controls — collapsed rail. Owner-only. */}
+              {/* Developer Controls — collapsed rail. Developer-only. */}
               {hasAccess("owner_controls", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("owner_controls")}
@@ -3260,7 +3073,7 @@ export default function App() {
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "owner_controls" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Owner Controls"
+                  title="Developer Controls"
                 >
                   <ShieldAlert style={{ width: "18px", height: "18px" }} />
                   {hiddenPages.length > 0 && (
@@ -3364,7 +3177,7 @@ export default function App() {
                   <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
                     <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Access Level:</span>
                     <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
-                      currentUser?.tier === "Owner"
+                      currentUser?.tier === "Developer"
                         ? "bg-red-500/10 text-red-500"
                         : currentUser?.tier === "Admin"
                         ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
@@ -3509,7 +3322,7 @@ export default function App() {
               title="Home (Go to Compliance & Policy Mapping Engine)" aria-label="Go to home — Declaration Assistant"
             >
               <div className="flex items-center gap-2">
-                <DittoWordmark className="text-lg" isWhite style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} firstSpanStyle={{ color: "#fefefe" }} secondSpanStyle={{ color: "#1e7af5" }} />
+                <DittoWordmark className="text-lg" isWhite style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} />
               </div>
             </button>
           </div>
@@ -3552,7 +3365,7 @@ export default function App() {
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                owner_controls: { label: "Owner Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
+                owner_controls: { label: "Developer Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
               };
               const meta = tabMeta[activeTab] || tabMeta.lookup;
               return (
@@ -3609,7 +3422,7 @@ export default function App() {
                 {/* Quick Access drawer trigger — open to every signed-in
                     user now that the drawer includes the Resources link
                     list (readable by everyone). The View As simulator
-                    stays gated to Owner/Admin, tucked in the footer. */}
+                    stays gated to Developer/Admin, tucked in the footer. */}
                 <button
                   onClick={(e) => {
                     setIsRightSidebarOpen(true);
@@ -3759,14 +3572,14 @@ export default function App() {
 
                 {/* Resources — external link list (Payment SOP, QA Dashboard,
                     etc.). Visible/clickable for every signed-in user by
-                    default, same as everyone else. Admin/Owner get a
+                    default, same as everyone else. Admin/Developer get a
                     "Manage Resources" toggle that reveals add/edit/delete
                     controls on demand instead of showing them by default. */}
                 <div className="flex items-center justify-between px-2 mb-2">
                   <span className="block text-[10px] font-bold tracking-wider text-[#C4CDD8]">
                     Resources
                   </span>
-                  {(currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                  {(currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
                     <button
                       onClick={() => {
                         setIsManagingResources((prev) => !prev);
@@ -3861,7 +3674,7 @@ export default function App() {
                           <ResourceIcon className="w-4 h-4 shrink-0 text-blue-300" />
                           <span className="truncate">{resource.title}</span>
                         </a>
-                        {isManagingResources && (currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                        {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               onClick={() => handleMoveResource(resource.id, "up")}
@@ -3901,7 +3714,7 @@ export default function App() {
                   );
                 })}
 
-                {isManagingResources && (currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
                   <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5 px-0.5">
                     {resourceFormError && (
                       <p className="text-[10px] font-semibold text-red-400">{resourceFormError}</p>
@@ -3956,14 +3769,14 @@ export default function App() {
 
               </div>
 
-              {/* Drawer Footer — minimal View As (Owner/Admin only) plus the
-                  standing helper note. Owner can preview Admin or Advisor;
+              {/* Drawer Footer — minimal View As (Developer/Admin only) plus the
+                  standing helper note. Developer can preview Admin or Advisor;
                   Admin can preview Advisor only (no reason to "preview" their
                   own tier, and letting them preview upward would be a
-                  confusing no-op since Owner-only actions stay
+                  confusing no-op since Developer-only actions stay
                   server-enforced regardless of this client UI toggle). */}
               <div className="p-4 border-t border-white/[0.08] space-y-2">
-                {(currentUser?.tier === "Owner" || currentUser?.tier === "Admin") && (
+                {(currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
                   <div className="flex items-center justify-between gap-2 px-2">
                     <span className="text-[10px] font-bold tracking-wider text-[#C4CDD8] shrink-0">
                       Preview As
@@ -3972,12 +3785,12 @@ export default function App() {
                       <CustomSelect
                         theme="dark"
                         value={simulatedRole || ""}
-                        onChange={(val) => setSimulatedRole((val as "General" | "Admin" | "Owner" | "") || null)}
+                        onChange={(val) => setSimulatedRole((val as "General" | "Admin" | "Developer" | "") || null)}
                         placeholder="Default Profile"
                         triggerClassName="w-full flex items-center justify-between gap-1 text-xs font-medium pl-2 pr-6 py-1 rounded border outline-none cursor-pointer bg-transparent border-white/[0.08] text-[#C4CDD8] hover:text-[#F5F7FA] focus:border-white/20 relative"
                         options={[
                           { value: "", label: "Default Profile" },
-                          ...(currentUser?.tier === "Owner" ? [{ value: "Admin", label: "Admin View" }] : []),
+                          ...(currentUser?.tier === "Developer" ? [{ value: "Admin", label: "Admin View" }] : []),
                           { value: "General", label: "Advisor View" },
                         ]}
                       />
@@ -4037,7 +3850,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Declaration Assistant">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-                  <LookupIntroPage theme={theme} isDark={isDark} setShowIntro={setShowIntro} />
+                  <LookupIntroPage theme={theme} setShowIntro={setShowIntro} />
                 </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4098,11 +3911,6 @@ export default function App() {
                 planConfigs={planConfigs}
                 checkIllnessInPlanSpecificList={checkIllnessInPlanSpecificList}
                 setActiveTab={setActiveTab}
-                userAdvisoryToggle={userAdvisoryToggle}
-                setUserAdvisoryToggle={setUserAdvisoryToggle}
-                advisoryHasBeenExpanded={advisoryHasBeenExpanded}
-                setAdvisoryHasBeenExpanded={setAdvisoryHasBeenExpanded}
-                qaAnnouncements={qaAnnouncements}
                 activeAnnouncements={activeAnnouncements}
                 noticeIndex={noticeIndex}
                 setNoticeIndex={setNoticeIndex}
@@ -4207,7 +4015,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* TAB: USER DIRECTORY (server-backed org user list; Owner can edit) */}
+          {/* TAB: USER DIRECTORY (server-backed org user list; Developer can edit) */}
           {activeTab === "profile_access" && currentUser && (
             <motion.div
               key="profile_access"
@@ -4280,7 +4088,7 @@ export default function App() {
           )}
 
           {/* OWNER CONTROLS — page visibility switch. Reachable only by the
-              Owner (featurePermissions marks General/Admin as "None"). */}
+              Developer (featurePermissions marks General/Admin as "None"). */}
           {activeTab === "owner_controls" && (
             <motion.div
               key="owner_controls"
@@ -4290,7 +4098,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="Owner Controls">
+              <ErrorBoundary theme={theme} label="Developer Controls">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <OwnerControlsPage
                 theme={theme}
@@ -4424,7 +4232,7 @@ export default function App() {
 
           {/* TAB 10: SMOKE TEST — runs the deterministic mapping engine
               against a curated baseline of common PEDs (plus any
-              Admin/Owner-added custom entries) for one plan at a time, to
+              Admin/Developer-added custom entries) for one plan at a time, to
               catch classification regressions without needing a real
               advisor lookup. See SmokeTestPage.tsx for the full
               explanation. */}

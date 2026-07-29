@@ -7,7 +7,7 @@ export interface LoggedUser {
   email: string;
   name: string;
   tactId: string;
-  tier: "General" | "Admin" | "Owner";
+  tier: "General" | "Admin" | "Developer";
   avatarUrl?: string;
   photoUrl?: string;
 }
@@ -16,7 +16,7 @@ export interface UserProfile {
   email: string;
   name: string;
   tactId: string;
-  tier: "General" | "Admin" | "Owner";
+  tier: "General" | "Admin" | "Developer";
   status: "Active" | "Disabled";
   avatarUrl?: string;
   photoUrl?: string;

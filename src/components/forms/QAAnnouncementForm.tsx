@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Check, Plus, Bold, Italic, List, Quote, Link2, Palette, X } from "lucide-react";
+import { Check, Plus, Bold, Italic, Underline, Code, List, Quote, Link2, Baseline, X } from "lucide-react";
 import { QAAnnouncement } from "../../types/announcements";
 import { LoggedUser } from "../../types/user";
 import { ChangeLogEntry } from "../../types/changeLog";
@@ -184,6 +184,8 @@ export function QAAnnouncementForm({
   const linkSelectionRef = useRef<Range | null>(null);
   const [boldActive, setBoldActive] = useState(false);
   const [italicActive, setItalicActive] = useState(false);
+  const [underlineActive, setUnderlineActive] = useState(false);
+  const [codeActive, setCodeActive] = useState(false);
 
   const effectiveTheme: "light" | "dark" = theme === "dark" ? "dark" : "light";
 
@@ -208,12 +210,16 @@ export function QAAnnouncementForm({
   // Text color palette — kept to hex values already used elsewhere in the
   // app (see renderFormattedAnnouncement.tsx's COLOR_HEX for why each one
   // was picked) so "red text" here is the same red as everywhere else.
+  // Black/White sits first as an explicit, always-visible swatch (per
+  // design feedback: the default text color should be a selectable option
+  // in the palette itself, not only reachable via a separate reset action).
   const COLOR_OPTIONS = [
     { key: "red", label: "Red", swatch: "#ef4444" },
     { key: "orange", label: "Orange", swatch: theme === "dark" ? "#b45309" : "#92400e" },
     { key: "green", label: "Green", swatch: theme === "dark" ? "#10b981" : "#059669" },
     { key: "blue", label: "Blue", swatch: theme === "dark" ? "#00D3F3" : "#0754B7" },
   ] as const;
+  const DEFAULT_COLOR_SWATCH = theme === "dark" ? "#f5f5f4" : "#111827";
 
   const applyBold = () => {
     editorRef.current?.focus();
@@ -224,6 +230,55 @@ export function QAAnnouncementForm({
   const applyItalic = () => {
     editorRef.current?.focus();
     document.execCommand("italic");
+    syncTextFromDom();
+  };
+
+  const applyUnderline = () => {
+    editorRef.current?.focus();
+    document.execCommand("underline");
+    syncTextFromDom();
+  };
+
+  // Inline code has no native execCommand, so this is a small manual
+  // Range-based toggle: unwrap if the selection already sits entirely
+  // inside one <code> element, otherwise wrap the selected fragment in a
+  // fresh one. Requires a real (non-collapsed) selection, same as the
+  // color picker — clicking with nothing selected is a no-op rather than
+  // guessing what the author meant.
+  const applyCode = () => {
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) return;
+
+    const closestCode = (node: Node): HTMLElement | null => {
+      const startEl = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+      return (startEl?.closest("code") as HTMLElement | null) ?? null;
+    };
+    const startCode = closestCode(range.startContainer);
+    const endCode = closestCode(range.endContainer);
+
+    if (startCode && startCode === endCode && el.contains(startCode)) {
+      // Toggle off — unwrap, keeping the text in place.
+      const parent = startCode.parentNode;
+      if (parent) {
+        while (startCode.firstChild) parent.insertBefore(startCode.firstChild, startCode);
+        parent.removeChild(startCode);
+      }
+      syncTextFromDom();
+      return;
+    }
+
+    const codeEl = document.createElement("code");
+    codeEl.appendChild(range.extractContents());
+    range.insertNode(codeEl);
+    const newRange = document.createRange();
+    newRange.selectNodeContents(codeEl);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
     syncTextFromDom();
   };
 
@@ -342,8 +397,8 @@ export function QAAnnouncementForm({
   };
 
   // Ctrl/Cmd+B, Ctrl/Cmd+I, Ctrl/Cmd+K, Ctrl/Cmd+Shift+8 — the same
-  // shortcuts a modern rich-text editor uses for Bold, Italic, Insert
-  // Link, and Bulleted List respectively.
+  // shortcuts a modern rich-text editor uses for Bold, Italic, Underline,
+  // Insert Link, and Bulleted List respectively.
   const handleContentKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     const mod = e.ctrlKey || e.metaKey;
     if (!mod) return;
@@ -354,6 +409,9 @@ export function QAAnnouncementForm({
     } else if (key === "i") {
       e.preventDefault();
       applyItalic();
+    } else if (key === "u") {
+      e.preventDefault();
+      applyUnderline();
     } else if (key === "k") {
       e.preventDefault();
       openLinkPrompt();
@@ -370,6 +428,16 @@ export function QAAnnouncementForm({
   // app's 4-color palette. Stripping to plain text on paste sidesteps that
   // entire class of surprise, and matches how most simplified rich-text
   // boxes (Slack, GitHub's comment box) handle paste by default.
+  //
+  // This alone does NOT fully explain the old "pasted content becomes
+  // bold" bug, though — the real cause was that a literal asterisk/
+  // underscore in plain pasted text (very common: "call *now*",
+  // "config_value") was stored completely unescaped and later misread as a
+  // real bold/italic marker by the read-side renderer's regex parser. The
+  // actual fix lives in announcementEditorHtml.ts's `escapeLiteral`, which
+  // backslash-escapes those characters when ANY plain text (typed or
+  // pasted) is serialized to the stored markup, regardless of how it got
+  // into the editor.
   const handleContentPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
     const plain = e.clipboardData.getData("text/plain");
@@ -377,9 +445,11 @@ export function QAAnnouncementForm({
     syncTextFromDom();
   };
 
-  // Tracks whether the caret is currently inside bold/italic text, so the
-  // toolbar buttons highlight to reflect it — same behavior as Word/Google
-  // Docs/every other rich-text toolbar.
+  // Tracks whether the caret is currently inside bold/italic/underline/code
+  // text, so the toolbar buttons highlight to reflect it — same behavior as
+  // Word/Google Docs/every other rich-text toolbar. Code has no native
+  // queryCommandState, so it's tracked with a small manual ancestor check
+  // instead.
   useEffect(() => {
     const handleSelectionChange = () => {
       const el = editorRef.current;
@@ -388,6 +458,9 @@ export function QAAnnouncementForm({
       if (!sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) return;
       setBoldActive(document.queryCommandState("bold"));
       setItalicActive(document.queryCommandState("italic"));
+      setUnderlineActive(document.queryCommandState("underline"));
+      const anchorEl = sel.anchorNode?.nodeType === Node.ELEMENT_NODE ? (sel.anchorNode as Element) : sel.anchorNode?.parentElement;
+      setCodeActive(!!anchorEl?.closest("code"));
     };
     document.addEventListener("selectionchange", handleSelectionChange);
     return () => document.removeEventListener("selectionchange", handleSelectionChange);
@@ -396,9 +469,9 @@ export function QAAnnouncementForm({
   // Sync author if user changes
   useEffect(() => {
     if (currentUser) {
-      setAuthorName(currentUser.name || currentUser.email || "Mehruf P (Owner)");
+      setAuthorName(currentUser.name || currentUser.email || "Mehruf P (Developer)");
     } else {
-      setAuthorName("Mehruf P (Owner)");
+      setAuthorName("Mehruf P (Developer)");
     }
   }, [currentUser]);
 
@@ -513,7 +586,7 @@ export function QAAnnouncementForm({
               id: `log-${Date.now()}`,
               timestamp: new Date().toISOString(),
               userName: authorName.trim() || "Underwriting Specialist",
-              role: "Owner",
+              role: "Developer",
               actionType: "Announcement Edited",
               planName: updated.category,
               description: `Edited "${announcementType}" announcement: "${text.trim().substring(0, 50)}..."`
@@ -534,7 +607,17 @@ export function QAAnnouncementForm({
         if (!res.ok) throw new Error(body.error || `Failed to create announcement (HTTP ${res.status}).`);
 
         const created = mapRow(body.entry);
-        setQaAnnouncements(prev => [created, ...prev]);
+        // The server also auto-deletes the oldest announcements of this
+        // same type once the configured retention limit is exceeded (QA and
+        // General pruned independently — see enforceRetentionLimit in
+        // announcementsRepository.ts) and reports which ids it removed, so
+        // this browser's own list drops them immediately too instead of
+        // showing a stale entry until the next full refetch.
+        const deletedIds: unknown[] = Array.isArray(body.deletedIds) ? body.deletedIds : [];
+        setQaAnnouncements(prev => [
+          created,
+          ...prev.filter(item => !deletedIds.some(id => String(id) === item.id)),
+        ]);
 
         if (setChangeLogs) {
           setChangeLogs(prev => [
@@ -542,7 +625,7 @@ export function QAAnnouncementForm({
               id: `log-${Date.now()}`,
               timestamp: new Date().toISOString(),
               userName: authorName.trim() || "Underwriting Specialist",
-              role: "Owner",
+              role: "Developer",
               actionType: "Announcement Added",
               planName: created.category,
               description: `Added "${announcementType}" announcement: "${text.trim().substring(0, 50)}..."`
@@ -823,25 +906,29 @@ export function QAAnnouncementForm({
         </div>
 
         {/* ── SECTION: Content ──
-            Fixed height (~350px, see the editor below) rather than growing
-            to fill whatever the card has left — on a tall viewport that
-            used to balloon the editor well past what's needed to write a
-            few paragraphs. The fields region above (line ~596) is already
-            overflow-y-auto, so this stays scoped and the submit button
-            never gets pushed out of view. */}
-        <div className="shrink-0 flex flex-col">
+            Grows to fill whatever vertical room this card actually has
+            (flex-1 + the editor's h-full below), instead of a fixed pixel
+            height that left a lot of dead space on a tall external monitor
+            and felt cramped on a laptop screen. min-h-0 lets it shrink
+            below its content size when space is tight; a min-h floor on
+            the editor itself keeps it from collapsing to nothing on very
+            short viewports. The fields region above (line ~596) is already
+            overflow-y-auto, so if there's truly not enough room this area
+            scrolls and the submit button still never gets pushed out of
+            view. */}
+        <div className="flex-1 min-h-0 flex flex-col">
           <SectionLabel theme={theme}>Content</SectionLabel>
 
-          {/* Formatting toolbar — Bold, Italic, Text Color, Quote, Bullet
-              list, Link — with tooltips and keyboard shortcuts on every
-              button. Authors never see or type the underlying markup: clicks
-              and shortcuts apply real formatting live in the editor below
-              (no separate Preview step — the editor IS the preview), and
-              `text` (the plain-markup string every existing announcement
-              and the read-side renderer already understand) is derived
-              from the editor's content on every change. See
-              announcementEditorHtml.ts's file header for how the two
-              representations stay in sync. */}
+          {/* Formatting toolbar — Bold, Italic, Underline, Code, Text
+              Color, Quote, Bullet list, Link — with tooltips and keyboard
+              shortcuts on every button. Authors never see or type the
+              underlying markup: clicks and shortcuts apply real formatting
+              live in the editor below (no separate Preview step — the
+              editor IS the preview), and `text` (the plain-markup string
+              every existing announcement and the read-side renderer
+              already understand) is derived from the editor's content on
+              every change. See announcementEditorHtml.ts's file header for
+              how the two representations stay in sync. */}
           <div
             className={`relative flex items-center gap-0.5 mb-1.5 p-1 rounded-lg border shrink-0 ${
               theme === "dark" ? "bg-[#0d1015] border-[#252A34]" : "bg-stone-50 border-stone-200"
@@ -853,7 +940,15 @@ export function QAAnnouncementForm({
             <ToolbarButton title="Italic (Ctrl+I)" theme={theme} active={italicActive} onClick={applyItalic}>
               <Italic className="w-3.5 h-3.5" />
             </ToolbarButton>
+            <ToolbarButton title="Underline (Ctrl+U)" theme={theme} active={underlineActive} onClick={applyUnderline}>
+              <Underline className="w-3.5 h-3.5" />
+            </ToolbarButton>
+            <ToolbarButton title="Code" theme={theme} active={codeActive} onClick={applyCode}>
+              <Code className="w-3.5 h-3.5" />
+            </ToolbarButton>
 
+            {/* Text Color — "A" + colored bar icon (Google Docs/Chat
+                convention), replacing the old paint-palette icon. */}
             <div className="relative">
               <ToolbarButton
                 title="Text Color"
@@ -861,7 +956,7 @@ export function QAAnnouncementForm({
                 active={colorPickerOpen}
                 onClick={() => setColorPickerOpen((v) => !v)}
               >
-                <Palette className="w-3.5 h-3.5" />
+                <Baseline className="w-3.5 h-3.5" />
               </ToolbarButton>
               {colorPickerOpen && (
                 <>
@@ -870,32 +965,49 @@ export function QAAnnouncementForm({
                       closes it without needing a document-level listener. */}
                   <div className="fixed inset-0 z-10" onClick={() => setColorPickerOpen(false)} />
                   <div
-                    className={`absolute top-full left-0 mt-1 z-20 flex items-center gap-1.5 p-2 rounded-lg border shadow-lg ${
+                    className={`absolute top-full left-0 mt-1 z-20 p-2 rounded-lg border shadow-lg ${
                       theme === "dark" ? "bg-[#151920] border-[#252A34]" : "bg-white border-stone-200"
                     }`}
                   >
-                    <button
-                      type="button"
-                      title="Default (remove color)"
-                      onClick={() => applyColor("default")}
-                      className={`w-5 h-5 rounded-full border-2 cursor-pointer flex items-center justify-center ${
-                        theme === "dark" ? "border-stone-500 hover:border-stone-300" : "border-stone-400 hover:border-stone-600"
-                      }`}
-                    >
-                      <X className={`w-3 h-3 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`} />
-                    </button>
-                    {COLOR_OPTIONS.map((c) => (
+                    <div className="flex items-center gap-1.5">
+                      {/* Black/White — the default text color, now a real
+                          selectable swatch in the palette itself rather
+                          than only reachable via a separate reset action. */}
                       <button
-                        key={c.key}
                         type="button"
-                        title={c.label}
-                        onClick={() => applyColor(c.key)}
+                        title="Default (Black/White)"
+                        onClick={() => applyColor("default")}
                         className={`w-5 h-5 rounded-full cursor-pointer border-2 transition-all hover:scale-110 ${
                           theme === "dark" ? "border-white/20 hover:border-white/50" : "border-black/10 hover:border-black/30"
                         }`}
-                        style={{ backgroundColor: c.swatch }}
+                        style={{ backgroundColor: DEFAULT_COLOR_SWATCH }}
                       />
-                    ))}
+                      {COLOR_OPTIONS.map((c) => (
+                        <button
+                          key={c.key}
+                          type="button"
+                          title={c.label}
+                          onClick={() => applyColor(c.key)}
+                          className={`w-5 h-5 rounded-full cursor-pointer border-2 transition-all hover:scale-110 ${
+                            theme === "dark" ? "border-white/20 hover:border-white/50" : "border-black/10 hover:border-black/30"
+                          }`}
+                          style={{ backgroundColor: c.swatch }}
+                        />
+                      ))}
+                    </div>
+                    {/* Explicit, labelled reset — same operation as the
+                        Black/White swatch above, kept as its own row so
+                        it's discoverable even if the swatch's meaning isn't
+                        obvious at a glance. */}
+                    <button
+                      type="button"
+                      onClick={() => applyColor("default")}
+                      className={`mt-2 w-full text-left text-[10.5px] font-bold px-1.5 py-1 rounded-md cursor-pointer transition-colors ${
+                        theme === "dark" ? "text-stone-400 hover:bg-white/[0.06] hover:text-white" : "text-stone-500 hover:bg-black/[0.05] hover:text-stone-900"
+                      }`}
+                    >
+                      Clear Formatting
+                    </button>
                   </div>
                 </>
               )}
@@ -973,7 +1085,7 @@ export function QAAnnouncementForm({
               wrapper + absolutely-positioned placeholder below stands in
               for the native `placeholder` attribute a plain textarea would
               have had — contentEditable elements don't support one. */}
-          <div className="relative shrink-0 flex flex-col">
+          <div className="relative flex-1 min-h-0 flex flex-col">
             {text.trim() === "" && (
               <span
                 className={`absolute top-3 left-3 text-[10.5px] leading-relaxed pointer-events-none select-none ${
@@ -990,10 +1102,10 @@ export function QAAnnouncementForm({
               onInput={syncTextFromDom}
               onKeyDown={handleContentKeyDown}
               onPaste={handleContentPaste}
-              className={`w-full h-[350px] text-xs font-semibold leading-relaxed p-3 rounded-lg border outline-none overflow-y-auto [&_blockquote]:pl-3 [&_blockquote]:border-l-2 [&_blockquote]:italic [&_ul]:list-disc [&_ul]:pl-5 [&_a]:underline ${
+              className={`w-full flex-1 min-h-[160px] text-xs font-semibold leading-relaxed p-3 rounded-lg border outline-none overflow-y-auto [&_blockquote]:pl-3 [&_blockquote]:border-l-2 [&_blockquote]:italic [&_ul]:list-disc [&_ul]:pl-5 [&_a]:underline [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded ${
                 theme === "dark"
-                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 [&_blockquote]:border-white/20 [&_a]:text-[#00D3F3]"
-                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500 [&_blockquote]:border-black/15 [&_a]:text-[#0754B7]"
+                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 [&_blockquote]:border-white/20 [&_a]:text-[#00D3F3] [&_code]:bg-white/10"
+                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500 [&_blockquote]:border-black/15 [&_a]:text-[#0754B7] [&_code]:bg-black/[0.06]"
               }`}
             />
           </div>

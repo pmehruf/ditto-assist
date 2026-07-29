@@ -65,4 +65,40 @@ describe("AnnouncementsRepository", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].validTillDate).toBe("2026-12-31");
   });
+
+  describe("enforceRetentionLimit", () => {
+    it("does nothing when the count is at or under the limit", async () => {
+      await repo.create({ ...baseEntry, type: "QA Announcement" });
+      await repo.create({ ...baseEntry, type: "QA Announcement" });
+      const deleted = await repo.enforceRetentionLimit("QA Announcement", 2);
+      expect(deleted).toEqual([]);
+      expect(await repo.list({ type: "QA Announcement" })).toHaveLength(2);
+    });
+
+    it("deletes only the oldest rows beyond the limit, keeping the newest", async () => {
+      const first = await repo.create({ ...baseEntry, announcement: "oldest", type: "QA Announcement" });
+      const second = await repo.create({ ...baseEntry, announcement: "middle", type: "QA Announcement" });
+      const third = await repo.create({ ...baseEntry, announcement: "newest", type: "QA Announcement" });
+
+      const deleted = await repo.enforceRetentionLimit("QA Announcement", 2);
+      expect(deleted).toEqual([first.id]);
+
+      const remaining = await repo.list({ type: "QA Announcement" });
+      expect(remaining.map((r) => r.id).sort()).toEqual([second.id, third.id].sort());
+    });
+
+    it("prunes QA and General independently — trimming one never touches the other", async () => {
+      const oldQa = await repo.create({ ...baseEntry, announcement: "old qa", type: "QA Announcement" });
+      await repo.create({ ...baseEntry, announcement: "new qa", type: "QA Announcement" });
+      const oldGeneral = await repo.create({ ...baseEntry, announcement: "old general", type: "General Announcement" });
+
+      const deleted = await repo.enforceRetentionLimit("QA Announcement", 1);
+      expect(deleted).toEqual([oldQa.id]);
+
+      // General's single row survives untouched even though it would also
+      // exceed a limit of 1 on its own — this call only ever scopes to the
+      // type it was called with.
+      expect(await repo.getById(oldGeneral.id)).toBeDefined();
+    });
+  });
 });

@@ -21,8 +21,8 @@ interface FlaggedResponsesPageProps {
   setReportedIssuesFilter: (value: string) => void;
   ownerResolutionNotes: Record<string, string>;
   setOwnerResolutionNotes: Dispatch<SetStateAction<Record<string, string>>>;
-  effectiveTier: "General" | "Admin" | "Owner";
-  /** Shows an "are you sure?" confirmation before running a destructive, Owner-tier action. */
+  effectiveTier: "General" | "Admin" | "Developer";
+  /** Shows an "are you sure?" confirmation before running a destructive, Developer-tier action. */
   confirmDestructiveAction: (actionDescription: string, onConfirm: () => void) => void;
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
@@ -56,7 +56,7 @@ export function FlaggedResponsesPage({
   // Pull the server's copy on mount — see Production_Readiness_Audit.md
   // Finding 3: this used to be a hardcoded/localStorage-only seed, so a
   // report only ever existed in the reporting advisor's own browser, and an
-  // Owner's resolve/ignore/delete never reached anyone else's session.
+  // Developer's resolve/ignore/delete never reached anyone else's session.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -137,7 +137,7 @@ export function FlaggedResponsesPage({
       {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        userName: currentUser?.name || currentUser?.email || "Mehruf P (Owner)",
+        userName: currentUser?.name || currentUser?.email || "Mehruf P (Developer)",
         role: effectiveTier,
         actionType,
         planName,
@@ -435,7 +435,7 @@ export function FlaggedResponsesPage({
                                 >
                                   Ignore
                                 </ClippedButton>
-                                {effectiveTier === "Owner" && (
+                                {effectiveTier === "Developer" && (
                                   <ClippedButton
                                     onClick={() => {
                                       confirmDestructiveAction(`Delete mismatch report for "${issue.pedInput}" permanently`, async () => {
@@ -469,7 +469,7 @@ export function FlaggedResponsesPage({
                               <p className={`text-[10.5px] font-semibold text-right max-w-[200px] line-clamp-2 ${dark ? "text-stone-305" : "text-stone-600"}`} title={issue.ownerNotes}>
                                 {issue.ownerNotes}
                               </p>
-                              {effectiveTier === "Owner" && (
+                              {effectiveTier === "Developer" && (
                                 <ClippedButton
                                   onClick={() => {
                                     confirmDestructiveAction(`Delete mismatch record for "${issue.pedInput}" permanently`, async () => {

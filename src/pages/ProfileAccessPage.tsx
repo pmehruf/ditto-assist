@@ -12,7 +12,7 @@ interface ProfileAccessPageProps {
   theme: "light" | "dark";
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
-  effectiveTier: "General" | "Admin" | "Owner";
+  effectiveTier: "General" | "Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -24,8 +24,8 @@ interface ProfileAccessPageProps {
  * (see ResourcesPage.tsx for why).
  *
  * Admin+ only (gated in App.tsx's sidebar/hasAccess via the "profile_access"
- * feature id). Owner can edit; Admin sees a read-only view. All reads/writes
- * go through the server (GET/PUT /api/users in server.ts) so an Owner's edit
+ * feature id). Developer can edit; Admin sees a read-only view. All reads/writes
+ * go through the server (GET/PUT /api/users in server.ts) so an Developer's edit
  * is reflected for every user, not just the editor's own browser/localStorage.
  */
 export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessPageProps) {
@@ -44,7 +44,7 @@ export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTie
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Organization-wide record of advisor accounts, TACT IDs, and clearance tiers.
-            {effectiveTier === "Owner" ? " Edits here apply to every user immediately." : " Read-only — Owner clearance is required to make changes."}
+            {effectiveTier === "Developer" ? " Edits here apply to every user immediately." : " Read-only — Developer clearance is required to make changes."}
           </p>
         </div>
       </div>

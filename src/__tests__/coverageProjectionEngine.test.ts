@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { PLANS, resolvePlan, simulate, totalOf, usableRestoration } from "../coverageProjectionEngine";
+import { resolvePlan, simulate, totalOf, usableRestoration } from "../coverageProjectionEngine";
 
 // Direct port of the standalone Coverage Projection Studio's engine.test.js
 // (70/70 passing at time of port). Same scenarios, same expected values —
@@ -14,12 +14,6 @@ import { PLANS, resolvePlan, simulate, totalOf, usableRestoration } from "../cov
 const L = 100_000; // 1 Lakh in rupees
 const CR = 10_000_000; // 1 Crore in rupees
 const RUPEE_TOLERANCE = 1; // matches engine.test.js's `< 1` tolerance
-
-function plan(id: string) {
-  const p = PLANS.find((p) => p.id === id);
-  if (!p) throw new Error(`Unknown plan id: ${id}`);
-  return p;
-}
 
 function close(actual: number, expected: number, label: string) {
   expect(Math.abs(actual - expected), label).toBeLessThan(RUPEE_TOLERANCE);

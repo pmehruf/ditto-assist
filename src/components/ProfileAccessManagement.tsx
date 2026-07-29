@@ -18,13 +18,13 @@ interface ProfileAccessManagementProps {
   theme: "light" | "dark";
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
-  effectiveTier: "General" | "Admin" | "Owner";
+  effectiveTier: "General" | "Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
 
-const TIERS: UserProfile["tier"][] = ["General", "Admin", "Owner"];
-// Admin can add users, but can't mint a new Owner from this form — matches
+const TIERS: UserProfile["tier"][] = ["General", "Admin", "Developer"];
+// Admin can add users, but can't mint a new Developer from this form — matches
 // the server-side check in POST /api/users.
 const ADMIN_ADDABLE_TIERS: UserProfile["tier"][] = ["General", "Admin"];
 const STATUSES: UserProfile["status"][] = ["Active", "Disabled"];
@@ -38,10 +38,10 @@ const emptyDraft = (): UserProfile => ({
 });
 
 /**
- * Owner-editable, Admin-visible directory of every advisor account. This is
+ * Developer-editable, Admin-visible directory of every advisor account. This is
  * the UI for the server-backed "User Directory" feature: reads come from
  * GET /api/users on mount (so the directory reflects the shared source of
- * truth rather than a stale local cache), and Owner edits are saved via
+ * truth rather than a stale local cache), and Developer edits are saved via
  * PUT /api/users so the change is picked up by every other user's session —
  * not just persisted to the editor's own localStorage.
  *
@@ -51,19 +51,19 @@ const emptyDraft = (): UserProfile => ({
  */
 export function ProfileAccessManagement({ theme, usersList, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
-  const isOwner = effectiveTier === "Owner";
+  const isDeveloper = effectiveTier === "Developer";
   // Admin can see and use "Add User" (same pattern as "Add Plan" on the
   // Plan Management page); Edit/Delete stay visible for Admin but render
-  // disabled — Owner clearance is required to actually edit or remove an
+  // disabled — Developer clearance is required to actually edit or remove an
   // existing directory entry.
-  const canManage = effectiveTier === "Admin" || isOwner;
+  const canManage = effectiveTier === "Admin" || isDeveloper;
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
       {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        userName: currentUser?.name || currentUser?.email || "Mehruf P (Owner)",
+        userName: currentUser?.name || currentUser?.email || "Mehruf P (Developer)",
         role: effectiveTier,
         actionType,
         planName: "User Directory",
@@ -125,7 +125,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
   );
 
   // Pull the server's copy of the directory on mount so this view (and the
-  // shared usersList state) reflects whatever the Owner last saved, even if
+  // shared usersList state) reflects whatever the Developer last saved, even if
   // that edit happened from a different browser/device.
   useEffect(() => {
     let cancelled = false;
@@ -224,8 +224,8 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
     setSaving(true);
     setSaveError(null);
     try {
-      // Single-row create — works for both Admin and Owner (unlike the
-      // Owner-only, full-array PUT used for editing/removing an existing
+      // Single-row create — works for both Admin and Developer (unlike the
+      // Developer-only, full-array PUT used for editing/removing an existing
       // user). See server.ts's POST /api/users for why this is safe to
       // expose to Admin.
       const res = await fetch("/api/users", {
@@ -261,7 +261,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
   }`;
 
   const tierBadgeClass = (tier: UserProfile["tier"]) =>
-    tier === "Owner"
+    tier === "Developer"
       ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
       : tier === "Admin"
         ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
@@ -409,7 +409,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                       value={newDraft.tier}
                       onChange={(val) => setNewDraft(d => ({ ...d, tier: val as UserProfile["tier"] }))}
                       triggerClassName={selectTriggerClass}
-                      options={(isOwner ? TIERS : ADMIN_ADDABLE_TIERS).map(t => ({ value: t, label: t }))}
+                      options={(isDeveloper ? TIERS : ADMIN_ADDABLE_TIERS).map(t => ({ value: t, label: t }))}
                     />
                   </td>
                   <td className={tdClass}>
@@ -446,7 +446,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
               )}
 
               {sortedUsersList.map((user, idx) => {
-                const isEditing = isOwner && editingEmail === user.email;
+                const isEditing = isDeveloper && editingEmail === user.email;
                 const row = isEditing && draft ? draft : user;
                 return (
                   <tr
@@ -520,19 +520,19 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                           <div className="flex items-center justify-end gap-1.5">
                             <ClippedButton
                               onClick={() => startEdit(user)}
-                              disabled={!isOwner}
+                              disabled={!isDeveloper}
                               cornerBg={dark ? "#0e2236" : "#ffffff"}
                               className={`p-1.5 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`}
-                              title={isOwner ? "Edit user" : "Owner clearance required to edit users"}
+                              title={isDeveloper ? "Edit user" : "Developer clearance required to edit users"}
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </ClippedButton>
                             <ClippedButton
                               onClick={() => deleteUser(user.email)}
-                              disabled={!isOwner}
+                              disabled={!isDeveloper}
                               cornerBg={dark ? "#0e2236" : "#ffffff"}
                               className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`}
-                              title={isOwner ? "Remove user" : "Owner clearance required to remove users"}
+                              title={isDeveloper ? "Remove user" : "Developer clearance required to remove users"}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </ClippedButton>
@@ -548,11 +548,11 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
         </div>
 
         <p className="text-[10.5px] font-semibold text-content-muted">
-          {isOwner
+          {isDeveloper
             ? "Changes are saved to the server."
             : canManage
-              ? "Admin clearance lets you add new users. Editing or removing an existing user requires Owner clearance."
-              : "Admin clearance grants read-only visibility into the directory. Owner clearance is required to add, edit, or remove users."}
+              ? "Admin clearance lets you add new users. Editing or removing an existing user requires Developer clearance."
+              : "Admin clearance grants read-only visibility into the directory. Developer clearance is required to add, edit, or remove users."}
         </p>
       </div>
     </div>

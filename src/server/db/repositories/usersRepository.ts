@@ -19,7 +19,7 @@ export type CreateUserEntry = NewUserRow;
 export class UsersRepository {
   constructor(private readonly db: AnyDb) {}
 
-  /** Full directory listing — powers GET /api/users (Admin/Owner only). */
+  /** Full directory listing — powers GET /api/users (Admin/Developer only). */
   async list(): Promise<UserRow[]> {
     return this.db.select().from(users);
   }
@@ -53,7 +53,7 @@ export class UsersRepository {
       // every row, and Postgres has no way to know a "new" row is actually
       // the same person — so createdAt's defaultNow() fired for EVERY user
       // in the directory on every single save, resetting everyone's join
-      // date the moment an Owner edited even one person's tier. Carrying the
+      // date the moment a Developer edited even one person's tier. Carrying the
       // old createdAt forward for emails that already existed fixes that;
       // genuinely new users (not in this snapshot) still get defaultNow().
       const existing = await tx.select({ email: users.email, createdAt: users.createdAt }).from(users);

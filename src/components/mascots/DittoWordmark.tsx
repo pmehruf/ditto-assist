@@ -6,7 +6,7 @@
 import React from "react";
 
 // Beautiful custom Ditto wordmark logo using uploaded ditto-logo.png asset
-export function DittoWordmark({ className = "", isWhite = false, firstSpanStyle, secondSpanStyle, style, imgStyle }: { className?: string; isWhite?: boolean; firstSpanStyle?: React.CSSProperties; secondSpanStyle?: React.CSSProperties; style?: React.CSSProperties; imgStyle?: React.CSSProperties }) {
+export function DittoWordmark({ className = "", isWhite = false, style, imgStyle }: { className?: string; isWhite?: boolean; style?: React.CSSProperties; imgStyle?: React.CSSProperties }) {
   return (
     <div className={`flex items-center select-none ${className}`} style={{ ...style, height: "26px" }}>
       <img 

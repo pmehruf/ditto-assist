@@ -15,8 +15,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Import types & engine logic
-import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, guessCategoryMap } from "./src/types.js";
-import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanQuestion, type DbDictionarySource } from "./src/engine.js";
+import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES } from "./src/types.js";
+import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
 import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup } from "./src/server/pedRuntimeCache.js";
 import type { Repositories } from "./src/server/db/repositories/index.js";
@@ -270,11 +270,48 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       }
 
       if (pointsAtLiveQuestion) {
+        // Same HIGH-confidence Plan Decision Engine override applied on the
+        // live Gemini path, applied here too (2026-07-29): a cached
+        // "pending" answer recorded before this rule existed (or before a
+        // plan's category mapping was added/fixed) must be corrected on
+        // replay, not just on the next brand-new lookup — otherwise every
+        // repeat search for the same condition would keep serving the
+        // stale answer indefinitely via L2. Never applied to "approved"
+        // entries — those reflect an explicit human review decision and
+        // are left untouched.
+        let toServe = storedResult;
+        if (cached.status !== "approved" && storedResult) {
+          try {
+            const override = applyHighConfidenceCategoryOverride(
+              storedResult.matched_question,
+              storedResult.match_type,
+              cached.suggestedCategoryKey,
+              cached.confidence,
+              config,
+              ped
+            );
+            if (override.applied) {
+              console.log(
+                `[Plan Decision Engine] Replaying cached "${ped}" answer with HIGH-confidence category "${cached.suggestedCategoryKey}" — ` +
+                  `applying Plan Decision Engine routing "${override.matchedQuestion}" in place of the previously cached "${storedResult.matched_question}".`
+              );
+              toServe = {
+                ...storedResult,
+                match_type: override.matchType,
+                matched_question: override.matchedQuestion,
+                explanation: override.explanation || storedResult.explanation,
+                confused_questions: [],
+              };
+            }
+          } catch (err) {
+            console.error("[Plan Decision Engine] Cross-check against cached identified_category failed (non-fatal):", err);
+          }
+        }
         try {
           await aiMemoryRepo.touch(cached.id);
         } catch (_) {}
         return res.json({
-          ...storedResult,
+          ...toServe,
           source:
             cached.status === "approved"
               ? "AI Memory (Approved)"
@@ -286,8 +323,34 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
 
     // ── LEVEL 3 ── Gemini. Reached only on an L1 + L2 miss. The answer is
     // recorded into AI Memory as 'pending' below so this costs one call, once.
+    //
+    // Approved architecture (2026-07-29), Rule 4/6: Gemini's role is
+    // classification, not insurer-specific routing — it should only step in
+    // when deterministic repository knowledge is insufficient (PED not
+    // found, or found but uncategorized), never to re-decide a plan's own
+    // routing for a category the repository already knows. The actual
+    // question selection below is unchanged from before this review (see
+    // PED_REPOSITORY_PHASE5_CUTOVER_REPORT.md-adjacent architecture review
+    // for why a full rewrite of Gemini's ten tuned clinical firewalls around
+    // category-only reasoning was judged too high-risk to do in this pass).
+    // What's new: Gemini is ALSO asked for an "identified_category" +
+    // "confidence" — a temporary, non-authoritative classification, per
+    // Governance Rule 2 ("Gemini must never become a runtime source of
+    // truth... must not automatically write into ped_repository / ped_aliases
+    // / categories"). That classification is run through the exact same
+    // Plan Decision Engine (resolvePlanDecision) a repository-resolved
+    // category would use — purely to log agreement/disagreement with
+    // Gemini's own directly-selected question, for future tuning and for
+    // AI Mapping Review's visibility. It is never used to override or
+    // replace the question actually returned to the advisor.
     const ai = getAiClient();
     const numberedQuestions = config.questions.map((q, i) => `${i + 1}. ${q}`);
+    let knownCategoryKeys: string[] = [];
+    try {
+      knownCategoryKeys = (await repos.categories.list()).map((c) => c.categoryKey);
+    } catch (err) {
+      console.error("[Plan Decision Engine] Failed to load categories for Gemini's classification field (continuing without it):", err);
+    }
 
     const prompt = [
       "You are an expert Chief Medical Underwriter mapping a pre-existing disease (PED) to a health insurance questionnaire.",
@@ -307,13 +370,13 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       "",
       "CRITICAL EXPLANATION TEMPLATES (USE EXACTLY IF TRIGGERED):",
       "If you returned 0 specifically because of the Ambiguous Symptoms Shield (Rule 1), your explanation MUST be exactly:",
-      `"*${ped}* is a clinical symptom or general finding, not a definitive medical diagnosis.\\\\n\\\\nBecause this can result from minor, acute, or transient issues, it does not automatically map to a disease category. If an underlying condition has been diagnosed, please declare that specific diagnosis. Otherwise, proceed with the 'Others' section."`,
+      `"*${ped}* is a clinical symptom or general finding, not a definitive medical diagnosis.\\n\\nBecause this can result from minor, acute, or transient issues, it does not automatically map to a disease category. If an underlying condition has been diagnosed, please declare that specific diagnosis. Otherwise, proceed with the 'Others' section."`,
       "",
       "If you returned match_type 'ESCALATE' specifically because of the Low Confidence / Ambiguity Shield (Rule 7), your explanation MUST exactly follow this structure:",
-      `"📝 *${ped}* is <Insert a 1-sentence medical definition>. \\\\nHowever, *it exhibits complex clinical features that could logically map to multiple different categories (or none perfectly).*\\\\n\\\\n🫸🏽If you are not confident about taking a decision independently, please connect with your Mentor/Guide before proceeding,* to avoid any incorrect declaration."`,
+      `"📝 *${ped}* is <Insert a 1-sentence medical definition>. \\nHowever, *it exhibits complex clinical features that could logically map to multiple different categories (or none perfectly).*\\n\\n🫸🏽If you are not confident about taking a decision independently, please connect with your Mentor/Guide before proceeding,* to avoid any incorrect declaration."`,
       "",
       "If you returned match_type 'INVALID' specifically because of the Invalid / Typo Shield (Rule 8), your explanation MUST exactly follow this structure:",
-      `"🤖 Our medical dictionary has officially given up on “${ped}”. \\\\n\\\\n*Kindly confirm the spelling with the customer or check the reports before trying again.🙏🏼*"`
+      `"🤖 Our medical dictionary has officially given up on “${ped}”. \\n\\n*Kindly confirm the spelling with the customer or check the reports before trying again.🙏🏼*"`
     ].join("\n");
 
     const systemInstruction = [
@@ -323,8 +386,16 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       `OTHER / FALLBACK (use question_number: 0): ${config.anyOther}`,
       `PED TO CLASSIFY: ${ped}`,
       "",
-      "Response MUST be valid JSON conforming to the requested schema. Ensure 'match_type' is exactly one of 'P1', 'P2', 'FALLBACK', 'ESCALATE', or 'INVALID'."
-    ].join("\n");
+      "Response MUST be valid JSON conforming to the requested schema. Ensure 'match_type' is exactly one of 'P1', 'P2', 'FALLBACK', 'ESCALATE', or 'INVALID'.",
+      "",
+      // Additive per the approved Declaration Engine architecture
+      // (2026-07-29): a SEPARATE classification, independent of your
+      // question_number pick above. This does not change how you should
+      // choose question_number — answer that exactly as instructed above.
+      knownCategoryKeys.length > 0
+        ? `ALSO identify the clinical category this condition belongs to, from this exact list (use "identified_category"; use null if none genuinely fit): ${knownCategoryKeys.join(", ")}. Independently, rate your confidence in this PED identification + category as "HIGH", "MEDIUM", or "LOW" (use "confidence"). This is a clinical classification only — it should reflect the condition's own medical category regardless of whether this plan happens to have a dedicated question for it.`
+        : ""
+    ].filter(Boolean).join("\n");
 
     // Perform highly resilient content generation with auto-retries & multiple model fallbacks
     const modelsToTry = ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash"];
@@ -371,6 +442,20 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
                       type: Type.STRING
                     },
                     description: "Only when match_type is 'ESCALATE', list the exact candidate questions from the questionnaire that the clinical condition could map to, which caused the ambiguity."
+                  },
+                  // Additive fields (approved architecture, 2026-07-29): a
+                  // temporary, non-authoritative classification, separate
+                  // from question_number above. Never used to override the
+                  // question actually returned — see the comment on the
+                  // Gemini call below for how this is used (Plan Decision
+                  // Engine cross-check + AI Mapping Review visibility only).
+                  identified_category: {
+                    type: Type.STRING,
+                    description: "The clinical category this condition belongs to, from the provided category list. Null/omit if none genuinely fit. Independent of question_number."
+                  },
+                  confidence: {
+                    type: Type.STRING,
+                    description: "Your confidence in the PED identification + category above: 'HIGH', 'MEDIUM', or 'LOW'."
                   }
                 },
                 required: ["ped_input", "match_type", "question_number", "explanation"]
@@ -409,6 +494,21 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
 
     const result = JSON.parse(text);
 
+    // Approved architecture (2026-07-29), Governance Rule 2 + point 7:
+    // Gemini's classification is temporary and non-authoritative — used
+    // only for this lookup, never persisted automatically into
+    // ped_repository/ped_aliases/categories. Validated against the live
+    // `categories` table (keeping Postgres the source of truth for what a
+    // valid category even is) rather than trusted verbatim.
+    const identifiedCategory: string | null =
+      typeof result.identified_category === "string" && knownCategoryKeys.includes(result.identified_category)
+        ? result.identified_category
+        : null;
+    const confidence: string | null =
+      typeof result.confidence === "string" && ["HIGH", "MEDIUM", "LOW"].includes(result.confidence.toUpperCase())
+        ? result.confidence.toUpperCase()
+        : null;
+
     // Turn numeric selection back into a question string mapping
     let matched_question = config.anyOther;
     let match_type: MatchOutput["match_type"] = "FALLBACK";
@@ -430,12 +530,57 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       }
     }
 
+    // Route Gemini's temporary classification through the SAME Plan
+    // Decision Engine a repository-resolved category would use (point 7).
+    // 2026-07-29 update (explicit user request): when Gemini's category
+    // confidence is HIGH and the Plan Decision Engine has an unambiguous
+    // mapping for that category, show ITS routing to the advisor in place
+    // of Gemini's own question selection — mirroring exactly how a
+    // repository-resolved category is handled (engine.ts's resolvePlanDecision
+    // call site: "direct_question" -> P1, "explicit_catchall" -> FALLBACK).
+    // This does not touch Governance Rule 2 — Gemini's classification is
+    // still never persisted into ped_repository/ped_aliases/categories,
+    // it's only used to pick a better answer for THIS lookup. Below HIGH
+    // confidence, or when the Plan Decision Engine has no mapping for the
+    // category, behavior is unchanged: Gemini's own selection stands and
+    // the disagreement is only logged for review.
+    let planDecisionApplied = false;
+    let explanationOverride: string | null = null;
+    try {
+      const override = applyHighConfidenceCategoryOverride(matched_question, match_type, identifiedCategory, confidence, config, ped);
+      if (override.applied) {
+        console.log(
+          `[Plan Decision Engine] Gemini classified "${ped}" as category "${identifiedCategory}" (confidence: HIGH). ` +
+            `Applying Plan Decision Engine routing "${override.matchedQuestion}" in place of Gemini's own question selection "${matched_question}".`
+        );
+        matched_question = override.matchedQuestion;
+        match_type = override.matchType;
+        explanationOverride = override.explanation;
+        planDecisionApplied = true;
+      } else if (identifiedCategory) {
+        // Not applied — either confidence wasn't HIGH, the Plan Decision
+        // Engine has no mapping for this category, or it already agrees
+        // with Gemini's own pick. Still worth a diagnostic log when there
+        // WAS a real disagreement, for future tuning visibility.
+        const planDecision = resolvePlanDecision(identifiedCategory, config, ped, normalizeDictionaryKey(ped));
+        if (planDecision.kind !== "no_mapping" && planDecision.question !== matched_question) {
+          console.log(
+            `[Plan Decision Engine] Gemini classified "${ped}" as category "${identifiedCategory}" (confidence: ${confidence ?? "unknown"}), ` +
+              `which this plan's Plan Decision Engine would route to "${planDecision.question}" — but Gemini's own question selection was ` +
+              `"${matched_question}". Not auto-corrected (confidence below HIGH); logged for review.`
+          );
+        }
+      }
+    } catch (err) {
+      console.error("[Plan Decision Engine] Cross-check against Gemini's identified_category failed (non-fatal):", err);
+    }
+
     let parsedOutput: MatchOutput = {
       ped_input: result.ped_input || ped,
       match_type,
       matched_question,
-      explanation: result.explanation || "No explanation provided by AI.",
-      confused_questions: result.confused_questions || []
+      explanation: explanationOverride || result.explanation || "No explanation provided by AI.",
+      confused_questions: planDecisionApplied ? [] : (result.confused_questions || [])
     };
 
     // Apply global post-processing sanitization and post-guards
@@ -458,6 +603,13 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
         geminiModel: usedModel || modelsToTry[0],
         aiResponse: { result: finalResult, raw: result },
         status: "pending",
+        // Additive (2026-07-29): the schema already had these columns
+        // (see schema.ts's ai_memory comment) but this call path never
+        // populated them. Surfaced in AI Mapping Review; still requires
+        // human approval before anything is promoted — see promotePedMappingOverride's
+        // call sites, unchanged by this addition.
+        confidence: confidence ?? undefined,
+        suggestedCategoryKey: identifiedCategory ?? undefined,
       });
     } catch (err: any) {
       const missingTable = /relation .*ai_memory.* does not exist/i.test(err?.message || "");
@@ -743,7 +895,7 @@ app.post("/api/auth/logout", (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // USER DIRECTORY — server-backed source of truth for the org's user list
-// (email, name, tactId, tier, status). This is what makes an Owner's edit
+// (email, name, tactId, tier, status). This is what makes an Developer's edit
 // in the UI "actually reflect in the core for all users": the record lives
 // in the `users` table (Postgres), not in one browser's localStorage, so
 // every client that fetches GET /api/users afterward sees the same data.
@@ -765,13 +917,13 @@ interface DirectoryUser {
   email: string;
   name: string;
   tactId: string;
-  tier: "General" | "Admin" | "Owner";
+  tier: "General" | "Admin" | "Developer";
   status: "Active" | "Disabled";
 }
 
 /** Users not yet present in the directory default to "General" — matches the
  * client's existing fallback for a first-time Google sign-in. */
-async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<"General" | "Admin" | "Owner"> {
+async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<"General" | "Admin" | "Developer"> {
   const email = (req.user?.email as string | undefined)?.toLowerCase();
   if (!email) return "General";
   const match = await usersRepo.findByEmail(email);
@@ -784,18 +936,18 @@ function isValidDirectoryUser(u: any): u is DirectoryUser {
     typeof u.email === "string" &&
     typeof u.name === "string" &&
     typeof u.tactId === "string" &&
-    (u.tier === "General" || u.tier === "Admin" || u.tier === "Owner") &&
+    (u.tier === "General" || u.tier === "Admin" || u.tier === "Developer") &&
     (u.status === "Active" || u.status === "Disabled")
   );
 }
 
-// Admin and Owner can view the directory; anyone else is refused.
+// Admin and Developer can view the directory; anyone else is refused.
 app.get("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Admin" && callerTier !== "Owner") {
-      return res.status(403).json({ error: "The user directory is restricted to Admin and Owner roles." });
+    if (callerTier !== "Admin" && callerTier !== "Developer") {
+      return res.status(403).json({ error: "The user directory is restricted to Admin and Developer roles." });
     }
     const users = await usersRepo.list();
     return res.json({ users });
@@ -805,22 +957,22 @@ app.get("/api/users", requireAuth, async (req, res) => {
   }
 });
 
-// Only Owner can edit — Admin gets a read-only view in the UI, enforced
+// Only Developer can edit — Admin gets a read-only view in the UI, enforced
 // again here so the restriction can't be bypassed by calling the API directly.
 app.put("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Owner") {
-      return res.status(403).json({ error: "Only the Owner role can edit the user directory." });
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can edit the user directory." });
     }
 
     const { users } = req.body;
     if (!Array.isArray(users) || !users.every(isValidDirectoryUser)) {
       return res.status(400).json({ error: "Invalid users payload." });
     }
-    if (!users.some((u: DirectoryUser) => u.tier === "Owner")) {
-      return res.status(400).json({ error: "At least one user must remain an Owner." });
+    if (!users.some((u: DirectoryUser) => u.tier === "Developer")) {
+      return res.status(400).json({ error: "At least one user must remain an Developer." });
     }
 
     // Rebuild each row from only the known directory fields before writing.
@@ -846,28 +998,28 @@ app.put("/api/users", requireAuth, async (req, res) => {
   }
 });
 
-// Admin AND Owner can add a new directory entry (mirrors "Add Plan" staying
+// Admin AND Developer can add a new directory entry (mirrors "Add Plan" staying
 // enabled for Admin on the Plan Management page) — unlike the PUT route
 // above, this only ever inserts one new row via a single-row create(), so an
 // Admin calling it can't smuggle in edits/deletes to other users the way a
 // full-array PUT would allow. Editing/removing an EXISTING user is still
-// Owner-only, enforced by the PUT/DELETE-via-PUT route above.
+// Developer-only, enforced by the PUT/DELETE-via-PUT route above.
 app.post("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Admin" && callerTier !== "Owner") {
-      return res.status(403).json({ error: "Only Admin and Owner roles can add users to the directory." });
+    if (callerTier !== "Admin" && callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
     }
 
     const { email, name, tactId, tier, status } = req.body;
     if (!isValidDirectoryUser({ email, name, tactId, tier, status })) {
       return res.status(400).json({ error: "email, name, tactId, tier, and status are all required." });
     }
-    // Admin can add users, but shouldn't be able to mint a new Owner from
-    // this lightweight endpoint — that's still an Owner-only directory edit.
-    if (callerTier === "Admin" && tier === "Owner") {
-      return res.status(403).json({ error: "Only the Owner role can grant Owner clearance." });
+    // Admin can add users, but shouldn't be able to mint a new Developer from
+    // this lightweight endpoint — that's still an Developer-only directory edit.
+    if (callerTier === "Admin" && tier === "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can grant Developer clearance." });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -897,7 +1049,7 @@ app.post("/api/users", requireAuth, async (req, res) => {
 // were never wired to any API route — every one of these features actually
 // ran on the calling browser's own localStorage (audit fix, see
 // Production_Readiness_Audit.md Finding 3). That meant an Admin publishing
-// an announcement, or an Owner resolving a flagged issue, only ever updated
+// an announcement, or an Developer resolving a flagged issue, only ever updated
 // their own browser; nobody else's session would see it. These routes make
 // Postgres (via getDb()/createRepositories()) the actual shared source of
 // truth, matching the pattern already used correctly by GET/PUT /api/users
@@ -906,12 +1058,12 @@ app.post("/api/users", requireAuth, async (req, res) => {
 // data/users.json rather than trusted from the client.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Requires Admin or Owner tier; sends a 403 and returns false otherwise. */
-async function requireAdminOrOwner(req: any, res: any, action: string): Promise<boolean> {
+/** Requires Admin or Developer tier; sends a 403 and returns false otherwise. */
+async function requireAdminOrDeveloper(req: any, res: any, action: string): Promise<boolean> {
   const { users: usersRepo } = createRepositories(getDb());
   const callerTier = await getCallerTier(req, usersRepo);
-  if (callerTier !== "Admin" && callerTier !== "Owner") {
-    res.status(403).json({ error: `${action} requires Admin or Owner tier.` });
+  if (callerTier !== "Admin" && callerTier !== "Developer") {
+    res.status(403).json({ error: `${action} requires Admin or Developer tier.` });
     return false;
   }
   return true;
@@ -926,8 +1078,8 @@ app.get("/api/search-history", requireAuth, async (req, res) => {
 
     // Anyone may view their OWN search history (My Activity); viewing
     // everyone's (Audit tab, no userEmail filter, or someone else's email)
-    // requires Admin/Owner, same as the featurePermissions matrix intends.
-    if (!isSelf && !(await requireAdminOrOwner(req, res, "Viewing other users' search history"))) return;
+    // requires Admin/Developer, same as the featurePermissions matrix intends.
+    if (!isSelf && !(await requireAdminOrDeveloper(req, res, "Viewing other users' search history"))) return;
 
     const { searchHistory } = createRepositories(getDb());
     const rows = await searchHistory.list({
@@ -971,8 +1123,8 @@ app.delete("/api/search-history", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Owner") {
-      return res.status(403).json({ error: "Only the Owner role can clear activity history." });
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can clear activity history." });
     }
     const { searchHistory } = createRepositories(getDb());
     await searchHistory.clearAll();
@@ -987,7 +1139,7 @@ app.delete("/api/search-history", requireAuth, async (req, res) => {
 
 app.get("/api/change-logs", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Viewing the modification history"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing the modification history"))) return;
     const { changeLogs } = createRepositories(getDb());
     const rows = await changeLogs.list({
       limit: req.query.limit ? Number(req.query.limit) : undefined,
@@ -1022,7 +1174,7 @@ app.post("/api/change-logs", requireAuth, async (req, res) => {
   }
 });
 
-// --- Announcements (QA Announcement Log tab; readable by everyone, writable by Admin/Owner) ---
+// --- Announcements (QA Announcement Log tab; readable by everyone, writable by Admin/Developer) ---
 
 app.get("/api/announcements", requireAuth, async (req, res) => {
   try {
@@ -1039,20 +1191,21 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
 
 app.post("/api/announcements", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Creating announcements"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Creating announcements"))) return;
     const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate } = req.body;
     if (typeof announcement !== "string" || !announcement.trim() || typeof category !== "string" || !category.trim()) {
       return res.status(400).json({ error: "announcement and category are required." });
     }
     const { users: usersRepo, announcements } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
+    const resolvedType = type === "General Announcement" ? "General Announcement" : "QA Announcement";
     const row = await announcements.create({
       announcement,
       category,
       addedBy: `${req.user!.name} (${callerTier})`,
       effectiveDate: effectiveDate || null,
       rating: typeof rating === "number" ? rating : null,
-      type: type === "General Announcement" ? "General Announcement" : "QA Announcement",
+      type: resolvedType,
       validTillDate: validTillDate || null,
       title: title || null,
       fromTeam: fromTeam || null,
@@ -1060,7 +1213,18 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
       // posted, not when the policy it describes takes effect.
       announcementDate: announcementDate || null,
     });
-    return res.json({ entry: row });
+    // Retention: auto-delete the oldest announcements of THIS SAME type once
+    // the configured limit is exceeded — QA and General are pruned entirely
+    // independently (see ANNOUNCEMENT_RETENTION_LIMIT / enforceRetentionLimit
+    // in announcementsRepository.ts). Never blocks the response on failure —
+    // a retention hiccup should never prevent a successful publish.
+    let deletedIds: number[] = [];
+    try {
+      deletedIds = await announcements.enforceRetentionLimit(resolvedType);
+    } catch (retentionErr) {
+      console.error("Announcement retention enforcement failed (non-fatal):", retentionErr);
+    }
+    return res.json({ entry: row, deletedIds });
   } catch (err: any) {
     console.error("Failed to create announcement:", err);
     return res.status(500).json({ error: `Failed to publish this announcement: ${err.message}` });
@@ -1069,7 +1233,7 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
 
 app.put("/api/announcements/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Editing announcements"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Editing announcements"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
 
@@ -1096,7 +1260,7 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/announcements/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Deleting announcements"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting announcements"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
     const { announcements } = createRepositories(getDb());
@@ -1108,7 +1272,7 @@ app.delete("/api/announcements/:id", requireAuth, async (req, res) => {
   }
 });
 
-// --- External Resources (Workspace Controls drawer; readable by everyone, writable by Admin/Owner) ---
+// --- External Resources (Workspace Controls drawer; readable by everyone, writable by Admin/Developer) ---
 
 app.get("/api/external-resources", requireAuth, async (req, res) => {
   try {
@@ -1123,7 +1287,7 @@ app.get("/api/external-resources", requireAuth, async (req, res) => {
 
 app.post("/api/external-resources", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Adding resource links"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Adding resource links"))) return;
     const { title, url, icon } = req.body;
     if (typeof title !== "string" || !title.trim() || typeof url !== "string" || !url.trim()) {
       return res.status(400).json({ error: "title and url are required." });
@@ -1151,7 +1315,7 @@ app.post("/api/external-resources", requireAuth, async (req, res) => {
 
 app.put("/api/external-resources/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Editing resource links"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Editing resource links"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
 
@@ -1180,7 +1344,7 @@ app.put("/api/external-resources/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/external-resources/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Deleting resource links"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting resource links"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
     const { externalResources } = createRepositories(getDb());
@@ -1197,7 +1361,7 @@ app.delete("/api/external-resources/:id", requireAuth, async (req, res) => {
 // would otherwise be swallowed by the :id route with id="reorder".
 app.post("/api/external-resources/reorder", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Reordering resource links"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Reordering resource links"))) return;
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds) || orderedIds.some((id: unknown) => !Number.isInteger(id))) {
       return res.status(400).json({ error: "orderedIds must be an array of integer ids." });
@@ -1223,7 +1387,7 @@ app.post("/api/external-resources/reorder", requireAuth, async (req, res) => {
 // (/api/ped-suggestions) and the `pedSuggestions` repository binding were
 // deliberately left as-is to avoid an app-wide rename churn) ---
 // This table itself only feeds the suggestion list an advisor sees while
-// typing a PED. Read by everyone; writes are gated to Admin/Owner, same
+// typing a PED. Read by everyone; writes are gated to Admin/Developer, same
 // pattern as external resources. Admin UI lives at
 // PedSuggestionsManagement.tsx. The optional `category` field an admin can
 // assign here IS live: POST/PUT below also call promotePedMappingOverride,
@@ -1242,14 +1406,14 @@ app.get("/api/ped-suggestions", requireAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// Page visibility — Owner-only show/hide switch.
+// Page visibility — Developer-only show/hide switch.
 //
 // GET is open to every signed-in user because the client needs the hidden
-// set to render its navigation. PUT is Owner-only: not Admin, not Editor —
+// set to render its navigation. PUT is Developer-only: not Admin, not Editor —
 // this is deliberately the narrowest gate in the app.
 //
-// The "never hide from the Owner" guarantee is enforced client-side in
-// hasAccess() (App.tsx), which short-circuits to true for Owner before the
+// The "never hide from the Developer" guarantee is enforced client-side in
+// hasAccess() (App.tsx), which short-circuits to true for Developer before the
 // hidden set is ever consulted.
 // ─────────────────────────────────────────────────────────────────────────
 app.get("/api/page-visibility", requireAuth, async (req, res) => {
@@ -1267,8 +1431,8 @@ app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, pageVisibility, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Owner") {
-      return res.status(403).json({ error: "Only the Owner can change page visibility." });
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer can change page visibility." });
     }
 
     const featureId = String(req.params.featureId);
@@ -1285,7 +1449,7 @@ app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
         role: callerTier,
         actionType: "Page Visibility Changed",
         planName: null,
-        description: `Set page "${featureId}" to ${hidden ? "Hidden" : "Visible"} for non-Owner users.`,
+        description: `Set page "${featureId}" to ${hidden ? "Hidden" : "Visible"} for non-Developer users.`,
         snapshot: null,
       });
     } catch (logErr) {
@@ -1309,7 +1473,7 @@ app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 app.get("/api/ai-memory", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Viewing AI Mapping Review"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing AI Mapping Review"))) return;
     const { aiMemory } = createRepositories(getDb());
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const planName = typeof req.query.planName === "string" ? req.query.planName : undefined;
@@ -1343,7 +1507,7 @@ app.get("/api/ai-memory", requireAuth, async (req, res) => {
 // instead of leaving a wrong override behind.
 app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Reviewing AI mapping recommendations"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Reviewing AI mapping recommendations"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid entry id." });
 
@@ -1435,7 +1599,7 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
 // the cache key fields are immutable.
 app.patch("/api/ai-memory/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Editing AI mapping recommendations"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Editing AI mapping recommendations"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid entry id." });
 
@@ -1489,7 +1653,7 @@ async function logPedRepositoryChange(
 
 app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Adding PED suggestions"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Adding PED suggestions"))) return;
     const { term, category } = req.body;
     if (typeof term !== "string" || !term.trim()) {
       return res.status(400).json({ error: "term is required." });
@@ -1540,7 +1704,7 @@ app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
 
 app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Editing PED suggestions"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Editing PED suggestions"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
     const { term, category } = req.body;
@@ -1609,7 +1773,7 @@ app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Deleting PED suggestions"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting PED suggestions"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
     const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
@@ -1641,10 +1805,10 @@ app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   }
 });
 
-// --- Smoke Test page — Admin/Owner-added custom PED entries, additional to
+// --- Smoke Test page — Admin/Developer-added custom PED entries, additional to
 // the hardcoded 50+ baseline list (COMMON_SMOKE_TEST_PEDS, client-side
 // constant, never touches the DB). Readable by everyone (the page itself is
-// visible to every tier), writes gated to Admin/Owner — same pattern as
+// visible to every tier), writes gated to Admin/Developer — same pattern as
 // PED Directory above. ---
 
 app.get("/api/smoke-test-peds", requireAuth, async (req, res) => {
@@ -1660,7 +1824,7 @@ app.get("/api/smoke-test-peds", requireAuth, async (req, res) => {
 
 app.post("/api/smoke-test-peds", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Adding custom smoke-test PEDs"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Adding custom smoke-test PEDs"))) return;
     const { term } = req.body;
     if (typeof term !== "string" || !term.trim()) {
       return res.status(400).json({ error: "term is required." });
@@ -1680,7 +1844,7 @@ app.post("/api/smoke-test-peds", requireAuth, async (req, res) => {
 
 app.delete("/api/smoke-test-peds/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Deleting custom smoke-test PEDs"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting custom smoke-test PEDs"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid smoke-test PED id." });
     const { smokeTestPeds } = createRepositories(getDb());
@@ -1760,7 +1924,7 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
 // --- Flagged Issues (Flagged Responses tab) ---
 
 // --- Plan Configs (declaration questionnaires; readable by everyone so the
-// plan picker + matching work for every tier, writable by Admin/Owner) ---
+// plan picker + matching work for every tier, writable by Admin/Developer) ---
 // This is the *live* source of truth for /api/match — see the merge in the
 // match route above. Adding a plan here means it goes live for matching
 // immediately, no code change/redeploy required.
@@ -1824,7 +1988,7 @@ app.get("/api/plan-configs", requireAuth, async (req, res) => {
 
 app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Adding a plan"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a plan"))) return;
 
     const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses } = req.body;
 
@@ -1869,7 +2033,7 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
 
 app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Editing a plan"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
 
     const { insurerName, questions, categoryMap, overrides, specificIllnesses } = req.body;
@@ -1916,7 +2080,7 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
 
 app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Deleting a plan"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
     const { planConfigs } = createRepositories(getDb());
     await planConfigs.delete(planName);
@@ -1929,7 +2093,7 @@ app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
 
 app.get("/api/flagged-issues", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrOwner(req, res, "Viewing flagged responses"))) return;
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing flagged responses"))) return;
     const validStatuses = ["Pending", "Urgent", "Resolved", "Ignored"];
     const status = typeof req.query.status === "string" && validStatuses.includes(req.query.status)
       ? (req.query.status as "Pending" | "Urgent" | "Resolved" | "Ignored")
@@ -1975,9 +2139,9 @@ app.post("/api/flagged-issues", requireAuth, async (req, res) => {
 
 app.put("/api/flagged-issues/:id", requireAuth, async (req, res) => {
   try {
-    // Resolve/Ignore + notes are Admin+Owner actions in the UI (only
-    // permanent delete is Owner-only — see the DELETE route below).
-    if (!(await requireAdminOrOwner(req, res, "Resolving flagged responses"))) return;
+    // Resolve/Ignore + notes are Admin+Developer actions in the UI (only
+    // permanent delete is Developer-only — see the DELETE route below).
+    if (!(await requireAdminOrDeveloper(req, res, "Resolving flagged responses"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid flagged issue id." });
 
@@ -2005,8 +2169,8 @@ app.delete("/api/flagged-issues/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Owner") {
-      return res.status(403).json({ error: "Only the Owner role can permanently delete flagged reports." });
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can permanently delete flagged reports." });
     }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid flagged issue id." });
@@ -2020,7 +2184,7 @@ app.delete("/api/flagged-issues/:id", requireAuth, async (req, res) => {
 });
 
 // Returns the CALLER's OWN directory record only — unlike GET /api/users,
-// this is intentionally not restricted to Admin/Owner, because a user is
+// this is intentionally not restricted to Admin/Developer, because a user is
 // always allowed to know their own role. This is what the client's login
 // bootstrap uses to resolve tier server-side (audit fix, see
 // Production_Readiness_Audit.md Findings 1 & 9): resolving "am I an
@@ -2044,12 +2208,12 @@ app.get("/api/me", requireAuth, async (req, res) => {
 // that GET /api/me didn't find in the directory yet. Deliberately narrow:
 // callers can only ever create THEIR OWN record (email comes from the
 // verified session, never the request body), always at "General" tier —
-// an Owner promotes people afterward via PUT /api/users. This is what makes
+// an Developer promotes people afterward via PUT /api/users. This is what makes
 // first-time setup actually provision the user server-side instead of only
 // ever touching the completing browser's own localStorage (audit fix, see
 // Production_Readiness_Audit.md Finding 9): before this, a new hire's
 // profile-completion never reached data/users.json, so they'd be asked to
-// "complete setup" again on every new device, and no Owner/Admin would ever
+// "complete setup" again on every new device, and no Developer/Admin would ever
 // see them in the User Management directory.
 app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
   try {

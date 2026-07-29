@@ -20,7 +20,7 @@ interface AdvisoryZonePageProps {
  *
  * ACCESS: Advisory Zone pages are visible to EVERY tier, including General
  * advisors (contrast with Admin Zone pages — Plan Management, PED
- * Repository, Announcement Manager, etc. — which are Admin/Owner only).
+ * Repository, Announcement Manager, etc. — which are Admin/Developer only).
  * This page is deliberately read-only: it renders the same live plan data
  * the matching engine uses, but exposes no add/edit/delete affordance, so
  * an advisor can look something up without any risk of changing config.

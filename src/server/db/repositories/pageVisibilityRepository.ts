@@ -8,10 +8,10 @@ import type { AnyDb } from "../client.js";
 import { pageVisibility, type PageVisibilityRow } from "../schema.js";
 
 /**
- * Data Access Layer for `page_visibility` — the Owner-only show/hide switch.
+ * Data Access Layer for `page_visibility` — the Developer-only show/hide switch.
  *
  * Read by EVERY signed-in user (the client needs the hidden set to render
- * its nav), writes gated to Owner in the API route layer. Absence of a row
+ * its nav), writes gated to Developer in the API route layer. Absence of a row
  * means visible, so a new page needs no seeding.
  */
 export class PageVisibilityRepository {

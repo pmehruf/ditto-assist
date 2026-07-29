@@ -51,7 +51,7 @@ export interface QAAnnouncement {
 
 /** External link (SOP, QA Dashboard, etc.) surfaced in the Workspace Controls
  * drawer's Resources section. Readable by everyone; add/edit/delete is
- * gated to Admin/Owner server-side. */
+ * gated to Admin/Developer server-side. */
 export interface ExternalResource {
   id: string;
   title: string;

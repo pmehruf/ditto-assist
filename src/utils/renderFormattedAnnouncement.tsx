@@ -7,47 +7,69 @@ import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 
 /**
- * Formatting rules for announcement content:
- *   **text**  -> Bold and Red        (legacy — still rendered, no longer
- *                                      offered as its own toolbar button;
- *                                      superseded by the general color
- *                                      picker below)
+ * Formatting rules for announcement content (v2 — rebuilt to fix the paste/
+ * color/combination bugs in the original implementation; see
+ * ANNOUNCEMENT_EDITOR_REBUILD.md for the full before/after writeup):
+ *
  *   *text*    -> Bold
- *   _text_    -> Italic (combinable with either bold variant above,
- *                 e.g. **_text_** or _**text**_ -> Bold + Red + Italic,
- *                      *_text_* or _*text*_     -> Bold + Italic)
+ *   _text_    -> Italic
+ *   ~text~    -> Underline
+ *   `text`    -> Code (monospace, subtle background)
+ *   (any of the above can nest/combine, e.g. *_text_* -> Bold + Italic)
+ *
+ *   **text**  -> Bold and Red        (LEGACY ONLY — still rendered for any
+ *                 announcement written before the general color picker
+ *                 existed; the editor never produces this anymore. Combos
+ *                 like **_text_** or _**text**_ -> Bold + Red + Italic still
+ *                 render exactly as they always did.)
+ *
  *   [red]text[/red]                  -> Text color (red/orange/green/blue).
- *                 Always the OUTERMOST wrapper — the Content toolbar's
- *                 color button always wraps the full current selection
- *                 (including any existing *и_ markers), so color can wrap
- *                 bold/italic but never the reverse. Inner content still
- *                 runs through the exact same bold/italic parsing above.
+ *                 Always the OUTERMOST wrapper. Inner content still runs
+ *                 through the exact same bold/italic/underline/code parsing.
  *   > text                           -> Quote line. Consecutive quoted
- *                 lines are grouped into one blockquote-styled block;
- *                 everything inside still supports color/bold/italic/links.
+ *                 lines are grouped into one blockquote-styled block.
+ *   • text                           -> Bulleted list line. Consecutive
+ *                 bulleted lines are grouped into one real <ul> block
+ *                 (previously stored but never actually rendered as a list —
+ *                 fixed here).
  *   [label](https://url)             -> Explicit link with custom label.
  *                 Bare "https://..." URLs elsewhere in the text still
- *                 auto-link exactly as before (unchanged legacy behavior).
+ *                 auto-link exactly as before.
  *
- * Real line breaks (actual newline characters from pressing Enter in the
- * textarea) are preserved. The old rule that treated a literal typed
- * backslash-n ("\n") as a line-break has been removed.
+ * ESCAPING (new): a literal `*`, `_`, `~`, backtick, `[` or `]` that the
+ * author actually typed or pasted as plain text (e.g. "check_in", "5 * 3",
+ * "call *now*" meant literally) is stored backslash-escaped by the editor
+ * (see announcementEditorHtml.ts) so it can never be misread as a
+ * formatting token here. This is the fix for "pasted content becomes bold":
+ * previously, any literal asterisk/underscore that happened to appear in
+ * plain typed or pasted text (extremely common — emphasis in a pasted
+ * email, a variable name, "config_value") was silently reinterpreted as a
+ * real bold/italic marker by this exact regex parser, because there was no
+ * way to distinguish "the user's own character" from "a real token". The
+ * regexes below use a negative-lookbehind (`(?<!\\)`) on every delimiter so
+ * an escaped character never starts/ends a token, and `unescapeLiteral`
+ * below strips the backslash back out at the very end, just before display.
+ * Content written before this fix never contains a backslash-escape, so
+ * this is purely additive — zero change to any existing announcement that
+ * doesn't happen to need escaping.
  *
- * BACKWARD COMPATIBILITY: every addition below (color tags, quote lines,
- * explicit links) is an ADDITIVE pass that only activates when its specific
- * token is present. Content with none of those tokens — i.e. every
- * announcement written before this feature existed — takes exactly the
- * same code path it always did: the color split finds nothing to split on,
- * the quote grouping produces one single "normal" block containing every
- * line, and the link pass finds no explicit-link syntax and falls straight
- * through to the original bare-URL auto-linking.
+ * BACKWARD COMPATIBILITY: every token above is an ADDITIVE pass that only
+ * activates when its specific token is present. Content with none of these
+ * tokens — i.e. every announcement written before this feature existed —
+ * takes exactly the same code path it always did.
  */
+
+function unescapeLiteral(text: string): string {
+  return text.replace(/\\([*_~`[\]])/g, "$1");
+}
 
 // Ordered so the more specific (combined) markers are tried before the
 // simpler ones — this prevents "**_text_**" from being mis-split as
-// "*" + "*_text_*" + "*", etc.
+// "*" + "*_text_*" + "*", etc. Each delimiter carries a `(?<!\\)` guard so
+// an escaped character (the author's own literal `*`/`_`/etc., see file
+// header) is never treated as a token boundary.
 const FORMAT_TOKEN_REGEX =
-  /(\*\*_[\s\S]+?_\*\*|_\*\*[\s\S]+?\*\*_|\*_[\s\S]+?_\*|_\*[\s\S]+?\*_|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|_[\s\S]+?_)/g;
+  /((?<!\\)\*\*(?<!\\)_[\s\S]+?(?<!\\)_(?<!\\)\*\*|(?<!\\)_(?<!\\)\*\*[\s\S]+?(?<!\\)\*\*(?<!\\)_|(?<!\\)\*(?<!\\)_[\s\S]+?(?<!\\)_(?<!\\)\*|(?<!\\)_(?<!\\)\*[\s\S]+?(?<!\\)\*(?<!\\)_|(?<!\\)\*\*[\s\S]+?(?<!\\)\*\*|(?<!\\)~[\s\S]+?(?<!\\)~|(?<!\\)`[\s\S]+?(?<!\\)`|(?<!\\)\*[\s\S]+?(?<!\\)\*|(?<!\\)_[\s\S]+?(?<!\\)_)/g;
 
 // Outermost color wrapper — see file header. Non-greedy so
 // "[red]a[/red] and [blue]b[/blue]" splits into two separate color spans
@@ -73,6 +95,13 @@ export const COLOR_HEX: Record<string, { light: string; dark: string }> = {
   blue: { light: "#0754B7", dark: "#00D3F3" },
 };
 
+// The color picker's "Black/White" swatch and its "Clear Formatting" action
+// are the same operation: both remove any [color]...[/color] wrapper so the
+// text falls back to the surrounding default ink color (which already IS
+// black in light theme / white in dark theme via normal inheritance). No
+// dedicated "default" color token is needed in the grammar — there is
+// simply no color wrapper at all once cleared.
+
 // Explicit "[label](https://url)" links — matched before bare-URL
 // auto-detection so a URL inside the parens is never double-processed.
 // http(s)-only by construction: nothing else can appear here and become a
@@ -92,7 +121,9 @@ const IS_URL_REGEX = /^https?:\/\//;
 
 function renderTextWithLinks(text: string, keyPrefix: string, effectiveTheme: "light" | "dark") {
   const hasExplicitLink = text.includes("](http");
-  if (!hasExplicitLink && !text.includes("http://") && !text.includes("https://")) return text;
+  if (!hasExplicitLink && !text.includes("http://") && !text.includes("https://")) {
+    return unescapeLiteral(text);
+  }
 
   // Resolved directly from effectiveTheme (a plain JS value the caller
   // already computed) instead of emitting both a base class and a
@@ -105,7 +136,7 @@ function renderTextWithLinks(text: string, keyPrefix: string, effectiveTheme: "l
   const linkColor = effectiveTheme === "dark" ? "#00D3F3" : "#0754B7";
 
   const renderBareUrls = (segment: string, segKey: string) => {
-    if (!segment.includes("http://") && !segment.includes("https://")) return segment;
+    if (!segment.includes("http://") && !segment.includes("https://")) return unescapeLiteral(segment);
     return segment.split(URL_SPLIT_REGEX).map((part, i) =>
       IS_URL_REGEX.test(part) ? (
         <a
@@ -120,7 +151,7 @@ function renderTextWithLinks(text: string, keyPrefix: string, effectiveTheme: "l
           <ExternalLink className="inline-block w-3 h-3 ml-0.5 -mt-0.5" />
         </a>
       ) : (
-        part
+        unescapeLiteral(part)
       )
     );
   };
@@ -149,7 +180,7 @@ function renderTextWithLinks(text: string, keyPrefix: string, effectiveTheme: "l
         className="underline underline-offset-2 decoration-1 hover:opacity-80 break-all font-semibold"
         style={{ color: linkColor }}
       >
-        {label}
+        {unescapeLiteral(label)}
         <ExternalLink className="inline-block w-3 h-3 ml-0.5 -mt-0.5" />
       </a>
     );
@@ -168,12 +199,16 @@ function renderFormattedSegment(segment: string, key: string, effectiveTheme: "l
   const boldItalic1 = /^\*_([\s\S]+?)_\*$/;
   const boldItalic2 = /^_\*([\s\S]+?)\*_$/;
   const boldRed = /^\*\*([\s\S]+?)\*\*$/;
+  const underlineOnly = /^~([\s\S]+?)~$/;
+  const codeOnly = /^`([\s\S]+?)`$/;
   const boldOnly = /^\*([\s\S]+?)\*$/;
   const italicOnly = /^_([\s\S]+?)_$/;
 
   let content: string;
   let bold = false;
   let italic = false;
+  let underline = false;
+  let code = false;
   let red = false;
   let match: RegExpMatchArray | null;
 
@@ -190,6 +225,12 @@ function renderFormattedSegment(segment: string, key: string, effectiveTheme: "l
     content = match[1];
     bold = true;
     red = true;
+  } else if ((match = segment.match(underlineOnly))) {
+    content = match[1];
+    underline = true;
+  } else if ((match = segment.match(codeOnly))) {
+    content = match[1];
+    code = true;
   } else if ((match = segment.match(boldOnly))) {
     content = match[1];
     bold = true;
@@ -200,7 +241,23 @@ function renderFormattedSegment(segment: string, key: string, effectiveTheme: "l
     return <span key={key}>{renderTextWithLinks(segment, key, effectiveTheme)}</span>;
   }
 
-  const classNames = [bold ? "font-extrabold" : "", italic ? "italic" : ""]
+  if (code) {
+    // Inline code renders as its own monospace/background span and does not
+    // recurse bold/italic/underline inside it (matches how Slack/Google
+    // Chat/GitHub treat inline code — its contents are shown verbatim).
+    return (
+      <code
+        key={key}
+        className={`px-1 py-0.5 rounded font-mono text-[0.92em] ${
+          effectiveTheme === "dark" ? "bg-white/10 text-stone-100" : "bg-black/[0.06] text-stone-800"
+        }`}
+      >
+        {unescapeLiteral(content)}
+      </code>
+    );
+  }
+
+  const classNames = [bold ? "font-extrabold" : "", italic ? "italic" : "", underline ? "underline underline-offset-2" : ""]
     .filter(Boolean)
     .join(" ");
 
@@ -223,22 +280,22 @@ function renderFormattedSegment(segment: string, key: string, effectiveTheme: "l
   // resolves to these same two hex values light vs dark).
   const color = red
     ? "#ef4444"
-    : effectiveTheme === "dark"
-      ? "#2DD4BF"
-      : "#0B5C56";
+    : bold || italic || underline
+      ? (effectiveTheme === "dark" ? "#2DD4BF" : "#0B5C56")
+      : undefined;
 
   return (
-    <span key={key} className={classNames || undefined} style={{ color }}>
+    <span key={key} className={classNames || undefined} style={color ? { color } : undefined}>
       {renderTextWithLinks(content, key, effectiveTheme)}
     </span>
   );
 }
 
-// Bold/italic token split + render — extracted verbatim from the body that
-// used to live inline in renderFormattedAnnouncement's line loop, so it can
-// be called both for plain text AND recursively for the inner content of a
-// color span (see renderColorAwareTokens below). Behavior for callers that
-// never touch color is unchanged.
+// Bold/italic/underline/code token split + render — extracted verbatim from
+// the body that used to live inline in renderFormattedAnnouncement's line
+// loop, so it can be called both for plain text AND recursively for the
+// inner content of a color span (see renderLineContent below).
+// Behavior for callers that never touch color is unchanged.
 function renderFormatTokens(text: string, keyPrefix: string, effectiveTheme: "light" | "dark") {
   const subParts = text.split(FORMAT_TOKEN_REGEX);
   return subParts.map((subPart, subIdx) =>
@@ -246,37 +303,21 @@ function renderFormatTokens(text: string, keyPrefix: string, effectiveTheme: "li
   );
 }
 
-// Splits out [color]...[/color] spans (always the outermost wrapper — see
-// file header) and recurses the existing bold/italic renderer into each
-// one's inner content; anything that isn't a color span runs through the
-// unmodified renderFormatTokens exactly as before. Text with no color tags
-// produces a single non-matching split part, so this is a no-op wrapper
-// around the original behavior for all pre-existing announcement content.
-function renderColorAwareTokens(text: string, keyPrefix: string, effectiveTheme: "light" | "dark") {
-  const parts = text.split(COLOR_TOKEN_REGEX);
-  return parts.map((part, i) => {
-    const spanMatch = part.match(COLOR_SPAN_REGEX);
-    if (spanMatch) {
-      const [, colorName, inner] = spanMatch;
-      const hex = COLOR_HEX[colorName]?.[effectiveTheme] ?? undefined;
-      return (
-        <span key={`${keyPrefix}-color-${i}`} style={hex ? { color: hex } : undefined}>
-          {renderFormatTokens(inner, `${keyPrefix}-color-${i}`, effectiveTheme)}
-        </span>
-      );
-    }
-    return renderFormatTokens(part, `${keyPrefix}-plain-${i}`, effectiveTheme);
-  });
-}
-
-// Rating-badge detection + color/bold/italic/link rendering for ONE line of
-// text (with the "> " quote prefix, if any, already stripped by the
-// caller). Extracted so both plain lines and quote-block lines share the
-// exact same rendering, and reused unchanged from what used to be the
-// inline body of the lines.map() callback below.
-function renderLineContent(line: string, keyPrefix: string, effectiveTheme: "light" | "dark") {
+// Rating-badge detection + bold/italic/underline/code/link rendering for a
+// run of text that has ALREADY had any [color]...[/color] wrapper peeled off
+// by renderLineContent below. Deliberately runs AFTER color-span extraction,
+// not before: rating detection used to run first (splitting the raw line on
+// "rated 3" etc.), which silently broke any color span containing a rating
+// badge into three fragments — one with only the opening "[red]", the badge
+// itself, and one with only the closing "[/red]" — so neither fragment ever
+// contained a matching open+close pair and both literal tags leaked into the
+// rendered output as raw text instead of coloring anything. Running this
+// AFTER color extraction means a rating badge can appear inside a colored
+// span (or outside one) and the color wrapper is never at risk of being
+// split apart by it.
+function renderRatingAwareTokens(text: string, keyPrefix: string, effectiveTheme: "light" | "dark") {
   const ratingRegex = /\b(Rating\s*:\s*-?[1-5]|Rating\s+-?[1-5]|Rated\s*:\s*-?[1-5]|Rated\s+-?[1-5]|R-?[1-5]|rating\s*:\s*-?[1-5]|rating\s+-?[1-5]|rated\s*:\s*-?[1-5]|rated\s+-?[1-5]|r-?[1-5])\b/gi;
-  const ratingParts = line.split(ratingRegex);
+  const ratingParts = text.split(ratingRegex);
 
   return ratingParts.map((part, partIdx) => {
     if (ratingRegex.test(part)) {
@@ -288,38 +329,14 @@ function renderLineContent(line: string, keyPrefix: string, effectiveTheme: "lig
       } else if (ratingNum === 2) {
         ratingColor = effectiveTheme === "dark" ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 font-extrabold" : "bg-orange-50 text-orange-700 border-orange-200 font-extrabold";
       } else if (ratingNum === 3) {
-        // Light-theme classes were "bg-amber-55"/"border-amber-205" —
-        // neither is a real Tailwind shade (the scale only has
-        // 50/100/200/...), so both rules silently produced no styling,
-        // leaving only the (valid) text-amber-800 color with no pill
-        // background or border. Fixed to the real 50/200 shades used
-        // by every other rating's light-theme pill.
         ratingColor = effectiveTheme === "dark" ? "bg-amber-500/10 text-amber-400 border border-amber-500/15 font-extrabold" : "bg-amber-50 text-amber-800 border border-amber-200 font-extrabold";
       } else if (ratingNum === 4) {
-        // Deliberately the SAME literal colors in both themes (no
-        // dark:/light branch) — this used to reuse the "bg-blue-55
-        // text-blue-800 border-blue-200" classes, but those are part
-        // of the app's global accent compatibility layer (index.css),
-        // which silently remaps them to the *current* theme's accent
-        // tokens regardless of which branch picked them. That's why a
-        // dark-tuned variant here still rendered low-contrast/hard to
-        // see: the class names looked theme-aware but the underlying
-        // CSS variables always resolved to whichever theme was active.
-        // Hardcoded hex values below sidestep that layer entirely, so
-        // Rating 4 always looks exactly like it does in Light theme.
         ratingColor = "bg-[#E1EAF7] text-[#0754B7] border border-[#B9D2F2] font-extrabold";
       } else if (ratingNum === -1) {
         ratingColor = effectiveTheme === "dark" ? "bg-purple-500/10 text-purple-400 border border-purple-500/15 font-extrabold" : "bg-purple-50 text-purple-800 border-purple-200 font-extrabold";
       } else if (ratingNum === 0) {
-        // Same invalid-shade issue as rating 3 above: "text-stone-605"
-        // isn't a real Tailwind shade, so this rendered with no text
-        // color override (just the pill background/border). Fixed to
-        // the real stone-600 shade.
         ratingColor = effectiveTheme === "dark" ? "bg-stone-500/10 text-stone-400 border border-stone-500/15 font-extrabold" : "bg-stone-100 text-stone-600 border border-stone-200 font-extrabold";
       } else {
-        // Same issue again: "text-teal-850" isn't a real shade — fixed
-        // to teal-800, matching the "800" text-shade convention used
-        // by the other light-theme pills (amber-800, purple-800).
         ratingColor = effectiveTheme === "dark" ? "bg-teal-500/10 text-teal-400 border border-teal-500/15 font-extrabold" : "bg-teal-50 text-teal-800 border border-teal-200 font-extrabold";
       }
       return (
@@ -329,7 +346,33 @@ function renderLineContent(line: string, keyPrefix: string, effectiveTheme: "lig
       );
     }
 
-    return renderColorAwareTokens(part, `${keyPrefix}-fmt-${partIdx}`, effectiveTheme);
+    return renderFormatTokens(part, `${keyPrefix}-fmt-${partIdx}`, effectiveTheme);
+  });
+}
+
+// Splits out [color]...[/color] spans (always the outermost wrapper — see
+// file header) BEFORE any rating-badge detection runs (see
+// renderRatingAwareTokens above for why the order matters), then recurses
+// the rating+format renderer into each span's inner content; anything that
+// isn't a color span runs through the same rating+format renderer directly.
+// Text with no color tags produces a single non-matching split part, so
+// this is a no-op wrapper around the original behavior for all pre-existing
+// announcement content. Plain lines, quote-block lines, and bullet lines
+// all share this exact same rendering.
+function renderLineContent(line: string, keyPrefix: string, effectiveTheme: "light" | "dark") {
+  const parts = line.split(COLOR_TOKEN_REGEX);
+  return parts.map((part, i) => {
+    const spanMatch = part.match(COLOR_SPAN_REGEX);
+    if (spanMatch) {
+      const [, colorName, inner] = spanMatch;
+      const hex = COLOR_HEX[colorName]?.[effectiveTheme] ?? undefined;
+      return (
+        <span key={`${keyPrefix}-color-${i}`} style={hex ? { color: hex } : undefined}>
+          {renderRatingAwareTokens(inner, `${keyPrefix}-color-${i}`, effectiveTheme)}
+        </span>
+      );
+    }
+    return renderRatingAwareTokens(part, `${keyPrefix}-plain-${i}`, effectiveTheme);
   });
 }
 
@@ -338,21 +381,24 @@ export function renderFormattedAnnouncement(rawText: string, theme: "light" | "d
   const lines = rawText.split(/\n/); // Real line breaks only.
   const effectiveTheme = forceLightContrast ? "light" : theme;
 
-  // Group consecutive "> "-prefixed lines into a single blockquote block;
-  // every other line stays in its own "normal" block of one. Content with
-  // no "> " lines at all — i.e. every announcement written before this
-  // feature existed — collapses to one normal block containing every line
-  // in order, which renders identically to the original implementation.
-  type Block = { type: "normal" | "quote"; lines: string[]; startIdx: number };
+  // Group consecutive "> "-prefixed lines into one blockquote block and
+  // consecutive "• "-prefixed lines into one real <ul> block; every other
+  // line stays in its own "normal" block of one. Content with none of these
+  // prefixes — i.e. every announcement written before quote/bullet support
+  // existed — collapses to one normal block containing every line in
+  // order, which renders identically to the original implementation.
+  type Block = { type: "normal" | "quote" | "bullet"; lines: string[]; startIdx: number };
   const blocks: Block[] = [];
   lines.forEach((line, idx) => {
     const isQuote = line.startsWith("> ");
-    const stripped = isQuote ? line.slice(2) : line;
+    const isBullet = !isQuote && line.startsWith("• ");
+    const type: Block["type"] = isQuote ? "quote" : isBullet ? "bullet" : "normal";
+    const stripped = isQuote || isBullet ? line.slice(2) : line;
     const last = blocks[blocks.length - 1];
-    if (last && last.type === (isQuote ? "quote" : "normal")) {
+    if (last && last.type === type) {
       last.lines.push(stripped);
     } else {
-      blocks.push({ type: isQuote ? "quote" : "normal", lines: [stripped], startIdx: idx });
+      blocks.push({ type, lines: [stripped], startIdx: idx });
     }
   });
 
@@ -373,6 +419,18 @@ export function renderFormattedAnnouncement(rawText: string, theme: "light" | "d
                 </div>
               ))}
             </div>
+          );
+        }
+
+        if (block.type === "bullet") {
+          return (
+            <ul key={`bullet-${blockIdx}`} className="my-1 list-disc pl-5 space-y-0.5">
+              {block.lines.map((line, i) => (
+                <li key={`b-${blockIdx}-${i}`}>
+                  {renderLineContent(line, `b${blockIdx}-${i}`, effectiveTheme)}
+                </li>
+              ))}
+            </ul>
           );
         }
 

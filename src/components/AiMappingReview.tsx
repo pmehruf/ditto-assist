@@ -76,10 +76,10 @@ export function AiMappingReview({
   effectiveTier,
 }: {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Owner";
+  effectiveTier: "General" | "Admin" | "Developer";
 }) {
   const dark = theme === "dark";
-  const canReview = effectiveTier === "Admin" || effectiveTier === "Owner";
+  const canReview = effectiveTier === "Admin" || effectiveTier === "Developer";
 
   const [entries, setEntries] = useState<AiMemoryEntry[]>([]);
   const [loading, setLoading] = useState(true);

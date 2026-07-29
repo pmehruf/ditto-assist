@@ -16,7 +16,7 @@ import { CustomSelect } from "../components/CustomSelect";
 
 interface PlanManagementPageProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Owner";
+  effectiveTier: "General" | "Admin" | "Developer";
   dbPlanConfigs: DbPlanConfigEntry[];
   setDbPlanConfigs: Dispatch<SetStateAction<DbPlanConfigEntry[]>>;
   dbPlanConfigsLoadError: string | null;
@@ -115,11 +115,11 @@ export function PlanManagementPage({
   currentUser,
 }: PlanManagementPageProps) {
   const dark = theme === "dark";
-  const canEdit = effectiveTier === "Admin" || effectiveTier === "Owner";
-  // Edit/Delete are actionable Owner-only — Admin still sees the buttons
+  const canEdit = effectiveTier === "Admin" || effectiveTier === "Developer";
+  // Edit/Delete are actionable Developer-only — Admin still sees the buttons
   // (so the UI doesn't look feature-incomplete) but they render disabled.
   // Add Plan stays fully enabled for Admin.
-  const isOwner = effectiveTier === "Owner";
+  const isDeveloper = effectiveTier === "Developer";
 
   useEffect(() => {
     fetchPlanConfigs();
@@ -1100,20 +1100,20 @@ export function PlanManagementPage({
                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <ClippedButton
                           onClick={() => openEditForm(name)}
-                          disabled={!isOwner}
+                          disabled={!isDeveloper}
                           cornerBg={dark ? "#0e2236" : "#ffffff"}
                           className={`p-2 ${dark ? "hover:bg-white/10 text-stone-300" : "hover:bg-stone-200 text-stone-600"}`}
-                          title={!isOwner ? "Owner clearance required to edit plans" : dbRow ? "Edit plan" : "Customize this built-in plan"}
+                          title={!isDeveloper ? "Developer clearance required to edit plans" : dbRow ? "Edit plan" : "Customize this built-in plan"}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </ClippedButton>
                         {dbRow && (
                           <ClippedButton
                             onClick={() => handleDelete(name)}
-                            disabled={!isOwner}
+                            disabled={!isDeveloper}
                             cornerBg={dark ? "#0e2236" : "#ffffff"}
                             className={`p-2 ${dark ? "hover:bg-red-500/15 text-stone-300 hover:text-red-400" : "hover:bg-red-50 text-stone-600 hover:text-red-600"}`}
-                            title={!isOwner ? "Owner clearance required to delete plans" : "Delete this custom plan"}
+                            title={!isDeveloper ? "Developer clearance required to delete plans" : "Delete this custom plan"}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </ClippedButton>
@@ -1158,7 +1158,7 @@ export function PlanManagementPage({
               {isNewPlan ? "Add Plan" : formMode === "view" ? `Viewing "${originalPlanName}"` : `Edit "${originalPlanName}"`}
             </h3>
             <div className="flex items-center gap-2">
-              {!isNewPlan && formMode === "view" && isOwner && (
+              {!isNewPlan && formMode === "view" && isDeveloper && (
                 <ClippedButton
                   onClick={() => setFormMode("edit")}
                   cornerBg={dark ? "#0e2236" : "#ffffff"}

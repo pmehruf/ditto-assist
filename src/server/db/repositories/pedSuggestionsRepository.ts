@@ -17,7 +17,7 @@ export type UpdatePedSuggestionEntry = Partial<Omit<NewPedSuggestionRow, "id" | 
  * churn). Deliberately separate from PedMappingOverrides —
  * this only feeds the suggestion dropdown, not PED classification/matching
  * (see schema.ts's comment on the ped_suggestions table for why). Read by
- * everyone; writes are gated to Admin/Owner in the API route layer, same
+ * everyone; writes are gated to Admin/Developer in the API route layer, same
  * pattern as ExternalResourcesRepository.
  */
 export class PedSuggestionsRepository {

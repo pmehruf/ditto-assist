@@ -5,7 +5,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
-import { Flame, Play, Plus, Trash2, RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Download, Search } from "lucide-react";
+import { Flame, Play, Plus, Trash2, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Download, Search } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { COMMON_SMOKE_TEST_PEDS } from "../constants/commonSmokeTestPeds";
@@ -31,7 +31,7 @@ interface SmokeTestResult {
 
 interface SmokeTestPageProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Owner";
+  effectiveTier: "General" | "Admin" | "Developer";
   currentUser: LoggedUser | null;
   productionPlans: string[];
   selectedPlan: string;
@@ -41,7 +41,7 @@ interface SmokeTestPageProps {
 
 /**
  * Smoke Test page — runs a fixed baseline of 100 common PEDs
- * (COMMON_SMOKE_TEST_PEDS), plus any Admin/Owner-added custom entries
+ * (COMMON_SMOKE_TEST_PEDS), plus any Admin/Developer-added custom entries
  * (the `smoke_test_peds` table), through the deterministic mapping engine
  * for one selected plan at a time, via POST /api/smoke-test. Deliberately
  * bypasses the Gemini AI fallback /api/match would use — an "Unresolved"
@@ -50,7 +50,7 @@ interface SmokeTestPageProps {
  * before an advisor hits it live.
  *
  * Visible to every tier (read/run); adding or removing a custom PED is
- * gated to Admin/Owner both here and server-side (requireAdminOrOwner),
+ * gated to Admin/Developer both here and server-side (requireAdminOrDeveloper),
  * same pattern as the PED Directory page.
  */
 export function SmokeTestPage({
@@ -63,14 +63,14 @@ export function SmokeTestPage({
   setChangeLogs,
 }: SmokeTestPageProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Owner";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs((prev) => [
       {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        userName: currentUser?.name || currentUser?.email || "Mehruf P (Owner)",
+        userName: currentUser?.name || currentUser?.email || "Mehruf P (Developer)",
         role: effectiveTier,
         actionType,
         planName: "Smoke Test",
@@ -93,7 +93,7 @@ export function SmokeTestPage({
   const [runError, setRunError] = useState<string | null>(null);
   const [filterTier, setFilterTier] = useState<"all" | "1" | "2" | "3" | "unresolved" | "clarify">("all");
 
-  // Baseline PED list panel — lets an Admin/Owner quickly check whether a
+  // Baseline PED list panel — lets an Admin/Developer quickly check whether a
   // PED they care about is already covered by the fixed 100-entry baseline
   // (COMMON_SMOKE_TEST_PEDS) before deciding whether it's worth adding as a
   // custom entry below.
@@ -122,7 +122,6 @@ export function SmokeTestPage({
 
   useEffect(() => {
     loadCustomPeds();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Default the plan picker to the first available production plan the

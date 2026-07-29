@@ -421,7 +421,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
   const legend = results ? buildLegend(results.plan) : [];
 
   // Small track+knob toggle for the Plan Configuration options below — same
-  // mechanic (role="switch", aria-checked, sliding knob) as the Owner
+  // mechanic (role="switch", aria-checked, sliding knob) as the Developer
   // Controls visibility switch, but neutral blue/gray coloring instead of
   // that switch's rose/emerald danger-vs-safe pairing, since these are plain
   // feature toggles (include this benefit in the projection or don't), not
@@ -490,7 +490,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
             share one row in a single full-width card (previously Sum
             Insured + Years lived in their own narrow card paired next to
             Claim Scenarios); the boolean options below render as toggle
-            switches instead of checkboxes, reusing the Owner Controls
+            switches instead of checkboxes, reusing the Developer Controls
             switch mechanic. Claim Scenarios (below) is its own full-width
             card again instead of being squeezed into the remaining 8/12
             columns. */}

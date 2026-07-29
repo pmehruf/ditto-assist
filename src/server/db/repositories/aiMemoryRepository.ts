@@ -37,7 +37,7 @@ export function normalizeCondition(text: string): string {
  *  - Nothing here can override or bypass an L1 result.
  *
  * Reads are needed by the match route for every signed-in user; writes that
- * change status (approve/reject/archive/edit) are gated to Admin/Owner in
+ * change status (approve/reject/archive/edit) are gated to Admin/Developer in
  * the API route layer, same pattern as the other repositories.
  */
 export class AiMemoryRepository {

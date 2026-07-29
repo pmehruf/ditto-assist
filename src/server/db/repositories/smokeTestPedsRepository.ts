@@ -10,12 +10,12 @@ import { smokeTestPeds, type SmokeTestPedRow, type NewSmokeTestPedRow } from "..
 export type CreateSmokeTestPedEntry = Omit<NewSmokeTestPedRow, "id" | "createdAt">;
 
 /**
- * Data Access Layer for the Smoke Test page's Admin/Owner-added custom PED
+ * Data Access Layer for the Smoke Test page's Admin/Developer-added custom PED
  * entries (the `smoke_test_peds` table). These are ADDITIONAL to the
  * hardcoded 50+ baseline list (COMMON_SMOKE_TEST_PEDS in
  * src/constants/commonSmokeTestPeds.ts) — this repository never touches
  * that baseline. Read by everyone (the Smoke Test page itself is visible to
- * every tier); writes are gated to Admin/Owner in the API route layer, same
+ * every tier); writes are gated to Admin/Developer in the API route layer, same
  * pattern as PedSuggestionsRepository.
  */
 export class SmokeTestPedsRepository {

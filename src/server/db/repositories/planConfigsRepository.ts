@@ -18,7 +18,7 @@ export type UpdatePlanConfigEntry = Partial<Omit<NewPlanConfigRow, "planName" | 
  * getPlanConfig() in types.ts is only consulted as a bootstrap seed for the
  * 4 original plans (see the seed migration and the merge in server.ts).
  * Read by everyone (needed for the plan picker + matching to work for every
- * tier); writes gated to Admin/Owner in the API route layer.
+ * tier); writes gated to Admin/Developer in the API route layer.
  */
 export class PlanConfigsRepository {
   constructor(private readonly db: AnyDb) {}

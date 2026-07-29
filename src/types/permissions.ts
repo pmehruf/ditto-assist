@@ -7,7 +7,7 @@ export interface FeaturePermission {
   id: string;
   name: string;
   description: string;
-  defaultTier: "General" | "Admin" | "Owner";
+  defaultTier: "General" | "Admin" | "Developer";
   generalAccess: "None" | "Viewer" | "Editor";
   adminAccess: "None" | "Viewer" | "Editor";
 }

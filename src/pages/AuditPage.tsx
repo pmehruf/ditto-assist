@@ -916,7 +916,7 @@ export function AuditPage({
                           <td className="py-3.5 px-5 font-extrabold">{log.userName}</td>
                           <td className="py-3.5 px-5">
                             <span className={`px-2 py-0.5 rounded text-[8.5px] uppercase font-black ${
-                              log.role === "Owner"
+                              log.role === "Owner" || log.role === "Developer"
                                 ? "bg-red-500/10 text-red-400 border border-red-500/20"
                                 : log.role === "Admin"
                                 ? "bg-amber-500/10 text-amber-300 border border-amber-500/20"

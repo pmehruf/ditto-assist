@@ -24,14 +24,14 @@ describe("UsersRepository", () => {
     email: "Alice@JoinDitto.in",
     name: "Alice",
     tactId: "TACT-101",
-    tier: "Owner" as const,
+    tier: "Developer" as const,
     status: "Active" as const,
   };
 
   it("creates a user, normalizing email to lowercase", async () => {
     const created = await repo.create(baseEntry);
     expect(created.email).toBe("alice@joinditto.in");
-    expect(created.tier).toBe("Owner");
+    expect(created.tier).toBe("Developer");
     expect(created.status).toBe("Active");
   });
 
@@ -71,7 +71,7 @@ describe("UsersRepository", () => {
     const bob = await repo.create({ ...baseEntry, email: "bob@joinditto.in", name: "Bob", tier: "General", status: "Active" });
 
     // Simulate the User Management screen saving the whole directory after
-    // an Owner only changed Bob's tier — Alice's row is round-tripped
+    // a Developer only changed Bob's tier — Alice's row is round-tripped
     // unchanged, exactly like the client does.
     await new Promise((resolve) => setTimeout(resolve, 5));
     await repo.replaceAll([
@@ -91,7 +91,7 @@ describe("UsersRepository", () => {
     await repo.create(baseEntry);
     const before = Date.now();
     const replaced = await repo.replaceAll([
-      { email: baseEntry.email.toLowerCase(), name: "Alice", tactId: "TACT-101", tier: "Owner", status: "Active" },
+      { email: baseEntry.email.toLowerCase(), name: "Alice", tactId: "TACT-101", tier: "Developer", status: "Active" },
       { email: "dave@joinditto.in", name: "Dave", tactId: "TACT-301", tier: "General", status: "Active" },
     ]);
     const dave = replaced.find((r) => r.email === "dave@joinditto.in");

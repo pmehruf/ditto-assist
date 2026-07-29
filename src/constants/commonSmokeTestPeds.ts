@@ -25,9 +25,9 @@
  * larger corpus of synthetic/typo/edge-case entries meant for automated
  * regression coverage, not a human-readable spot-check page. The full list
  * is also shown directly on the Smoke Test page (a collapsible "Baseline
- * PEDs" panel) so an Admin/Owner can see at a glance whether a PED they care
+ * PEDs" panel) so an Admin/Developer can see at a glance whether a PED they care
  * about is already covered here before deciding to add it as a custom
- * entry. Admins/Owners extend the baseline via the "smoke_test_peds" DB
+ * entry. Admins/Developers extend the baseline via the "smoke_test_peds" DB
  * table (see smokeTestPedsRepository.ts) instead of editing this file, so
  * custom additions survive independently of code deploys.
  */

@@ -82,14 +82,7 @@ interface LookupPageProps {
   // Nav
   setActiveTab: (value: TabId) => void;
 
-  // Chronic-condition special instruction advisory toggle
-  userAdvisoryToggle: boolean | null;
-  setUserAdvisoryToggle: (value: boolean) => void;
-  advisoryHasBeenExpanded: boolean;
-  setAdvisoryHasBeenExpanded: (value: boolean) => void;
-
   // QA Announcement carousel
-  qaAnnouncements: QAAnnouncement[];
   activeAnnouncements: QAAnnouncement[];
   noticeIndex: number;
   setNoticeIndex: (updater: number | ((prev: number) => number)) => void;
@@ -139,11 +132,6 @@ export function LookupPage({
   planConfigs,
   checkIllnessInPlanSpecificList,
   setActiveTab,
-  userAdvisoryToggle,
-  setUserAdvisoryToggle,
-  advisoryHasBeenExpanded,
-  setAdvisoryHasBeenExpanded,
-  qaAnnouncements,
   activeAnnouncements,
   noticeIndex,
   setNoticeIndex,
@@ -1174,7 +1162,27 @@ export function LookupPage({
                           the available space instead. */}
                       {item.announcementDate && (
                         <div className="shrink-0 mt-1 pt-1 border-t border-dashed border-stone-300/40 dark:border-white/10">
-                          <span className="text-[9.5px] font-semibold tracking-wide text-stone-400">
+                          {/* `text-stone-400` follows the AMBIENT theme (index.css
+                              remaps it to a pale, dark-surface-tuned color under a
+                              `.dark` ancestor — see the note on the body text
+                              above), but the QA card is always a light-blue
+                              gradient regardless of ambient theme, so that remap
+                              made this date read as near-invisible pale-on-pale
+                              whenever the app's ambient theme was Dark, even
+                              though the card itself never changed. Explicit hex,
+                              same pattern as the body text color right above,
+                              sidesteps the remap entirely: QA always gets one
+                              light gray/charcoal tone (its card never changes),
+                              General gets its own theme-dependent pair since its
+                              card genuinely does invert (dark navy vs light mint). */}
+                          <span
+                            className="text-[9.5px] font-semibold tracking-wide"
+                            style={{
+                              color: annType === "General Announcement"
+                                ? (theme === "dark" ? "#94a3b8" : "#57534e")
+                                : "#57534e",
+                            }}
+                          >
                             Posted {formatOrdinal(item.announcementDate)}
                           </span>
                         </div>

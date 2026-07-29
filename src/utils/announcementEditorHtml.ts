@@ -7,21 +7,22 @@ import { COLOR_HEX } from "./renderFormattedAnnouncement";
 
 /**
  * Two-way conversion between the plain-markup-token announcement format
- * (*bold*, _italic_, legacy **bold+red**, [color]...[/color], "> " quote
- * lines, "• " bullet lines, [label](url) links -- see
- * renderFormattedAnnouncement.tsx's file header for the full grammar this
- * mirrors) and the HTML a `contentEditable` surface needs so authors see
- * formatting applied live while typing, instead of the raw tokens.
+ * (*bold*, _italic_, ~underline~, `code`, legacy **bold+red**,
+ * [color]...[/color], "> " quote lines, "• " bullet lines, [label](url)
+ * links -- see renderFormattedAnnouncement.tsx's file header for the full
+ * grammar this mirrors) and the HTML a `contentEditable` surface needs so
+ * authors see formatting applied live while typing, instead of the raw
+ * tokens.
  *
  * Why this exists: QAAnnouncementForm.tsx used to store and edit content as
  * a single plain-text string in a `<textarea>`, with a separate "Preview"
  * toggle (Eye/EyeOff button) that swapped in a read-only render of the same
  * text. Per design feedback, that's gone -- there is exactly one editing
  * surface now, and it live-renders formatting the same way a normal
- * rich-text compose box (Slack, Notion, Gmail) does. The STORAGE format is
- * unchanged (still the same plain-markup string every existing announcement
- * and the read-side renderer already understand) -- only the authoring
- * surface changed, from <textarea> to contentEditable.
+ * rich-text compose box (Slack, Notion, Google Chat, Gmail) does. The
+ * STORAGE format is unchanged (still the same plain-markup string every
+ * existing announcement and the read-side renderer already understand) --
+ * only the authoring surface changed, from <textarea> to contentEditable.
  *
  * `markupToEditableHtml` runs when loading content INTO the editor (opening
  * the form fresh, switching into "Edit" on an existing announcement, or
@@ -39,9 +40,9 @@ import { COLOR_HEX } from "./renderFormattedAnnouncement";
  * a bullet line) -- consecutive quote/bullet lines each get their own
  * container rather than being merged into one shared block. That's a purely
  * cosmetic simplification (the read-side renderer already groups consecutive
- * "> " lines into one visual blockquote regardless of how many separate
- * <blockquote> elements produced them) that keeps both conversion directions
- * a simple 1:1 line mapping instead of needing cross-line grouping logic in
+ * "> "/"• " lines into one visual blockquote/list regardless of how many
+ * separate elements produced them) that keeps both conversion directions a
+ * simple 1:1 line mapping instead of needing cross-line grouping logic in
  * both places.
  *
  * Legacy **bold+red** input (pre-dating the general color picker) round-trips
@@ -49,6 +50,19 @@ import { COLOR_HEX } from "./renderFormattedAnnouncement";
  * identical (the read-side renderer already treats both as the same bold+red
  * styling), just normalized onto the newer explicit-color-tag form the first
  * time someone re-edits and saves that announcement.
+ *
+ * ESCAPING (fixes "pasted content becomes bold"): a literal `*`, `_`, `~`,
+ * backtick, `[` or `]` typed or pasted as plain text is backslash-escaped
+ * when serialized to the stored markup (see `escapeLiteral` below), so it
+ * can never be misread as a real formatting token by the parser above —
+ * this was the actual root cause of that bug: plain text containing an
+ * ordinary asterisk or underscore (extremely common in pasted prose —
+ * "call *now*", "config_value") was previously stored completely unescaped,
+ * so the read-side renderer's regex had no way to tell the difference
+ * between the author's own character and a real bold/italic marker.
+ * `unescapeLiteral` reverses this when loading stored markup back into the
+ * editor's HTML, so the author only ever sees their original characters —
+ * the backslash is a pure storage-format detail, never shown on screen.
  */
 
 // ---------------------------------------------------------------------------
@@ -62,8 +76,18 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function unescapeLiteral(text: string): string {
+  return text.replace(/\\([*_~`[\]])/g, "$1");
+}
+
+/** Reverses `escapeLiteral` before HTML-escaping, so the editor shows the
+ * author's original literal character (never a visible backslash). */
+function escapeHtmlUnescapingLiterals(text: string): string {
+  return escapeHtml(unescapeLiteral(text));
+}
+
 const FORMAT_TOKEN_REGEX =
-  /(\*\*_[\s\S]+?_\*\*|_\*\*[\s\S]+?\*\*_|\*_[\s\S]+?_\*|_\*[\s\S]+?\*_|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*|_[\s\S]+?_)/g;
+  /((?<!\\)\*\*(?<!\\)_[\s\S]+?(?<!\\)_(?<!\\)\*\*|(?<!\\)_(?<!\\)\*\*[\s\S]+?(?<!\\)\*\*(?<!\\)_|(?<!\\)\*(?<!\\)_[\s\S]+?(?<!\\)_(?<!\\)\*|(?<!\\)_(?<!\\)\*[\s\S]+?(?<!\\)\*(?<!\\)_|(?<!\\)\*\*[\s\S]+?(?<!\\)\*\*|(?<!\\)~[\s\S]+?(?<!\\)~|(?<!\\)`[\s\S]+?(?<!\\)`|(?<!\\)\*[\s\S]+?(?<!\\)\*|(?<!\\)_[\s\S]+?(?<!\\)_)/g;
 
 const COLOR_TOKEN_REGEX =
   /(\[(?:red|orange|green|blue)\][\s\S]*?\[\/(?:red|orange|green|blue)\])/g;
@@ -73,22 +97,22 @@ const EXPLICIT_LINK_REGEX = /\[([^[\]]+)\]\((https?:\/\/[^\s()]+)\)/g;
 
 /** [label](url) -> <a href="url">label</a>; everything else escaped as plain text. */
 function inlineLinksToHtml(text: string): string {
-  if (!text.includes("](http")) return escapeHtml(text);
+  if (!text.includes("](http")) return escapeHtmlUnescapingLiterals(text);
   let out = "";
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   EXPLICIT_LINK_REGEX.lastIndex = 0;
   while ((match = EXPLICIT_LINK_REGEX.exec(text)) !== null) {
-    if (match.index > lastIndex) out += escapeHtml(text.slice(lastIndex, match.index));
+    if (match.index > lastIndex) out += escapeHtmlUnescapingLiterals(text.slice(lastIndex, match.index));
     const [, label, url] = match;
-    out += `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`;
+    out += `<a href="${escapeHtml(url)}">${escapeHtmlUnescapingLiterals(label)}</a>`;
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < text.length) out += escapeHtml(text.slice(lastIndex));
+  if (lastIndex < text.length) out += escapeHtmlUnescapingLiterals(text.slice(lastIndex));
   return out;
 }
 
-/** Bold/italic (and the combined/legacy-red variants) -> <b>/<i> HTML, recursing link handling into each segment. */
+/** Bold/italic/underline/code (and the combined/legacy-red variants) -> HTML, recursing link handling into each segment. */
 function formatTokensToHtml(text: string): string {
   const parts = text.split(FORMAT_TOKEN_REGEX);
   return parts
@@ -105,6 +129,14 @@ function formatTokensToHtml(text: string): string {
       }
       if ((match = part.match(/^\*\*([\s\S]+?)\*\*$/))) {
         return `<b style="color:#ef4444">${inlineLinksToHtml(match[1])}</b>`;
+      }
+      if ((match = part.match(/^~([\s\S]+?)~$/))) {
+        return `<u>${inlineLinksToHtml(match[1])}</u>`;
+      }
+      if ((match = part.match(/^`([\s\S]+?)`$/))) {
+        // Code content is shown verbatim (matches the read-side renderer —
+        // no nested bold/italic parsing inside a code run).
+        return `<code>${escapeHtmlUnescapingLiterals(match[1])}</code>`;
       }
       if ((match = part.match(/^\*([\s\S]+?)\*$/))) {
         return `<b>${inlineLinksToHtml(match[1])}</b>`;
@@ -230,30 +262,60 @@ function getInlineColor(el: Element): string | null {
   return null;
 }
 
-/** Recursively converts one inline DOM subtree (the content of a single line) back into markup tokens. */
-function inlineNodeToMarkup(node: ChildNode, theme: "light" | "dark"): string {
+/** Backslash-escapes literal formatting-delimiter characters in genuine
+ * user-typed/pasted plain text, so they round-trip as plain text instead of
+ * being misread as real tokens by the parser (see file header). */
+function escapeLiteral(text: string): string {
+  return text.replace(/([*_~`[\]])/g, "\\$1");
+}
+
+/**
+ * Recursively converts one inline DOM subtree (the content of a single
+ * line) back into markup tokens.
+ *
+ * `suppressColor` guarantees the app's own invariant that color is always
+ * the OUTERMOST wrapper (see file header / renderFormattedAnnouncement.tsx)
+ * actually holds in the stored output, no matter what DOM shape the browser
+ * produced. `document.execCommand('foreColor', ...)` is well known to
+ * produce nested/overlapping <span style="color:..."> elements in some
+ * browsers when re-coloring a selection that already has partial color
+ * formatting (e.g. picking a new color over text that's already colored, or
+ * a selection whose boundary falls mid-span) — before this fix, a nested
+ * color span serialized as mismatched brackets like
+ * "[red][blue]text[/blue][/red]", and the inner "[blue]text" (missing its
+ * own matching close, since the outer regex's non-greedy match already
+ * consumed "[/blue]") rendered as literal, unstyled raw text on publish —
+ * exactly the "color formatting is rendered as raw formatting codes"
+ * bug. Once the OUTERMOST color span sets `suppressColor = true` for its
+ * own children, any color found deeper inside is simply ignored (treated
+ * as a plain wrapper, contributing only its text/other formatting) — so
+ * there is only ever one clean, correctly-matched color bracket pair per
+ * line, regardless of how messy the underlying DOM is.
+ */
+function inlineNodeToMarkup(node: ChildNode, theme: "light" | "dark", suppressColor = false): string {
   if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent ?? "";
+    return escapeLiteral(node.textContent ?? "");
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
   const el = node as Element;
   const tag = el.tagName;
-  const childrenMarkup = () => Array.from(el.childNodes).map((c) => inlineNodeToMarkup(c, theme)).join("");
+  const childrenMarkup = (nextSuppressColor = suppressColor) =>
+    Array.from(el.childNodes).map((c) => inlineNodeToMarkup(c, theme, nextSuppressColor)).join("");
 
   if (tag === "BR") return "";
 
   if (tag === "A") {
     const href = el.getAttribute("href") || "";
     const label = el.textContent || "";
-    if (!href || !/^https?:\/\//i.test(href)) return label; // never emit a non-http(s) link token
-    return `[${label}](${href})`;
+    if (!href || !/^https?:\/\//i.test(href)) return escapeLiteral(label); // never emit a non-http(s) link token
+    return `[${escapeLiteral(label)}](${href})`;
   }
 
   if (tag === "B" || tag === "STRONG") {
-    const color = getInlineColor(el);
+    const color = suppressColor ? null : getInlineColor(el);
     const resolved = color ? resolveNamedColor(color, theme) : null;
-    const inner = childrenMarkup();
+    const inner = resolved ? childrenMarkup(true) : childrenMarkup();
     // Legacy bold+red produced directly on the <b> itself (see
     // markupToEditableHtml) — normalize forward to an explicit color tag
     // rather than trying to preserve the old "**" shorthand.
@@ -264,10 +326,21 @@ function inlineNodeToMarkup(node: ChildNode, theme: "light" | "dark"): string {
     return `_${childrenMarkup()}_`;
   }
 
+  if (tag === "U") {
+    return `~${childrenMarkup()}~`;
+  }
+
+  if (tag === "CODE") {
+    // Code content is stored verbatim (escaped so a literal backtick/
+    // asterisk typed inside a code run round-trips correctly too), with no
+    // nested-token parsing — matches the read-side renderer.
+    return `\`${escapeLiteral(el.textContent ?? "")}\``;
+  }
+
   if (tag === "SPAN" || tag === "FONT") {
-    const color = getInlineColor(el);
+    const color = suppressColor ? null : getInlineColor(el);
     const resolved = color ? resolveNamedColor(color, theme) : null;
-    const inner = childrenMarkup();
+    const inner = resolved ? childrenMarkup(true) : childrenMarkup();
     return resolved ? `[${resolved}]${inner}[/${resolved}]` : inner;
   }
 
@@ -329,7 +402,7 @@ export function editableHtmlToMarkup(html: string, theme: "light" | "dark"): str
     if (node.nodeType === Node.TEXT_NODE) {
       const t = node.textContent ?? "";
       if (t !== "") bufferHasContent = true;
-      buffer += t;
+      buffer += escapeLiteral(t);
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
