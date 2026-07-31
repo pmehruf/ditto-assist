@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Check,
   X,
@@ -18,7 +18,11 @@ import {
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { SortableTh } from "./SortableTh";
-import { useSortableData, stringComparator, dateComparator, numberComparator } from "../utils/useSortableData";
+import { Pagination } from "./Pagination";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useServerSort } from "../hooks/useServerSort";
+
+const PAGE_SIZE = 50;
 
 export type AiMemoryStatus = "pending" | "approved" | "rejected" | "archived";
 
@@ -82,10 +86,16 @@ export function AiMappingReview({
   const canReview = effectiveTier === "Admin" || effectiveTier === "Developer";
 
   const [entries, setEntries] = useState<AiMemoryEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("pending");
-  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const search = useDebouncedValue(searchInput, 350);
+  const { sort: entriesSort, toggleSort: toggleEntriesSort } = useServerSort();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   // Transient feedback from the last approve action's promotion attempt
@@ -98,14 +108,29 @@ export function AiMappingReview({
   const [draftQuestion, setDraftQuestion] = useState("");
   const [draftExplanation, setDraftExplanation] = useState("");
 
+  const buildParams = (forExport: boolean) => {
+    const params = new URLSearchParams({ paginated: "1" });
+    if (!forExport) params.set("page", String(page));
+    params.set("pageSize", forExport ? "10000" : String(PAGE_SIZE));
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (search) params.set("search", search);
+    if (entriesSort) {
+      params.set("sortBy", entriesSort.key);
+      params.set("sortDir", entriesSort.direction);
+    }
+    return params;
+  };
+
   const fetchEntries = async () => {
     setLoading(true);
     try {
-      const qs = statusFilter === "all" ? "" : `?status=${encodeURIComponent(statusFilter)}`;
-      const res = await fetch(`/api/ai-memory${qs}`);
+      const res = await fetch(`/api/ai-memory?${buildParams(false).toString()}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to load queue (HTTP ${res.status}).`);
       setEntries(body.entries || []);
+      setTotal(body.total ?? 0);
+      setTotalPages(body.totalPages ?? 1);
+      if (typeof body.page === "number" && body.page !== page) setPage(body.page);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load AI Mapping Review.");
@@ -115,9 +140,14 @@ export function AiMappingReview({
   };
 
   useEffect(() => {
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, search, entriesSort?.key, entriesSort?.direction]);
+
+  useEffect(() => {
     fetchEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, [statusFilter, search, page, entriesSort?.key, entriesSort?.direction]);
 
   const setStatus = async (id: number, status: AiMemoryStatus) => {
     setBusyId(id);
@@ -173,30 +203,6 @@ export function AiMappingReview({
     }
   };
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter(
-      (e) =>
-        e.condition.toLowerCase().includes(q) ||
-        e.planName.toLowerCase().includes(q) ||
-        (e.aiResponse?.result?.matched_question || "").toLowerCase().includes(q)
-    );
-  }, [entries, search]);
-
-  const { sorted, sort: entriesSort, toggleSort: toggleEntriesSort } = useSortableData(
-    filtered,
-    {
-      condition: stringComparator((e: AiMemoryEntry) => e.condition),
-      planName: stringComparator((e: AiMemoryEntry) => e.planName),
-      matched_question: stringComparator((e: AiMemoryEntry) => e.aiResponse?.result?.matched_question),
-      status: stringComparator((e: AiMemoryEntry) => e.status),
-      createdAt: dateComparator((e: AiMemoryEntry) => e.createdAt),
-      lastAccessedAt: dateComparator((e: AiMemoryEntry) => e.lastAccessedAt),
-      accessCount: numberComparator((e: AiMemoryEntry) => e.accessCount),
-    }
-  );
-
   // Same CSV-building logic as the Activity Log's "Export CSV" (App.tsx's
   // downloadCSV) — kept local here rather than threaded down as a prop
   // since this component already owns and fetches its own entries.
@@ -225,12 +231,12 @@ export function AiMappingReview({
     URL.revokeObjectURL(url);
   };
 
-  // Flattens the currently filtered entries (same set the table shows, not
-  // the full unfiltered queue) into plain rows — the nested aiResponse/raw
-  // JSON is reduced to just the fields already surfaced in the UI so the
-  // export reads like the table, not a database dump.
-  const exportRows = () =>
-    sorted.map((e) => ({
+  // Flattens the whole currently-filtered set (fetched fresh from the
+  // server, not just the visible page) into plain rows — the nested
+  // aiResponse/raw JSON is reduced to just the fields already surfaced in
+  // the UI so the export reads like the table, not a database dump.
+  const exportRows = (rows: AiMemoryEntry[]) =>
+    rows.map((e) => ({
       Condition: e.condition,
       "Normalized Condition": e.normalizedCondition,
       Plan: e.planName,
@@ -247,6 +253,20 @@ export function AiMappingReview({
       "Approved By": e.approvedBy || "",
       "Approved At": fmtDate(e.approvedAt),
     }));
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/ai-memory?${buildParams(true).toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
+      downloadCSV(exportRows(body.entries || []), "ai-mapping-review.csv");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to export AI Mapping Review.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const fmtDate = (iso?: string | null) => {
     if (!iso) return "—";
@@ -300,8 +320,8 @@ export function AiMappingReview({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search condition, plan, question..."
             className={`${inputClass} w-56`}
           />
@@ -329,14 +349,14 @@ export function AiMappingReview({
               function-performing button in the app (e.g. the Activity Log's
               Export CSV). */}
           <ClippedButton
-            onClick={() => downloadCSV(exportRows(), "ai-mapping-review.csv")}
-            disabled={filtered.length === 0}
+            onClick={exportCsv}
+            disabled={total === 0 || exporting}
             size="sm"
             title="Export the filtered queue as a CSV file"
             className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
           >
             <Download className="w-3.5 h-3.5 shrink-0" />
-            <span>Export CSV</span>
+            <span>{exporting ? "Exporting..." : "Export CSV"}</span>
           </ClippedButton>
           <button
             type="button"
@@ -391,14 +411,14 @@ export function AiMappingReview({
                   Loading queue...
                 </td>
               </tr>
-            ) : sorted.length === 0 ? (
+            ) : entries.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-10 text-center text-xs italic text-stone-500">
                   No entries for this filter. Conditions appear here automatically when the AI fallback runs.
                 </td>
               </tr>
             ) : (
-              sorted.map((entry) => {
+              entries.map((entry) => {
                 const result = entry.aiResponse?.result;
                 const isOpen = expandedId === entry.id;
                 const isBusy = busyId === entry.id;
@@ -593,6 +613,17 @@ export function AiMappingReview({
           </tbody>
         </table>
       </div>
+
+      {!loading && entries.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[10.5px] font-semibold text-content-muted">
+            Showing {(page - 1) * PAGE_SIZE + 1}
+            {"–"}
+            {Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()} entries.
+          </p>
+          <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      )}
     </div>
   );
 }

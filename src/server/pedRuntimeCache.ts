@@ -22,17 +22,30 @@ import type { Repositories } from "./db/repositories/index.js";
  * implementation until Phase 4 validation + Checkpoint B are complete and
  * the flag is deliberately flipped.
  *
- * Known gap (surfaced, not silently papered over): there is currently no
- * UI write path that touches `ped_repository` / `ped_aliases` /
- * `plan_overrides` at all — those tables are populated once by
- * `scripts/seedPedRepository.ts --apply` and otherwise static. PED
- * Library / AI Mapping Review edits today only write to the legacy
- * `ped_mapping_overrides` table (see pedMappingLive.ts), which this DB-backed
- * cache does NOT consult. The update-on-write functions below
- * (`updateDbAliasCache` etc.) are built and exported for exactly this
- * purpose, but nothing calls them yet — wiring PED Library / AI Mapping
- * Review to also write into the new tables is a separate decision, out of
- * scope for "wire the runtime engine so it can read" (this phase).
+ * Update (2026-07-29): the gap described below is closed for the PED
+ * Repository admin UI. `src/server/pedRepositoryLive.ts` now calls every
+ * mutator below (`updateDbAliasCache`, `removeDbAliasCache`,
+ * `updateDbPedCategoryCache`, `updateDbPlanOverrideCache`,
+ * `removeDbPlanOverrideCache`) on every PED/alias write from the "PED
+ * Repository" admin page (`src/components/PedRepositoryManagement.tsx`),
+ * so this cache stays in sync with the DB without a restart. Each of those
+ * writes also mirrors into the legacy `ped_mapping_overrides` table (see
+ * pedMappingLive.ts) as `PED_SOURCE=legacy` rollback insurance. AI Mapping
+ * Review's approve/reject flow still writes ONLY to the legacy table
+ * (unchanged) — extending it to also write here remains open, see below.
+ *
+ * Original gap note, left for history: "there is currently no UI write path
+ * that touches ped_repository / ped_aliases / plan_overrides at all — those
+ * tables are populated once by scripts/seedPedRepository.ts --apply and
+ * otherwise static. PED Library / AI Mapping Review edits today only write
+ * to the legacy ped_mapping_overrides table (see pedMappingLive.ts), which
+ * this DB-backed cache does NOT consult. [...] wiring PED Library / AI
+ * Mapping Review to also write into the new tables is a separate decision,
+ * out of scope for 'wire the runtime engine so it can read' (this phase)."
+ * — "PED Library" (the term the original note used) is what's now wired;
+ * AI Mapping Review is not, and `updateDbPlanOverrideCache`/
+ * `removeDbPlanOverrideCache` are still unused (no `plan_overrides` admin UI
+ * exists yet — see PED_REPOSITORY_MIGRATION_COMPLETION_REPORT.md §7/§8).
  */
 
 export interface DbAliasEntry {

@@ -3,20 +3,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Search, Clock, History, ChevronDown } from "lucide-react";
 import { PLANS } from "../types";
 import { AuditLogEntry } from "../types/announcements";
 import { LoggedUser } from "../types/user";
-import { parseGlobalLogTimestamp } from "../utils/timestamps";
 import { getMatchTierInfo } from "../utils/matchTier";
 import { translateSourceToLayman } from "../utils/labelTranslation";
 import { CustomSelect } from "../components/CustomSelect";
 import { SortableTh } from "../components/SortableTh";
-import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
+import { Pagination } from "../components/Pagination";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useServerSort } from "../hooks/useServerSort";
+
+const PAGE_SIZE = 50;
+
+/** My Activity's sortKeys -> the server-side search_history column each
+ * maps to (searchHistoryRepository.ts). */
+const MY_ACTIVITY_SORT_KEY_MAP: Record<string, string> = {
+  pedInput: "pedInput",
+  timestamp: "timestamp",
+  planName: "planName",
+  matchedQuestion: "matchedQuestion",
+  matchType: "matchType",
+};
 
 interface MyActivityPageProps {
-  auditLogs: AuditLogEntry[];
   currentUser: LoggedUser | null;
   theme: "light" | "dark";
   myActivitySearch: string;
@@ -39,7 +51,6 @@ interface MyActivityPageProps {
  * ResourcesPage.tsx for why).
  */
 export function MyActivityPage({
-  auditLogs,
   currentUser,
   theme,
   myActivitySearch,
@@ -53,49 +64,60 @@ export function MyActivityPage({
   expandedLogIndex,
   setExpandedLogIndex,
 }: MyActivityPageProps) {
-  const myLogs = auditLogs.filter(log => log.userEmail === (currentUser?.email || "advisor@joinditto.in"));
+  const userEmail = currentUser?.email || "advisor@joinditto.in";
+  const debouncedSearch = useDebouncedValue(myActivitySearch, 350);
+  const [page, setPage] = useState(1);
+  const { sort: myLogsSort, toggleSort: toggleMyLogsSort } = useServerSort({ key: "timestamp", direction: "desc" });
 
-  const filteredMyLogs = myLogs.filter(log => {
-    const matchesSearch = !myActivitySearch.trim() ||
-      (log.pedInput || "").toLowerCase().includes(myActivitySearch.toLowerCase()) ||
-      (log.matchedQuestion || "").toLowerCase().includes(myActivitySearch.toLowerCase()) ||
-      (log.explanation || "").toLowerCase().includes(myActivitySearch.toLowerCase());
+  const [myLogs, setMyLogs] = useState<AuditLogEntry[]>([]);
+  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalLookups, setTotalLookups] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-    const matchesPlan = myActivityPlanFilter === "All" || log.planName === myActivityPlanFilter;
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, myActivityPlanFilter, myActivityStartDate, myActivityEndDate, myLogsSort?.key, myLogsSort?.direction]);
 
-    let matchesDate = true;
-    const logDate = parseGlobalLogTimestamp(log.timestamp);
-    if (logDate) {
-      const logTime = logDate.getTime();
-      if (myActivityStartDate) {
-        const startDateObj = new Date(myActivityStartDate);
-        startDateObj.setHours(0, 0, 0, 0);
-        if (logTime < startDateObj.getTime()) {
-          matchesDate = false;
-        }
-      }
-      if (myActivityEndDate) {
-        const endDateObj = new Date(myActivityEndDate);
-        endDateObj.setHours(23, 59, 59, 999);
-        if (logTime > endDateObj.getTime()) {
-          matchesDate = false;
-        }
-      }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({ paginated: "1", userEmail, page: String(page), pageSize: String(PAGE_SIZE) });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (myActivityPlanFilter !== "All") params.set("planName", myActivityPlanFilter);
+    if (myActivityStartDate) params.set("from", myActivityStartDate);
+    if (myActivityEndDate) params.set("to", myActivityEndDate);
+    if (myLogsSort) {
+      params.set("sortBy", MY_ACTIVITY_SORT_KEY_MAP[myLogsSort.key] || myLogsSort.key);
+      params.set("sortDir", myLogsSort.direction);
     }
+    fetch(`/api/search-history?${params.toString()}`)
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        if (cancelled) return;
+        setMyLogs(body.entries || []);
+        setFilteredTotal(body.total ?? 0);
+        setTotalPages(body.totalPages ?? 1);
+        if (typeof body.page === "number" && body.page !== page) setPage(body.page);
+      })
+      .catch((err) => console.error("Failed to load My Activity from the server:", err))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail, page, debouncedSearch, myActivityPlanFilter, myActivityStartDate, myActivityEndDate, myLogsSort?.key, myLogsSort?.direction]);
 
-    return matchesSearch && matchesPlan && matchesDate;
-  });
+  // "Total Lookups" stat — this user's grand total, unaffected by the
+  // current search/filter. A separate lightweight COUNT-only request
+  // (pageSize=1) rather than deriving it from a fully-loaded array.
+  useEffect(() => {
+    fetch(`/api/search-history?${new URLSearchParams({ paginated: "1", userEmail, page: "1", pageSize: "1" }).toString()}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((body) => setTotalLookups(body.total ?? 0))
+      .catch((err) => console.error("Failed to load lookup total:", err));
+  }, [userEmail]);
 
-  const { sorted: sortedMyLogs, sort: myLogsSort, toggleSort: toggleMyLogsSort } = useSortableData(
-    filteredMyLogs,
-    {
-      pedInput: stringComparator((log: AuditLogEntry) => log.pedInput),
-      timestamp: dateComparator((log: AuditLogEntry) => parseGlobalLogTimestamp(log.timestamp)),
-      planName: stringComparator((log: AuditLogEntry) => log.planName),
-      matchedQuestion: stringComparator((log: AuditLogEntry) => log.matchedQuestion),
-      matchType: stringComparator((log: AuditLogEntry) => getMatchTierInfo(log.matchType).label),
-    }
-  );
+  const hasActiveFilter = Boolean(myActivitySearch || myActivityPlanFilter !== "All" || myActivityStartDate || myActivityEndDate);
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -133,12 +155,12 @@ export function MyActivityPage({
         <div className={`flex items-center gap-6 pb-3.5 mb-3.5 border-b ${theme === "dark" ? "border-white/[0.06]" : "border-stone-200/70"}`}>
           <div>
             <p className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-zinc-400" : "text-stone-600"}`}>Total Lookups</p>
-            <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{myLogs.length}</p>
+            <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{totalLookups.toLocaleString()}</p>
           </div>
           <div className={`w-px self-stretch ${theme === "dark" ? "bg-white/[0.06]" : "bg-stone-200/70"}`} />
           <div>
             <p className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-zinc-400" : "text-stone-600"}`}>Filtered Matches</p>
-            <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{filteredMyLogs.length}</p>
+            <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{filteredTotal.toLocaleString()}</p>
           </div>
         </div>
 
@@ -278,14 +300,19 @@ export function MyActivityPage({
       <div className={`rounded-xl border overflow-hidden ${
         theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
       }`}>
-        {filteredMyLogs.length === 0 ? (
+        {loading ? (
+          <div className="p-16 text-center font-sans">
+            <History className="w-10 h-10 text-stone-400 mx-auto mb-3 stroke-1 animate-pulse" />
+            <p className={`text-sm font-bold ${theme === "dark" ? "text-white" : "text-stone-850"}`}>Loading your activity...</p>
+          </div>
+        ) : myLogs.length === 0 ? (
           <div className="p-16 text-center font-sans">
             <History className="w-10 h-10 text-stone-400 mx-auto mb-3 stroke-1 animate-pulse" />
             <p className={`text-sm font-bold ${theme === "dark" ? "text-white" : "text-stone-850"}`}>
               No activity history found
             </p>
             <p className="text-xs text-stone-500 mt-1">
-              {myLogs.length === 0
+              {!hasActiveFilter
                 ? "Initiate a medical term lookup in the Declaration Assistant page to populate this history."
                 : "Try relaxing your search terms or filters to reveal matching logs."}
             </p>
@@ -310,7 +337,7 @@ export function MyActivityPage({
               <tbody className={`divide-y text-sm font-semibold ${
                 theme === "dark" ? "divide-[#252A34] text-stone-200" : "divide-stone-200 text-stone-800"
               }`}>
-                {sortedMyLogs.map((log) => {
+                {myLogs.map((log) => {
                   const isExpanded = expandedLogIndex === log.timestamp;
 
                   // Shared taxonomy (src/utils/matchTier.ts) — same Level
@@ -490,6 +517,17 @@ export function MyActivityPage({
           </div>
         )}
       </div>
+
+      {!loading && myLogs.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[10.5px] font-semibold text-content-muted">
+            Showing {(page - 1) * PAGE_SIZE + 1}
+            {"–"}
+            {Math.min(page * PAGE_SIZE, filteredTotal)} of {filteredTotal.toLocaleString()} entries.
+          </p>
+          <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      )}
     </div>
   );
 }

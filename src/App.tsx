@@ -72,7 +72,7 @@ import { LoggedUser, UserProfile } from "./types/user";
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon } from "./components/icons";
+import { DeclarationMapIcon, QaDashboardIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
@@ -101,6 +101,9 @@ const ResourcesPage = lazy(() =>
 );
 const CoverageProjectionStudioPage = lazy(() =>
   import("./pages/CoverageProjectionStudioPage").then((m) => ({ default: m.CoverageProjectionStudioPage }))
+);
+const QaDashboardPage = lazy(() =>
+  import("./pages/QaDashboardPage").then((m) => ({ default: m.QaDashboardPage }))
 );
 const ProfileAccessPage = lazy(() =>
   import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
@@ -192,7 +195,7 @@ function resolveResourceIcon(resource: { title: string; icon?: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "coverage_projection" | "owner_controls">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "coverage_projection" | "qa_dashboard" | "owner_controls">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -252,6 +255,32 @@ export default function App() {
   // The effect that actually calls fetchAnnouncements() lives further down,
   // right after `currentUser` is declared (it depends on currentUser, which
   // isn't in scope yet at this point in the component body).
+
+  // Keeps `usersList` (the small, app-wide directory cache — see its
+  // declaration above) reasonably fresh for consumers that need to resolve
+  // OTHER advisors' name/TACT ID from an email, e.g. AuditPage's Activity
+  // Log ("Modification History"/"User Activity" sub-tabs) — search_history
+  // and change_logs rows only store the actor's email. This used to happen
+  // as a side effect of ProfileAccessManagement.tsx fetching the full
+  // directory on its own mount; now that that admin table is
+  // server-paginated (25/page) instead of loading everything, this is the
+  // one place that still does a one-time full fetch of the (typically small,
+  // org-staff-sized) `users` table. GET /api/users is Admin/Developer-only
+  // server-side, so this silently no-ops for a General-tier caller — same
+  // fail-open pattern as fetchPageVisibility below.
+  const fetchUsersList = async () => {
+    try {
+      const res = await fetch("/api/users");
+      if (!res.ok) return;
+      const body = await res.json().catch(() => ({}));
+      if (Array.isArray(body.users)) {
+        setUsersList(body.users);
+      }
+    } catch (_) {
+      // Never block the app on this — worst case name/TACT-ID resolution
+      // falls back to whatever's already cached.
+    }
+  };
 
   // External resource links (Payment SOP, QA Dashboard, etc.) shown in the
   // Workspace Controls drawer's Resources section — readable by every
@@ -320,16 +349,19 @@ export default function App() {
     }
   };
 
-  // Refreshes the Lookup page's autocomplete dropdown from the
-  // ped_suggestions table (DB-backed, decoupled from PED matching — see
-  // schema.ts). `dynamicSuggestions`'s useState initializer below computes
-  // the same list client-side from TOP_PED_DICTIONARY/SCRIPT_DICTIONARY as
-  // a bootstrap fallback, so this only overwrites it once the DB actually
-  // has rows — before that migration has run in a given environment, or if
-  // this fetch fails, the dropdown keeps working off the built-in list.
+  // Refreshes the Lookup page's autocomplete dropdown from the NEW
+  // ped_repository/ped_aliases schema (cutover, 2026-07-29) — visible
+  // aliases only, per PED_REPOSITORY_GOVERNANCE.md's 3-layer model (hidden/
+  // normalization-only aliases still match on the Lookup page's actual
+  // search, they just never appear as a suggested term). `dynamicSuggestions`'s
+  // useState initializer below computes the same list client-side from
+  // TOP_PED_DICTIONARY/SCRIPT_DICTIONARY as a bootstrap fallback, so this
+  // only overwrites it once the DB actually has rows — before that
+  // migration has run in a given environment, or if this fetch fails, the
+  // dropdown keeps working off the built-in list.
   const fetchPedSuggestions = async () => {
     try {
-      const res = await fetch("/api/ped-suggestions");
+      const res = await fetch("/api/ped-repository/autocomplete");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to load PED suggestions (HTTP ${res.status}).`);
       const terms = (body.entries || [])
@@ -615,6 +647,7 @@ export default function App() {
       fetchPlanConfigs();
       fetchPedSuggestions();
       fetchPageVisibility();
+      fetchUsersList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.email]);
@@ -767,21 +800,6 @@ export default function App() {
   // of those call sites need to change.
   const [changeLogs, setChangeLogsRaw] = useState<ChangeLogEntry[]>([]);
 
-  const mapChangeLogRow = (row: any): ChangeLogEntry => ({
-    id: String(row.id),
-    timestamp: row.timestamp,
-    userName: row.userName,
-    role: row.role,
-    actionType: row.actionType,
-    planName: row.planName,
-    description: row.description,
-    snapshot: row.snapshot ?? undefined,
-  });
-
-  // The effect that fetches change logs (below, right after `effectiveTier`
-  // is declared — it depends on effectiveTier, which isn't in scope yet at
-  // this point in the component body) lives further down.
-
   // changeLogsRef mirrors `changeLogs` synchronously (state updates aren't
   // visible until the next render, but setChangeLogs below needs the *current*
   // value the instant it's called). It's also what makes setChangeLogs safe
@@ -924,32 +942,25 @@ export default function App() {
   const baseUserTier: "General" | "Admin" | "Developer" = currentUser?.tier ?? "General";
   const effectiveTier = simulatedRole || baseUserTier;
 
-  // Fetches change logs (Modification History) from the server. Only
-  // Admin/Developer can read this server-side (see requireAdminOrDeveloper in
-  // server.ts) — matches the Audit tab's own gating, so General-tier users
-  // simply never issue this fetch.
-  useEffect(() => {
-    if (!currentUser) return;
-    if (effectiveTier !== "Admin" && effectiveTier !== "Developer") return;
-    fetch("/api/change-logs")
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-        if (Array.isArray(body.entries)) {
-          setChangeLogsRaw(body.entries.map(mapChangeLogRow));
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load modification history from the server:", err);
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.email, effectiveTier]);
+  // NOTE: this used to eagerly bulk-fetch the ENTIRE change_logs table on
+  // every login for Admin/Developer (GET /api/change-logs, no limit) purely
+  // so the Modification History table had data to render. AuditPage.tsx now
+  // self-fetches its own server-side paginated page of change_logs directly
+  // (see its internal fetch effect), so that preload is gone — `changeLogs`
+  // state above still exists and starts empty; it's populated incrementally
+  // by `setChangeLogs` below whenever THIS session logs a new action (the
+  // POST side-effect that every `setChangeLogs(prev => [entry, ...prev])`
+  // call site across the app relies on), never by a bulk read.
 
-  // Dynamic Feature Permissions Governance State
-  const [featurePermissions] = usePersistentState<FeaturePermission[]>(
-    "ditto_feature_permissions",
-    () => DEFAULT_FEATURE_PERMISSIONS
-  );
+  // Feature permissions — nothing in the app currently writes to a saved
+  // override (no admin UI ever calls a setter here), so this used to go
+  // through usePersistentState anyway, which meant a browser's very first
+  // page load permanently froze a JSON snapshot of DEFAULT_FEATURE_PERMISSIONS
+  // in localStorage. Any later fix to that source file (e.g. correcting
+  // Smoke Test to Admin-only) would silently never reach a browser that had
+  // already cached the old, wrong entry. Reading the constant directly
+  // guarantees every browser always reflects the current shipped tiers.
+  const featurePermissions = DEFAULT_FEATURE_PERMISSIONS;
 
   // Unified dynamic hasAccess governance function
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
@@ -1704,18 +1715,16 @@ export default function App() {
   // the <html> "dark" class is kept in sync by the effect near isDark's
   // declaration, so this used to be a duplicate of both.)
 
-  // Load search history (Audit tab's full list / My Activity's self-filtered
-  // view — MyActivityPage does its own client-side filter-by-email on this
-  // same array).
-  //
-  // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
-  // to read/write this browser's own localStorage, capped at 400 in-memory
-  // entries with no sharing across users or devices — meaning "Audit" never
-  // actually audited anyone but the viewing browser. GET/POST/DELETE
-  // /api/search-history (backed by the search_history table) is now the
-  // shared source of truth: Admin/Developer fetch everyone's history (for the
-  // Audit tab), everyone else fetches only their own (for My Activity) —
-  // matching the server-side authorization already enforced by that route.
+  // `auditLogs` state below is no longer bulk-hydrated: AuditPage.tsx's User
+  // Activity sub-tab and MyActivityPage.tsx now each self-fetch their own
+  // server-side paginated/searched/filtered/sorted page of search_history
+  // directly (GET /api/search-history?paginated=1&...), instead of reading
+  // this array. `auditLogs`/`setAuditLogs` and `mapSearchHistoryRow` remain
+  // only because `saveAuditLog` below still optimistically prepends the
+  // just-recorded lookup to it — that local echo isn't read anywhere
+  // anymore either, but is harmless to leave (bounded at 400 entries) and
+  // touching `saveAuditLog`, called from the live match flow, is out of
+  // scope for a pagination change.
   const mapSearchHistoryRow = (row: any): AuditLogEntry => ({
     timestamp: row.timestamp,
     userEmail: row.userEmail,
@@ -1726,28 +1735,6 @@ export default function App() {
     source: row.source,
     explanation: row.explanation,
   });
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const isPrivileged = effectiveTier === "Admin" || effectiveTier === "Developer";
-    const url = isPrivileged
-      ? "/api/search-history"
-      : `/api/search-history?userEmail=${encodeURIComponent(currentUser.email)}`;
-    fetch(url)
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-        if (Array.isArray(body.entries)) {
-          setAuditLogs(body.entries.map(mapSearchHistoryRow));
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load search history from the server:", err);
-      });
-    // Re-fetch when the signed-in user or their effective tier changes
-    // (e.g. simulating a different role should reflect that role's view).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.email, effectiveTier]);
 
   const saveAuditLog = (ped: string, plan: string, result: MatchOutput, source: string) => {
     // Fire-and-forget: this is telemetry, not something that should block
@@ -2482,22 +2469,20 @@ export default function App() {
             </>
           )}
 
-          {/* Advisory Zone — sits ABOVE the Admin Zone divider because it is
-              advisor-facing and visible to every tier. */}
-          {hasAccess("advisory_zone", "Viewer") && (
+          {hasAccess("qa_dashboard", "Viewer") && (
             <button
               onClick={() => {
-                setActiveTab("advisory_zone");
+                setActiveTab("qa_dashboard");
                 if (isMobile) setIsMenuOpen(false);
               }}
               className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "advisory_zone"
+                activeTab === "qa_dashboard"
                   ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
                   : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>Plan Reference</span>
+              <QaDashboardIcon className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>QA Dashboard</span>
             </button>
           )}
 
@@ -2515,6 +2500,25 @@ export default function App() {
             >
               <FileSpreadsheet className="w-4 h-4 shrink-0 text-blue-300" />
               <span>Cover projection</span>
+            </button>
+          )}
+
+          {/* Advisory Zone — sits ABOVE the Admin Zone divider because it is
+              advisor-facing and visible to every tier. */}
+          {hasAccess("advisory_zone", "Viewer") && (
+            <button
+              onClick={() => {
+                setActiveTab("advisory_zone");
+                if (isMobile) setIsMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                activeTab === "advisory_zone"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+              } rounded-r-lg border-y-transparent border-r-transparent`}
+            >
+              <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>Plan Reference</span>
             </button>
           )}
 
@@ -2674,7 +2678,7 @@ export default function App() {
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
                   <span className="relative shrink-0 flex items-center justify-center">
-                    <AlertCircle className="w-4 h-4 text-blue-300" />
+                    <Flag className="w-4 h-4 text-blue-300" />
                     {/* Moved here from the header's standalone Bell icon —
                         the unresolved-mismatch alert now lives on the nav
                         item that actually opens that list. */}
@@ -2882,18 +2886,18 @@ export default function App() {
                 </>
               )}
 
-              {hasAccess("advisory_zone", "Viewer") && (
+              {hasAccess("qa_dashboard", "Viewer") && (
                 <button
-                  onClick={() => setActiveTab("advisory_zone")}
+                  onClick={() => setActiveTab("qa_dashboard")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "advisory_zone"
+                    activeTab === "qa_dashboard"
                       ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "advisory_zone" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Plan Reference"
+                  style={{ color: activeTab === "qa_dashboard" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="QA Dashboard"
                 >
-                  <BookOpen style={{ width: "18px", height: "18px" }} />
+                  <QaDashboardIcon style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -2909,6 +2913,21 @@ export default function App() {
                   title="Cover projection"
                 >
                   <FileSpreadsheet style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("advisory_zone", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("advisory_zone")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "advisory_zone"
+                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "advisory_zone" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Plan Reference"
+                >
+                  <BookOpen style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -3038,7 +3057,7 @@ export default function App() {
                   style={{ color: activeTab === "flagged_responses" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                   title="Flagged Responses"
                 >
-                  <AlertCircle style={{ width: "18px", height: "18px" }} />
+                  <Flag style={{ width: "18px", height: "18px" }} />
                   {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
                     <span className="absolute top-1 right-1 flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
@@ -3357,12 +3376,13 @@ export default function App() {
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                flagged_responses: { label: "Flagged Responses", icon: <AlertCircle className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 profile_access: { label: "User Directory & Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 plan_scope: { label: "Plan Management", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 owner_controls: { label: "Developer Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
@@ -3938,7 +3958,6 @@ export default function App() {
                 theme={theme}
                 auditSubTab={auditSubTab}
                 setAuditSubTab={setAuditSubTab}
-                auditLogs={auditLogs}
                 auditSearch={auditSearch}
                 setAuditSearch={setAuditSearch}
                 auditPlanFilter={auditPlanFilter}
@@ -3956,7 +3975,6 @@ export default function App() {
                 setHistorySearch={setHistorySearch}
                 historyActionFilter={historyActionFilter}
                 setHistoryActionFilter={setHistoryActionFilter}
-                changeLogs={changeLogs}
                 usersList={usersList}
               />
               </Suspense>
@@ -3977,7 +3995,6 @@ export default function App() {
               <ErrorBoundary theme={theme} label="My Activity">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <MyActivityPage
-                auditLogs={auditLogs}
                 currentUser={currentUser}
                 theme={theme}
                 myActivitySearch={myActivitySearch}
@@ -4082,6 +4099,28 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Coverage Projection Studio">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <CoverageProjectionStudioPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* QA DASHBOARD — read-only advisor QA scorecard, native port of
+              the standalone Apps Script "Advisor QA Dashboard" (Google
+              Sheets source of truth). Visible to every tier (see
+              featurePermissions.ts); the page's own Admin/Guide/Mentor/
+              Advisor role logic decides what each signed-in person sees. */}
+          {activeTab === "qa_dashboard" && (
+            <motion.div
+              key="qa_dashboard"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="QA Dashboard">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <QaDashboardPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

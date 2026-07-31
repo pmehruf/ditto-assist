@@ -282,9 +282,92 @@ export function QAAnnouncementForm({
     syncTextFromDom();
   };
 
+  // `execCommand('insertUnorderedList')` is one of the least consistent
+  // native commands across browsers, and especially so against this
+  // editor's "one stored line = one top-level <div>" model (see
+  // announcementEditorHtml.ts's file header) — it doesn't reliably touch
+  // exactly the current line(s) the way formatBlock does for the Quote
+  // button. So this is a manual Range-based toggle instead, same idea as
+  // applyCode's manual wrap/unwrap above: find the top-level line(s) the
+  // selection spans, and either wrap each one's content in a single-item
+  // <ul><li> (toggling on) or unwrap it back to a plain <div> (toggling
+  // off), matching whatever editableHtmlToMarkup already expects to see.
   const applyBulletList = () => {
-    editorRef.current?.focus();
-    document.execCommand("insertUnorderedList");
+    const el = editorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) return;
+    const range = sel.getRangeAt(0);
+
+    // The very first line, before Enter has ever been pressed, can still be
+    // bare text/inline nodes sitting directly inside `el` rather than
+    // wrapped in a line container — normalize that one-time case into a
+    // real <div> line so everything below only ever deals with top-level
+    // line elements.
+    const isLineTag = (n: Node) =>
+      n.nodeType === Node.ELEMENT_NODE && ["DIV", "P", "BLOCKQUOTE", "UL", "OL"].includes((n as Element).tagName);
+    if (el.childNodes.length > 0 && !Array.from(el.childNodes).some(isLineTag)) {
+      const wrapper = document.createElement("div");
+      while (el.firstChild) wrapper.appendChild(el.firstChild);
+      el.appendChild(wrapper);
+    }
+
+    const getLineEl = (node: Node | null): Element | null => {
+      let n: Node | null = node;
+      while (n && n.parentNode && n.parentNode !== el) n = n.parentNode;
+      return n && n.nodeType === Node.ELEMENT_NODE && n.parentNode === el ? (n as Element) : null;
+    };
+
+    const startLine = getLineEl(range.startContainer);
+    const endLine = getLineEl(range.endContainer);
+    if (!startLine) return;
+
+    const allLines = Array.from(el.children);
+    const startIdx = allLines.indexOf(startLine);
+    const endIdx = endLine ? allLines.indexOf(endLine) : startIdx;
+    if (startIdx === -1) return;
+    const [lo, hi] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+    const targetLines = allLines.slice(lo, hi + 1);
+    if (targetLines.length === 0) return;
+
+    // Toggle off only if every targeted line is already a bullet; otherwise
+    // toggle everything on, same "uniform state wins" rule the Bold/Italic
+    // toolbar highlighting already implies.
+    const allAlreadyBullets = targetLines.every((line) => line.tagName === "UL");
+    let lastReplacement: Element | null = null;
+
+    targetLines.forEach((line) => {
+      if (allAlreadyBullets) {
+        Array.from(line.children).forEach((li) => {
+          const div = document.createElement("div");
+          while (li.firstChild) div.appendChild(li.firstChild);
+          el.insertBefore(div, line);
+          lastReplacement = div;
+        });
+        el.removeChild(line);
+      } else if (line.tagName !== "UL") {
+        const ul = document.createElement("ul");
+        const li = document.createElement("li");
+        while (line.firstChild) li.appendChild(line.firstChild);
+        ul.appendChild(li);
+        el.replaceChild(ul, line);
+        lastReplacement = ul;
+      } else {
+        lastReplacement = line;
+      }
+    });
+
+    // Restore a collapsed caret at the end of the last line touched, so the
+    // author can keep typing right where they left off.
+    if (lastReplacement) {
+      const newRange = document.createRange();
+      newRange.selectNodeContents(lastReplacement);
+      newRange.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+
     syncTextFromDom();
   };
 
@@ -315,7 +398,16 @@ export function QAAnnouncementForm({
     el.focus();
     setColorPickerOpen(false);
     if (color === "default") {
-      document.execCommand("foreColor", false, "inherit");
+      // "inherit" is not a value execCommand('foreColor', ...) can parse —
+      // Chromium's real, well-documented behavior for an unparseable color
+      // argument is to silently fall back to some internal default that
+      // renders as a brownish color, not to actually clear formatting. Pass
+      // the real default swatch hex instead (same as every other color
+      // button below); resolveNamedColor in announcementEditorHtml.ts
+      // already treats anything this far from the 4 named colors as "no
+      // color tag" on the way back out, so this still round-trips to a
+      // clean, colorless line.
+      document.execCommand("foreColor", false, DEFAULT_COLOR_SWATCH);
     } else {
       const swatch = COLOR_OPTIONS.find((c) => c.key === color)?.swatch;
       if (swatch) document.execCommand("foreColor", false, swatch);
@@ -504,7 +596,7 @@ export function QAAnnouncementForm({
       setCategory("");
       setTitle("");
       setRating(0);
-      setValidTillDate("2026-06-24");
+      setValidTillDate("");
       setFromTeam("");
       setAnnouncementType("QA Announcement");
     }

@@ -12,7 +12,11 @@ import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { formatDisplayTimestamp } from "../utils/timestamps";
 import { SortableTh } from "./SortableTh";
-import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
+import { Pagination } from "./Pagination";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useServerSort } from "../hooks/useServerSort";
+
+const PAGE_SIZE = 25;
 
 interface ProfileAccessManagementProps {
   theme: "light" | "dark";
@@ -38,18 +42,22 @@ const emptyDraft = (): UserProfile => ({
 });
 
 /**
- * Developer-editable, Admin-visible directory of every advisor account. This is
- * the UI for the server-backed "User Directory" feature: reads come from
- * GET /api/users on mount (so the directory reflects the shared source of
- * truth rather than a stale local cache), and Developer edits are saved via
- * PUT /api/users so the change is picked up by every other user's session —
- * not just persisted to the editor's own localStorage.
+ * Developer-editable, Admin-visible directory of every advisor account. This
+ * is the UI for the server-backed "User Directory" feature: this component
+ * self-fetches its own paginated/searched/sorted page from
+ * GET /api/users?paginated=1 (25/page) rather than loading the full
+ * directory, and Developer edits are saved via single-row PATCH/DELETE
+ * (`/api/users/:email`) so a save from any page only ever touches the one
+ * row being edited — the old full-array PUT is no longer safe to use here
+ * once the client only holds one page at a time.
  *
  * `usersList` / `setUsersList` (App.tsx's usePersistentState-backed state)
- * are still kept in sync here as a fast local cache / offline fallback, but
- * the server is authoritative.
+ * are a SEPARATE, smaller cache used elsewhere in the app (e.g. to keep the
+ * signed-in user's own profile fields in sync — see App.tsx). This component
+ * doesn't read `usersList` for its own display, but does patch `setUsersList`
+ * after every create/edit/delete so that cache stays correct too.
  */
-export function ProfileAccessManagement({ theme, usersList, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessManagementProps) {
+export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
   const isDeveloper = effectiveTier === "Developer";
   // Admin can see and use "Add User" (same pattern as "Add Plan" on the
@@ -73,6 +81,17 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
     ]);
   };
 
+  // `entries` holds only the CURRENT PAGE — search/filter/sort/paging all
+  // happen server-side (GET /api/users?paginated=1&...) rather than loading
+  // the full directory into the browser. `usersList`/`setUsersList` (the
+  // App.tsx-level cache used to keep the signed-in user's own profile in
+  // sync — see App.tsx) is left untouched here except after a create/edit/
+  // delete, where the one affected row is patched into it too so that cache
+  // stays correct without ever needing a full-directory re-fetch.
+  const [entries, setEntries] = useState<UserProfile[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -83,102 +102,51 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
   const [draft, setDraft] = useState<UserProfile | null>(null);
   const [addingNew, setAddingNew] = useState(false);
   const [newDraft, setNewDraft] = useState<UserProfile>(emptyDraft());
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const searchQuery = useDebouncedValue(searchInput, 350);
+  const { sort: usersSort, toggleSort: toggleUsersSort } = useServerSort();
 
-  const filteredUsersList = usersList
-    .filter(user => {
-      const q = searchQuery.trim().toLowerCase();
-      if (!q) return true;
-      return (
-        user.name.toLowerCase().includes(q) ||
-        user.email.toLowerCase().includes(q) ||
-        user.tactId.toLowerCase().includes(q) ||
-        user.tier.toLowerCase().includes(q) ||
-        user.status.toLowerCase().includes(q)
-      );
-    })
-    // Latest to oldest by join time (users.created_at, set by the DB on
-    // insert). Entries with no createdAt (shouldn't normally happen — the
-    // column defaults to now() on insert — but the field is optional on the
-    // type since older/local-only records may predate this being wired up)
-    // sort to the end rather than crashing the comparator.
-    .sort((a, b) => {
-      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : -Infinity;
-      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : -Infinity;
-      return bTime - aTime;
-    });
-
-  // Click-to-sort layered on top of the default latest-to-oldest order
-  // above: with no column clicked (sort === null), useSortableData passes
-  // filteredUsersList through unchanged, so the existing "newest join first"
-  // default is preserved exactly. Clicking a header overrides it.
-  const { sorted: sortedUsersList, sort: usersSort, toggleSort: toggleUsersSort } = useSortableData(
-    filteredUsersList,
-    {
-      name: stringComparator((user: UserProfile) => user.name),
-      email: stringComparator((user: UserProfile) => user.email),
-      tactId: stringComparator((user: UserProfile) => user.tactId),
-      tier: stringComparator((user: UserProfile) => user.tier),
-      status: stringComparator((user: UserProfile) => user.status),
-      createdAt: dateComparator((user: UserProfile) => user.createdAt),
-    }
-  );
-
-  // Pull the server's copy of the directory on mount so this view (and the
-  // shared usersList state) reflects whatever the Developer last saved, even if
-  // that edit happened from a different browser/device.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/users");
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Failed to load user directory (HTTP ${res.status}).`);
-        }
-        const data = await res.json();
-        if (!cancelled && Array.isArray(data.users)) {
-          setUsersList(data.users);
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setSyncError(err.message || "Could not reach the server. Showing the last locally cached directory.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // Intentionally run once on mount — subsequent edits go through
-    // persistDirectory below, which updates usersList locally in lockstep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const persistDirectory = async (nextUsers: UserProfile[]) => {
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(false);
+  const loadEntries = async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/users", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ users: nextUsers })
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body.error || `Failed to save the user directory (HTTP ${res.status}).`);
+      const params = new URLSearchParams({ paginated: "1", page: String(page), pageSize: String(PAGE_SIZE) });
+      if (searchQuery) params.set("search", searchQuery);
+      if (usersSort) {
+        params.set("sortBy", usersSort.key);
+        params.set("sortDir", usersSort.direction);
       }
-      setUsersList(body.users || nextUsers);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-      return true;
+      const res = await fetch(`/api/users?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed to load user directory (HTTP ${res.status}).`);
+      }
+      const data = await res.json();
+      if (Array.isArray(data.entries)) {
+        setEntries(data.entries);
+        setTotal(data.total ?? 0);
+        setTotalPages(data.totalPages ?? 1);
+        // Server clamps an out-of-range page (e.g. right after a delete
+        // empties the last page) — mirror that back so Previous/Next agree.
+        if (typeof data.page === "number" && data.page !== page) setPage(data.page);
+        setSyncError(null);
+      }
     } catch (err: any) {
-      setSaveError(err.message || "Failed to save changes. Please try again.");
-      return false;
+      setSyncError(err.message || "Could not reach the server. Showing the last loaded list.");
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
+
+  // Search/sort changes jump back to page 1; the fetch effect below re-runs
+  // regardless (it depends on all of these plus `page`).
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, usersSort?.key, usersSort?.direction]);
+
+  useEffect(() => {
+    loadEntries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, searchQuery, usersSort?.key, usersSort?.direction]);
 
   const startEdit = (user: UserProfile) => {
     setEditingEmail(user.email);
@@ -192,23 +160,57 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
   };
 
   const saveEdit = async () => {
-    if (!draft) return;
-    const nextUsers = usersList.map(u => (u.email === editingEmail ? draft : u));
-    const ok = await persistDirectory(nextUsers);
-    if (ok) {
-      logAction("User Edited", `Updated directory entry for ${draft.name} (${draft.email}) — Tier: ${draft.tier}, Status: ${draft.status}.`);
+    if (!draft || !editingEmail) return;
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(false);
+    try {
+      // Single-row PATCH, not the old full-array PUT — see
+      // usersRepository.ts's updateUser doc comment for why a full-array
+      // replace is no longer safe now that this table is paginated.
+      const res = await fetch(`/api/users/${encodeURIComponent(editingEmail)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
+      const saved: UserProfile = body.user;
+      setEntries(prev => prev.map(u => (u.email === editingEmail ? saved : u)));
+      setUsersList(prev => prev.map(u => (u.email === editingEmail ? saved : u)));
+      logAction("User Edited", `Updated directory entry for ${saved.name} (${saved.email}) — Tier: ${saved.tier}, Status: ${saved.status}.`);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
       setEditingEmail(null);
       setDraft(null);
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to save changes. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
   const deleteUser = async (email: string) => {
     if (!window.confirm(`Remove ${email} from the user directory? This cannot be undone.`)) return;
-    const removedUser = usersList.find(u => u.email === email);
-    const nextUsers = usersList.filter(u => u.email !== email);
-    const ok = await persistDirectory(nextUsers);
-    if (ok) {
+    const removedUser = entries.find(u => u.email === email);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // Single-row DELETE, not the old filter-then-PUT-the-whole-array flow
+      // — see usersRepository.ts's deleteUser doc comment.
+      const res = await fetch(`/api/users/${encodeURIComponent(email)}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to remove this user (HTTP ${res.status}).`);
+      setUsersList(prev => prev.filter(u => u.email !== email));
       logAction("User Deleted", `Removed ${removedUser?.name || email} (${email}) from the user directory.`);
+      // Deleting the last row on a page (other than page 1) would otherwise
+      // leave the view stuck on a now-empty page — loadEntries() re-fetches
+      // page `page`, and the server clamps it back into range if needed.
+      await loadEntries();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to remove this user. Please try again.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -217,17 +219,15 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
       setSaveError("Email, name, and TACT ID are required to add a user.");
       return;
     }
-    if (usersList.some(u => u.email.toLowerCase() === newDraft.email.toLowerCase().trim())) {
-      setSaveError("A user with that email already exists in the directory.");
-      return;
-    }
     setSaving(true);
     setSaveError(null);
     try {
       // Single-row create — works for both Admin and Developer (unlike the
-      // Developer-only, full-array PUT used for editing/removing an existing
+      // Developer-only PATCH/DELETE used for editing/removing an existing
       // user). See server.ts's POST /api/users for why this is safe to
-      // expose to Admin.
+      // expose to Admin. The server rejects a duplicate email (409) rather
+      // than relying on a client-side pre-check against the full directory,
+      // which is no longer loaded in memory now that this list is paginated.
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -239,6 +239,9 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
       logAction("User Added", `Added ${newDraft.name} (${newDraft.email}) to the user directory — Tier: ${newDraft.tier}.`);
       setAddingNew(false);
       setNewDraft(emptyDraft());
+      setSearchInput("");
+      setPage(1);
+      await loadEntries();
     } catch (err: any) {
       setSaveError(err.message || "Failed to add this user. Please try again.");
     } finally {
@@ -319,7 +322,7 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
               <span className={`text-[11px] font-bold whitespace-nowrap px-2 py-1 rounded-lg border shrink-0 ${
                 dark ? "bg-white/5 border-stone-800 text-stone-300" : "bg-stone-100 border-stone-200 text-stone-700"
               }`}>
-                {usersList.length.toLocaleString()} {usersList.length === 1 ? "user" : "users"}
+                {total.toLocaleString()} {total === 1 ? "user" : "users"}
               </span>
             )}
 
@@ -328,17 +331,17 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
               <input
                 type="text"
                 placeholder="Search the directory..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className={`w-full py-1.5 pl-8 pr-4 text-xs font-semibold rounded-lg border outline-none transition-all ${
                   dark
                     ? "bg-[#060A10] border-stone-850 text-white focus:border-sky-500"
                     : "bg-white border-stone-250 text-stone-900 focus:border-sky-400 shadow-inner"
                 }`}
               />
-              {searchQuery && (
+              {searchInput && (
                 <button
-                  onClick={() => setSearchQuery("")}
+                  onClick={() => setSearchInput("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 hover:text-stone-100"
                   title="Clear search"
                 >
@@ -437,15 +440,15 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
                 </tr>
               )}
 
-              {searchQuery && filteredUsersList.length === 0 && (
+              {!loading && entries.length === 0 && (
                 <tr>
                   <td colSpan={canManage ? 7 : 6} className="py-10 text-center text-xs font-semibold text-stone-400">
-                    No directory entries match "{searchQuery}".
+                    {searchQuery ? `No directory entries match "${searchQuery}".` : "No directory entries yet."}
                   </td>
                 </tr>
               )}
 
-              {sortedUsersList.map((user, idx) => {
+              {entries.map((user, idx) => {
                 const isEditing = isDeveloper && editingEmail === user.email;
                 const row = isEditing && draft ? draft : user;
                 return (
@@ -547,13 +550,19 @@ export function ProfileAccessManagement({ theme, usersList, setUsersList, effect
           </table>
         </div>
 
-        <p className="text-[10.5px] font-semibold text-content-muted">
-          {isDeveloper
-            ? "Changes are saved to the server."
-            : canManage
-              ? "Admin clearance lets you add new users. Editing or removing an existing user requires Developer clearance."
-              : "Admin clearance grants read-only visibility into the directory. Developer clearance is required to add, edit, or remove users."}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[10.5px] font-semibold text-content-muted">
+            Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
+            {"–"}
+            {Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()}
+            {searchQuery ? " matching users" : " users"}. {isDeveloper
+              ? "Changes are saved to the server."
+              : canManage
+                ? "Admin clearance lets you add new users. Editing or removing an existing user requires Developer clearance."
+                : "Admin clearance grants read-only visibility into the directory. Developer clearance is required to add, edit, or remove users."}
+          </p>
+          <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
+        </div>
       </div>
     </div>
   );

@@ -33,9 +33,9 @@ When AI is used to review or integrate mappings:
 
 ## Version Information
 
-- **Version:** 1.0
+- **Version:** 1.1
 - **Status:** Authoritative — approved baseline. This is the single highest-authority governance document for the mapping engine.
-- **Last Updated:** 2026-07-18
+- **Last Updated:** 2026-07-29
 - **Authority:** This document supersedes and consolidates all prior governance material — the Mapping Policy Charter, the Production Governance Manual, and any Validation Framework, Integration Playbook, Change Control, Mapping Governance, or Integration Rules notes. Those documents become optional historical reference. Where any of them conflicts with this Constitution, **this Constitution governs.**
 - **Purpose:** To let any future contributor or AI assistant safely maintain and extend the engine using this one document alone — preserving current production behavior, keeping governance and process distinct from behavior, and never silently resolving decisions that belong to the business.
 
@@ -101,13 +101,20 @@ Only principles provable from the implementation. Aspirational rules are exclude
 **Execution order (the first stage that returns wins)** — [CURRENT]
 
 1. **Natural life-stage firewall** → `NON_AILMENT` (pregnancy, menopause, puberty, lactation, "healthy/normal/nil/n-a", vaccination, routine checkup). Hard exception: inputs containing `ectopic` bypass it.
-2. **Plan-specific overrides** — Activ Fit Preferred, Care Supreme, Optima Secure `planName ===` blocks.
+2. **Plan-specific overrides** — Activ Fit Preferred, Care Supreme, Optima Secure `planName ===` blocks. Since 2026-07-28, each block first checks the term's *current live* dictionary category (see stage 5) and uses that if it differs from the term's original compiled default, falling back to the block's own historical hardcoded category only when no live override exists — added because an admin re-categorizing a term (e.g. PED Library) previously had no effect on these four plans. Since 2026-07-28/29 (PED Repository DB migration, see below), when the caller passes a populated `dbSource`, a DB-backed generic plan-override lookup (`plan_overrides` table, keyed by `planName` + the resolved PED's id) runs ahead of these hardcoded blocks and takes precedence if a matching row exists — this is the intended eventual replacement for all four blocks (Part IX is silent on when/whether to retire them; not yet done).
 3. **Fast-path safety shields (A–I)** — global test firewall; acute-infectious firewall; hypoglycaemia; DVT/PE; gangrene; hypotension; gestational/Type-2 diabetes; prediabetes; HPV/HIV-only coupling.
 4. **Exact plan-wording chunk match** → `P0`.
-5. **Dictionary exact-match routing** — `TOP_PED_DICTIONARY[cleanInput]` → `categoryKey`; pseudo-category keys short-circuit to fixed fallbacks (`vascular_fallback`, `acute_infection`, `ambiguous_symptom`, `lifestyle`, `natural_life_stage`, `acute_trauma`, `benign_growth`); otherwise `questionForCategory`.
+5. **Dictionary exact-match routing** — resolves via one of two sources depending on the `PED_SOURCE` server flag (`.env`; see "PED Repository DB migration" below): **`PED_SOURCE=legacy`** (the historical default) looks up `TOP_PED_DICTIONARY[cleanInput]` → `categoryKey`. **`PED_SOURCE=db`** looks up the same normalized key in a DB-backed alias map (`ped_repository`/`ped_aliases`, loaded into memory at boot / on write by `src/server/pedRuntimeCache.ts`) instead, and `TOP_PED_DICTIONARY` is not consulted at all in this mode. Either way: pseudo-category keys short-circuit to fixed fallbacks (`vascular_fallback`, `acute_infection`, `ambiguous_symptom`, `lifestyle`, `natural_life_stage`, `acute_trauma`, `benign_growth`); otherwise `questionForCategory`.
 6. **Disease-family regex sections** (~24 ordered blocks).
 7. **Generic shields** — benign growths, allergy, gynecomastia, ambiguous symptoms, lab findings, diagnostics, isolated procedures/trauma.
 8. **No match** → `null` → **AI fallback** (outside this engine).
+
+**PED Repository DB migration (`PED_SOURCE` flag)** — [CURRENT], added 2026-07-28/29, not yet reflected anywhere else in this Constitution prior to this note:
+- `classifyDeterministic` (`src/engine.ts`) takes an optional 4th parameter, `dbSource`. When absent or null (`PED_SOURCE=legacy`, the default), behavior is byte-for-byte identical to everything described elsewhere in this document: `TOP_PED_DICTIONARY` and the 4 hardcoded plan-specific blocks are the only dictionary/override sources.
+- When `PED_SOURCE=db` (`server.ts`), `dbSource` is populated from `src/server/pedRuntimeCache.ts`'s in-memory cache of the `ped_repository` / `ped_aliases` / `plan_overrides` / `categories` tables, and stages 2 and 5 above read from it instead, per-term, wherever it has an entry — falling through to the legacy path term-by-term where it doesn't.
+- As of 2026-07-29, the admin UI page labeled "PED Repository" (PED Library sub-tab) writes directly to these tables (`src/server/pedRepositoryLive.ts`) and is the intended live source of truth going forward — this is a change from the page's original behavior (writing only to the legacy `ped_suggestions`/`ped_mapping_overrides` tables, which fed `TOP_PED_DICTIONARY`). Every write also mirrors into the legacy `ped_mapping_overrides` table as rollback insurance, so setting `PED_SOURCE=legacy` and restarting still gives a working (if less current) result.
+- The 4 hardcoded plan-specific blocks (stage 2) are **not yet removed or fully superseded** — they remain the fallback for any term that has no matching `plan_overrides` row under `PED_SOURCE=db`, and are the *only* path under `PED_SOURCE=legacy`. Retiring them is out of scope for this note; see Part IX item 7 (global vs plan-specific placement) for the closest existing unresolved question, though it does not name this migration specifically.
+- This does not change anything in Parts I–III, V–IX (the routing precedence, evidence hierarchy, and unresolved Business Decisions are unaffected — only *where* the dictionary/override data physically lives and how an admin edits it).
 
 **Post-processing (always after a route is chosen)** — [CURRENT]: `sanitizeOutput` → `applyPostGuards` (plan-aware corrections, e.g. Care Supreme diabetes Type-1 restriction; SLE/lupus organ-reroute) → `finalizeOutput` (resolves the question against the plan's real text, attaches umbrella recommendations, applies terminology and advisory-footer rules).
 
@@ -306,7 +313,7 @@ Standard change types and their review expectations. — [PROCESS]
 |---|---|---|
 | New synonym | Alias to an existing canonical condition. | Confirm identical routing to canonical where consistency is declared; targeted regression. |
 | New canonical condition | New condition + category assignment. | Full Part XI lifecycle. |
-| Dictionary update | Add/edit a `TOP_PED_DICTIONARY` entry. | Dictionary owner; regression — high blast radius (dictionary precedes regex). |
+| Dictionary update | Add/edit a `TOP_PED_DICTIONARY` entry (`PED_SOURCE=legacy`), or — since 2026-07-29 — a `ped_repository`/`ped_aliases` row via the "PED Repository" admin UI (`PED_SOURCE=db`; see Part IV). | Dictionary owner; regression — high blast radius (dictionary precedes regex), regardless of which storage backs it. |
 | Regex update | Edit a disease-family section. | Regex owner; broadening + collision check. |
 | Shield update | Change a firewall token/class. | Shield owner; conservative fallback preserved. |
 | New category | Introduce a `categoryKey`. | Category owner; must map to a real plan question; add to label vocabulary. |
@@ -413,6 +420,8 @@ Input (condition, plan)
 Post-processing (after any route): sanitizeOutput → applyPostGuards → finalizeOutput
 ```
 
+**Note (2026-07-29):** stages 2 and 5 above each have a `PED_SOURCE=db` variant that reads `ped_repository`/`ped_aliases`/`plan_overrides` (via `src/server/pedRuntimeCache.ts`) instead of `TOP_PED_DICTIONARY`/the hardcoded blocks — see "PED Repository DB migration" under Part IV. Not redrawn as a separate branch here since the *shape* of the flow (same 8 stages, same precedence) is unchanged; only the data source for two of the boxes differs by flag.
+
 ## Appendix B — Evidence Hierarchy (justifying a mapping) — [CURRENT 1–4 / GOVERNANCE 5–6]
 
 ```
@@ -507,7 +516,23 @@ v1.0  (2026-07-18)
 - Added: Quick Start, AI Usage, Change Impact Template, Version History.
 - No mapping, engine behavior, or Business Decision changed.
 
-v1.1  (unreleased)
+v1.1  (2026-07-29)
+- Documentation-only update (Change Impact: Documentation only). Corrected a
+  documentation regression (Part XII) that existed unnoticed since the
+  2026-07-28 PED Repository DB migration cutover: Part IV described only the
+  legacy TOP_PED_DICTIONARY dictionary/override path, which is no longer the
+  only one in production.
+- Added, to Part IV: the `PED_SOURCE` flag, the `dbSource`-gated DB-backed
+  variants of stages 2 and 5, and the 2026-07-29 change making the "PED
+  Repository" admin UI write directly to `ped_repository`/`ped_aliases`
+  (mirrored into the legacy table for `PED_SOURCE=legacy` rollback safety).
+  Added a corresponding note to Appendix A and updated Part XIV's
+  "Dictionary update" row.
+- No mapping, routing precedence, evidence hierarchy, or Business Decision
+  (Parts I-III, V-IX) was altered. No owner sign-off required per the Change
+  Impact Template (Documentation only).
+
+v1.2  (unreleased)
 - ...
 
 v1.2  (unreleased)

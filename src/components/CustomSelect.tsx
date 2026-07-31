@@ -71,8 +71,26 @@ export function CustomSelect({
   checkColorClassName,
 }: CustomSelectProps) {
   const [open, setOpen] = useState(false);
+  // Whether the floating panel should render ABOVE the trigger instead of
+  // below it. Decided once, right when the panel opens (see handleToggle),
+  // based on actual viewport space — most triggers have room below and
+  // keep the original downward-opening behavior, but a trigger pinned near
+  // the bottom of the screen (e.g. the sidebar's "Preview As" picker) would
+  // otherwise render its options panel partly off-screen/under the OS
+  // taskbar.
+  const [openUpward, setOpenUpward] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
+
+  const handleToggle = () => {
+    if (!open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setOpenUpward(spaceBelow < maxPanelHeightPx + 24 && spaceAbove > spaceBelow);
+    }
+    setOpen((v) => !v);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -106,7 +124,7 @@ export function CustomSelect({
         type="button"
         id={id}
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={triggerClassName || defaultTriggerClass}
@@ -128,7 +146,9 @@ export function CustomSelect({
       {open && !disabled && (
         <div
           role="listbox"
-          className={`absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border shadow-lg overflow-hidden flex flex-col ${
+          className={`absolute left-0 right-0 z-50 rounded-xl border shadow-lg overflow-hidden flex flex-col ${
+            openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          } ${
             panelClassName ??
             (dark ? "bg-stone-900 border-white/[0.08] text-white" : "bg-white border-stone-200 text-stone-900")
           }`}

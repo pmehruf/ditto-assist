@@ -3,9 +3,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { announcements, type AnnouncementRow, type NewAnnouncementRow } from "../schema.js";
+import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
+
+export interface AnnouncementListOptions {
+  page?: number;
+  pageSize?: number;
+  category?: string;
+  type?: NewAnnouncementRow["type"];
+  /** Matches against announcement body, title, or fromTeam (case-insensitive substring). */
+  search?: string;
+  /** Whitelisted to "createdAt" | "announcementDate" | "effectiveDate" | "category" | "title"; defaults to "createdAt". */
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+}
+
+const SORTABLE_COLUMNS = {
+  createdAt: announcements.createdAt,
+  announcementDate: announcements.announcementDate,
+  effectiveDate: announcements.effectiveDate,
+  category: announcements.category,
+  title: announcements.title,
+} as const;
 
 /**
  * Retention ceiling per announcement type (QA vs General, tracked
@@ -72,6 +93,55 @@ export class AnnouncementsRepository {
       .orderBy(desc(announcements.createdAt));
 
     return filter.limit ? query.limit(filter.limit) : query;
+  }
+
+  private buildListConditions(options: AnnouncementListOptions) {
+    const conditions = [];
+    if (options.category) conditions.push(eq(announcements.category, options.category));
+    if (options.type) conditions.push(eq(announcements.type, options.type));
+    if (options.search) {
+      const pattern = containsPattern(options.search);
+      conditions.push(or(ilike(announcements.announcement, pattern), ilike(announcements.title, pattern), ilike(announcements.fromTeam, pattern)));
+    }
+    return conditions;
+  }
+
+  /**
+   * Server-side paginated/searched/filtered/sorted list for the
+   * Announcement History admin UI. `total` comes from a COUNT(*) scoped by
+   * the same WHERE clause as the page query.
+   */
+  async listPaginated(options: AnnouncementListOptions = {}): Promise<PaginatedResult<AnnouncementRow>> {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.max(1, options.pageSize ?? 25);
+    const conditions = this.buildListConditions(options);
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? announcements.createdAt;
+    const orderFn = options.sortDir === "asc" ? asc : desc;
+
+    const [{ value: total }] = await this.db.select({ value: count() }).from(announcements).where(where);
+    const { page: clampedPage } = clampPage(page, total, pageSize);
+    const data = await this.db
+      .select()
+      .from(announcements)
+      .where(where)
+      .orderBy(orderFn(sortColumn))
+      .limit(pageSize)
+      .offset((clampedPage - 1) * pageSize);
+
+    return buildPaginatedResult(data, total, clampedPage, pageSize);
+  }
+
+  /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
+   * kept for parity with the other repositories' export path, even though
+   * this table is already retention-capped at 100 rows/type. */
+  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir"> = {}): Promise<AnnouncementRow[]> {
+    const conditions = this.buildListConditions(options);
+    const where = conditions.length ? and(...conditions) : undefined;
+    const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? announcements.createdAt;
+    const orderFn = options.sortDir === "asc" ? asc : desc;
+    return this.db.select().from(announcements).where(where).orderBy(orderFn(sortColumn));
   }
 
   /**

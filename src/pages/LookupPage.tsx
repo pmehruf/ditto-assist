@@ -451,6 +451,13 @@ export function LookupPage({
                       </button>
                     </div>
 
+                    {/* Reassures advisors the dropdown is a convenience, not
+                        a whitelist — a condition can be typed and added even
+                        when nothing in the suggestion list matches it. */}
+                    <p className={`text-[10px] font-medium mt-1.5 ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+                     Can't find in dropdown? Type and add it anyway🚀
+                    </p>
+
                     {/* Floating Dropdown for Suggestions */}
                     {pedInput.trim().length > 0 && (() => {
                       const query = pedInput.trim();

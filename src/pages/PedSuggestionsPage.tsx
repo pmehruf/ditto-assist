@@ -7,7 +7,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import { BookMarked, Bot } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
-import { PedSuggestionsManagement } from "../components/PedSuggestionsManagement";
+import { PedRepositoryManagement } from "../components/PedRepositoryManagement";
 import { AiMappingReview } from "../components/AiMappingReview";
 
 interface PedSuggestionsPageProps {
@@ -25,12 +25,15 @@ interface PedSuggestionsPageProps {
  * only the admin-facing label changed).
  *
  * Admin+ only (gated in App.tsx's sidebar/hasAccess via the
- * "ped_suggestions" feature id). Manages the dropdown/autocomplete term
- * list an advisor sees while typing a PED on the Lookup page, plus an
- * optional mapping category per term. Assigning that category is LIVE —
- * see PedSuggestionsManagement.tsx and promotePedMappingOverride in
- * server.ts — it's promoted into the deterministic engine for every plan,
- * not just this directory listing.
+ * "ped_suggestions" feature id). "PED Library" now renders
+ * PedRepositoryManagement — the `ped_repository`/`ped_aliases` schema the
+ * deterministic engine actually reads when PED_SOURCE=db (cutover,
+ * 2026-07-28/29; see PED_REPOSITORY_PHASE5_CUTOVER_REPORT.md and
+ * pedRepositoryLive.ts). Edits here ARE the live source of truth — no
+ * separate promotion step — and also feed the Lookup page's autocomplete
+ * dropdown (GET /api/ped-repository/autocomplete). The legacy
+ * `ped_directory`-backed PedSuggestionsManagement component still exists
+ * (its API routes are untouched) but is no longer wired into any tab.
  */
 export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChangeLogs }: PedSuggestionsPageProps) {
   // Two surfaces live under PED Repository: the curated PED Library
@@ -83,7 +86,7 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
 
       <div className="space-y-5 pb-6">
         {activeSubTab === "library" ? (
-          <PedSuggestionsManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+          <PedRepositoryManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
         ) : (
           <AiMappingReview theme={theme} effectiveTier={effectiveTier} />
         )}

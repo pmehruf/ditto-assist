@@ -141,6 +141,27 @@
             "when": 1785200000000,
             "tag": "0019_rename_owner_tier_to_developer",
             "breakpoints": true
+        },
+        {
+            "idx": 20,
+            "version": "7",
+            "when": 1785300000000,
+            "tag": "0020_qa_dashboard_google_connection",
+            "breakpoints": true
+        },
+        {
+            "idx": 21,
+            "version": "7",
+            "when": 1785400000000,
+            "tag": "0021_change_logs_plan_name_nullable",
+            "breakpoints": true
+        },
+        {
+            "idx": 22,
+            "version": "7",
+            "when": 1785500000000,
+            "tag": "0022_qa_dashboard_roles",
+            "breakpoints": true
         }
     ]
 }

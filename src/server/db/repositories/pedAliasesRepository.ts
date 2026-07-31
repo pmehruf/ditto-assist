@@ -31,6 +31,11 @@ export class PedAliasesRepository {
     return row;
   }
 
+  async get(id: number): Promise<PedAliasRow | undefined> {
+    const [row] = await this.db.select().from(pedAliases).where(eq(pedAliases.id, id));
+    return row;
+  }
+
   /** Every alias row, joined to nothing — used to build the full in-memory
    * runtime lookup Map (normalizedAlias -> { pedId }) at boot. */
   async listAll(): Promise<PedAliasRow[]> {
@@ -77,6 +82,17 @@ export class PedAliasesRepository {
   async setPrimary(id: number, isPrimary: boolean): Promise<PedAliasRow | undefined> {
     const [row] = await this.db.update(pedAliases).set({ isPrimary }).where(eq(pedAliases.id, id)).returning();
     return row;
+  }
+
+  /** Sets exactly one alias as primary for a PED — clears every other alias
+   * of that PED first, in the same transaction, so two rows can never both
+   * be flagged primary at once. */
+  async setPrimaryExclusive(pedId: number, aliasId: number): Promise<PedAliasRow | undefined> {
+    return this.db.transaction(async (tx) => {
+      await tx.update(pedAliases).set({ isPrimary: false }).where(eq(pedAliases.pedId, pedId));
+      const [row] = await tx.update(pedAliases).set({ isPrimary: true }).where(eq(pedAliases.id, aliasId)).returning();
+      return row;
+    });
   }
 
   /** Every alias marked visible for a given PED — the UI-facing subset of

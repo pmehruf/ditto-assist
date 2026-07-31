@@ -3,11 +3,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, ne, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { users, type UserRow, type NewUserRow } from "../schema.js";
+import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
 
 export type CreateUserEntry = NewUserRow;
+
+export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status">>;
+
+export interface UserListOptions {
+  page?: number;
+  pageSize?: number;
+  tier?: NewUserRow["tier"];
+  status?: NewUserRow["status"];
+  /** Matches against name, email, or tactId (case-insensitive substring). */
+  search?: string;
+  /** Whitelisted to "name" | "email" | "tactId" | "tier" | "status" | "createdAt" | "lastLogin"; defaults to "createdAt". */
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+}
+
+const SORTABLE_COLUMNS = {
+  name: users.name,
+  email: users.email,
+  tactId: users.tactId,
+  tier: users.tier,
+  status: users.status,
+  createdAt: users.createdAt,
+  lastLogin: users.lastLogin,
+} as const;
 
 /**
  * Data Access Layer for the org's user directory (users table). Replaces
@@ -37,6 +62,97 @@ export class UsersRepository {
       .values({ ...entry, email: entry.email.toLowerCase() })
       .returning();
     return row;
+  }
+
+  private buildListConditions(options: UserListOptions) {
+    const conditions = [];
+    if (options.tier) conditions.push(eq(users.tier, options.tier));
+    if (options.status) conditions.push(eq(users.status, options.status));
+    if (options.search) {
+      const pattern = containsPattern(options.search);
+      conditions.push(or(ilike(users.name, pattern), ilike(users.email, pattern), ilike(users.tactId, pattern)));
+    }
+    return conditions;
+  }
+
+  /**
+   * Server-side paginated/searched/filtered/sorted list for the User
+   * Management admin UI. `total` comes from a COUNT(*) scoped by the same
+   * WHERE clause as the page query. Defaults to newest-joined-first
+   * (createdAt desc), matching the admin table's old default sort.
+   */
+  async listPaginated(options: UserListOptions = {}): Promise<PaginatedResult<UserRow>> {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.max(1, options.pageSize ?? 25);
+    const conditions = this.buildListConditions(options);
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? users.createdAt;
+    const orderFn = options.sortDir === "asc" ? asc : desc;
+
+    const [{ value: total }] = await this.db.select({ value: count() }).from(users).where(where);
+    const { page: clampedPage } = clampPage(page, total, pageSize);
+    const data = await this.db
+      .select()
+      .from(users)
+      .where(where)
+      .orderBy(orderFn(sortColumn))
+      .limit(pageSize)
+      .offset((clampedPage - 1) * pageSize);
+
+    return buildPaginatedResult(data, total, clampedPage, pageSize);
+  }
+
+  /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
+   * kept for parity with the other repositories' export path. */
+  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
+    const conditions = this.buildListConditions(options);
+    const where = conditions.length ? and(...conditions) : undefined;
+    const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? users.createdAt;
+    const orderFn = options.sortDir === "asc" ? asc : desc;
+    return this.db.select().from(users).where(where).orderBy(orderFn(sortColumn));
+  }
+
+  /**
+   * Single-row update, keyed by email (the primary key). Added alongside
+   * pagination: once the admin UI only ever holds ONE PAGE of the directory
+   * in memory, the old `replaceAll` full-array PUT becomes unsafe for
+   * editing — a save from any page but the first would silently overwrite
+   * every user NOT on that page with whatever the client happened to be
+   * holding. This is the safe replacement for a single row's name/tactId/
+   * tier/status. Deliberately does not accept `email` — the primary key is
+   * immutable via this method; deleting and re-adding is the only way to
+   * change it.
+   */
+  async updateUser(email: string, patch: UpdateUserEntry): Promise<UserRow | undefined> {
+    const [row] = await this.db
+      .update(users)
+      .set(patch)
+      .where(eq(users.email, email.toLowerCase()))
+      .returning();
+    return row;
+  }
+
+  /** Single-row delete, keyed by email — the safe counterpart to
+   * `updateUser` above, for the same reason (a full-array PUT with one row
+   * missing would delete every OTHER user not on the current page). */
+  async deleteUser(email: string): Promise<void> {
+    await this.db.delete(users).where(eq(users.email, email.toLowerCase()));
+  }
+
+  /**
+   * Counts Developer-tier users OTHER than `excludeEmail` — used to enforce
+   * "at least one Developer must remain in the directory" when a single-row
+   * PATCH/DELETE would otherwise change or remove the last one. Mirrors the
+   * same guard the old full-array PUT route used to check across the whole
+   * submitted array.
+   */
+  async countOtherDevelopers(excludeEmail: string): Promise<number> {
+    const [{ value }] = await this.db
+      .select({ value: count() })
+      .from(users)
+      .where(and(eq(users.tier, "Developer"), ne(users.email, excludeEmail.toLowerCase())));
+    return value;
   }
 
   /**

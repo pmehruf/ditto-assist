@@ -509,7 +509,12 @@ export function finalizeOutput(output: MatchOutput, ped: string, config: PlanCon
   let rawExp = output.explanation || "";
 
   // 1. Terminology replacements: Always use "Others Section", never "Others", never "Other Conditions" except actual wording.
-  rawExp = rawExp.replace(/\bOthers\b/g, "Others Section");
+  // The negative lookahead guards against double-appending when a source
+  // string already correctly wrote "Others Section" literally (e.g. the
+  // acute_trauma/TB-lymph-node FALLBACK messages below) — without it, "the
+  // 'Others Section'" was being turned into the redundant "the 'Others
+  // Section Section'" every time this ran.
+  rawExp = rawExp.replace(/\bOthers\b(?!\s+Section)/g, "Others Section");
   rawExp = rawExp.replace(/\bother conditions\b/gi, "Others Section");
   rawExp = rawExp.replace(/\bother disease\b/gi, "Others Section");
 
@@ -944,7 +949,7 @@ export function classifyDeterministic(
 
     // Handle special dictionary cases (Firewalls & Ambiguous Symptoms)
     if (categoryKey === "vascular_fallback") {
-      return makeOutput(pedText, "FALLBACK", config.anyOther, `*${pedText} is a vascular/venous condition.* It does not map to the severe cardiovascular/heart disease questions and should be declared under the 'Others' section.`);
+      return makeOutput(pedText, "FALLBACK", config.anyOther, `*${pedText} is a vascular/venous condition.* It does not map to the severe cardiovascular/heart disease questions and should be declared under the 'Others Section'.`);
     }
     if (categoryKey === "autoimmune" && planName === "Optima Secure") {
       return makeOutput(

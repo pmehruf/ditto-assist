@@ -53,11 +53,28 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Viewer"
   },
   {
+    // QA DASHBOARD — read-only advisor QA scorecard, ported from the
+    // standalone Apps Script tool. Visible to every tier (Viewer for both,
+    // like coverage_projection above), matching that tool's "Anyone within
+    // Ditto" deployment access — the page's own Admin/Guide/Mentor/Advisor
+    // role logic (src/server/qaDashboard/qaRoles.ts, sourced from the
+    // qa_dashboard_roles DB table — managed via User Directory & Management's
+    // "QA Dashboard Access" tab, NOT this app's General/Admin/Developer
+    // tiers) decides what each signed-in person actually sees, exactly as it
+    // did in the original tool.
+    id: "qa_dashboard",
+    name: "QA Dashboard",
+    description: "Read-only advisor QA scorecard (Lead Score, Payments QA, feedback and dispute/escalation history) sourced live from the QA team's Google Sheet",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer"
+  },
+  {
     id: "smoke_test",
     name: "Smoke Test",
     description: "Run the deterministic mapping engine against a curated list of common PEDs, per plan, to catch classification regressions",
-    defaultTier: "General",
-    generalAccess: "Viewer",
+    defaultTier: "Admin",
+    generalAccess: "None",
     adminAccess: "Editor"
   },
   {

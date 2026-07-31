@@ -3,16 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, Plus, RefreshCw, ShieldCheck, AlertTriangle, Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Pencil, Save, X, Trash2, Plus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { CATEGORY_LABELS } from "../types.js";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { SortableTh } from "./SortableTh";
-import { useSortableData, stringComparator } from "../utils/useSortableData";
+import { Pagination } from "./Pagination";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useServerSort } from "../hooks/useServerSort";
 
 interface PedSuggestionEntry {
   id: number;
@@ -151,8 +153,14 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
     ]);
   };
 
+  // `entries` holds only the CURRENT PAGE now — search/filter/sort/paging
+  // all happen server-side (GET /api/ped-suggestions?paginated=1&...), never
+  // by loading the full ~1,223-row directory into the browser.
   const [entries, setEntries] = useState<PedSuggestionEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -164,16 +172,58 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
   const [addingNew, setAddingNew] = useState(false);
   const [newTerm, setNewTerm] = useState("");
   const [newCategory, setNewCategory] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const searchQuery = useDebouncedValue(searchInput, 350);
   // "all" | "uncategorized" | a categoryKey (e.g. "diabetes") — combined
   // with searchQuery below rather than replacing it, so an admin can search
   // within a category.
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const { sort: entriesSort, toggleSort: toggleEntriesSort } = useServerSort();
+
+  // Distinct categories actually present in the directory (plus whether any
+  // entry is uncategorized) — fetched once from a lightweight dedicated
+  // endpoint rather than derived from a full table load, so the filter
+  // dropdown never offers a category with zero matching entries.
+  const [categoriesInUse, setCategoriesInUse] = useState<{ list: { key: string; label: string }[]; hasUncategorized: boolean }>({
+    list: [],
+    hasUncategorized: false,
+  });
+
+  const refreshCategoriesInUse = () => {
+    fetch("/api/ped-suggestions/categories")
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then(data => {
+        const list = (Array.isArray(data.categories) ? data.categories : [])
+          .map((key: string) => ({ key, label: CATEGORY_LABELS[key] || key }))
+          .sort((a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label));
+        setCategoriesInUse({ list, hasUncategorized: Boolean(data.hasUncategorized) });
+      })
+      .catch(() => {
+        // Non-critical — the filter dropdown just falls back to whatever it
+        // last had (or "All categories" only, on first load) if this fails.
+      });
+  };
+
+  useEffect(() => {
+    refreshCategoriesInUse();
+    // Runs once on mount; also re-invoked after add/edit/delete below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const hasActiveFilter = Boolean(searchQuery) || categoryFilter !== "all";
 
   const loadEntries = async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/ped-suggestions");
+      const params = new URLSearchParams({ paginated: "1", page: String(page), pageSize: String(PAGE_SIZE) });
+      if (searchQuery) params.set("search", searchQuery);
+      if (categoryFilter !== "all") params.set("category", categoryFilter);
+      if (entriesSort) {
+        params.set("sortBy", entriesSort.key);
+        params.set("sortDir", entriesSort.direction);
+      }
+      const res = await fetch(`/api/ped-suggestions?${params.toString()}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Failed to load the PED directory (HTTP ${res.status}).`);
@@ -181,6 +231,13 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
       const data = await res.json();
       if (Array.isArray(data.entries)) {
         setEntries(data.entries);
+        setTotal(data.total ?? 0);
+        setTotalPages(data.totalPages ?? 1);
+        // The server clamps an out-of-range page (e.g. right after a filter
+        // shrinks the result set below the current page) — mirror that back
+        // into local state so Previous/Next and the page indicator agree
+        // with what's actually on screen.
+        if (typeof data.page === "number" && data.page !== page) setPage(data.page);
         setSyncError(null);
       }
     } catch (err: any) {
@@ -190,89 +247,64 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
     }
   };
 
-  useEffect(() => {
-    loadEntries();
-    // Runs once on mount only — writes below update `entries` locally in lockstep.
-  }, []);
-
-  // Distinct categories actually present in the loaded list (plus whether
-  // any entry is uncategorized) — used to populate the filter dropdown so
-  // it never offers a category with zero matching entries.
-  const categoriesInUse = useMemo(() => {
-    const seen = new Set<string>();
-    let hasUncategorized = false;
-    for (const e of entries) {
-      if (e.category) seen.add(e.category);
-      else hasUncategorized = true;
-    }
-    const list = Array.from(seen)
-      .map(key => ({ key, label: CATEGORY_LABELS[key] || key }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-    return { list, hasUncategorized };
-  }, [entries]);
-
-  const filteredEntries = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return entries.filter(e => {
-      // Search matches the PED term only — category filtering has its own
-      // dedicated dropdown (categoryFilter) right next to this box, so
-      // matching category names here too just meant typing a category word
-      // (e.g. "eye") surfaced unrelated PEDs that happened to share it.
-      const matchesSearch = !q || e.term.toLowerCase().includes(q);
-      const matchesCategory = categoryFilter === "all" ||
-        (categoryFilter === "uncategorized" ? !e.category : e.category === categoryFilter);
-      return matchesSearch && matchesCategory;
-    });
-  }, [entries, searchQuery, categoryFilter]);
-
-  const hasActiveFilter = Boolean(searchQuery) || categoryFilter !== "all";
-
-  // Sorting happens on the full filtered list, BEFORE the pagination slice
-  // below — sorting only the current page would just reorder 50 rows at a
-  // time instead of actually ordering the directory.
-  const { sorted: sortedEntries, sort: entriesSort, toggleSort: toggleEntriesSort } = useSortableData(
-    filteredEntries,
-    {
-      term: stringComparator((e: PedSuggestionEntry) => e.term),
-      category: stringComparator((e: PedSuggestionEntry) => (e.category ? CATEGORY_LABELS[e.category] || e.category : null)),
-      addedBy: stringComparator((e: PedSuggestionEntry) => e.addedBy),
-    }
-  );
-
-  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
-  const clampedPage = Math.min(page, totalPages);
-  const pageEntries = sortedEntries.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
-
+  // Filter/search/sort changes jump back to page 1; the fetch effect below
+  // re-runs regardless (it depends on all of these plus `page`).
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, categoryFilter, entriesSort]);
+  }, [searchQuery, categoryFilter, entriesSort?.key, entriesSort?.direction]);
 
-  // Exports the currently filtered list (respects both search and the
-  // category filter, so an admin can narrow first and download just that
-  // slice) as a CSV — Term, Category, Added By, Created At.
-  const downloadCsv = () => {
-    const escapeCell = (value: string) => {
-      const s = String(value ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const header = ["Term", "Category", "Added By", "Created At"];
-    const rows = sortedEntries.map(e => [
-      e.term,
-      e.category ? (CATEGORY_LABELS[e.category] || e.category) : "Uncategorized",
-      e.addedBy,
-      e.createdAt ? new Date(e.createdAt).toLocaleDateString() : "",
-    ]);
-    const csv = [header, ...rows].map(row => row.map(escapeCell).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ped-directory-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    logAction("PED Directory Exported", `Downloaded a CSV of ${filteredEntries.length.toLocaleString()} PED directory ${filteredEntries.length === 1 ? "entry" : "entries"}${hasActiveFilter ? " (filtered)" : ""}.`);
+  useEffect(() => {
+    loadEntries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, searchQuery, categoryFilter, entriesSort?.key, entriesSort?.direction]);
+
+  // Exports the currently filtered set (respects both search and the
+  // category filter, NOT just the visible page) as a CSV — Term, Category,
+  // Added By, Created At. Round-trips to the server since the client only
+  // holds the current page.
+  const downloadCsv = async () => {
+    setExporting(true);
+    setSaveError(null);
+    try {
+      const params = new URLSearchParams({ paginated: "1", export: "1" });
+      if (searchQuery) params.set("search", searchQuery);
+      if (categoryFilter !== "all") params.set("category", categoryFilter);
+      if (entriesSort) {
+        params.set("sortBy", entriesSort.key);
+        params.set("sortDir", entriesSort.direction);
+      }
+      const res = await fetch(`/api/ped-suggestions?${params.toString()}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to export the PED directory (HTTP ${res.status}).`);
+      const exportRows: PedSuggestionEntry[] = Array.isArray(body.entries) ? body.entries : [];
+
+      const escapeCell = (value: string) => {
+        const s = String(value ?? "");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const header = ["Term", "Category", "Added By", "Created At"];
+      const rows = exportRows.map(e => [
+        e.term,
+        e.category ? (CATEGORY_LABELS[e.category] || e.category) : "Uncategorized",
+        e.addedBy,
+        e.createdAt ? new Date(e.createdAt).toLocaleDateString() : "",
+      ]);
+      const csv = [header, ...rows].map(row => row.map(escapeCell).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ped-directory-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      logAction("PED Directory Exported", `Downloaded a CSV of ${exportRows.length.toLocaleString()} PED directory ${exportRows.length === 1 ? "entry" : "entries"}${hasActiveFilter ? " (filtered)" : ""}.`);
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to export the PED directory. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const startEdit = (entry: PedSuggestionEntry) => {
@@ -301,13 +333,17 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to update this term (HTTP ${res.status}).`);
       const previousTerm = entries.find(e => e.id === editingId)?.term;
-      setEntries(prev => prev.map(e => (e.id === editingId ? body.entry : e)).sort((a, b) => a.term.localeCompare(b.term)));
       logAction("PED Directory Entry Edited", `Updated "${previousTerm}" in the PED directory (now "${body.entry.term}", category: ${body.entry.category ? CATEGORY_LABELS[body.entry.category] || body.entry.category : "none"}).`);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
       setEditingId(null);
       setDraftTerm("");
       setDraftCategory("");
+      // Refresh from the server rather than patching the in-memory page —
+      // a category change can move this row out of the current filter/sort
+      // position, and the category-filter dropdown's option list can change.
+      await loadEntries();
+      refreshCategoriesInUse();
     } catch (err: any) {
       setSaveError(err.message || "Failed to update this term. Please try again.");
     } finally {
@@ -323,8 +359,12 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
       const res = await fetch(`/api/ped-suggestions/${entry.id}`, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to remove this term (HTTP ${res.status}).`);
-      setEntries(prev => prev.filter(e => e.id !== entry.id));
       logAction("PED Directory Entry Deleted", `Removed "${entry.term}" from the PED directory.`);
+      // Deleting the last row on a page (other than page 1) would otherwise
+      // leave the view stuck on a now-empty page — loadEntries() re-fetches
+      // page `page`, and the server clamps it back into range if needed.
+      await loadEntries();
+      refreshCategoriesInUse();
     } catch (err: any) {
       setSaveError(err.message || "Failed to remove this term. Please try again.");
     } finally {
@@ -338,10 +378,6 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
       setSaveError("Enter a term before adding it to the directory.");
       return;
     }
-    if (entries.some(e => e.term.toLowerCase() === term.toLowerCase())) {
-      setSaveError(`"${term}" is already in the PED directory.`);
-      return;
-    }
     setSaving(true);
     setSaveError(null);
     try {
@@ -351,14 +387,19 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
         body: JSON.stringify({ term, category: newCategory || null }),
       });
       const body = await res.json().catch(() => ({}));
+      // The server now returns a friendly 409 for a duplicate term (see
+      // server.ts) — the old client-side pre-check relied on the full
+      // directory being loaded in memory, which is no longer true now that
+      // this list is server-paginated.
       if (!res.ok) throw new Error(body.error || `Failed to add this term (HTTP ${res.status}).`);
-      setEntries(prev => [...prev, body.entry].sort((a, b) => a.term.localeCompare(b.term)));
       logAction("PED Directory Entry Added", `Added "${body.entry.term}" to the PED directory${body.entry.category ? ` (category: ${CATEGORY_LABELS[body.entry.category] || body.entry.category})` : ""}.`);
       setAddingNew(false);
       setNewTerm("");
       setNewCategory("");
-      setSearchQuery("");
+      setSearchInput("");
       setPage(1);
+      await loadEntries();
+      refreshCategoriesInUse();
     } catch (err: any) {
       setSaveError(err.message || "Failed to add this term. Please try again.");
     } finally {
@@ -401,7 +442,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
             ) : (
               <span className="text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap text-emerald-500">
                 <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                {entries.length.toLocaleString()} terms synced
+                {total.toLocaleString()} {hasActiveFilter ? "matching terms" : "terms synced"}
               </span>
             )}
             {saving && (
@@ -419,17 +460,17 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
             <input
               type="text"
               placeholder="Search PED terms..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className={`w-full py-2 pl-10 pr-4 text-xs font-semibold rounded-lg border outline-none transition-all ${
                 dark
                   ? "bg-[#060A10] border-stone-850 text-white focus:border-sky-500"
                   : "bg-white border-stone-250 text-stone-900 focus:border-sky-400 shadow-inner"
               }`}
             />
-            {searchQuery && (
+            {searchInput && (
               <button
-                onClick={() => setSearchQuery("")}
+                onClick={() => setSearchInput("")}
                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 hover:text-stone-100"
                 title="Clear search"
               >
@@ -459,7 +500,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
           <ClippedButton
             type="button"
             onClick={downloadCsv}
-            disabled={filteredEntries.length === 0}
+            disabled={total === 0 || exporting}
             cornerBg={dark ? "#0e2236" : "#ffffff"}
             style={{
               background: dark ? "#2A303C" : "#E7E5E4",
@@ -468,8 +509,8 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
             className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 hover:brightness-110 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:brightness-100"
             title="Download the current list as CSV"
           >
-            <Download className="w-3.5 h-3.5 shrink-0" />
-            Export
+            <Download className={`w-3.5 h-3.5 shrink-0 ${exporting ? "animate-pulse" : ""}`} />
+            {exporting ? "Exporting..." : "Export"}
           </ClippedButton>
 
           {canManage && !addingNew && (
@@ -546,7 +587,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
                 </tr>
               )}
 
-              {!loading && filteredEntries.length === 0 && (
+              {!loading && entries.length === 0 && (
                 <tr>
                   <td colSpan={columnCount} className="py-10 text-center text-xs font-semibold text-stone-400">
                     {hasActiveFilter
@@ -558,7 +599,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
                 </tr>
               )}
 
-              {pageEntries.map((entry, idx) => {
+              {entries.map((entry, idx) => {
                 const isEditing = editingId === entry.id;
                 return (
                   <tr
@@ -645,36 +686,12 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[10.5px] font-semibold text-content-muted">
-            Showing {filteredEntries.length === 0 ? 0 : (clampedPage - 1) * PAGE_SIZE + 1}
+            Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
             {"–"}
-            {Math.min(clampedPage * PAGE_SIZE, filteredEntries.length)} of {filteredEntries.length.toLocaleString()}
+            {Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()}
             {hasActiveFilter ? " matching entries" : " entries"}. {canManage ? "Changes are saved to the server, feed the Lookup page dropdown for every advisor, and — when a category is assigned — go live in classification for every plan." : "Admin or Developer clearance is required to add, edit, or remove entries."}
           </p>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1.5 shrink-0">
-              <ClippedButton
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={clampedPage <= 1}
-                cornerBg={dark ? "#0e2236" : "#ffffff"}
-                className={`p-1.5 ${dark ? "text-stone-300" : "text-stone-600"}`}
-                title="Previous page"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </ClippedButton>
-              <span className={`text-[10.5px] font-bold px-1 whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                Page {clampedPage} of {totalPages}
-              </span>
-              <ClippedButton
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={clampedPage >= totalPages}
-                cornerBg={dark ? "#0e2236" : "#ffffff"}
-                className={`p-1.5 ${dark ? "text-stone-300" : "text-stone-600"}`}
-                title="Next page"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </ClippedButton>
-            </div>
-          )}
+          <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       </div>
     </div>

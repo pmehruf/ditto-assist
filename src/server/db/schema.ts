@@ -69,7 +69,7 @@ export const changeLogs = pgTable("change_logs", {
   userName: text("user_name").notNull(),
   role: varchar("role", { length: 32 }).notNull(),
   actionType: text("action_type").notNull(),
-  planName: text("plan_name").notNull(),
+  planName: text("plan_name"),
   description: text("description").notNull(),
   snapshot: jsonb("snapshot"),
 });
@@ -641,6 +641,51 @@ export const pageVisibility = pgTable("page_visibility", {
 
 export type PageVisibilityRow = typeof pageVisibility.$inferSelect;
 export type NewPageVisibilityRow = typeof pageVisibility.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// qa_dashboard_google_connection — the QA Dashboard's stored Google OAuth
+// grant (see src/server/qaDashboard/*). Single-row table (id is always the
+// literal string "default") holding an encrypted refresh token obtained
+// when someone with sheet access clicks "Connect Google Sheets" in
+// Developer Controls, so the app can read the QA team's Sheet read-only as
+// that person — no Workspace admin action or service account needed. The
+// refresh token itself is encrypted at rest (see tokenCrypto.ts); this
+// table never stores it in plaintext.
+// ─────────────────────────────────────────────────────────────────────────
+export const qaDashboardGoogleConnection = pgTable("qa_dashboard_google_connection", {
+  id: text("id").primaryKey().default("default"),
+  connectedEmail: text("connected_email").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedBy: text("connected_by").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type QaDashboardGoogleConnectionRow = typeof qaDashboardGoogleConnection.$inferSelect;
+export type NewQaDashboardGoogleConnectionRow = typeof qaDashboardGoogleConnection.$inferInsert;
+
+// qa_dashboard_roles — who holds Admin/Guide/Mentor access on the QA
+// Dashboard (src/server/qaDashboard/qaRoles.ts), managed from the "QA
+// Dashboard Access" tab in User Directory & Management. Replaces the former
+// QA_ADMIN_EMAILS/QA_GUIDE_EMAILS/QA_MENTOR_EMAILS env vars entirely — this
+// table is the sole source of truth as of the 2026-07-30 cutover, which
+// backfilled the exact membership those env vars held at the time (see
+// drizzle/0022_qa_dashboard_roles.sql). displayName is only meaningful for
+// guide/mentor: it must match the "Guide"/"Mentor Name" column text in the
+// QA team's Google Sheet exactly (which may differ from this person's
+// WebApp profile name) for src/server/qaDashboard/qaDataEngine.ts's
+// getAdvisorsForGuide/getAdvisorsForMentor to find their team.
+export const qaDashboardRoleEnum = pgEnum("qa_dashboard_role", ["admin", "guide", "mentor"]);
+
+export const qaDashboardRoles = pgTable("qa_dashboard_roles", {
+  email: varchar("email", { length: 320 }).primaryKey(),
+  role: qaDashboardRoleEnum("role").notNull(),
+  displayName: text("display_name"),
+  assignedBy: text("assigned_by").notNull(),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type QaDashboardRoleRow = typeof qaDashboardRoles.$inferSelect;
+export type NewQaDashboardRoleRow = typeof qaDashboardRoles.$inferInsert;
 
 export type SearchHistoryRow = typeof searchHistory.$inferSelect;
 export type NewSearchHistoryRow = typeof searchHistory.$inferInsert;

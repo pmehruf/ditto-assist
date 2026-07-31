@@ -3,14 +3,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { pedRepository, type PedRepositoryRow, type NewPedRepositoryRow } from "../schema.js";
+import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
 
 export type CreatePedEntry = Omit<NewPedRepositoryRow, "id" | "pedCode" | "createdAt" | "updatedAt">;
 export type UpdatePedEntry = Partial<
   Omit<NewPedRepositoryRow, "id" | "pedCode" | "createdAt" | "updatedAt" | "addedBy">
 >;
+
+export interface PedRepositoryListOptions {
+  page?: number;
+  pageSize?: number;
+  /** Matches against `canonicalName` or `pedCode` (case-insensitive substring). */
+  search?: string;
+  categoryKey?: string;
+  status?: "draft" | "approved" | "deprecated";
+  /** Whitelisted to "canonicalName" | "pedCode" | "status" | "createdAt" | "updatedAt"; defaults to "canonicalName". */
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+}
+
+const SORTABLE_COLUMNS = {
+  canonicalName: pedRepository.canonicalName,
+  pedCode: pedRepository.pedCode,
+  categoryKey: pedRepository.categoryKey,
+  status: pedRepository.status,
+  createdAt: pedRepository.createdAt,
+  updatedAt: pedRepository.updatedAt,
+} as const;
 
 /**
  * Data Access Layer for `ped_repository` — the master disease registry
@@ -25,6 +47,59 @@ export class PedRepositoryRepository {
 
   async list(): Promise<PedRepositoryRow[]> {
     return this.db.select().from(pedRepository).orderBy(asc(pedRepository.canonicalName));
+  }
+
+  /**
+   * Server-side paginated/searched/filtered/sorted list. Not wired to any
+   * admin UI route yet (this table has no UI surface today — see
+   * PED_REPOSITORY_DB_MIGRATION_DESIGN.md), added ahead of that so a future
+   * admin page can page through the registry without loading it whole, the
+   * same contract every other table in this app now follows.
+   */
+  async listPaginated(options: PedRepositoryListOptions = {}): Promise<PaginatedResult<PedRepositoryRow>> {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.max(1, options.pageSize ?? 50);
+
+    const conditions = [];
+    if (options.search) {
+      const pattern = containsPattern(options.search);
+      conditions.push(or(ilike(pedRepository.canonicalName, pattern), ilike(pedRepository.pedCode, pattern)));
+    }
+    if (options.categoryKey) conditions.push(eq(pedRepository.categoryKey, options.categoryKey));
+    if (options.status) conditions.push(eq(pedRepository.status, options.status));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? pedRepository.canonicalName;
+    const orderFn = options.sortDir === "desc" ? desc : asc;
+
+    const [{ value: total }] = await this.db.select({ value: count() }).from(pedRepository).where(where);
+    const { page: clampedPage } = clampPage(page, total, pageSize);
+    const data = await this.db
+      .select()
+      .from(pedRepository)
+      .where(where)
+      .orderBy(orderFn(sortColumn))
+      .limit(pageSize)
+      .offset((clampedPage - 1) * pageSize);
+
+    return buildPaginatedResult(data, total, clampedPage, pageSize);
+  }
+
+  /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
+   * powers the admin UI's CSV export, which downloads the whole matching
+   * set rather than just the visible page. */
+  async listMatching(options: Pick<PedRepositoryListOptions, "search" | "categoryKey" | "status" | "sortBy" | "sortDir"> = {}): Promise<PedRepositoryRow[]> {
+    const conditions = [];
+    if (options.search) {
+      const pattern = containsPattern(options.search);
+      conditions.push(or(ilike(pedRepository.canonicalName, pattern), ilike(pedRepository.pedCode, pattern)));
+    }
+    if (options.categoryKey) conditions.push(eq(pedRepository.categoryKey, options.categoryKey));
+    if (options.status) conditions.push(eq(pedRepository.status, options.status));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? pedRepository.canonicalName;
+    const orderFn = options.sortDir === "desc" ? desc : asc;
+    return this.db.select().from(pedRepository).where(where).orderBy(orderFn(sortColumn));
   }
 
   async get(id: number): Promise<PedRepositoryRow | undefined> {

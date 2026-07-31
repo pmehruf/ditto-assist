@@ -4,13 +4,45 @@
  */
 
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Pencil, Trash2, Search } from "lucide-react";
 import { QAAnnouncementForm } from "../components/forms/QAAnnouncementForm";
 import { renderFormattedAnnouncement } from "../utils/renderFormattedAnnouncement";
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "../components/ClippedButton";
+import { Pagination } from "../components/Pagination";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+
+const PAGE_SIZE = 25;
+
+// Maps a raw server announcements-table row into this app's client-side
+// QAAnnouncement shape — same mapping App.tsx's mapAnnouncementRow and
+// QAAnnouncementForm.tsx's mapRow already apply to every other fetch of this
+// table. This page's own paginated fetch (below) used to skip this and hand
+// the raw row straight to `entries`, which left `id` as the DB's native
+// number instead of the `String(row.id)` every other announcements array in
+// the app uses — so clicking Edit here set `editingAnnouncementId` to a
+// number that could never strictly-equal a string id in `qaAnnouncements`,
+// and the form's by-id lookup silently found nothing. Also fixes `from`
+// (the row's real field is `fromTeam`), which had the same "never actually
+// wired up" problem for General Announcements' team field.
+function mapAnnouncementRow(row: any): QAAnnouncement {
+  return {
+    id: String(row.id),
+    announcement: row.announcement,
+    effectiveDate: row.effectiveDate ?? undefined,
+    category: row.category,
+    addedBy: row.addedBy,
+    rating: row.rating ?? undefined,
+    type: row.type ?? "QA Announcement",
+    validTillDate: row.validTillDate ?? undefined,
+    title: row.title ?? undefined,
+    from: row.fromTeam ?? undefined,
+    announcementDate: row.announcementDate ?? undefined,
+  };
+}
 
 /**
  * Urgency accent used for the card's left border + small status pill.
@@ -100,6 +132,73 @@ export function AnnouncementLogPage({
   deletingAnnouncementId,
   setDeletingAnnouncementId,
 }: AnnouncementLogPageProps) {
+  // Self-fetched paginated/searched view for THIS admin gallery only.
+  // `qaAnnouncements` (the full, unbounded array from App.tsx) stays exactly
+  // as-is and keeps feeding the carousel/banner and the edit-form's
+  // by-id lookup — neither of those is touched here. This component just
+  // stops rendering that full array directly and instead asks the server
+  // for one page at a time (25/page, per spec).
+  const [entries, setEntries] = useState<QAAnnouncement[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebouncedValue(searchInput);
+  // Bumped only when the create/edit form actually saves something (see
+  // handleFormAnnouncementsChange below) — the signal this gallery needs to
+  // refetch, decoupled from App.tsx's own one-time mount fetch of the full
+  // array so we don't double-fetch on load.
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({
+      paginated: "1",
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+      sortBy: "announcementDate",
+      sortDir: "desc",
+    });
+    const trimmed = debouncedSearch.trim();
+    if (trimmed) params.set("search", trimmed);
+
+    fetch(`/api/announcements?${params.toString()}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setEntries(Array.isArray(data.entries) ? data.entries.map(mapAnnouncementRow) : []);
+        setTotal(typeof data.total === "number" ? data.total : 0);
+        setTotalPages(typeof data.totalPages === "number" ? data.totalPages : 1);
+        // Server clamps out-of-range pages (e.g. after a delete empties the
+        // last page) — sync that back so Previous/Next stay consistent.
+        if (typeof data.page === "number" && data.page !== page) setPage(data.page);
+      })
+      .catch((err) => {
+        console.error("Failed to load announcements:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, debouncedSearch, refreshTick]);
+
+  // QAAnnouncementForm updates the app-wide `qaAnnouncements` array directly
+  // on create/edit — this wrapper just also nudges this gallery to refetch
+  // its own current page so the change shows up here too.
+  const handleFormAnnouncementsChange: Dispatch<SetStateAction<QAAnnouncement[]>> = (update) => {
+    setQaAnnouncements(update);
+    setRefreshTick((t) => t + 1);
+  };
+
   return (
     /* Fills the app's content area on lg+ (main is lg:flex lg:flex-col
        lg:min-h-0 for this tab) so the two cards below share exactly the
@@ -149,7 +248,7 @@ export function AnnouncementLogPage({
             <QAAnnouncementForm
               theme={theme}
               qaAnnouncements={qaAnnouncements}
-              setQaAnnouncements={setQaAnnouncements}
+              setQaAnnouncements={handleFormAnnouncementsChange}
               currentUser={currentUser}
               setChangeLogs={setChangeLogs}
               editingAnnouncementId={editingAnnouncementId}
@@ -175,11 +274,32 @@ export function AnnouncementLogPage({
             <div className="space-y-4 h-full flex flex-col min-h-0">
               <div className="flex justify-between items-center pb-2 border-b border-light-stone/5 dark:border-stone-800">
                 <h3 className={`text-sm font-bold uppercase tracking-wider ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-                  Active Announcements ({qaAnnouncements.length})
+                  Active Announcements ({total})
                 </h3>
                 <span className="text-[10px] font-mono text-content-muted">
                   Active Sort: Newest First
                 </span>
+              </div>
+
+              {/* Search — server-side, across the full announcements table
+                  (not just the current page). Debounced via useDebouncedValue;
+                  a page-change effect resets to page 1 whenever the debounced
+                  term changes. */}
+              <div className="relative shrink-0">
+                <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${
+                  theme === "dark" ? "text-stone-500" : "text-stone-400"
+                }`} />
+                <input
+                  type="text"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search announcements..."
+                  className={`w-full pl-8 pr-3 py-1.5 rounded-lg text-xs border outline-none transition-colors ${
+                    theme === "dark"
+                      ? "bg-white/[0.03] border-white/[0.08] text-white placeholder:text-stone-600 focus:border-white/20"
+                      : "bg-white border-[#D2DFEC] text-stone-900 placeholder:text-stone-400 focus:border-[#4673a9]/50"
+                  }`}
+                />
               </div>
 
               {/* Masonry gallery.
@@ -193,26 +313,19 @@ export function AnnouncementLogPage({
                   alignment between columns. */}
               <div className="flex-grow min-h-0 overflow-y-auto overflow-x-hidden pr-2">
                 <div className="columns-2 gap-4">
-                {qaAnnouncements.length === 0 ? (
+                {entries.length === 0 ? (
                   <div className="text-center py-20 text-xs italic text-stone-500 select-none">
-                    No active announcements. Use the form on the left to add one.
+                    {loading
+                      ? "Loading…"
+                      : searchInput.trim()
+                        ? "No announcements match your search."
+                        : "No active announcements. Use the form on the left to add one."}
                   </div>
                 ) : (
-                  // Newest first, by Announcement Date (when the notice was
-                  // posted — the same date shown to advisors and used to
-                  // decide which announcements they see), not proximity to
-                  // today's effective date. `qaAnnouncements` already arrives
-                  // from GET /api/announcements ordered newest-created-first
-                  // (see announcementsRepository.ts's `orderBy(desc(createdAt))`),
-                  // and Array.prototype.sort is stable, so entries sharing the
-                  // same Announcement Date keep that creation-order tiebreak
-                  // automatically — no separate secondary sort key needed.
-                  [...qaAnnouncements]
-                    .sort((a, b) => {
-                      const aTime = a.announcementDate ? new Date(a.announcementDate).getTime() : 0;
-                      const bTime = b.announcementDate ? new Date(b.announcementDate).getTime() : 0;
-                      return bTime - aTime;
-                    })
+                  // Newest first, by Announcement Date — now sorted server-side
+                  // (GET /api/announcements?paginated=1&sortBy=announcementDate&sortDir=desc),
+                  // so `entries` arrives in display order already.
+                  entries
                     .map((item) => {
                       const today = new Date();
                       const diffDays = Math.ceil((new Date(item.effectiveDate).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -307,6 +420,8 @@ export function AnnouncementLogPage({
                                       // would reappear for every other user.
                                       const targetId = item.id;
                                       setQaAnnouncements(prev => prev.filter(p => p.id !== targetId));
+                                      setEntries(prev => prev.filter(p => p.id !== targetId));
+                                      setTotal(prev => Math.max(0, prev - 1));
                                       setDeletingAnnouncementId(null);
                                       fetch(`/api/announcements/${targetId}`, { method: "DELETE" }).catch((err) => {
                                         console.error("Failed to delete announcement on the server:", err);
@@ -420,6 +535,16 @@ export function AnnouncementLogPage({
                 )}
                 </div>
               </div>
+
+              {totalPages > 1 && (
+                <Pagination
+                  theme={theme}
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                  className="shrink-0 pt-2 border-t border-light-stone/5 dark:border-stone-800"
+                />
+              )}
             </div>
           </div>
         </div>

@@ -3,25 +3,51 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Filter, Search, Calendar, Activity, Download, Clock, ChevronRight } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from "recharts";
 import { AuditLogEntry } from "../types/announcements";
 import { ChangeLogEntry } from "../types/changeLog";
 import { UserProfile } from "../types/user";
-import { parseGlobalLogTimestamp, formatDisplayTimestamp } from "../utils/timestamps";
-import { translateSourceToLayman, getSourceInfo } from "../utils/labelTranslation";
+import { formatDisplayTimestamp } from "../utils/timestamps";
+import { translateSourceToLayman } from "../utils/labelTranslation";
 import { getMatchTierInfo } from "../utils/matchTier";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { SortableTh } from "../components/SortableTh";
-import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
+import { Pagination } from "../components/Pagination";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { useServerSort } from "../hooks/useServerSort";
+
+const PAGE_SIZE = 50;
+
+interface PaginatedListResponse<T> {
+  entries: T[];
+  total: number;
+  page: number;
+  totalPages: number;
+  tierCounts?: { level1: number; level2: number; level3: number; needsClarification: number; notMedicalAilment: number };
+}
+
+/** search_history sortKeys used by this page's User Activity table -> the
+ * server-side column each maps to (searchHistoryRepository.ts). "adviser"
+ * has no dedicated column on search_history (the advisor's display name is
+ * resolved client-side from userEmail via the user directory below), so it
+ * sorts by the underlying userEmail instead — the closest real column. */
+const AUDIT_SORT_KEY_MAP: Record<string, string> = {
+  adviser: "userEmail",
+  timestamp: "timestamp",
+  planName: "planName",
+  pedInput: "pedInput",
+  matchType: "matchType",
+  matchedQuestion: "matchedQuestion",
+  source: "source",
+};
 
 interface AuditPageProps {
   theme: "light" | "dark";
   auditSubTab: "user" | "modification";
   setAuditSubTab: (value: "user" | "modification") => void;
-  auditLogs: AuditLogEntry[];
   auditSearch: string;
   setAuditSearch: (value: string) => void;
   auditPlanFilter: string;
@@ -39,7 +65,6 @@ interface AuditPageProps {
   setHistorySearch: (value: string) => void;
   historyActionFilter: string;
   setHistoryActionFilter: (value: string) => void;
-  changeLogs: ChangeLogEntry[];
   /**
    * User directory, used to resolve an advisor's real name and TACT ID from
    * the email stored on each log row. search_history only records
@@ -50,18 +75,19 @@ interface AuditPageProps {
 }
 
 /**
- * "Activity Log" (audit) tab content. Extracted verbatim from App.tsx
- * (Phase 1.3), including the two `useMemo` derivations (`filteredAuditLogs`,
- * `auditChartData`) that used to live in App() and were only ever consumed
- * here. The `activeTab === "audit"` condition and wrapping
- * `<motion.div key="audit">` deliberately stay in App.tsx (see
- * ResourcesPage.tsx for why).
+ * "Activity Log" (audit) tab content. Originally extracted verbatim from
+ * App.tsx (Phase 1.3); both sub-tabs (User Activity / search_history and
+ * Modification History / change_logs) now self-fetch server-side
+ * paginated/searched/filtered/sorted data directly from this component
+ * rather than reading a fully-loaded array passed down from App.tsx — see
+ * the fetch effects near the top of the component body. The
+ * `activeTab === "audit"` condition and wrapping `<motion.div key="audit">`
+ * deliberately stay in App.tsx (see ResourcesPage.tsx for why).
  */
 export function AuditPage({
   theme,
   auditSubTab,
   setAuditSubTab,
-  auditLogs,
   auditSearch,
   setAuditSearch,
   auditPlanFilter,
@@ -79,7 +105,6 @@ export function AuditPage({
   setHistorySearch,
   historyActionFilter,
   setHistoryActionFilter,
-  changeLogs,
   usersList,
 }: AuditPageProps) {
   // Which rows have their explanation expanded (keyed by row index).
@@ -127,135 +152,188 @@ export function AuditPage({
     return { name: formattedName, tactId: "—" };
   };
 
-  const filteredAuditLogs = useMemo(() => {
-    return auditLogs.filter(log => {
-      const matchSearch =
-        !auditSearch ||
-        (log.userEmail || "").toLowerCase().includes(auditSearch.toLowerCase()) ||
-        (log.pedInput || "").toLowerCase().includes(auditSearch.toLowerCase()) ||
-        (log.matchedQuestion || "").toLowerCase().includes(auditSearch.toLowerCase());
+  // ── USER ACTIVITY (search_history) — server-side page/search/filter/sort ──
+  const debouncedAuditSearch = useDebouncedValue(auditSearch, 350);
+  const [auditPage, setAuditPage] = useState(1);
+  const { sort: auditLogsSort, toggleSort: toggleAuditLogsSort } = useServerSort({ key: "timestamp", direction: "desc" });
+  const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditTotalPages, setAuditTotalPages] = useState(1);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [auditExporting, setAuditExporting] = useState(false);
+  const [tierCounts, setTierCounts] = useState({ level1: 0, level2: 0, level3: 0, needsClarification: 0, notMedicalAilment: 0 });
 
-      const matchPlan =
-        auditPlanFilter === "All" ||
-        log.planName === auditPlanFilter;
-
-      // Mapping Status filter — separate from the Mapping Source filter
-      // below. This one filters by the shared confidence tier taxonomy
-      // (src/utils/matchTier.ts): Level 1/2/3, Needs Clarification, or Not
-      // a Medical Ailment — same labels shown in the MAPPING STATUS column
-      // and on the Match Category Distribution chart.
-      const statusTier = getMatchTierInfo(log.matchType);
-      const matchStatus =
-        auditStatusFilter === "All" ||
-        statusTier.levelLabel === auditStatusFilter;
-
-      // Shared classifier (src/utils/labelTranslation.ts getSourceInfo) —
-      // same System Rule / AI Generated split shown in the SOURCE column
-      // below. This used to be a local .includes("deterministic") check,
-      // which mislabeled the two offline safety-net fallbacks ("Match API
-      // Error Fallback", "Disaster Recovery Local Rules") as AI even though
-      // no AI reasoning runs on those paths — so filtering by "AI Fallback"
-      // silently included plain rule-based fallback entries too.
-      const isSystemRuleMatch = getSourceInfo(log.source).isSystemRule;
-      const matchSource =
-        auditTypeFilter === "All" ||
-        (auditTypeFilter === "System Rule" && isSystemRuleMatch) ||
-        (auditTypeFilter === "AI Generated" && !isSystemRuleMatch);
-
-      let matchDate = true;
-      const logDate = parseGlobalLogTimestamp(log.timestamp);
-      if (logDate) {
-        const logTime = logDate.getTime();
-        if (auditStartDate) {
-          const startDateObj = new Date(auditStartDate);
-          startDateObj.setHours(0, 0, 0, 0);
-          if (logTime < startDateObj.getTime()) {
-            matchDate = false;
-          }
-        }
-        if (auditEndDate) {
-          const endDateObj = new Date(auditEndDate);
-          endDateObj.setHours(23, 59, 59, 999);
-          if (logTime > endDateObj.getTime()) {
-            matchDate = false;
-          }
-        }
-      }
-
-      return matchSearch && matchPlan && matchStatus && matchSource && matchDate;
-    });
-  }, [auditLogs, auditSearch, auditPlanFilter, auditStatusFilter, auditTypeFilter, auditStartDate, auditEndDate]);
-
-  const { sorted: sortedAuditLogs, sort: auditLogsSort, toggleSort: toggleAuditLogsSort } = useSortableData(
-    filteredAuditLogs,
-    {
-      adviser: stringComparator((log: AuditLogEntry) => resolveAdviser(log.userEmail).name),
-      timestamp: dateComparator((log: AuditLogEntry) => parseGlobalLogTimestamp(log.timestamp)),
-      planName: stringComparator((log: AuditLogEntry) => log.planName),
-      pedInput: stringComparator((log: AuditLogEntry) => log.pedInput),
-      matchType: stringComparator((log: AuditLogEntry) => getMatchTierInfo(log.matchType).levelLabel),
-      matchedQuestion: stringComparator((log: AuditLogEntry) => log.matchedQuestion),
-      source: stringComparator((log: AuditLogEntry) => translateSourceToLayman(log.source)),
+  const buildAuditParams = (forExport: boolean) => {
+    const params = new URLSearchParams({ paginated: "1" });
+    if (!forExport) params.set("page", String(auditPage));
+    params.set("pageSize", forExport ? "10000" : String(PAGE_SIZE));
+    if (debouncedAuditSearch) params.set("search", debouncedAuditSearch);
+    if (auditPlanFilter !== "All") params.set("planName", auditPlanFilter);
+    if (auditStatusFilter !== "All") params.set("statusTier", auditStatusFilter);
+    if (auditTypeFilter !== "All") params.set("sourceType", auditTypeFilter);
+    if (auditStartDate) params.set("from", auditStartDate);
+    if (auditEndDate) params.set("to", auditEndDate);
+    if (auditLogsSort) {
+      params.set("sortBy", AUDIT_SORT_KEY_MAP[auditLogsSort.key] || auditLogsSort.key);
+      params.set("sortDir", auditLogsSort.direction);
     }
+    return params;
+  };
+
+  useEffect(() => {
+    setAuditPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedAuditSearch, auditPlanFilter, auditStatusFilter, auditTypeFilter, auditStartDate, auditEndDate, auditLogsSort?.key, auditLogsSort?.direction]);
+
+  useEffect(() => {
+    if (auditSubTab !== "user") return;
+    let cancelled = false;
+    setAuditLoading(true);
+    const params = buildAuditParams(false);
+    params.set("includeTierCounts", "1");
+    fetch(`/api/search-history?${params.toString()}`)
+      .then(async (res) => {
+        const body: PaginatedListResponse<AuditLogEntry> = await res.json();
+        if (!res.ok) throw new Error((body as any).error || `HTTP ${res.status}`);
+        if (cancelled) return;
+        setAuditEntries(body.entries || []);
+        setAuditTotal(body.total ?? 0);
+        setAuditTotalPages(body.totalPages ?? 1);
+        if (body.tierCounts) setTierCounts(body.tierCounts);
+        if (typeof body.page === "number" && body.page !== auditPage) setAuditPage(body.page);
+      })
+      .catch((err) => console.error("Failed to load search history from the server:", err))
+      .finally(() => { if (!cancelled) setAuditLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditSubTab, auditPage, debouncedAuditSearch, auditPlanFilter, auditStatusFilter, auditTypeFilter, auditStartDate, auditEndDate, auditLogsSort?.key, auditLogsSort?.direction]);
+
+  const hasActiveAuditFilter = Boolean(
+    auditSearch || auditPlanFilter !== "All" || auditStatusFilter !== "All" || auditTypeFilter !== "All" || auditStartDate || auditEndDate
   );
 
-  const auditChartData = useMemo(() => {
-    // Bucketed through the shared taxonomy (src/utils/matchTier.ts) so this
-    // chart's categories always agree with the badges shown in this same
-    // table, the live Declaration Assistant results screen, and My Activity
-    // Journal. Previously P1 and P2 were split into separate bars ("P1
-    // (Category)" / "P2 (Umbrella)") even though the product decision is
-    // that they're the same confidence tier (Level 2: Category Match) —
-    // only *how* a question was found differs, not the tier shown to
-    // advisers. Unrecognized/malformed match types fall into Level 3
-    // (Fallback) here too, matching getMatchTierInfo's documented safe
-    // default, so there's no more silent "Other" bucket.
-    let level1Count = 0;
-    let level2Count = 0;
-    let level3Count = 0;
-    let needsClarificationCount = 0;
-    let nonAilmentCount = 0;
+  const auditChartData = useMemo(() => ([
+    { name: "Level 1: Direct Match", count: tierCounts.level1, color: "#14B8A6" },
+    { name: "Level 2: Category Match", count: tierCounts.level2, color: "#3B82F6" },
+    { name: "Level 3: Fallback", count: tierCounts.level3, color: "#8B5CF6" },
+    { name: "Needs Clarification", count: tierCounts.needsClarification, color: "#EF4444" },
+    { name: "Not a Medical Ailment", count: tierCounts.notMedicalAilment, color: "#10B981" },
+  ]), [tierCounts]);
 
-    filteredAuditLogs.forEach(log => {
-      const tier = getMatchTierInfo(log.matchType);
-      if (tier.level === 1) level1Count++;
-      else if (tier.level === 2) level2Count++;
-      else if (tier.level === 3) level3Count++;
-      else if (tier.label === "Not a Medical Ailment") nonAilmentCount++;
-      else needsClarificationCount++;
-    });
-
-    return [
-      { name: "Level 1: Direct Match", count: level1Count, color: "#14B8A6" },
-      { name: "Level 2: Category Match", count: level2Count, color: "#3B82F6" },
-      { name: "Level 3: Fallback", count: level3Count, color: "#8B5CF6" },
-      { name: "Needs Clarification", count: needsClarificationCount, color: "#EF4444" },
-      { name: "Not a Medical Ailment", count: nonAilmentCount, color: "#10B981" }
-    ];
-  }, [filteredAuditLogs]);
-
-  const filteredChangeLogs = useMemo(() => {
-    return changeLogs.filter((log) => {
-      const matchSearch =
-        (log.planName || "").toLowerCase().includes(historySearch.toLowerCase()) ||
-        (log.description || "").toLowerCase().includes(historySearch.toLowerCase()) ||
-        (log.userName || "").toLowerCase().includes(historySearch.toLowerCase());
-      const matchType = historyActionFilter === "All" || log.actionType.startsWith(historyActionFilter);
-      return matchSearch && matchType;
-    });
-  }, [changeLogs, historySearch, historyActionFilter]);
-
-  const { sorted: sortedChangeLogs, sort: changeLogsSort, toggleSort: toggleChangeLogsSort } = useSortableData(
-    filteredChangeLogs,
-    {
-      timestamp: dateComparator((log: ChangeLogEntry) => log.timestamp),
-      userName: stringComparator((log: ChangeLogEntry) => log.userName),
-      role: stringComparator((log: ChangeLogEntry) => log.role),
-      actionType: stringComparator((log: ChangeLogEntry) => log.actionType),
-      planName: stringComparator((log: ChangeLogEntry) => log.planName),
-      description: stringComparator((log: ChangeLogEntry) => log.description),
+  const exportAuditCsv = async () => {
+    setAuditExporting(true);
+    try {
+      const res = await fetch(`/api/search-history?${buildAuditParams(true).toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      downloadCSV(Array.isArray(body.entries) ? body.entries : [], "ped-audit-history-crm.csv");
+    } catch (err) {
+      console.error("Failed to export the activity log:", err);
+    } finally {
+      setAuditExporting(false);
     }
-  );
+  };
+
+  // ── MODIFICATION HISTORY (change_logs) — server-side page/search/filter/sort ──
+  const debouncedHistorySearch = useDebouncedValue(historySearch, 350);
+  const [historyPage, setHistoryPage] = useState(1);
+  const { sort: changeLogsSort, toggleSort: toggleChangeLogsSort } = useServerSort({ key: "timestamp", direction: "desc" });
+  const [changeLogEntries, setChangeLogEntries] = useState<ChangeLogEntry[]>([]);
+  const [changeLogTotal, setChangeLogTotal] = useState(0);
+  const [changeLogTotalPages, setChangeLogTotalPages] = useState(1);
+  const [changeLogLoading, setChangeLogLoading] = useState(true);
+
+  const buildHistoryParams = (forExport: boolean) => {
+    const params = new URLSearchParams({ paginated: "1" });
+    if (!forExport) params.set("page", String(historyPage));
+    params.set("pageSize", forExport ? "10000" : String(PAGE_SIZE));
+    if (debouncedHistorySearch) params.set("search", debouncedHistorySearch);
+    if (historyActionFilter !== "All") params.set("actionType", historyActionFilter);
+    if (changeLogsSort) {
+      params.set("sortBy", changeLogsSort.key);
+      params.set("sortDir", changeLogsSort.direction);
+    }
+    return params;
+  };
+
+  useEffect(() => {
+    setHistoryPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedHistorySearch, historyActionFilter, changeLogsSort?.key, changeLogsSort?.direction]);
+
+  useEffect(() => {
+    if (auditSubTab !== "modification") return;
+    let cancelled = false;
+    setChangeLogLoading(true);
+    fetch(`/api/change-logs?${buildHistoryParams(false).toString()}`)
+      .then(async (res) => {
+        const body: PaginatedListResponse<ChangeLogEntry> = await res.json();
+        if (!res.ok) throw new Error((body as any).error || `HTTP ${res.status}`);
+        if (cancelled) return;
+        setChangeLogEntries(body.entries || []);
+        setChangeLogTotal(body.total ?? 0);
+        setChangeLogTotalPages(body.totalPages ?? 1);
+        if (typeof body.page === "number" && body.page !== historyPage) setHistoryPage(body.page);
+      })
+      .catch((err) => console.error("Failed to load modification history from the server:", err))
+      .finally(() => { if (!cancelled) setChangeLogLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditSubTab, historyPage, debouncedHistorySearch, historyActionFilter, changeLogsSort?.key, changeLogsSort?.direction]);
+
+  const [historyExporting, setHistoryExporting] = useState(false);
+
+  const exportChangeLogsCsv = async () => {
+    setHistoryExporting(true);
+    try {
+      const res = await fetch(`/api/change-logs?${buildHistoryParams(true).toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      const filteredLogs: ChangeLogEntry[] = Array.isArray(body.entries) ? body.entries : [];
+
+      const headers = [
+        "Timestamp",
+        "User",
+        "Role",
+        "Action Type",
+        "Plan Title",
+        "Description Log",
+        "Draft Plans State",
+        "Production Plans State",
+        "Question Database Size",
+        "Insurer Metadata Count",
+        "Specific Waiting Period Count",
+      ];
+      const rows = filteredLogs.map((log) => [
+        log.timestamp,
+        log.userName,
+        log.role,
+        log.actionType,
+        log.planName,
+        log.description.replace(/"/g, '""'),
+        log.snapshot?.draftPlans ? `${log.snapshot.draftPlans.length} drafts active` : "Active draft baseline",
+        log.snapshot?.productionPlans ? `${log.snapshot.productionPlans.length} prod active` : "Active prod baseline",
+        log.snapshot?.planQuestionsState ? `${Object.keys(log.snapshot.planQuestionsState).length} items` : "Default schema baseline",
+        log.snapshot?.insurerMetadata ? `${Object.keys(log.snapshot.insurerMetadata).length} mapped` : "Default metadata",
+        log.snapshot?.specificIllnesses ? `${Object.keys(log.snapshot.specificIllnesses).length} schedules` : "Default schedules",
+      ]);
+
+      const csvContent = "data:text/csv;charset=utf-8,"
+        + [headers.join(","), ...rows.map(e => `"${e.join('","')}"`)].join("\n");
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `ditto_modification_history_${new Date().toISOString().split("T")[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to export the modification history:", err);
+    } finally {
+      setHistoryExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -311,8 +389,10 @@ export function AuditPage({
 
       {auditSubTab === "user" && (
         <>
-      {/* CHARTS & FILTERS GRID */}
-      {auditLogs.length > 0 && (
+      {/* CHARTS & FILTERS GRID — shown once the first page has loaded (even
+          if the result set is empty after filtering), so the filters
+          themselves stay usable to clear a filter that zeroed the results. */}
+      {!auditLoading && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Filters Card — flat transparent-grey glass card (was a
               teal/blue gradient wash) to match the neutral, low-chroma card
@@ -334,8 +414,8 @@ export function AuditPage({
                   instead of a one-off rounded pill, so this matches every
                   other function-performing button in the app. */}
               <ClippedButton
-                onClick={() => downloadCSV(filteredAuditLogs, "ped-audit-history-crm.csv")}
-                disabled={filteredAuditLogs.length === 0}
+                onClick={exportAuditCsv}
+                disabled={auditExporting || auditTotal === 0}
                 size="sm"
                 title="Export the filtered activity log as a CSV file"
                 className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
@@ -530,7 +610,7 @@ export function AuditPage({
               <div className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded font-sans ${
                 theme === 'dark' ? 'text-teal-400 bg-teal-500/10' : 'text-stone-700 bg-stone-100'
               }`}>
-                Filtered Entries: {filteredAuditLogs.length}
+                Filtered Entries: {auditTotal.toLocaleString()}
               </div>
             </div>
 
@@ -598,18 +678,25 @@ export function AuditPage({
         theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
       }`}>
         <div className="overflow-x-auto max-h-[600px]">
-          {auditLogs.length === 0 ? (
+          {auditLoading ? (
             <div className="p-16 text-center flex flex-col items-center justify-center font-sans">
               <Activity className="w-10 h-10 text-[#117FDA] dark:text-sky-400 mb-3 stroke-1 animate-pulse" />
-              <p className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-stone-300' : 'text-[#111827]'}`}>Audit trail ledger is empty.</p>
-              <p className={`text-[11px] mt-1.5 font-semibold ${theme === 'dark' ? 'text-stone-450' : 'text-stone-605'}`}>Matched lookup declarations are kept recorded here dynamically.</p>
+              <p className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-stone-300' : 'text-[#111827]'}`}>Loading activity log...</p>
             </div>
-          ) : filteredAuditLogs.length === 0 ? (
-            <div className="p-16 text-center flex flex-col items-center justify-center font-sans">
-              <Search className="w-10 h-10 text-amber-500 mb-3 stroke-1 animate-pulse" />
-              <p className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-stone-300' : 'text-[#111827]'}`}>No matching audit trail logs.</p>
-              <p className={`text-[11px] mt-1.5 font-semibold ${theme === 'dark' ? 'text-stone-450' : 'text-stone-605'}`}>Try adjusting or clearing your active filter options to view historical matches.</p>
-            </div>
+          ) : auditEntries.length === 0 ? (
+            hasActiveAuditFilter ? (
+              <div className="p-16 text-center flex flex-col items-center justify-center font-sans">
+                <Search className="w-10 h-10 text-amber-500 mb-3 stroke-1 animate-pulse" />
+                <p className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-stone-300' : 'text-[#111827]'}`}>No matching audit trail logs.</p>
+                <p className={`text-[11px] mt-1.5 font-semibold ${theme === 'dark' ? 'text-stone-450' : 'text-stone-605'}`}>Try adjusting or clearing your active filter options to view historical matches.</p>
+              </div>
+            ) : (
+              <div className="p-16 text-center flex flex-col items-center justify-center font-sans">
+                <Activity className="w-10 h-10 text-[#117FDA] dark:text-sky-400 mb-3 stroke-1 animate-pulse" />
+                <p className={`text-xs font-black uppercase tracking-wider ${theme === 'dark' ? 'text-stone-300' : 'text-[#111827]'}`}>Audit trail ledger is empty.</p>
+                <p className={`text-[11px] mt-1.5 font-semibold ${theme === 'dark' ? 'text-stone-450' : 'text-stone-605'}`}>Matched lookup declarations are kept recorded here dynamically.</p>
+              </div>
+            )
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead className={`text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${
@@ -634,7 +721,7 @@ export function AuditPage({
               <tbody className={`divide-y font-semibold ${
                 theme === "dark" ? "divide-stone-800 text-stone-300" : "divide-stone-200 text-stone-900"
               }`}>
-                {sortedAuditLogs.map((log, index) => {
+                {auditEntries.map((log, index) => {
                   const adviser = resolveAdviser(log.userEmail);
                   const isExpanded = expandedRows.has(index);
                   return (
@@ -752,6 +839,17 @@ export function AuditPage({
           )}
         </div>
       </div>
+
+      {!auditLoading && auditEntries.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[10.5px] font-semibold text-content-muted">
+            Showing {(auditPage - 1) * PAGE_SIZE + 1}
+            {"–"}
+            {Math.min(auditPage * PAGE_SIZE, auditTotal)} of {auditTotal.toLocaleString()} entries.
+          </p>
+          <Pagination theme={theme} page={auditPage} totalPages={auditTotalPages} onPageChange={setAuditPage} />
+        </div>
+      )}
       </>
       )}
 
@@ -814,50 +912,11 @@ export function AuditPage({
             {/* Dynamic CSV Downloader button */}
             <button
               id="export-csv-button"
-              onClick={() => {
-                const filteredLogs = filteredChangeLogs;
-
-                const headers = [
-                  "Timestamp",
-                  "User",
-                  "Role",
-                  "Action Type",
-                  "Plan Title",
-                  "Description Log",
-                  "Draft Plans State",
-                  "Production Plans State",
-                  "Question Database Size",
-                  "Insurer Metadata Count",
-                  "Specific Waiting Period Count"
-                ];
-                const rows = filteredLogs.map((log) => [
-                  log.timestamp,
-                  log.userName,
-                  log.role,
-                  log.actionType,
-                  log.planName,
-                  log.description.replace(/"/g, '""'),
-                  log.snapshot?.draftPlans ? `${log.snapshot.draftPlans.length} drafts active` : "Active draft baseline",
-                  log.snapshot?.productionPlans ? `${log.snapshot.productionPlans.length} prod active` : "Active prod baseline",
-                  log.snapshot?.planQuestionsState ? `${Object.keys(log.snapshot.planQuestionsState).length} items` : "Default schema baseline",
-                  log.snapshot?.insurerMetadata ? `${Object.keys(log.snapshot.insurerMetadata).length} mapped` : "Default metadata",
-                  log.snapshot?.specificIllnesses ? `${Object.keys(log.snapshot.specificIllnesses).length} schedules` : "Default schedules"
-                ]);
-
-                const csvContent = "data:text/csv;charset=utf-8,"
-                  + [headers.join(","), ...rows.map(e => `"${e.join('","')}"`)].join("\n");
-
-                const encodedUri = encodeURI(csvContent);
-                const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
-                link.setAttribute("download", `ditto_modification_history_${new Date().toISOString().split("T")[0]}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
-              className="w-full md:w-auto px-4 py-2 border border-blue-500/40 text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md select-none"
+              onClick={exportChangeLogsCsv}
+              disabled={historyExporting || changeLogTotal === 0}
+              className="w-full md:w-auto px-4 py-2 border border-blue-500/40 text-blue-400 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md select-none disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Download className="w-4 h-4" /> Export
+              <Download className="w-4 h-4" /> {historyExporting ? "Exporting..." : "Export"}
             </button>
           </div>
 
@@ -884,14 +943,20 @@ export function AuditPage({
                 <tbody className={`divide-y font-semibold ${
                   theme === "dark" ? "divide-stone-800 text-stone-300" : "divide-stone-200 text-stone-900"
                 }`}>
-                  {filteredChangeLogs.length === 0 ? (
+                  {changeLogLoading ? (
+                    <tr>
+                      <td colSpan={6} className="p-16 text-center text-stone-500 font-bold font-sans">
+                        Loading modification history...
+                      </td>
+                    </tr>
+                  ) : changeLogEntries.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="p-16 text-center text-stone-500 font-bold font-sans">
                         No auditable records found matching query filter.
                       </td>
                     </tr>
                   ) : (
-                    sortedChangeLogs.map((log) => {
+                    changeLogEntries.map((log) => {
                       const isAddedVal = log.actionType.includes("Added");
                       const isResolvedVal = log.actionType.includes("Resolved");
                       const isEditedVal = log.actionType.includes("Edited");
@@ -954,6 +1019,17 @@ export function AuditPage({
               </table>
             </div>
           </div>
+
+          {!changeLogLoading && changeLogEntries.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-[10.5px] font-semibold text-content-muted">
+                Showing {(historyPage - 1) * PAGE_SIZE + 1}
+                {"–"}
+                {Math.min(historyPage * PAGE_SIZE, changeLogTotal)} of {changeLogTotal.toLocaleString()} entries.
+              </p>
+              <Pagination theme={theme} page={historyPage} totalPages={changeLogTotalPages} onPageChange={setHistoryPage} />
+            </div>
+          )}
         </div>
       )}
     </div>

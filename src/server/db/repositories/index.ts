@@ -22,6 +22,8 @@ import { PedAliasesRepository } from "./pedAliasesRepository.js";
 import { PlanOverridesRepository } from "./planOverridesRepository.js";
 import { MappingHistoryRepository } from "./mappingHistoryRepository.js";
 import { CollisionsRepository } from "./collisionsRepository.js";
+import { QaDashboardConnectionRepository } from "./qaDashboardConnectionRepository.js";
+import { QaDashboardRoleRepository } from "./qaDashboardRoleRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -93,6 +95,11 @@ export type { CreateMappingHistoryEntry } from "./mappingHistoryRepository.js";
 export { CollisionsRepository } from "./collisionsRepository.js";
 export type { CollisionType, CreateCollisionEntry } from "./collisionsRepository.js";
 
+export { QaDashboardConnectionRepository } from "./qaDashboardConnectionRepository.js";
+
+export { QaDashboardRoleRepository } from "./qaDashboardRoleRepository.js";
+export type { QaDashboardRoleType, UpsertQaDashboardRoleEntry } from "./qaDashboardRoleRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -118,6 +125,8 @@ export interface Repositories {
   planOverrides: PlanOverridesRepository;
   mappingHistory: MappingHistoryRepository;
   collisions: CollisionsRepository;
+  qaDashboardConnection: QaDashboardConnectionRepository;
+  qaDashboardRoles: QaDashboardRoleRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -140,5 +149,7 @@ export function createRepositories(db: AnyDb): Repositories {
     planOverrides: new PlanOverridesRepository(db),
     mappingHistory: new MappingHistoryRepository(db),
     collisions: new CollisionsRepository(db),
+    qaDashboardConnection: new QaDashboardConnectionRepository(db),
+    qaDashboardRoles: new QaDashboardRoleRepository(db),
   };
 }

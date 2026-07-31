@@ -3,11 +3,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { aiMemory, type AiMemoryRow, type NewAiMemoryRow } from "../schema.js";
+import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
 
 export type AiMemoryStatus = "pending" | "approved" | "rejected" | "archived";
+
+/** ai_memory.ai_response is JSONB shaped `{ result: { matched_question, ... } }`
+ * — this pulls that nested field out as a plain SQL text expression so it
+ * can be searched/sorted the same way as a real column. */
+const MATCHED_QUESTION_EXPR = sql`(${aiMemory.aiResponse}->'result'->>'matched_question')`;
+
+export interface AiMemoryListOptions {
+  page?: number;
+  pageSize?: number;
+  status?: AiMemoryStatus;
+  planName?: string;
+  /** Matches against condition, planName, or the nested matched_question (case-insensitive substring) — mirrors AiMappingReview.tsx's old client-side search. */
+  search?: string;
+  /** Whitelisted to "condition" | "planName" | "matched_question" | "status" | "createdAt" | "lastAccessedAt" | "accessCount"; defaults to "createdAt". */
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+}
 
 export type CreateAiMemoryEntry = Omit<
   NewAiMemoryRow,
@@ -117,6 +135,75 @@ export class AiMemoryRepository {
     const base = this.db.select().from(aiMemory);
     const query = filters.length ? base.where(and(...filters)) : base;
     return query.orderBy(desc(aiMemory.createdAt));
+  }
+
+  private buildListConditions(options: AiMemoryListOptions) {
+    const conditions = [];
+    if (options.status) conditions.push(eq(aiMemory.status, options.status));
+    if (options.planName) conditions.push(eq(aiMemory.planName, options.planName));
+    if (options.search) {
+      const pattern = containsPattern(options.search);
+      conditions.push(or(ilike(aiMemory.condition, pattern), ilike(aiMemory.planName, pattern), sql`${MATCHED_QUESTION_EXPR} ILIKE ${pattern}`));
+    }
+    return conditions;
+  }
+
+  private sortExpression(sortBy: string | undefined): SQL | any {
+    switch (sortBy) {
+      case "condition":
+        return aiMemory.condition;
+      case "planName":
+        return aiMemory.planName;
+      case "matched_question":
+        return MATCHED_QUESTION_EXPR;
+      case "status":
+        return aiMemory.status;
+      case "lastAccessedAt":
+        return aiMemory.lastAccessedAt;
+      case "accessCount":
+        return aiMemory.accessCount;
+      case "createdAt":
+      default:
+        return aiMemory.createdAt;
+    }
+  }
+
+  /**
+   * Server-side paginated/searched/filtered/sorted list for the AI Mapping
+   * Review admin UI. `total` comes from a COUNT(*) scoped by the same WHERE
+   * clause as the page query.
+   */
+  async listPaginated(options: AiMemoryListOptions = {}): Promise<PaginatedResult<AiMemoryRow>> {
+    const page = Math.max(1, options.page ?? 1);
+    const pageSize = Math.max(1, options.pageSize ?? 50);
+    const conditions = this.buildListConditions(options);
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const sortColumn = this.sortExpression(options.sortBy);
+    const orderFn = options.sortDir === "asc" ? asc : desc;
+
+    const [{ value: total }] = await this.db.select({ value: count() }).from(aiMemory).where(where);
+    const { page: clampedPage } = clampPage(page, total, pageSize);
+    const data = await this.db
+      .select()
+      .from(aiMemory)
+      .where(where)
+      .orderBy(orderFn(sortColumn as any))
+      .limit(pageSize)
+      .offset((clampedPage - 1) * pageSize);
+
+    return buildPaginatedResult(data, total, clampedPage, pageSize);
+  }
+
+  /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
+   * used only by the "Export CSV" button, which downloads the whole
+   * matching set rather than just the visible page. */
+  async listMatching(options: Pick<AiMemoryListOptions, "status" | "planName" | "search" | "sortBy" | "sortDir"> = {}): Promise<AiMemoryRow[]> {
+    const conditions = this.buildListConditions(options);
+    const where = conditions.length ? and(...conditions) : undefined;
+    const sortColumn = this.sortExpression(options.sortBy);
+    const orderFn = options.sortDir === "asc" ? asc : desc;
+    return this.db.select().from(aiMemory).where(where).orderBy(orderFn(sortColumn as any));
   }
 
   async get(id: number): Promise<AiMemoryRow | undefined> {

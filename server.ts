@@ -19,14 +19,38 @@ import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES } 
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
 import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup } from "./src/server/pedRuntimeCache.js";
+import {
+  createPedWithPrimaryAlias,
+  updatePedRow,
+  deletePedRow,
+  addAliasToPed,
+  updateAliasRow,
+  deleteAliasRow,
+} from "./src/server/pedRepositoryLive.js";
 import type { Repositories } from "./src/server/db/repositories/index.js";
 import { dbRowToPlanConfig } from "./src/server/planConfigUtils.js";
-import { getGoogleAuthUrl, exchangeCodeForIdentity } from "./src/server/auth/googleOAuth.js";
+import {
+  getGoogleAuthUrl,
+  exchangeCodeForIdentity,
+  getQaDashboardSheetsAuthUrl,
+  exchangeCodeForQaDashboardSheetsGrant,
+} from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
 import { getDb } from "./src/server/db/client.js";
 import { createRepositories, normalizeCondition } from "./src/server/db/repositories/index.js";
 import type { UsersRepository } from "./src/server/db/repositories/index.js";
+import { parseListQuery, pickEnumValue } from "./src/server/pagination.js";
+import {
+  getDashboardData as getQaDashboardData,
+  listAdvisorsForCaller as listQaAdvisorsForCaller,
+  getFeedbackRowsFor as getQaFeedbackRowsFor,
+  getReviewRowsFor as getQaReviewRowsFor,
+  getAdvisorsDashboardListFor as getQaAdvisorsDashboardListFor,
+} from "./src/server/qaDashboard/qaDashboardService.js";
+import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDataEngine.js";
+import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
+import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClient.js";
 
 dotenv.config();
 
@@ -828,6 +852,11 @@ app.post("/api/ai-plan-workflow", requireAuth, expensiveActionLimiter, async (re
 // the server-side domain enforcement (the `hd` URL param alone is not a
 // security boundary).
 const OAUTH_STATE_COOKIE = "ditto_oauth_state";
+// Distinctly-named cookie for the QA Dashboard's "Connect Google Sheets"
+// grant (see below) — both flows share the exact same registered redirect
+// URI (/api/auth/google/callback), so the callback route below tells them
+// apart by which of these two cookies is present, not by the URI itself.
+const QA_SHEETS_OAUTH_STATE_COOKIE = "ditto_qa_sheets_oauth_state";
 const isProdEnv = () => process.env.NODE_ENV === "production";
 
 app.get("/api/auth/google/login", (req, res) => {
@@ -851,6 +880,36 @@ app.get("/api/auth/google/login", (req, res) => {
 });
 
 app.get("/api/auth/google/callback", async (req, res) => {
+  // Both the normal login flow and the QA Dashboard's "Connect Google
+  // Sheets" flow share this exact redirect URI (see getQaDashboardSheetsAuthUrl's
+  // comment for why) — tell them apart by which distinctly-named state
+  // cookie is present, checking the QA Dashboard one first since it's the
+  // less common case.
+  const qaSheetsExpectedState = req.cookies?.[QA_SHEETS_OAUTH_STATE_COOKIE];
+  if (qaSheetsExpectedState) {
+    res.clearCookie(QA_SHEETS_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== qaSheetsExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Developer Controls.");
+        return;
+      }
+      const grant = await exchangeCodeForQaDashboardSheetsGrant(code);
+      const { qaDashboardConnection } = createRepositories(getDb());
+      await qaDashboardConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptQaRefreshToken(grant.refreshToken),
+        connectedBy: req.user?.email || grant.email,
+      });
+      invalidateQaSheetsAuthCache();
+      res.redirect("/?qa_dashboard_connected=1");
+    } catch (err: any) {
+      console.error("QA Dashboard Google Sheets connection failed:", err);
+      res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Developer Controls.`);
+    }
+    return;
+  }
+
   const expectedState = req.cookies?.[OAUTH_STATE_COOKIE];
   res.clearCookie(OAUTH_STATE_COOKIE);
 
@@ -949,6 +1008,20 @@ app.get("/api/users", requireAuth, async (req, res) => {
     if (callerTier !== "Admin" && callerTier !== "Developer") {
       return res.status(403).json({ error: "The user directory is restricted to Admin and Developer roles." });
     }
+
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
+      const tier = pickEnumValue(req.query.tier, ["General", "Admin", "Developer"] as const);
+      const status = pickEnumValue(req.query.status, ["Active", "Disabled"] as const);
+      const listOptions = { page, pageSize, search, tier, status, sortBy, sortDir };
+      if (req.query.export) {
+        const rows = await usersRepo.listMatching(listOptions);
+        return res.json({ entries: rows });
+      }
+      const result = await usersRepo.listPaginated(listOptions);
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
+    }
+
     const users = await usersRepo.list();
     return res.json({ users });
   } catch (err: any) {
@@ -957,8 +1030,90 @@ app.get("/api/users", requireAuth, async (req, res) => {
   }
 });
 
-// Only Developer can edit — Admin gets a read-only view in the UI, enforced
-// again here so the restriction can't be bypassed by calling the API directly.
+// Single-row edit — added alongside pagination (see usersRepository.ts's
+// updateUser doc comment for why the old full-array PUT below becomes
+// unsafe once the admin UI only ever holds one page in memory). Only
+// Developer can edit, same restriction as the PUT route it replaces for the
+// UI's normal edit flow.
+app.patch("/api/users/:email", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can edit the user directory." });
+    }
+
+    const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
+    const { name, tactId, tier, status } = req.body;
+    if (
+      typeof name !== "string" || !name.trim() ||
+      typeof tactId !== "string" || !tactId.trim() ||
+      (tier !== "General" && tier !== "Admin" && tier !== "Developer") ||
+      (status !== "Active" && status !== "Disabled")
+    ) {
+      return res.status(400).json({ error: "name, tactId, tier, and status are all required." });
+    }
+
+    const existing = await usersRepo.findByEmail(targetEmail);
+    if (!existing) {
+      return res.status(404).json({ error: "No directory entry found for that email." });
+    }
+    // Same "at least one Developer must remain" guard the old full-array PUT
+    // enforced across the whole submitted array — here it's scoped to just
+    // this one row's tier change.
+    if (existing.tier === "Developer" && tier !== "Developer") {
+      const remaining = await usersRepo.countOtherDevelopers(targetEmail);
+      if (remaining === 0) {
+        return res.status(400).json({ error: "At least one user must remain a Developer." });
+      }
+    }
+
+    const row = await usersRepo.updateUser(targetEmail, { name: name.trim(), tactId: tactId.trim(), tier, status });
+    return res.json({ success: true, user: row });
+  } catch (err: any) {
+    console.error("Failed to update directory entry:", err);
+    return res.status(500).json({ error: "Failed to update this user." });
+  }
+});
+
+// Single-row delete — the safe counterpart to the PATCH route above, for the
+// same reason (removing pagination's "current page only" client state made
+// the old filter-then-PUT-the-whole-array delete flow unsafe).
+app.delete("/api/users/:email", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can remove users from the directory." });
+    }
+
+    const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
+    const existing = await usersRepo.findByEmail(targetEmail);
+    if (!existing) {
+      return res.status(404).json({ error: "No directory entry found for that email." });
+    }
+    if (existing.tier === "Developer") {
+      const remaining = await usersRepo.countOtherDevelopers(targetEmail);
+      if (remaining === 0) {
+        return res.status(400).json({ error: "At least one user must remain a Developer." });
+      }
+    }
+
+    await usersRepo.deleteUser(targetEmail);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to remove directory entry:", err);
+    return res.status(500).json({ error: "Failed to remove this user." });
+  }
+});
+
+// LEGACY — kept for backward compatibility but no longer called by the
+// admin UI (ProfileAccessManagement.tsx now uses the single-row PATCH/DELETE
+// routes above). A full-array replace is unsafe now that the UI only holds
+// one page of the directory at a time: saving from any page but the first
+// would silently wipe out every user not on that page. Only Developer can
+// edit — Admin gets a read-only view in the UI, enforced again here so the
+// restriction can't be bypassed by calling the API directly.
 app.put("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
@@ -1082,11 +1237,34 @@ app.get("/api/search-history", requireAuth, async (req, res) => {
     if (!isSelf && !(await requireAdminOrDeveloper(req, res, "Viewing other users' search history"))) return;
 
     const { searchHistory } = createRepositories(getDb());
+    const planName = typeof req.query.planName === "string" ? req.query.planName : undefined;
+    const from = typeof req.query.from === "string" ? req.query.from : undefined;
+    const to = typeof req.query.to === "string" ? req.query.to : undefined;
+
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 50, "desc");
+      const statusTier = typeof req.query.statusTier === "string" ? req.query.statusTier : undefined;
+      const sourceType = typeof req.query.sourceType === "string" ? req.query.sourceType : undefined;
+      const listOptions = { page, pageSize, search, userEmail: requestedEmail, planName, from, to, statusTier, sourceType, sortBy, sortDir };
+      if (req.query.export) {
+        const rows = await searchHistory.listMatching(listOptions);
+        return res.json({ entries: rows });
+      }
+      const result = await searchHistory.listPaginated(listOptions);
+      // Tier counts power the "Match Category Distribution" chart on the
+      // Activity Log's User Activity sub-tab — a lightweight aggregate
+      // query, not a second full-table load. Skipped for My Activity's
+      // simpler view (no `includeTierCounts` flag) to avoid the extra query
+      // on every page load of a page that doesn't render the chart.
+      const tierCounts = req.query.includeTierCounts ? await searchHistory.getTierCounts(listOptions) : undefined;
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages, tierCounts });
+    }
+
     const rows = await searchHistory.list({
       userEmail: requestedEmail,
-      planName: typeof req.query.planName === "string" ? req.query.planName : undefined,
-      from: typeof req.query.from === "string" ? req.query.from : undefined,
-      to: typeof req.query.to === "string" ? req.query.to : undefined,
+      planName,
+      from,
+      to,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
     return res.json({ entries: rows });
@@ -1141,6 +1319,19 @@ app.get("/api/change-logs", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Viewing the modification history"))) return;
     const { changeLogs } = createRepositories(getDb());
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 50, "desc");
+      const actionType = typeof req.query.actionType === "string" ? req.query.actionType : undefined;
+      const from = typeof req.query.from === "string" ? req.query.from : undefined;
+      const to = typeof req.query.to === "string" ? req.query.to : undefined;
+      const clOptions = { search, actionType, from, to, sortBy, sortDir };
+      if (req.query.export) {
+        const rows = await changeLogs.listMatching(clOptions);
+        return res.json({ entries: rows });
+      }
+      const result = await changeLogs.listPaginated({ page, pageSize, ...clOptions });
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
+    }
     const rows = await changeLogs.list({
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
@@ -1179,9 +1370,21 @@ app.post("/api/change-logs", requireAuth, async (req, res) => {
 app.get("/api/announcements", requireAuth, async (req, res) => {
   try {
     const { announcements } = createRepositories(getDb());
-    const rows = await announcements.list({
-      category: typeof req.query.category === "string" ? req.query.category : undefined,
-    });
+    const category = typeof req.query.category === "string" ? req.query.category : undefined;
+
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
+      const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement"] as const);
+      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir };
+      if (req.query.export) {
+        const rows = await announcements.listMatching(listOptions);
+        return res.json({ entries: rows });
+      }
+      const result = await announcements.listPaginated(listOptions);
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
+    }
+
+    const rows = await announcements.list({ category });
     return res.json({ entries: rows });
   } catch (err: any) {
     console.error("Failed to list announcements:", err);
@@ -1397,11 +1600,45 @@ app.post("/api/external-resources/reorder", requireAuth, async (req, res) => {
 app.get("/api/ped-suggestions", requireAuth, async (req, res) => {
   try {
     const { pedSuggestions } = createRepositories(getDb());
+    const category = typeof req.query.category === "string" ? req.query.category : undefined;
+    // `paginated=1` opts into the server-side page/search/filter/sort
+    // contract (PedSuggestionsManagement.tsx). Omitted entirely for the
+    // Lookup page's autocomplete fetch (App.tsx's fetchPedSuggestions),
+    // which still wants the full, unpaginated list — keeps this endpoint
+    // backward compatible for that caller.
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 50, "asc");
+      // `export=1`: the admin UI's "Export CSV" button intentionally
+      // downloads the whole matching set (search/category-filtered, but not
+      // paginated) rather than just the visible page.
+      if (req.query.export) {
+        const rows = await pedSuggestions.listMatching({ search, category, sortBy, sortDir });
+        return res.json({ entries: rows });
+      }
+      const result = await pedSuggestions.listPaginated({ page, pageSize, search, category, sortBy, sortDir });
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
+    }
     const rows = await pedSuggestions.list();
     return res.json({ entries: rows });
   } catch (err: any) {
     console.error("Failed to list PED suggestions:", err);
     return res.status(500).json({ error: `Failed to load PED suggestions: ${err.message}` });
+  }
+});
+
+// Distinct categories actually present in the PED directory, for the admin
+// UI's filter dropdown — a lightweight aggregate query so it never has to
+// load the full (possibly 1,000+ row) table just to populate a dropdown.
+app.get("/api/ped-suggestions/categories", requireAuth, async (req, res) => {
+  try {
+    const { pedSuggestions } = createRepositories(getDb());
+    const rows = await pedSuggestions.listCategoriesInUse();
+    const categories = rows.map((r) => r.category).filter((c): c is string => Boolean(c)).sort();
+    const hasUncategorized = rows.some((r) => !r.category);
+    return res.json({ categories, hasUncategorized });
+  } catch (err: any) {
+    console.error("Failed to list PED directory categories:", err);
+    return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
   }
 });
 
@@ -1478,8 +1715,21 @@ app.get("/api/ai-memory", requireAuth, async (req, res) => {
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const planName = typeof req.query.planName === "string" ? req.query.planName : undefined;
     const validStatuses = ["pending", "approved", "rejected", "archived"];
+    const validStatus = status && validStatuses.includes(status) ? (status as any) : undefined;
+
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 50, "desc");
+      const listOptions = { page, pageSize, search, status: validStatus, planName, sortBy, sortDir };
+      if (req.query.export) {
+        const rows = await aiMemory.listMatching(listOptions);
+        return res.json({ entries: rows });
+      }
+      const result = await aiMemory.listPaginated(listOptions);
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
+    }
+
     const rows = await aiMemory.list({
-      status: status && validStatuses.includes(status) ? (status as any) : undefined,
+      status: validStatus,
       planName,
     });
     return res.json({ entries: rows });
@@ -1696,6 +1946,15 @@ app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
 
     return res.json({ entry: row });
   } catch (err: any) {
+    // Postgres unique-violation (ped_directory.term is UNIQUE). The admin UI
+    // used to catch this client-side by scanning its fully-loaded entry
+    // list; now that the directory is server-paginated, the client only
+    // holds the current page, so that check can miss a duplicate that's on
+    // a different page — this server-side message keeps the error friendly
+    // either way.
+    if (err.cause?.code === "23505" || err.code === "23505") {
+      return res.status(409).json({ error: `"${req.body?.term?.trim?.() || "This term"}" is already in the PED directory.` });
+    }
     console.error("Failed to create PED suggestion:", err);
     const detail = err.cause?.message || err.message;
     return res.status(500).json({ error: `Failed to add this PED suggestion: ${detail}` });
@@ -1802,6 +2061,388 @@ app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete PED suggestion:", err);
     return res.status(500).json({ error: `Failed to delete this PED suggestion: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PED Repository (NEW schema) — ped_repository / ped_aliases / categories.
+//
+// This is the write path onto the tables the deterministic engine actually
+// reads when PED_SOURCE=db (see getDbSource above, pedRuntimeCache.ts).
+// Cutover decision (2026-07-29): the "PED Repository" admin page now reads
+// and writes THIS schema, not the legacy ped_directory table above — see
+// pedRepositoryLive.ts's module doc for the full write-path pattern
+// (DB write -> pedRuntimeCache sync -> legacy ped_mapping_overrides mirror
+// for PED_SOURCE=legacy rollback safety). The legacy routes above are left
+// running unchanged (nothing currently calls them from the client) rather
+// than deleted, so no historical data is lost and PED_SOURCE=legacy still
+// has somewhere to read from if ever needed.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Flat shape (not a discriminated union) — see pagination.ts's pickEnumValue
+// doc comment for why: this codebase's TS setup does not reliably narrow a
+// `{ ok: true; value } | { ok: false; error }` union back down after an
+// `if (!x.ok) return ...` guard, so `error`/`value` are just always-present
+// (possibly null) fields instead, checked by value rather than by narrowing.
+async function validateCategoryKey(categoryKey: unknown): Promise<{ ok: boolean; value: string | null; error: string | null }> {
+  if (categoryKey === undefined || categoryKey === null || categoryKey === "") return { ok: true, value: null, error: null };
+  if (typeof categoryKey !== "string") return { ok: false, value: null, error: "categoryKey must be a string." };
+  const { categories } = createRepositories(getDb());
+  const row = await categories.get(categoryKey);
+  if (!row) return { ok: false, value: null, error: `Unknown category "${categoryKey}".` };
+  return { ok: true, value: categoryKey, error: null };
+}
+
+const PED_STATUS_VALUES = ["draft", "approved", "deprecated"] as const;
+
+app.get("/api/ped-repository", requireAuth, async (req, res) => {
+  try {
+    const { pedRepository: pedRepositoryRepo } = createRepositories(getDb());
+    const categoryKey = typeof req.query.categoryKey === "string" ? req.query.categoryKey : undefined;
+    const status = pickEnumValue(req.query.status, PED_STATUS_VALUES);
+
+    if (req.query.paginated) {
+      const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 50, "asc");
+      if (req.query.export) {
+        const rows = await pedRepositoryRepo.listMatching({ search, categoryKey, status, sortBy, sortDir });
+        return res.json({ entries: rows });
+      }
+      const result = await pedRepositoryRepo.listPaginated({ page, pageSize, search, categoryKey, status, sortBy, sortDir });
+      return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
+    }
+    const rows = await pedRepositoryRepo.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list the PED repository:", err);
+    return res.status(500).json({ error: `Failed to load the PED repository: ${err.message}` });
+  }
+});
+
+// Full category list (not just "in use") — an admin assigning a category to
+// a brand-new PED needs every real option, not only ones already referenced.
+app.get("/api/ped-repository/categories", requireAuth, async (req, res) => {
+  try {
+    const { categories } = createRepositories(getDb());
+    const rows = await categories.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list categories:", err);
+    return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
+  }
+});
+
+// The Lookup page's autocomplete source (App.tsx's fetchPedSuggestions) —
+// deliberately filtered to `isVisible` aliases only, per
+// PED_REPOSITORY_GOVERNANCE.md's 3-layer model: the normalization-only layer
+// (misspellings/OCR variants) must keep matching silently but must never be
+// suggested to an advisor as if it were correct terminology.
+app.get("/api/ped-repository/autocomplete", requireAuth, async (req, res) => {
+  try {
+    const { pedAliases } = createRepositories(getDb());
+    const rows = await pedAliases.listAll();
+    const entries = rows.filter((a) => a.isVisible).map((a) => ({ term: a.aliasText }));
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to load PED repository autocomplete list:", err);
+    return res.status(500).json({ error: `Failed to load PED suggestions: ${err.message}` });
+  }
+});
+
+// Admin-only: the full alias list for one PED, INCLUDING hidden
+// (isVisible=false) normalization-only entries — this route is what powers
+// the alias-management panel, which is the one place hidden aliases are
+// allowed to be listed (clearly separated, per governance), so an admin can
+// actually manage them.
+app.get("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing PED aliases"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
+    const { pedAliases } = createRepositories(getDb());
+    const rows = await pedAliases.listByPed(id);
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list PED aliases:", err);
+    return res.status(500).json({ error: `Failed to load aliases: ${err.message}` });
+  }
+});
+
+app.post("/api/ped-repository", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a PED"))) return;
+    const { canonicalName, categoryKey, status, notes } = req.body;
+    if (typeof canonicalName !== "string" || !canonicalName.trim()) {
+      return res.status(400).json({ error: "canonicalName is required." });
+    }
+    const categoryCheck = await validateCategoryKey(categoryKey);
+    if (!categoryCheck.ok) return res.status(400).json({ error: categoryCheck.error || "Invalid category." });
+    const statusValue = status !== undefined ? pickEnumValue(status, PED_STATUS_VALUES) : undefined;
+    if (status !== undefined && !statusValue) {
+      return res.status(400).json({ error: `status must be one of: ${PED_STATUS_VALUES.join(", ")}` });
+    }
+
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const addedBy = `${req.user!.name} (${callerTier})`;
+
+    const { ped, alias } = await createPedWithPrimaryAlias(
+      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      { canonicalName: canonicalName.trim(), categoryKey: categoryCheck.value, status: statusValue, notes: notes ?? null, addedBy }
+    );
+
+    try {
+      await mappingHistory.record({ pedId: ped.id, entityType: "ped", action: "created", previousValue: null, newValue: ped, reason: null, performedBy: addedBy });
+    } catch (err) {
+      console.error("Failed to write mapping history for PED create:", err);
+    }
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Added",
+      `Added "${ped.canonicalName}" to the PED Repository${ped.categoryKey ? ` under category "${ped.categoryKey}" — now live in classification` : " with no category assigned"}.`);
+
+    return res.json({ ped, alias });
+  } catch (err: any) {
+    if (err.cause?.code === "23505" || err.code === "23505") {
+      return res.status(409).json({ error: `"${req.body?.canonicalName?.trim?.() || "This term"}" already exists as an alias of another PED (Alias Collision).` });
+    }
+    console.error("Failed to create PED:", err);
+    return res.status(500).json({ error: `Failed to add this PED: ${err.cause?.message || err.message}` });
+  }
+});
+
+app.patch("/api/ped-repository/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a PED"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
+
+    const { canonicalName, categoryKey, status, notes } = req.body;
+    if (canonicalName !== undefined && (typeof canonicalName !== "string" || !canonicalName.trim())) {
+      return res.status(400).json({ error: "canonicalName must be a non-empty string." });
+    }
+    let categoryValue: string | null | undefined;
+    if (categoryKey !== undefined) {
+      const categoryCheck = await validateCategoryKey(categoryKey);
+      if (!categoryCheck.ok) return res.status(400).json({ error: categoryCheck.error || "Invalid category." });
+      categoryValue = categoryCheck.value;
+    }
+    let statusValue: (typeof PED_STATUS_VALUES)[number] | undefined;
+    if (status !== undefined) {
+      statusValue = pickEnumValue(status, PED_STATUS_VALUES);
+      if (!statusValue) return res.status(400).json({ error: `status must be one of: ${PED_STATUS_VALUES.join(", ")}` });
+    }
+
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const before = await pedRepositoryRepo.get(id);
+    if (!before) return res.status(404).json({ error: "PED not found." });
+
+    const callerTier = await getCallerTier(req, usersRepo);
+    const performedBy = `${req.user!.name} (${callerTier})`;
+
+    const after = await updatePedRow(
+      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      id,
+      {
+        ...(canonicalName !== undefined ? { canonicalName: canonicalName.trim() } : {}),
+        ...(categoryKey !== undefined ? { categoryKey: categoryValue } : {}),
+        ...(statusValue !== undefined ? { status: statusValue } : {}),
+        ...(notes !== undefined ? { notes } : {}),
+      },
+      performedBy
+    );
+    if (!after) return res.status(404).json({ error: "PED not found." });
+
+    try {
+      await mappingHistory.record({ pedId: id, entityType: "ped", action: "updated", previousValue: before, newValue: after, reason: null, performedBy });
+    } catch (err) {
+      console.error("Failed to write mapping history for PED update:", err);
+    }
+
+    const changes: string[] = [];
+    if (before.canonicalName !== after.canonicalName) changes.push(`name "${before.canonicalName}" → "${after.canonicalName}"`);
+    if (before.categoryKey !== after.categoryKey) changes.push(`category "${before.categoryKey || "none"}" → "${after.categoryKey || "none"}"`);
+    if (before.status !== after.status) changes.push(`status "${before.status}" → "${after.status}"`);
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Edited",
+      changes.length > 0 ? `Edited PED "${after.canonicalName}": ${changes.join("; ")}.` : `Saved PED "${after.canonicalName}" with no field changes.`);
+
+    return res.json({ ped: after });
+  } catch (err: any) {
+    if (err.cause?.code === "23505" || err.code === "23505") {
+      return res.status(409).json({ error: `That name collides with an existing alias of another PED (Alias Collision).` });
+    }
+    console.error("Failed to update PED:", err);
+    return res.status(500).json({ error: `Failed to update this PED: ${err.cause?.message || err.message}` });
+  }
+});
+
+app.delete("/api/ped-repository/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a PED"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
+
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const performedBy = `${req.user!.name} (${callerTier})`;
+
+    const deleted = await deletePedRow({ pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides }, id, performedBy);
+    if (!deleted) return res.status(404).json({ error: "PED not found." });
+
+    try {
+      await mappingHistory.record({ pedId: id, entityType: "ped", action: "deleted", previousValue: deleted, newValue: null, reason: null, performedBy });
+    } catch (err) {
+      console.error("Failed to write mapping history for PED delete:", err);
+    }
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Deleted",
+      `Deleted "${deleted.canonicalName}" from the PED Repository${deleted.categoryKey ? ` (category "${deleted.categoryKey}") — no longer live in classification` : ""}, including all of its aliases.`);
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete PED:", err);
+    return res.status(500).json({ error: `Failed to delete this PED: ${err.message}` });
+  }
+});
+
+app.post("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a PED alias"))) return;
+    const pedId = Number(req.params.id);
+    if (!Number.isInteger(pedId)) return res.status(400).json({ error: "Invalid PED id." });
+    const { aliasText, isVisible } = req.body;
+    if (typeof aliasText !== "string" || !aliasText.trim()) {
+      return res.status(400).json({ error: "aliasText is required." });
+    }
+    if (isVisible !== undefined && typeof isVisible !== "boolean") {
+      return res.status(400).json({ error: "isVisible must be a boolean." });
+    }
+
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const ped = await pedRepositoryRepo.get(pedId);
+    if (!ped) return res.status(404).json({ error: "PED not found." });
+
+    const callerTier = await getCallerTier(req, usersRepo);
+    const addedBy = `${req.user!.name} (${callerTier})`;
+
+    const alias = await addAliasToPed(
+      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      { pedId, aliasText: aliasText.trim(), isVisible, addedBy }
+    );
+
+    try {
+      await mappingHistory.record({ pedId, entityType: "alias", action: "alias_added", previousValue: null, newValue: alias, reason: null, performedBy: addedBy });
+    } catch (err) {
+      console.error("Failed to write mapping history for alias add:", err);
+    }
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Alias Added",
+      `Added alias "${alias.aliasText}" to "${ped.canonicalName}"${alias.isVisible ? "" : " (hidden — normalization only)"}.`);
+
+    return res.json({ entry: alias });
+  } catch (err: any) {
+    if (err.cause?.code === "23505" || err.code === "23505") {
+      try {
+        const { pedAliases: pedAliasesForCollision, collisions, users: usersRepoForCollision } = createRepositories(getDb());
+        const existing = await pedAliasesForCollision.getByNormalizedAlias(normalizeDictionaryKey(String(req.body?.aliasText || "")));
+        const callerTier = await getCallerTier(req, usersRepoForCollision);
+        await collisions.record({
+          collisionType: "alias",
+          pedId: existing?.pedId ?? Number(req.params.id),
+          rejectedCategoryKey: null,
+          approvedCategoryKey: null,
+          relatedPlanName: null,
+          relatedAiMemoryId: null,
+          severity: "advisory",
+          active: true,
+          addedBy: `${req.user!.name} (${callerTier})`,
+          description: `Attempted to add alias "${req.body?.aliasText}" to PED #${req.params.id}, but it already belongs to PED #${existing?.pedId}.`,
+        });
+      } catch (logErr) {
+        console.error("Failed to record alias collision:", logErr);
+      }
+      return res.status(409).json({ error: `"${req.body?.aliasText?.trim?.() || "This term"}" already exists as an alias of another PED (Alias Collision).` });
+    }
+    console.error("Failed to add PED alias:", err);
+    return res.status(500).json({ error: `Failed to add this alias: ${err.cause?.message || err.message}` });
+  }
+});
+
+app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a PED alias"))) return;
+    const aliasId = Number(req.params.aliasId);
+    if (!Number.isInteger(aliasId)) return res.status(400).json({ error: "Invalid alias id." });
+    const { aliasText, isVisible, isPrimary } = req.body;
+    if (aliasText !== undefined && (typeof aliasText !== "string" || !aliasText.trim())) {
+      return res.status(400).json({ error: "aliasText must be a non-empty string." });
+    }
+    if (isVisible !== undefined && typeof isVisible !== "boolean") {
+      return res.status(400).json({ error: "isVisible must be a boolean." });
+    }
+    if (isPrimary !== undefined && isPrimary !== true) {
+      return res.status(400).json({ error: "isPrimary can only be set to true here — set a different alias primary to demote this one." });
+    }
+
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const before = await pedAliases.get(aliasId);
+    if (!before) return res.status(404).json({ error: "Alias not found." });
+
+    const callerTier = await getCallerTier(req, usersRepo);
+    const performedBy = `${req.user!.name} (${callerTier})`;
+
+    const after = await updateAliasRow(
+      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      aliasId,
+      { ...(aliasText !== undefined ? { aliasText: aliasText.trim() } : {}), isVisible, isPrimary },
+      performedBy
+    );
+    if (!after) return res.status(404).json({ error: "Alias not found." });
+
+    try {
+      await mappingHistory.record({ pedId: before.pedId, entityType: "alias", action: "updated", previousValue: before, newValue: after, reason: null, performedBy });
+    } catch (err) {
+      console.error("Failed to write mapping history for alias update:", err);
+    }
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Alias Edited", `Edited alias "${before.aliasText}" (now "${after.aliasText}").`);
+
+    return res.json({ entry: after });
+  } catch (err: any) {
+    if (err.cause?.code === "23505" || err.code === "23505") {
+      return res.status(409).json({ error: `"${req.body?.aliasText?.trim?.() || "This term"}" already exists as an alias of another PED (Alias Collision).` });
+    }
+    console.error("Failed to update PED alias:", err);
+    return res.status(500).json({ error: `Failed to update this alias: ${err.cause?.message || err.message}` });
+  }
+});
+
+app.delete("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a PED alias"))) return;
+    const aliasId = Number(req.params.aliasId);
+    if (!Number.isInteger(aliasId)) return res.status(400).json({ error: "Invalid alias id." });
+
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const before = await pedAliases.get(aliasId);
+    if (!before) return res.status(404).json({ error: "Alias not found." });
+
+    const siblings = await pedAliases.listByPed(before.pedId);
+    if (siblings.length <= 1) {
+      return res.status(400).json({ error: "A PED must have at least one alias — delete the PED itself instead of its last alias." });
+    }
+
+    const callerTier = await getCallerTier(req, usersRepo);
+    const performedBy = `${req.user!.name} (${callerTier})`;
+
+    const deleted = await deleteAliasRow({ pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides }, aliasId, performedBy);
+    if (!deleted) return res.status(404).json({ error: "Alias not found." });
+
+    try {
+      await mappingHistory.record({ pedId: deleted.pedId, entityType: "alias", action: "alias_removed", previousValue: deleted, newValue: null, reason: null, performedBy });
+    } catch (err) {
+      console.error("Failed to write mapping history for alias delete:", err);
+    }
+    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Alias Deleted", `Deleted alias "${deleted.aliasText}".`);
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete PED alias:", err);
+    return res.status(500).json({ error: `Failed to delete this alias: ${err.message}` });
   }
 });
 
@@ -2244,6 +2885,215 @@ app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
     // clue was this server-side log line.
     console.error("Failed to save first-time profile setup:", err);
     return res.status(500).json({ error: `Failed to save your profile: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// QA DASHBOARD — native port of the standalone Apps Script "Advisor QA
+// Dashboard" (Google Sheets source of truth, read-only — see
+// QA_DASHBOARD_SHEETS_SETUP.md). Identity comes from req.user (this app's
+// own verified Google session), never a request body field — mirrors every
+// other route in this file. Authorization (Admin/Guide/Mentor/Advisor) is
+// resolved server-side per request from qaRoles.ts; the client only ever
+// learns the result, never decides it.
+// ─────────────────────────────────────────────────────────────────────────
+
+function parseQaDateFilters(query: any): QaDateFilters | null {
+  const { checkedFrom, checkedTo, tillDate } = query;
+  if (typeof checkedFrom !== "string" || typeof checkedTo !== "string" || typeof tillDate !== "string") return null;
+  const isDateStr = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (!isDateStr(checkedFrom) || !isDateStr(checkedTo) || !isDateStr(tillDate)) return null;
+  return { checkedFrom, checkedTo, tillDate };
+}
+
+app.get("/api/qa-dashboard/dashboard", requireAuth, async (req, res) => {
+  try {
+    const dateFilters = parseQaDateFilters(req.query);
+    if (!dateFilters) return res.status(400).json({ error: "checkedFrom, checkedTo, and tillDate (yyyy-MM-dd) are required." });
+    const requestedTactId = typeof req.query.tactId === "string" && req.query.tactId.trim() ? req.query.tactId.trim() : null;
+    const result = await getQaDashboardData(req.user!.email, requestedTactId, dateFilters);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load dashboard data:", err);
+    return res.status(500).json({ error: `Failed to load QA dashboard: ${err.message}` });
+  }
+});
+
+app.get("/api/qa-dashboard/advisors", requireAuth, async (req, res) => {
+  try {
+    const result = await listQaAdvisorsForCaller(req.user!.email);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to list advisors:", err);
+    return res.status(500).json({ error: `Failed to load advisor list: ${err.message}` });
+  }
+});
+
+app.get("/api/qa-dashboard/feedback", requireAuth, async (req, res) => {
+  try {
+    const requestedTactId = typeof req.query.tactId === "string" && req.query.tactId.trim() ? req.query.tactId.trim() : null;
+    const result = await getQaFeedbackRowsFor(req.user!.email, requestedTactId);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load feedback rows:", err);
+    return res.status(500).json({ error: `Failed to load feedback rows: ${err.message}` });
+  }
+});
+
+app.get("/api/qa-dashboard/reviews", requireAuth, async (req, res) => {
+  try {
+    const requestedTactId = typeof req.query.tactId === "string" && req.query.tactId.trim() ? req.query.tactId.trim() : null;
+    const checkedFrom = typeof req.query.checkedFrom === "string" && req.query.checkedFrom ? req.query.checkedFrom : null;
+    const checkedTo = typeof req.query.checkedTo === "string" && req.query.checkedTo ? req.query.checkedTo : null;
+    const result = await getQaReviewRowsFor(req.user!.email, requestedTactId, checkedFrom, checkedTo);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load review rows:", err);
+    return res.status(500).json({ error: `Failed to load review rows: ${err.message}` });
+  }
+});
+
+// --- QA Dashboard: "Connect Google Sheets" (see googleOAuth.ts / sheetsClient.ts) ---
+// Admin/Developer only to initiate or tear down; connection-status is
+// readable by anyone signed in so the Developer Controls UI (and, if ever
+// needed, a friendlier "not configured" message elsewhere) can reflect it.
+
+app.get("/api/qa-dashboard/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(QA_SHEETS_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getQaDashboardSheetsAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start QA Dashboard Google Sheets connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+app.get("/api/qa-dashboard/connection-status", requireAuth, async (req, res) => {
+  try {
+    const { qaDashboardConnection } = createRepositories(getDb());
+    const row = await qaDashboardConnection.get();
+    return res.json(row ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt } : { connected: false });
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load connection status:", err);
+    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+  }
+});
+
+app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    const { qaDashboardConnection } = createRepositories(getDb());
+    await qaDashboardConnection.clear();
+    invalidateQaSheetsAuthCache();
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to disconnect Google Sheets:", err);
+    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+// --- QA Dashboard Access (Admin/Guide/Mentor role management) ---
+// Source of truth for src/server/qaDashboard/qaRoles.ts — see the
+// qa_dashboard_roles table (schema.ts) for why this replaced the
+// QA_ADMIN_EMAILS/QA_GUIDE_EMAILS/QA_MENTOR_EMAILS env vars. Viewing and
+// editing are both Admin+Developer here (unlike the rest of User Directory
+// & Management, where editing core WebApp tiers stays Developer-only) —
+// QA role assignment is a narrower, QA-team-specific permission.
+
+const QA_ROLE_TYPES = ["admin", "guide", "mentor"] as const;
+
+app.get("/api/qa-dashboard/roles", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing QA Dashboard access"))) return;
+    const { qaDashboardRoles } = createRepositories(getDb());
+    const rows = await qaDashboardRoles.listAll();
+    return res.json({ roles: rows });
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to list role assignments:", err);
+    return res.status(500).json({ error: `Failed to load QA Dashboard access: ${err.message}` });
+  }
+});
+
+app.post("/api/qa-dashboard/roles", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing QA Dashboard access"))) return;
+    const { email, role, displayName } = req.body;
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ error: "email is required." });
+    }
+    if (typeof role !== "string" || !(QA_ROLE_TYPES as readonly string[]).includes(role)) {
+      return res.status(400).json({ error: `role must be one of: ${QA_ROLE_TYPES.join(", ")}` });
+    }
+    const { qaDashboardRoles, users: usersRepo, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const row = await qaDashboardRoles.upsert({
+      email: email.trim().toLowerCase(),
+      role: role as "admin" | "guide" | "mentor",
+      displayName: typeof displayName === "string" && displayName.trim() ? displayName.trim() : null,
+      assignedBy: `${req.user!.name} (${callerTier})`,
+    });
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "QA Dashboard Access Changed",
+        planName: null,
+        description: `Granted ${row.email} QA Dashboard "${row.role}" access${row.displayName ? ` (as "${row.displayName}")` : ""}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for QA Dashboard access:", logErr);
+    }
+    return res.json({ role: row });
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to assign role:", err);
+    return res.status(500).json({ error: `Failed to save this assignment: ${err.message}` });
+  }
+});
+
+app.delete("/api/qa-dashboard/roles/:email", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing QA Dashboard access"))) return;
+    const email = decodeURIComponent(req.params.email).trim().toLowerCase();
+    const { qaDashboardRoles, users: usersRepo, changeLogs } = createRepositories(getDb());
+    const existing = await qaDashboardRoles.getByEmail(email);
+    await qaDashboardRoles.remove(email);
+    const callerTier = await getCallerTier(req, usersRepo);
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "QA Dashboard Access Changed",
+        planName: null,
+        description: `Revoked QA Dashboard access for ${email}${existing ? ` (was "${existing.role}")` : ""}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for QA Dashboard access:", logErr);
+    }
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to revoke role:", err);
+    return res.status(500).json({ error: `Failed to revoke access: ${err.message}` });
+  }
+});
+
+app.get("/api/qa-dashboard/summary", requireAuth, async (req, res) => {
+  try {
+    const dateFilters = parseQaDateFilters(req.query);
+    if (!dateFilters) return res.status(400).json({ error: "checkedFrom, checkedTo, and tillDate (yyyy-MM-dd) are required." });
+    const result = await getQaAdvisorsDashboardListFor(req.user!.email, dateFilters);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load advisors summary:", err);
+    return res.status(500).json({ error: `Failed to load advisors summary: ${err.message}` });
   }
 });
 

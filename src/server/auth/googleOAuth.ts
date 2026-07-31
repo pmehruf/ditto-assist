@@ -103,3 +103,80 @@ export async function exchangeCodeForIdentity(code: string): Promise<GoogleIdent
     picture: payload.picture,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// QA DASHBOARD — "Connect Google Sheets" incremental-scope grant.
+//
+// Reuses this exact same OAuth client (same client ID/secret, same
+// registered redirect URI) rather than needing a second one registered in
+// Cloud Console — the only difference from the login flow above is the
+// extra `spreadsheets.readonly` scope and `access_type: "offline"` (so
+// Google issues a refresh token) + `prompt: "consent"` (so it issues one
+// EVERY time, not just on first-ever consent — otherwise reconnecting after
+// a disconnect would silently fail to get a new refresh token). See
+// server.ts's /api/qa-dashboard/connect-google and the shared callback
+// route, which branches on which of two distinctly-named state cookies is
+// present to tell this flow apart from a normal login.
+// ─────────────────────────────────────────────────────────────────────────
+
+const QA_SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+export function getQaDashboardSheetsAuthUrl(state: string, loginHint?: string): string {
+  const client = getOAuthClient();
+  return client.generateAuthUrl({
+    access_type: "offline",
+    scope: ["openid", "email", QA_SHEETS_READONLY_SCOPE],
+    hd: ALLOWED_DOMAIN,
+    prompt: "consent",
+    include_granted_scopes: true,
+    state,
+    login_hint: loginHint,
+  });
+}
+
+export interface QaDashboardSheetsGrant {
+  email: string;
+  refreshToken: string;
+}
+
+/**
+ * Exchanges the "Connect Google Sheets" authorization code for a refresh
+ * token, verifying the consenting identity the same way exchangeCodeForIdentity
+ * does (signature/domain-checked ID token) — this grant is only ever
+ * useful, and only ever stored, for a real @joinditto.in account.
+ */
+export async function exchangeCodeForQaDashboardSheetsGrant(code: string): Promise<QaDashboardSheetsGrant> {
+  const client = getOAuthClient();
+  const { tokens } = await client.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Google did not return a refresh token for this connection. This usually happens when the account has a " +
+        "prior grant cached — revoke this app's access at https://myaccount.google.com/permissions and try " +
+        "connecting again."
+    );
+  }
+  if (!tokens.id_token) {
+    throw new Error("Google did not return an id_token for this authorization code.");
+  }
+
+  const ticket = await client.verifyIdToken({
+    idToken: tokens.id_token,
+    audience: requireEnv("GOOGLE_CLIENT_ID"),
+  });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) {
+    throw new Error("Could not read an identity from the Google ID token.");
+  }
+  if (!payload.email_verified) {
+    throw new Error("Google account email is not verified.");
+  }
+
+  const emailDomain = payload.email.split("@")[1]?.toLowerCase();
+  const hdClaim = payload.hd?.toLowerCase();
+  if (emailDomain !== ALLOWED_DOMAIN || hdClaim !== ALLOWED_DOMAIN) {
+    throw new Error(`Access restricted to @${ALLOWED_DOMAIN} Google Workspace accounts.`);
+  }
+
+  return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token };
+}

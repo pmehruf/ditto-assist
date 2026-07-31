@@ -80,3 +80,22 @@ Exhaustive comparison of legacy vs. DB-backed engine across every `(alias, plan)
 ## 8. What Phase 6 will do (not yet approved, not yet started)
 
 Per the design doc, Phase 6 strips the compiled dictionary data out of `types.ts` down to a seed-only artifact, once Phase 5 has been running in production long enough to build confidence. This report does not authorize that step — it is a prerequisite input for the user's separate Phase 6 approval decision.
+
+---
+
+## 9. Addendum (2026-07-29) — PED Repository admin write path
+
+Per this document's own header, the sections above are left as the permanent Phase 5 record and are not edited. This addendum records what changed next, at the explicit request of the product owner ("I want the UI PED Repository to be used as the source of truth, that was main purpose of building it initially").
+
+**What shipped:**
+- The admin page labeled "PED Repository" (PED Library sub-tab) now reads and writes `ped_repository` / `ped_aliases` / `categories` directly — new API routes (`/api/ped-repository/*`), a new write-path module (`src/server/pedRepositoryLive.ts`), and a new UI component (`src/components/PedRepositoryManagement.tsx`), replacing the page's previous binding to the legacy `ped_directory`/`ped_suggestions` table.
+- Every write (create/edit/delete a PED; add/edit/hide/delete an alias) updates `pedRuntimeCache.ts`'s in-memory maps synchronously (closing the "Known gap" that module's own doc comment previously flagged) and also mirrors into the legacy `ped_mapping_overrides` table, so `PED_SOURCE=legacy` remains a working one-restart rollback even for edits made after this change.
+- The Lookup page's autocomplete dropdown was repointed to the same new tables (visible aliases only), so it no longer diverges from what the admin page shows.
+- The admin alias-management panel filters/separates hidden (`isVisible=false`) aliases into a clearly-marked "normalization only" group, never presenting them as real terminology — this resolves the §7 technical-debt item "Admin UI does not yet filter by `is_visible`" **for this specific page**. AI Mapping Review's screens were not touched and may still need the same treatment if/when they're audited.
+
+**What did NOT change:**
+- Nothing in Part IV's routing precedence (see MASTER_CONSTITUTION.md v1.1) — this is a data-entry/write-path change, not a routing-logic change. `classifyDeterministic`'s stage order and the 4 hardcoded plan-specific blocks are untouched.
+- AI Mapping Review's approve/reject flow still writes only to the legacy `ped_mapping_overrides` table, unchanged — the §7 item "PED Library and AI Mapping Review edits still write into the old table" is now only half-resolved (PED Library: done; AI Mapping Review: still open).
+- The legacy `ped_directory`/`ped_suggestions` table and its API routes still exist and still work — nothing was deleted. They're simply no longer linked from any UI tab.
+- The 4 hardcoded plan-specific blocks in `engine.ts` and the `plan_overrides`-table admin UI gap (§7, still no UI for `plan_overrides` itself) are unchanged — out of scope for this addendum.
+- Phase 6 (§8) is still not approved and still not started.

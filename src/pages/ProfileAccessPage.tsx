@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { UserProfile, LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ProfileAccessManagement } from "../components/ProfileAccessManagement";
+import { QaDashboardAccessManagement } from "../components/QaDashboardAccessManagement";
 
 interface ProfileAccessPageProps {
   theme: "light" | "dark";
@@ -29,6 +31,9 @@ interface ProfileAccessPageProps {
  * is reflected for every user, not just the editor's own browser/localStorage.
  */
 export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessPageProps) {
+  const [activeSubTab, setActiveSubTab] = useState<"directory" | "qa_access">("directory");
+  const dark = theme === "dark";
+
   return (
     <div className="space-y-5 text-left">
       {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
@@ -43,14 +48,38 @@ export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTie
             <span>User Directory & Management</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
-            Organization-wide record of advisor accounts, TACT IDs, and clearance tiers.
-            {effectiveTier === "Developer" ? " Edits here apply to every user immediately." : " Read-only — Developer clearance is required to make changes."}
+            {activeSubTab === "directory"
+              ? <>Organization-wide record of advisor accounts, TACT IDs, and clearance tiers.{effectiveTier === "Developer" ? " Edits here apply to every user immediately." : " Read-only — Developer clearance is required to make changes."}</>
+              : "Who holds Admin/Guide/Mentor access on the QA Dashboard, separate from the WebApp tiers above."}
           </p>
         </div>
       </div>
 
+      <nav className={`flex gap-1 border-b-2 ${dark ? "border-white/10" : "border-stone-200"}`}>
+        {([
+          { id: "directory", label: "User Directory" },
+          { id: "qa_access", label: "QA Dashboard Access" },
+        ] as const).map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveSubTab(tab.id)}
+            className={`px-4 py-2 text-xs font-bold rounded-t-lg -mb-0.5 border-b-[3px] cursor-pointer transition-colors ${
+              activeSubTab === tab.id
+                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                : "border-transparent text-content-muted hover:text-content"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="space-y-5 pb-6">
-        <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+        {activeSubTab === "directory" ? (
+          <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+        ) : (
+          <QaDashboardAccessManagement theme={theme} effectiveTier={effectiveTier} />
+        )}
       </div>
     </div>
   );

@@ -20,3 +20,6 @@ export type { } from './SvgIcon';
 
 export { DeclarationMapIcon } from './DeclarationMapIcon';
 export type { } from './DeclarationMapIcon';
+
+export { QaDashboardIcon } from './QaDashboardIcon';
+export type { } from './QaDashboardIcon';
