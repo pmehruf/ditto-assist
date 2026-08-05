@@ -290,7 +290,7 @@ export function MyActivityPage({
             </p>
             <p className="text-xs text-stone-500 mt-1">
               {!hasActiveFilter
-                ? "Initiate a medical term lookup in the Ditto Assist page to populate this history."
+                ? "Initiate a medical term lookup in the Declaration Assistant page to populate this history."
                 : "Try relaxing your search terms or filters to reveal matching logs."}
             </p>
           </div>
@@ -319,7 +319,7 @@ export function MyActivityPage({
 
                   // Shared taxonomy (src/utils/matchTier.ts) — same Level
                   // 1/2/3 + Needs Clarification / Not a Medical Ailment
-                  // scheme as the live Ditto Assist results screen
+                  // scheme as the live Declaration Assistant results screen
                   // and the admin Audit page. This replaces a previous
                   // lookup keyed on "perfect"/"approx"/"not matched" —
                   // values that never actually occur in real match_type

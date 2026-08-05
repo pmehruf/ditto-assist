@@ -8,7 +8,7 @@ import { FeaturePermission } from "../types/permissions";
 export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   {
     id: "lookup",
-    name: "Ditto Assist",
+    name: "Declaration Assistant",
     description: "Search and medical policy category mapping assistant",
     defaultTier: "General",
     generalAccess: "Editor",

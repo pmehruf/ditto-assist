@@ -756,7 +756,7 @@ export function AuditPage({
                       {(() => {
                         // Shared taxonomy (src/utils/matchTier.ts) — same
                         // Level 1/2/3 + Needs Clarification / Not a Medical
-                        // Ailment scheme as the live Ditto Assist
+                        // Ailment scheme as the live Declaration Assistant
                         // results screen and My Activity Journal.
                         const tier = getMatchTierInfo(log.matchType);
                         const badgeClass =

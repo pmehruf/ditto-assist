@@ -2452,8 +2452,8 @@ export default function App() {
                 — it was reading as a barely-visible gray smudge in Light
                 theme. Sidebar bg is intentionally dark-navy in both themes
                 (see index.css's --sidebar-bg "LOCKED VALUE" note). */}
-            <span className="text-xs font-bold uppercase tracking-wider text-white">Ditto Compliance</span>
-            <span className="text-[10px] font-medium text-[#C4CDD8]">Medical Declaration Mapping Workspace</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-white">Ditto Assist</span>
+            <span className="text-[10px] font-medium text-[#C4CDD8]">A Powerful Suite of Advisory Tools</span>
           </div>
           <button
             onClick={() => setIsMenuOpen(false)}
@@ -2501,7 +2501,7 @@ export default function App() {
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
                 <Sparkles className="w-4 h-4 shrink-0 text-blue-300" />
-                <span>Ditto Assist</span>
+                <span>Declaration Assistant</span>
               </button>
             </>
           )}
@@ -2935,7 +2935,7 @@ export default function App() {
                         : "hover:bg-white/5"
                     }`}
                     style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                    title="Ditto Assist"
+                    title="Declaration Assistant"
                   >
                     <Sparkles style={{ width: "18px", height: "18px" }} />
                   </button>
@@ -3443,7 +3443,7 @@ export default function App() {
                 );
               }
               const tabMeta = {
-                lookup: { label: "Ditto Assist", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                lookup: { label: "Declaration Assistant", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -3940,7 +3940,7 @@ export default function App() {
               style={{ width: "100%", maxWidth: "100%", marginTop: "2px", marginBottom: "2px" }}
               className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-center"
             >
-              <ErrorBoundary theme={theme} label="Ditto Assist">
+              <ErrorBoundary theme={theme} label="Declaration Assistant">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
                   <LookupIntroPage theme={theme} setShowIntro={setShowIntro} />
                 </Suspense>
@@ -3973,7 +3973,7 @@ export default function App() {
               }}
               className="flex flex-col gap-4 lg:flex-1 lg:min-h-0"
             >
-              <ErrorBoundary theme={theme} label="Ditto Assist">
+              <ErrorBoundary theme={theme} label="Declaration Assistant">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <LookupPage
                 theme={theme}

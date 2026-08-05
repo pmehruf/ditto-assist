@@ -612,7 +612,7 @@ html:not(.dark) select { color-scheme: light; }
    flush against the right edge with no breathing room (Insurance
    Plan/Mapping Status/Mapping Source filters, Plan Management, Announcement
    forms, PED Suggestions, Profile Access, Specific Illness Ledger, etc).
-   The Health Insurance Plan select on the Ditto Assist page
+   The Health Insurance Plan select on the Declaration Assistant page
    (#insurance-plan-dropdown) already renders its own hand-placed
    ChevronDown + padding, so it's excluded here to avoid a double arrow. */
 select:not(#insurance-plan-dropdown) {

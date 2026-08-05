@@ -92,7 +92,7 @@ interface LookupPageProps {
 }
 
 /**
- * "Ditto Assist" lookup tab — main functional form + results content
+ * "Declaration Assistant" lookup tab — main functional form + results content
  * (the `!showIntro` branch). Extracted verbatim from App.tsx (Phase 1.3). The
  * `activeTab === "lookup" && !showIntro` condition and wrapping
  * `<motion.div key="lookup">` deliberately stay in App.tsx (see
