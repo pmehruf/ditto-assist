@@ -2915,7 +2915,7 @@ export default function App() {
                     }}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && showIntro
-                        ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                        ? "bg-white/[0.08] border border-white/[0.14]"
                         : "hover:bg-white/5"
                     }`}
                     style={{ color: activeTab === "lookup" && showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2931,7 +2931,7 @@ export default function App() {
                     }}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && !showIntro
-                        ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                        ? "bg-white/[0.08] border border-white/[0.14]"
                         : "hover:bg-white/5"
                     }`}
                     style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2947,7 +2947,7 @@ export default function App() {
                   onClick={() => setActiveTab("qa_dashboard")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "qa_dashboard"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "qa_dashboard" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2962,7 +2962,7 @@ export default function App() {
                   onClick={() => setActiveTab("coverage_projection")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "coverage_projection"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "coverage_projection" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2977,7 +2977,7 @@ export default function App() {
                   onClick={() => setActiveTab("advisory_zone")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "advisory_zone"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "advisory_zone" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2992,7 +2992,7 @@ export default function App() {
                   onClick={() => setActiveTab("announcement_archive")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "announcement_archive"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "announcement_archive" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3007,7 +3007,7 @@ export default function App() {
                   onClick={() => setActiveTab("resources")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "resources"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "resources" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3022,7 +3022,7 @@ export default function App() {
                   onClick={() => setActiveTab("my_activity")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "my_activity"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "my_activity" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3047,7 +3047,7 @@ export default function App() {
                   onClick={() => setActiveTab("qa_announcement_log")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "qa_announcement_log"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "qa_announcement_log" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3062,7 +3062,7 @@ export default function App() {
                   onClick={() => setActiveTab("ped_suggestions")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "ped_suggestions"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "ped_suggestions" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3077,7 +3077,7 @@ export default function App() {
                   onClick={() => setActiveTab("plan_scope")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "plan_scope"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "plan_scope" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3092,7 +3092,7 @@ export default function App() {
                   onClick={() => setActiveTab("profile_access")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "profile_access"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "profile_access" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3107,7 +3107,7 @@ export default function App() {
                   onClick={() => setActiveTab("audit")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "audit"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "audit" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3122,7 +3122,7 @@ export default function App() {
                   onClick={() => setActiveTab("flagged_responses")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "flagged_responses"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "flagged_responses" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3159,7 +3159,7 @@ export default function App() {
                   onClick={() => setActiveTab("owner_controls")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "owner_controls"
-                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "owner_controls" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
