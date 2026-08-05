@@ -151,7 +151,19 @@ export function AnnouncementAckModal({
             // bg-[#ffffff], not bg-white — same reasoning as the modal
             // shell above: a floating overlay needs to stay fully opaque,
             // not pick up the card surface's translucency.
-            className="min-h-0 flex-1 overflow-y-auto pr-2 rounded-lg border border-stone-200 bg-[#ffffff] text-stone-850 p-3 text-xs leading-relaxed"
+            // text-[#111827], not text-stone-850 — this box's background is
+            // forced white in BOTH themes (see the bg-[#ffffff] note above),
+            // but `.text-stone-850` resolves through a dark-theme compat
+            // rule to var(--text-primary), which is near-white (#F5F7FA) in
+            // dark theme. On a permanently-white box that produced
+            // near-invisible white-on-white text whenever the app itself was
+            // in dark theme — a container-level bug independent of (and
+            // found only after fixing) the per-color contrast guard in
+            // announcementHtml.tsx's wrapColor. A literal always-dark hex
+            // (matching DEFAULT_INK.light, the same "default ink" constant
+            // AnnouncementContent itself uses) is correct regardless of
+            // ambient theme, since the box itself never changes.
+            className="min-h-0 flex-1 overflow-y-auto pr-2 rounded-lg border border-stone-200 bg-[#ffffff] text-[#111827] p-3 text-xs leading-relaxed"
           >
             <AnnouncementContent content={current.announcement} theme={theme} forceLightContrast />
           </div>
