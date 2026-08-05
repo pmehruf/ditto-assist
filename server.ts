@@ -1375,7 +1375,9 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
     if (req.query.paginated) {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
       const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement"] as const);
-      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir };
+      const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
+      const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
+      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir, dateFrom, dateTo };
       if (req.query.export) {
         const rows = await announcements.listMatching(listOptions);
         return res.json({ entries: rows });
@@ -1399,13 +1401,12 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
     if (typeof announcement !== "string" || !announcement.trim() || typeof category !== "string" || !category.trim()) {
       return res.status(400).json({ error: "announcement and category are required." });
     }
-    const { users: usersRepo, announcements } = createRepositories(getDb());
-    const callerTier = await getCallerTier(req, usersRepo);
+    const { announcements } = createRepositories(getDb());
     const resolvedType = type === "General Announcement" ? "General Announcement" : "QA Announcement";
     const row = await announcements.create({
       announcement,
       category,
-      addedBy: `${req.user!.name} (${callerTier})`,
+      addedBy: req.user!.name,
       effectiveDate: effectiveDate || null,
       rating: typeof rating === "number" ? rating : null,
       type: resolvedType,
@@ -1472,6 +1473,38 @@ app.delete("/api/announcements/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete announcement:", err);
     return res.status(500).json({ error: `Failed to delete this announcement: ${err.message}` });
+  }
+});
+
+// --- Mandatory read-and-acknowledge (all tiers, both announcement types) ---
+// Which announcements a user must ack is decided server-side (see
+// AnnouncementAcksRepository.listUnackedForUser): requires_ack rows only
+// (pre-feature history was grandfathered), created after the user joined,
+// still valid, and not yet acked by them.
+
+app.get("/api/announcements/unacknowledged", requireAuth, async (req, res) => {
+  try {
+    const { announcementAcks } = createRepositories(getDb());
+    const rows = await announcementAcks.listUnackedForUser(req.user!.email);
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list unacknowledged announcements:", err);
+    return res.status(500).json({ error: `Failed to load unacknowledged announcements: ${err.message}` });
+  }
+});
+
+app.post("/api/announcements/:id/acknowledge", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
+    const { announcements, announcementAcks } = createRepositories(getDb());
+    const row = await announcements.getById(id);
+    if (!row) return res.status(404).json({ error: "Announcement not found." });
+    await announcementAcks.acknowledge(id, req.user!.email);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to record announcement acknowledgement:", err);
+    return res.status(500).json({ error: `Failed to record acknowledgement: ${err.message}` });
   }
 });
 
@@ -2932,7 +2965,9 @@ app.get("/api/qa-dashboard/advisors", requireAuth, async (req, res) => {
 app.get("/api/qa-dashboard/feedback", requireAuth, async (req, res) => {
   try {
     const requestedTactId = typeof req.query.tactId === "string" && req.query.tactId.trim() ? req.query.tactId.trim() : null;
-    const result = await getQaFeedbackRowsFor(req.user!.email, requestedTactId);
+    const checkedFrom = typeof req.query.checkedFrom === "string" && req.query.checkedFrom ? req.query.checkedFrom : null;
+    const checkedTo = typeof req.query.checkedTo === "string" && req.query.checkedTo ? req.query.checkedTo : null;
+    const result = await getQaFeedbackRowsFor(req.user!.email, requestedTactId, checkedFrom, checkedTo);
     return res.json(result);
   } catch (err: any) {
     console.error("QA Dashboard: failed to load feedback rows:", err);

@@ -356,15 +356,15 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
               type="button"
               onClick={() => { setAddingNew(true); setSaveError(null); }}
               cornerBg={dark ? "#0e2236" : "#ffffff"}
-              // Solid primary blue (var(--accent-solid), the app's
-              // theme-aware "solid button" color — deep blue in light mode,
-              // cyan in dark mode, same variable PrimaryCtaButton uses)
-              // rather than the previous pastel/muted chip look, per design
+              // Solid brand navy (var(--action-navy)) — the app's
+              // theme-independent primary/neutral action color (same one
+              // PrimaryCtaButton and every other primary CTA uses) rather
+              // than the previous pastel/muted chip look, per design
               // feedback.
               style={{
-                backgroundColor: "var(--accent-solid)",
-                borderColor: "var(--accent-solid)",
-                color: "var(--on-accent)",
+                backgroundColor: "var(--action-navy)",
+                borderColor: "var(--action-navy)",
+                color: "var(--on-action-navy)",
               }}
               className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
             >

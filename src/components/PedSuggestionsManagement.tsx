@@ -15,6 +15,7 @@ import { SortableTh } from "./SortableTh";
 import { Pagination } from "./Pagination";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
+import { formatDateDMY } from "../utils/dateFormat";
 
 interface PedSuggestionEntry {
   id: number;
@@ -287,7 +288,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
         e.term,
         e.category ? (CATEGORY_LABELS[e.category] || e.category) : "Uncategorized",
         e.addedBy,
-        e.createdAt ? new Date(e.createdAt).toLocaleDateString() : "",
+        e.createdAt ? formatDateDMY(e.createdAt) : "",
       ]);
       const csv = [header, ...rows].map(row => row.map(escapeCell).join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -519,9 +520,9 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
               onClick={() => { setAddingNew(true); setSaveError(null); }}
               cornerBg={dark ? "#0e2236" : "#ffffff"}
               style={{
-                backgroundColor: "var(--accent-solid)",
-                borderColor: "var(--accent-solid)",
-                color: "var(--on-accent)",
+                backgroundColor: "var(--action-navy)",
+                borderColor: "var(--action-navy)",
+                color: "var(--on-action-navy)",
               }}
               className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
             >

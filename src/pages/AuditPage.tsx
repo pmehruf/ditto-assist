@@ -16,6 +16,7 @@ import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { SortableTh } from "../components/SortableTh";
 import { Pagination } from "../components/Pagination";
+import { DateInputDMY } from "../components/DateInputDMY";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 
@@ -364,7 +365,7 @@ export function AuditPage({
               role="tab" aria-selected={auditSubTab === "user"} onClick={() => setAuditSubTab("user")}
               className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                 auditSubTab === "user"
-                  ? "bg-blue-600 text-white shadow-md font-extrabold"
+                  ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
                   : theme === "dark"
                     ? "text-stone-400 hover:text-stone-200"
                     : "text-stone-600 hover:text-stone-900 font-bold"
@@ -376,7 +377,7 @@ export function AuditPage({
               role="tab" aria-selected={auditSubTab === "modification"} onClick={() => setAuditSubTab("modification")}
               className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
                 auditSubTab === "modification"
-                  ? "bg-blue-600 text-white shadow-md font-extrabold"
+                  ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
                   : theme === "dark"
                     ? "text-stone-400 hover:text-stone-200"
                     : "text-stone-600 hover:text-stone-900 font-bold font-sans"
@@ -536,19 +537,13 @@ export function AuditPage({
                   <Calendar className="w-3 h-3 text-cyan-500 dark:text-cyan-400" />
                   Start Date
                 </label>
-                <input
-                  type="date"
+                <DateInputDMY
                   value={auditStartDate}
-                  onChange={(e) => setAuditStartDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs px-2 py-2 rounded-xl border outline-none font-semibold cursor-pointer ${
+                  onChange={setAuditStartDate}
+                  displayClassName={`w-full text-xs px-2 py-2 rounded-xl border font-semibold flex items-center ${
                     theme === 'dark'
-                      ? 'bg-[#060a12] border-stone-800 text-white focus:border-[#117FDA]'
-                      : 'bg-white border-stone-200 text-stone-900 focus:border-[#117FDA]'
+                      ? 'bg-[#060a12] border-stone-800 text-white'
+                      : 'bg-white border-stone-200 text-stone-900'
                   }`}
                 />
               </div>
@@ -557,19 +552,13 @@ export function AuditPage({
                   <Calendar className="w-3 h-3 text-cyan-500 dark:text-cyan-400" />
                   End Date
                 </label>
-                <input
-                  type="date"
+                <DateInputDMY
                   value={auditEndDate}
-                  onChange={(e) => setAuditEndDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs px-2 py-2 rounded-xl border outline-none font-semibold cursor-pointer ${
+                  onChange={setAuditEndDate}
+                  displayClassName={`w-full text-xs px-2 py-2 rounded-xl border font-semibold flex items-center ${
                     theme === 'dark'
-                      ? 'bg-[#060a12] border-stone-800 text-white focus:border-[#117FDA]'
-                      : 'bg-white border-stone-200 text-stone-900 focus:border-[#117FDA]'
+                      ? 'bg-[#060a12] border-stone-800 text-white'
+                      : 'bg-white border-stone-200 text-stone-900'
                   }`}
                 />
               </div>
@@ -610,7 +599,7 @@ export function AuditPage({
               <div className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded font-sans ${
                 theme === 'dark' ? 'text-teal-400 bg-teal-500/10' : 'text-stone-700 bg-stone-100'
               }`}>
-                Filtered Entries: {auditTotal.toLocaleString()}
+                Total Lookups: {auditTotal.toLocaleString()}
               </div>
             </div>
 
@@ -767,7 +756,7 @@ export function AuditPage({
                       {(() => {
                         // Shared taxonomy (src/utils/matchTier.ts) — same
                         // Level 1/2/3 + Needs Clarification / Not a Medical
-                        // Ailment scheme as the live Declaration Assistant
+                        // Ailment scheme as the live Ditto Assist
                         // results screen and My Activity Journal.
                         const tier = getMatchTierInfo(log.matchType);
                         const badgeClass =

@@ -40,7 +40,8 @@ import {
   DollarSign,
   Stethoscope,
   Flame,
-  ShieldAlert
+  ShieldAlert,
+  Newspaper
 } from "lucide-react";
 
 import {
@@ -77,6 +78,7 @@ import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
+import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
@@ -116,6 +118,9 @@ const AuditPage = lazy(() =>
 );
 const AdvisoryZonePage = lazy(() =>
   import("./pages/AdvisoryZonePage").then((m) => ({ default: m.AdvisoryZonePage }))
+);
+const AnnouncementArchivePage = lazy(() =>
+  import("./pages/AnnouncementArchivePage").then((m) => ({ default: m.AnnouncementArchivePage }))
 );
 const OwnerControlsPage = lazy(() =>
   import("./pages/OwnerControlsPage").then((m) => ({ default: m.OwnerControlsPage }))
@@ -195,7 +200,7 @@ function resolveResourceIcon(resource: { title: string; icon?: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "coverage_projection" | "qa_dashboard" | "owner_controls">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "qa_dashboard" | "owner_controls">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -255,6 +260,37 @@ export default function App() {
   // The effect that actually calls fetchAnnouncements() lives further down,
   // right after `currentUser` is declared (it depends on currentUser, which
   // isn't in scope yet at this point in the component body).
+
+  // Mandatory read-and-acknowledge queue (oldest first). Non-empty renders
+  // the blocking AnnouncementAckModal over the entire app. The server
+  // decides eligibility (see /api/announcements/unacknowledged): only
+  // announcements posted after the feature shipped AND after this user
+  // joined, still valid, and not yet acked by them. Fails open on any
+  // fetch error — a flaky network must never lock everyone out.
+  const [unackedAnnouncements, setUnackedAnnouncements] = useState<QAAnnouncement[]>([]);
+
+  const fetchUnackedAnnouncements = async () => {
+    try {
+      const res = await fetch("/api/announcements/unacknowledged");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setUnackedAnnouncements((body.entries || []).map(mapAnnouncementRow));
+    } catch (_) {
+      // Fail open — see comment above.
+    }
+  };
+
+  const handleAcknowledgeAnnouncement = (id: string) => {
+    // Optimistic: advance the modal immediately; the POST records it. If the
+    // POST fails, the next app open simply shows the announcement again —
+    // safe in the direction that matters (an ack can be re-done; a lockout
+    // caused by waiting on a failed request can't be escaped).
+    setUnackedAnnouncements(prev => prev.filter(a => a.id !== id));
+    fetch(`/api/announcements/${id}/acknowledge`, { method: "POST" }).catch((err) => {
+      console.error("Failed to record announcement acknowledgement:", err);
+    });
+  };
 
   // Keeps `usersList` (the small, app-wide directory cache — see its
   // declaration above) reasonably fresh for consumers that need to resolve
@@ -643,6 +679,7 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       fetchAnnouncements();
+      fetchUnackedAnnouncements();
       fetchExternalResources();
       fetchPlanConfigs();
       fetchPedSuggestions();
@@ -2464,7 +2501,7 @@ export default function App() {
                 } rounded-r-lg border-y-transparent border-r-transparent`}
               >
                 <Sparkles className="w-4 h-4 shrink-0 text-blue-300" />
-                <span>Declaration Assistant</span>
+                <span>Ditto Assist</span>
               </button>
             </>
           )}
@@ -2519,6 +2556,25 @@ export default function App() {
             >
               <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
               <span>Plan Reference</span>
+            </button>
+          )}
+
+          {/* Announcements archive — sits directly below Plan Reference,
+              same Advisory Zone (all-tiers) visibility. */}
+          {hasAccess("announcement_archive", "Viewer") && (
+            <button
+              onClick={() => {
+                setActiveTab("announcement_archive");
+                if (isMobile) setIsMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                activeTab === "announcement_archive"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+              } rounded-r-lg border-y-transparent border-r-transparent`}
+            >
+              <Newspaper className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>Announcements</span>
             </button>
           )}
 
@@ -2859,7 +2915,7 @@ export default function App() {
                     }}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && showIntro
-                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                        ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                         : "hover:bg-white/5"
                     }`}
                     style={{ color: activeTab === "lookup" && showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2875,11 +2931,11 @@ export default function App() {
                     }}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && !showIntro
-                        ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                        ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                         : "hover:bg-white/5"
                     }`}
                     style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                    title="Declaration Assistant"
+                    title="Ditto Assist"
                   >
                     <Sparkles style={{ width: "18px", height: "18px" }} />
                   </button>
@@ -2891,7 +2947,7 @@ export default function App() {
                   onClick={() => setActiveTab("qa_dashboard")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "qa_dashboard"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "qa_dashboard" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2906,7 +2962,7 @@ export default function App() {
                   onClick={() => setActiveTab("coverage_projection")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "coverage_projection"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "coverage_projection" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2921,7 +2977,7 @@ export default function App() {
                   onClick={() => setActiveTab("advisory_zone")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "advisory_zone"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "advisory_zone" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2931,12 +2987,27 @@ export default function App() {
                 </button>
               )}
 
+              {hasAccess("announcement_archive", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("announcement_archive")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "announcement_archive"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "announcement_archive" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Announcements"
+                >
+                  <Newspaper style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
               {hasAccess("resources", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("resources")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "resources"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "resources" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2951,7 +3022,7 @@ export default function App() {
                   onClick={() => setActiveTab("my_activity")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "my_activity"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "my_activity" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2976,7 +3047,7 @@ export default function App() {
                   onClick={() => setActiveTab("qa_announcement_log")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "qa_announcement_log"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "qa_announcement_log" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -2991,7 +3062,7 @@ export default function App() {
                   onClick={() => setActiveTab("ped_suggestions")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "ped_suggestions"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "ped_suggestions" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3006,7 +3077,7 @@ export default function App() {
                   onClick={() => setActiveTab("plan_scope")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "plan_scope"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "plan_scope" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3021,7 +3092,7 @@ export default function App() {
                   onClick={() => setActiveTab("profile_access")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "profile_access"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "profile_access" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3036,7 +3107,7 @@ export default function App() {
                   onClick={() => setActiveTab("audit")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "audit"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "audit" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3051,7 +3122,7 @@ export default function App() {
                   onClick={() => setActiveTab("flagged_responses")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "flagged_responses"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "flagged_responses" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3088,7 +3159,7 @@ export default function App() {
                   onClick={() => setActiveTab("owner_controls")}
                   className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "owner_controls"
-                      ? "bg-blue-600/15 text-blue-400 border border-blue-500/30"
+                      ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "owner_controls" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
@@ -3263,7 +3334,7 @@ export default function App() {
         <>
       <div
         className={`absolute inset-0 pointer-events-none z-0 select-none transition-all duration-500 ${
-          isDark ? "opacity-55" : "opacity-[0.35]"
+          isDark ? "opacity-55" : "opacity-[0.50]"
         }`}
         style={{
           backgroundImage: isDark
@@ -3338,7 +3409,7 @@ export default function App() {
                 setShowIntro(true);
               }}
               className="text-left cursor-pointer hover:opacity-85 transition-opacity focus:outline-none select-none"
-              title="Home (Go to Compliance & Policy Mapping Engine)" aria-label="Go to home — Declaration Assistant"
+              title="Home (Go to Compliance & Policy Mapping Engine)" aria-label="Go to home — Ditto Assist"
             >
               <div className="flex items-center gap-2">
                 <DittoWordmark className="text-lg" isWhite style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} />
@@ -3372,7 +3443,7 @@ export default function App() {
                 );
               }
               const tabMeta = {
-                lookup: { label: "Declaration Assistant", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                lookup: { label: "Ditto Assist", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -3381,6 +3452,7 @@ export default function App() {
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 plan_scope: { label: "Plan Management", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -3868,14 +3940,14 @@ export default function App() {
               style={{ width: "100%", maxWidth: "100%", marginTop: "2px", marginBottom: "2px" }}
               className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-center"
             >
-              <ErrorBoundary theme={theme} label="Declaration Assistant">
+              <ErrorBoundary theme={theme} label="Ditto Assist">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
                   <LookupIntroPage theme={theme} setShowIntro={setShowIntro} />
                 </Suspense>
               </ErrorBoundary>
             </motion.div>
           )}
-          {/* TAB 1: DECLARATION ASSISTANT (ACTIVE SCREEN) */}
+          {/* TAB 1: DITTO ASSIST (ACTIVE SCREEN) */}
           {activeTab === "lookup" && !showIntro && (
             <motion.div
               key="lookup"
@@ -3901,7 +3973,7 @@ export default function App() {
               }}
               className="flex flex-col gap-4 lg:flex-1 lg:min-h-0"
             >
-              <ErrorBoundary theme={theme} label="Declaration Assistant">
+              <ErrorBoundary theme={theme} label="Ditto Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <LookupPage
                 theme={theme}
@@ -4077,6 +4149,27 @@ export default function App() {
                 planConfigs={planConfigs}
                 specificIllnessesDict={effectiveSpecificIllnessesDict}
               />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* ANNOUNCEMENTS ARCHIVE — full searchable/filterable history of
+              every posted announcement, visible to every tier (same
+              Advisory Zone visibility as Plan Reference above it in the
+              nav; see featurePermissions.ts's "announcement_archive"). */}
+          {activeTab === "announcement_archive" && (
+            <motion.div
+              key="announcement_archive"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0"
+            >
+              <ErrorBoundary theme={theme} label="Announcements Archive">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <AnnouncementArchivePage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4468,6 +4561,18 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mandatory read-and-acknowledge overlay — blocks ALL app usage (it
+          sits above every other layer, z-[200]) until the signed-in user has
+          marked every applicable new announcement as read, one at a time.
+          Eligibility is decided server-side; see fetchUnackedAnnouncements. */}
+      {currentUser && unackedAnnouncements.length > 0 && (
+        <AnnouncementAckModal
+          theme={theme}
+          announcements={unackedAnnouncements}
+          onAcknowledge={handleAcknowledgeAnnouncement}
+        />
+      )}
 
       {/* Destructive-action confirmation modal (see confirmDestructiveAction above for why this
           is a plain confirmation and not a passcode/credential check). */}

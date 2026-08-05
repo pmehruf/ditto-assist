@@ -40,10 +40,23 @@ const MASTER_DUMP_COLS = {
 const TASK_TYPES = { CHAT: "CHAT", CALL: "FIRST_CALL", PAYMENT: "PAYMENT_CALL" } as const;
 const PERFECT_SCORE = 5;
 
+// Friendly labels for the raw task_type/"Domain" enum — matches the Chats/
+// Calls/Payments naming already used by the Score tab's BucketCards.
+const DOMAIN_LABELS: Record<string, string> = {
+  [TASK_TYPES.CHAT]: "Chat",
+  [TASK_TYPES.CALL]: "Call",
+  [TASK_TYPES.PAYMENT]: "Payment",
+};
+function domainLabel(raw: unknown): string {
+  const s = String(raw ?? "").trim();
+  return DOMAIN_LABELS[s] || s;
+}
+
 export interface Advisor {
   tactId: string;
   name: string;
   guide: string | null;
+  mentor: string | null;
 }
 
 export interface DateFilters {
@@ -133,6 +146,7 @@ export async function getAdvisorByEmail(email: string): Promise<Advisor | null> 
   const tactCol = colIndex(headers, "Tact ID");
   const nameCol = colIndex(headers, "Name");
   const guideCol = guideColIndex(headers);
+  const mentorCol = mentorColIndex(headers);
 
   const target = String(email).trim().toLowerCase();
   for (const row of rows) {
@@ -141,6 +155,7 @@ export async function getAdvisorByEmail(email: string): Promise<Advisor | null> 
         tactId: String(row[tactCol]),
         name: String(row[nameCol]),
         guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
+        mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
       };
     }
   }
@@ -152,6 +167,7 @@ export async function findAdvisorByTactId(tactId: string): Promise<Advisor | nul
   const tactCol = colIndex(headers, "Tact ID");
   const nameCol = colIndex(headers, "Name");
   const guideCol = guideColIndex(headers);
+  const mentorCol = mentorColIndex(headers);
 
   const target = String(tactId).trim();
   for (const row of rows) {
@@ -160,6 +176,7 @@ export async function findAdvisorByTactId(tactId: string): Promise<Advisor | nul
         tactId: String(row[tactCol]),
         name: String(row[nameCol]),
         guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
+        mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
       };
     }
   }
@@ -171,6 +188,7 @@ export async function getAllAdvisors(): Promise<Advisor[]> {
   const tactCol = colIndex(headers, "Tact ID");
   const nameCol = colIndex(headers, "Name");
   const guideCol = guideColIndex(headers);
+  const mentorCol = mentorColIndex(headers);
   const statusCol = statusColIndex(headers);
 
   const advisors: Advisor[] = [];
@@ -184,6 +202,7 @@ export async function getAllAdvisors(): Promise<Advisor[]> {
       tactId: String(row[tactCol]),
       name: String(row[nameCol]),
       guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
+      mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
     });
   }
   return advisors;
@@ -305,7 +324,15 @@ export async function getAdvisorMetrics(tactId: string, dateFilters: ParsedDateF
 
 export interface BatchMetric {
   paymentsAvg: number | null;
+  paymentsInstances: number;
   leadScoreAvg: number | null;
+  leadScoreInstances: number;
+  // Chat/Call QA scores — the plain per-domain average (like paymentsAvg),
+  // distinct from leadScoreAvg's per-chat-id-min dedup across CHAT+CALL.
+  chatAvg: number | null;
+  chatInstances: number;
+  callAvg: number | null;
+  callInstances: number;
 }
 
 export async function getAdvisorsBatchMetrics(
@@ -324,6 +351,8 @@ export async function getAdvisorsBatchMetrics(
 
   const wanted = new Set(tactIds.map((id) => String(id).trim()));
   const paymentScores = new Map<string, number[]>();
+  const chatScores = new Map<string, number[]>();
+  const callScores = new Map<string, number[]>();
   const minByChatId = new Map<string, Map<unknown, number>>();
 
   for (const r of rows) {
@@ -345,6 +374,14 @@ export async function getAdvisorsBatchMetrics(
       if (!paymentScores.has(tact)) paymentScores.set(tact, []);
       paymentScores.get(tact)!.push(score);
     }
+    if (domain === TASK_TYPES.CHAT) {
+      if (!chatScores.has(tact)) chatScores.set(tact, []);
+      chatScores.get(tact)!.push(score);
+    }
+    if (domain === TASK_TYPES.CALL) {
+      if (!callScores.has(tact)) callScores.set(tact, []);
+      callScores.get(tact)!.push(score);
+    }
     if (domain === TASK_TYPES.CHAT || domain === TASK_TYPES.CALL) {
       const chatId = r[iChatId];
       if (!minByChatId.has(tact)) minByChatId.set(tact, new Map());
@@ -354,14 +391,27 @@ export async function getAdvisorsBatchMetrics(
     }
   }
 
+  function avgOf(scores: number[]): number | null {
+    return scores.length ? round2(sum(scores) / scores.length) : null;
+  }
+
   const result: Record<string, BatchMetric> = {};
   for (const id of tactIds) {
     const tact = String(id).trim();
     const pScores = paymentScores.get(tact) || [];
-    const paymentsAvg = pScores.length ? round2(sum(pScores) / pScores.length) : null;
+    const cScores = chatScores.get(tact) || [];
+    const clScores = callScores.get(tact) || [];
     const mins = Array.from((minByChatId.get(tact) || new Map()).values());
-    const leadScoreAvg = mins.length ? round2(sum(mins) / mins.length) : null;
-    result[tact] = { paymentsAvg, leadScoreAvg };
+    result[tact] = {
+      paymentsAvg: avgOf(pScores),
+      paymentsInstances: pScores.length,
+      leadScoreAvg: avgOf(mins),
+      leadScoreInstances: mins.length,
+      chatAvg: avgOf(cScores),
+      chatInstances: cScores.length,
+      callAvg: avgOf(clScores),
+      callInstances: clScores.length,
+    };
   }
   return result;
 }
@@ -380,7 +430,11 @@ const KNOWN_DATE_HEADERS = new Set(["checked date", "mistake date"]);
 /** Advisor Feedback tab — still reads the qa_feedback presentation sheet
  * (not yet repointed to master_feedback_dump; see Phase1_DataEngine.gs's
  * SOURCE OF TRUTH note — getAdvisorFeedback was deliberately left alone). */
-export async function getAdvisorFeedback(tactId: string): Promise<SheetTable & { sheetMissing?: boolean }> {
+export async function getAdvisorFeedback(
+  tactId: string,
+  checkedFromStr?: string | null,
+  checkedToStr?: string | null
+): Promise<SheetTable & { sheetMissing?: boolean }> {
   const { headers, rows } = await getSheetDataCached(SHEETS.QA_FEEDBACK);
   if (headers.length === 0) return { headers: [], rows: [], sheetMissing: true };
 
@@ -389,7 +443,22 @@ export async function getAdvisorFeedback(tactId: string): Promise<SheetTable & {
   const sortColIdx = headers.indexOf("Checked Date");
 
   const target = String(tactId).trim().toLowerCase();
-  const matched = rows.filter((r) => String(r[filterColIdx]).trim().toLowerCase() === target);
+  let matched = rows.filter((r) => String(r[filterColIdx]).trim().toLowerCase() === target);
+
+  // Optional Checked Date range filter — applied on the raw serial value,
+  // same as getAdvisorReviews's date-range handling, before serialToDMY
+  // formatting below discards the numeric type.
+  if (sortColIdx !== -1 && (checkedFromStr || checkedToStr)) {
+    const dateFrom = checkedFromStr ? dateStringToSerial(checkedFromStr, false) : null;
+    const dateTo = checkedToStr ? dateStringToSerial(checkedToStr, true) : null;
+    matched = matched.filter((r) => {
+      const cell = r[sortColIdx];
+      if (typeof cell !== "number") return false;
+      if (dateFrom !== null && cell < dateFrom) return false;
+      if (dateTo !== null && cell > dateTo) return false;
+      return true;
+    });
+  }
 
   if (sortColIdx !== -1) {
     matched.sort((a, b) => {
@@ -433,6 +502,7 @@ export async function getAdvisorReviews(
   const iTact = colIndex(headers, "advisor_tact");
   const iAdvisor = colIndex(headers, "advisor_name");
   const iChat = colIndex(headers, "chat_display_id");
+  const iDomain = colIndex(headers, MASTER_DUMP_COLS.DOMAIN);
   const iScore = colIndex(headers, "score");
   const iDispRaised = colIndex(headers, "dispute_raised");
   const iDispRaisedAt = colIndex(headers, "dispute_raised_at");
@@ -478,6 +548,7 @@ export async function getAdvisorReviews(
           "TACT ID": row[iTact],
           Advisor: row[iAdvisor],
           "Chat ID": row[iChat],
+          Domain: domainLabel(row[iDomain]),
           Type: "Dispute",
           Score: row[iScore],
           Raised: fmt(dRaised),
@@ -497,6 +568,7 @@ export async function getAdvisorReviews(
           "TACT ID": row[iTact],
           Advisor: row[iAdvisor],
           "Chat ID": row[iChat],
+          Domain: domainLabel(row[iDomain]),
           Type: "Escalation",
           Score: row[iScore],
           Raised: fmt(eRaised),
@@ -513,7 +585,7 @@ export async function getAdvisorReviews(
   out.forEach((r) => delete (r as Record<string, unknown>)._sortDate);
 
   return {
-    headers: ["TACT ID", "Advisor", "Chat ID", "Type", "Score", "Raised", "Resolved", "Comment", "QA Response", "Status"],
+    headers: ["TACT ID", "Advisor", "Chat ID", "Domain", "Type", "Score", "Raised", "Resolved", "Comment", "QA Response", "Status"],
     rows: out,
   };
 }

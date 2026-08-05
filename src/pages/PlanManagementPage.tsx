@@ -808,7 +808,7 @@ export function PlanManagementPage({
           role="tab" aria-selected={planMgmtView === "plans"} onClick={() => setPlanMgmtView("plans")}
           className={`px-2.5 py-1 rounded-md text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
             planMgmtView === "plans"
-              ? "bg-blue-600 text-white shadow-md font-extrabold"
+              ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
               : dark
                 ? "text-stone-400 hover:text-stone-200"
                 : "text-stone-600 hover:text-stone-900 font-bold"
@@ -820,7 +820,7 @@ export function PlanManagementPage({
           role="tab" aria-selected={planMgmtView === "category-mapping"} onClick={() => setPlanMgmtView("category-mapping")}
           className={`px-2.5 py-1 rounded-md text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
             planMgmtView === "category-mapping"
-              ? "bg-blue-600 text-white shadow-md font-extrabold"
+              ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
               : dark
                 ? "text-stone-400 hover:text-stone-200"
                 : "text-stone-600 hover:text-stone-900 font-bold"
@@ -832,7 +832,7 @@ export function PlanManagementPage({
           role="tab" aria-selected={planMgmtView === "illness-ledger"} onClick={() => setPlanMgmtView("illness-ledger")}
           className={`px-2.5 py-1 rounded-md text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
             planMgmtView === "illness-ledger"
-              ? "bg-blue-600 text-white shadow-md font-extrabold"
+              ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
               : dark
                 ? "text-stone-400 hover:text-stone-200"
                 : "text-stone-600 hover:text-stone-900 font-bold"

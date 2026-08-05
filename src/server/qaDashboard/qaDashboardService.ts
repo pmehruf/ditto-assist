@@ -153,12 +153,14 @@ export async function listAdvisorsForCaller(
 
 export async function getFeedbackRowsFor(
   email: string,
-  requestedTactId: string | null
+  requestedTactId: string | null,
+  checkedFrom: string | null = null,
+  checkedTo: string | null = null
 ): Promise<Awaited<ReturnType<typeof getAdvisorFeedback>> | ErrorResult> {
   try {
     const resolved = await resolveTargetTactId(email, requestedTactId);
     if (isError(resolved)) return resolved;
-    return await getAdvisorFeedback(resolved.tactId);
+    return await getAdvisorFeedback(resolved.tactId, checkedFrom, checkedTo);
   } catch (err: any) {
     return { error: "SERVER_ERROR", message: err.message };
   }
@@ -183,8 +185,15 @@ export interface AdvisorSummaryRow {
   tactId: string;
   name: string;
   guide: string | null;
+  mentor: string | null;
   leadScoreAvg: number | null;
+  leadScoreInstances: number;
   paymentsAvg: number | null;
+  paymentsInstances: number;
+  chatAvg: number | null;
+  chatInstances: number;
+  callAvg: number | null;
+  callInstances: number;
 }
 
 export async function getAdvisorsDashboardListFor(
@@ -208,8 +217,30 @@ export async function getAdvisorsDashboardListFor(
 
     const advisors: AdvisorSummaryRow[] = pool.map((a) => {
       const tact = String(a.tactId).trim();
-      const m = metricsByTact[tact] || { paymentsAvg: null, leadScoreAvg: null };
-      return { tactId: a.tactId, name: a.name, guide: a.guide, leadScoreAvg: m.leadScoreAvg, paymentsAvg: m.paymentsAvg };
+      const m = metricsByTact[tact] || {
+        paymentsAvg: null,
+        paymentsInstances: 0,
+        leadScoreAvg: null,
+        leadScoreInstances: 0,
+        chatAvg: null,
+        chatInstances: 0,
+        callAvg: null,
+        callInstances: 0,
+      };
+      return {
+        tactId: a.tactId,
+        name: a.name,
+        guide: a.guide,
+        mentor: a.mentor,
+        leadScoreAvg: m.leadScoreAvg,
+        leadScoreInstances: m.leadScoreInstances,
+        paymentsAvg: m.paymentsAvg,
+        paymentsInstances: m.paymentsInstances,
+        chatAvg: m.chatAvg,
+        chatInstances: m.chatInstances,
+        callAvg: m.callAvg,
+        callInstances: m.callInstances,
+      };
     });
 
     return { advisors, isAdmin: role.isAdmin, isGuide: role.isGuide, isMentor: role.isMentor, callerName: role.callerName };

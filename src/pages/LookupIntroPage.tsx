@@ -15,7 +15,7 @@ interface LookupIntroPageProps {
 }
 
 /**
- * "Declaration Assistant" lookup tab — intro/splash screen content.
+ * "Ditto Assist" lookup tab — intro/splash screen content.
  * Extracted verbatim from App.tsx (Phase 1.3). The `activeTab === "lookup"
  * && showIntro` condition and wrapping `<motion.div key="intro">`
  * deliberately stay in App.tsx (see ResourcesPage.tsx for why — moving them
@@ -95,7 +95,7 @@ export function LookupIntroPage({ theme, setShowIntro }: LookupIntroPageProps) {
                   theme === "dark" ? "text-white/60" : "text-stone-600 font-medium"
                 }`}
               >
-                Accurate disclosure is not just about what you declare. It is also about where you declare it. Your Declaration Assistant helps you identify the most appropriate place to disclose a medical condition by considering both medical context and policy logic.
+                Accurate disclosure is not just about what you declare. It is also about where you declare it. Ditto Assist helps you identify the most appropriate place to disclose a medical condition by considering both medical context and policy logic.
               </p>
 
               {/* Advisory Note — was a thin amber left-border strip with a

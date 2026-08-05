@@ -496,18 +496,30 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
             columns. */}
         <section
           className={`rounded-2xl border p-5 space-y-4 ${
-            dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated/70 border-[#D2DFEC]"
+            dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)] shadow-card"
           }`}
         >
-          <h2 className={`text-xs font-black uppercase tracking-wider flex items-center gap-2 ${dark ? "text-slate-200" : "text-stone-700"}`}>
-            <FileSpreadsheet className="w-4 h-4" style={{ color: dark ? "var(--accent)" : "#00D3F3" }} />
+          <h2 className={`text-xs font-black uppercase tracking-wider flex items-center gap-2 ${dark ? "text-slate-200" : "text-stone-800"}`}>
+            {/* Was `dark ? "var(--accent)" : "#00D3F3"` — backwards: that put
+                dark theme's own cyan accent into the LIGHT branch, so the
+                icon rendered neon-cyan against a light card. Matches the
+                page-title accent bar above (line ~479) now. */}
+            <FileSpreadsheet className="w-4 h-4" style={{ color: dark ? "#00D3F3" : "#4673a9" }} />
             Plan Configuration
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
             <div>
               <label className={`block text-[11px] font-bold mb-1.5 ${dark ? "text-slate-300" : "text-stone-600"}`}>Plan</label>
-              <CustomSelect value={planId} onChange={handlePlanChange} options={planOptions} theme={theme} />
+              <CustomSelect
+                value={planId}
+                onChange={handlePlanChange}
+                options={planOptions}
+                theme={theme}
+                triggerClassName={`w-full flex items-center justify-between gap-2 pl-2.5 pr-8 py-1.5 rounded-lg border outline-none font-semibold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
+                  dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                }`}
+              />
 
               {/* Toggle options sit directly under the Plan field instead of
                   spanning full-width below the whole row (Plan's dropdown
@@ -536,7 +548,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                   setSiLakhs(parseFloat(e.target.value) || 0);
                   setResults(null);
                 }}
-                className={`w-full px-3 py-2.5 rounded-xl border outline-none font-bold text-xs ${
+                className={`w-full px-3 py-1.5 rounded-lg border outline-none font-semibold text-xs ${
                   dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
                 }`}
               />
@@ -549,14 +561,14 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                       setSiLakhs(val);
                       setResults(null);
                     }}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
                       siLakhs === val
                         ? dark
                           ? "bg-blue-600/25 text-blue-300 border border-blue-500/40"
-                          : "bg-blue-50 text-blue-700 border border-blue-300"
+                          : "bg-blue-100 text-blue-700 border border-blue-400"
                         : dark
                           ? "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
-                          : "bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-150"
+                          : "bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200 hover:border-stone-300"
                     }`}
                   >
                     {label}
@@ -579,7 +591,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                   setResults(null);
                 }}
                 onBlur={() => setYearsText(String(clampYears(yearsText)))}
-                className={`w-full px-3 py-2.5 rounded-xl border outline-none font-bold text-xs ${
+                className={`w-full px-3 py-1.5 rounded-lg border outline-none font-semibold text-xs ${
                   dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
                 }`}
               />
@@ -605,20 +617,20 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
 
         {/* CLAIM SCENARIOS — full width, its own card. */}
         <section
-          className={`rounded-2xl border p-5 space-y-3 ${
-            dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated/70 border-[#D2DFEC]"
+          className={`rounded-2xl border p-5 space-y-3 mt-7 ${
+            dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)]"
           }`}
         >
-            <h2 className={`text-xs font-black uppercase tracking-wider ${dark ? "text-slate-200" : "text-stone-700"}`}>
+            <h2 className={`text-xs font-black uppercase tracking-wider ${dark ? "text-slate-200" : "text-stone-800"}`}>
               Claim Scenarios
             </h2>
             {/* Mild separator between year rows instead of bare vertical gap
                 — divide-y only draws a line *between* rows, so the list
                 still starts/ends flush, just with a subtle rule marking
                 each year off from the next. */}
-            <div className={`divide-y ${dark ? "divide-white/[0.06]" : "divide-stone-300"}`}>
+            <div className={`divide-y mt-4 ${dark ? "divide-white/[0.06]" : "divide-stone-500"}`}>
               {Array.from({ length: years }, (_, i) => i + 1).map((y) => (
-                <div key={y} className="flex flex-wrap items-center gap-2.5 py-2.5">
+                <div key={y} className={`flex flex-wrap items-center gap-3 py-2 pl-3 pr-1 -mx-1 rounded-lg transition-colors duration-150 ${dark ? "" : "hover:bg-stone-50"}`}>
                   <div className={`text-xs font-bold w-16 shrink-0 ${dark ? "text-slate-300" : "text-stone-600"}`}>Year {y}</div>
                   <div className="flex flex-wrap gap-1.5 flex-1 min-w-[120px]">
                     {(claimsByYear[y] || []).map((amt, idx) => (
@@ -639,7 +651,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                       </span>
                     ))}
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2">
                     <input
                       type="number"
                       min={0}
@@ -677,9 +689,11 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
             </div>
         </section>
 
-        <PrimaryCtaButton theme={theme} onClick={runSimulation} className="self-start">
-          Generate
-        </PrimaryCtaButton>
+        <div className={`pt-7 border-t ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+          <PrimaryCtaButton theme={theme} onClick={runSimulation} className="self-start">
+            Generate Illustration
+          </PrimaryCtaButton>
+        </div>
 
         {/* RESULTS — deliberately theme-independent: this card always
             renders with the original Coverage Projection Studio's fixed
@@ -701,7 +715,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                 aspect ratio, centered inside — see the wrapper further below. */}
             <div
               className={`rounded-2xl border ${
-                dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated/70 border-[#D2DFEC]"
+                dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)]"
               }`}
               style={{ padding: "32px 28px" }}
             >

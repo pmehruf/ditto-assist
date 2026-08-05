@@ -108,20 +108,38 @@
 
   /* Backgrounds & surfaces — a real elevation ladder instead of a dark-theme
      inversion. Level 0 (--bg) is a quiet neutral gray, not blue-tinted, so it
-     recedes; cards (--surface) are pure white and read as the most "raised"
-     layer; the tiers in between (--surface-elevated/-inset/-tint) give large
-     section containers (stats panels, filter bars, config groups) their own
-     recognizable tone instead of collapsing into the same white as cards. */
-  --bg: #F5F6F8;                    /* Level 0 — app background   */
-  --surface: #FFFFFF;               /* Level 2 — cards / panels   */
-  --surface-elevated: #EFF2F6;      /* Level 1 — section containers */
-  --surface-inset: #E7EBF1;         /* Level 1 — step cards / inner widgets */
-  --surface-tint: #E9EFF8;          /* Level 1 — accent-tinted panels */
-  --surface-hover: #F5F8FB;         /* Level 3/4 — row / control hover */
+     recedes; cards (--surface) read as the most "raised" layer; the tiers in
+     between (--surface-elevated/-inset/-tint) give large section containers
+     (stats panels, filter bars, config groups) their own recognizable tone
+     instead of collapsing into the same white as cards.
+
+     Unified Surface Philosophy: every surface tier is a translucent white
+     (rgba, not opaque hex) so the wallpaper pattern + glow atmosphere behind
+     the app shell shows through — mirroring how dark theme's cards are
+     already translucent overlays rather than solid fills. This is plain
+     alpha transparency, not glassmorphism: no blur/backdrop-filter, no
+     glossy sheen.
+
+     Alpha calibration note: --bg and the wallpaper art are both
+     intentionally near-white/low-contrast ("atmosphere, not foreground"),
+     so the maximum tint a translucent card can pick up from them is modest
+     by nature — a card blended all the way down to 0% opacity would still
+     only land ~10–20 RGB units off pure white. An earlier pass used 85–92%
+     alpha "to be safe," which — given that ceiling — was indistinguishable
+     from fully opaque in practice. Alphas below are pushed much closer to
+     that ceiling (45–62%) so the effect actually reads. Text contrast is
+     unaffected either way: dark body text against a background this close
+     to white keeps double-digit contrast ratios regardless of alpha. */
+  --bg: #EEF1F6;                              /* Level 0 — app background (stays opaque; wallpaper paints above it) */
+  --surface: rgba(255, 255, 255, 0.55);       /* Level 2 — cards / panels   */
+  --surface-elevated: rgba(242, 245, 250, 0.50); /* Level 1 — section containers */
+  --surface-inset: rgba(227, 232, 240, 0.46); /* Level 1 — step cards / inner widgets (sunken, below --bg) */
+  --surface-tint: rgba(231, 237, 250, 0.50);  /* Level 1 — accent-tinted panels */
+  --surface-hover: rgba(245, 248, 252, 0.62); /* Level 3/4 — row / control hover */
 
   /* Borders — perceptible but soft; defines structure without drawing the eye */
-  --border: #DCE2EA;
-  --border-strong: #96A5B8;
+  --border: #D3DAE5;
+  --border-strong: #8A9BB0;
 
   /* PRIMARY ACCENT — Dark Brand Blue (hero title / top nav family) */
   --accent: #0754B7;
@@ -134,6 +152,23 @@
   --accent-border: #B9D2F2;
   --gradient-accent: linear-gradient(to right, #0754B7, #3B82F6);
   --gradient-heading: linear-gradient(to right, #192030, #3A4A6E);
+
+  /* BRAND NAVY — the app's one shared "solid dark" fill, originally
+     Coverage Projection Studio's Add Claim/Copy Table/Download buttons.
+     Deliberately theme-independent (no .dark override) — same navy in
+     both themes, same as those buttons always were. Two consumers so far:
+       - --tab-active-bg/-text: the active state of every tab toggle.
+       - --action-navy/-hover/-text: the fill for PRIMARY/neutral action
+         buttons (Add Plan, Generate, Save, etc.) — replacing the old
+         bg-blue-600 family. Deliberately NOT used for destructive (red) or
+         confirm/success (green) buttons — those colors are load-bearing:
+         they're how a user tells "delete this" apart from "mark as read"
+         at a glance, and collapsing them into one color would erase that. */
+  --tab-active-bg: #1f2d3d;
+  --tab-active-text: #FFFFFF;
+  --action-navy: #1f2d3d;
+  --action-navy-hover: #16212c;
+  --on-action-navy: #FFFFFF;
 
   /* Secondary accent (approved teal, functional only)
      Darkened from #0F766E — the original shade fell to ~2.3-3.4:1 against
@@ -184,7 +219,7 @@
 
   /* Tables */
   --table-header-bg: #EEF1F5;
-  --table-row-hover: #F1F5F9;
+  --table-row-hover: #EDF2F8;
 
   /* Header / Sidebar — unified chrome for the light theme.
      LOCKED VALUE: this is the single source of truth for both the header
@@ -206,10 +241,12 @@
 
   /* Shadows — layered "soft elevation" (a tight contact shadow + a wider,
      softer diffuse one) instead of one big blur, so cards read as gently
-     raised rather than floating. Kept restrained per spec. */
-  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 16px rgba(16, 24, 40, 0.06);
-  --shadow-overlay: 0 2px 6px rgba(16, 24, 40, 0.07), 0 12px 32px rgba(16, 24, 40, 0.12);
+     raised rather than floating. Kept restrained per spec — deepened
+     slightly from the original values so elevation reads at a glance
+     against the now-wider surface ladder above, without going heavy. */
+  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.05), 0 6px 20px rgba(16, 24, 40, 0.08);
+  --shadow-overlay: 0 3px 8px rgba(16, 24, 40, 0.09), 0 16px 40px rgba(16, 24, 40, 0.14);
 
   /* Scanline / texture overlays used on hero panels — dialed down so the
      sitewide grid texture (see GridTexture.tsx) supports content instead of
@@ -455,11 +492,37 @@ html {
   line-height: var(--leading-section-heading);
 }
 
-/* Scrollbars */
+/* Scrollbars — themed, slim, rounded thumb. Shared across both themes (the
+   colors are CSS vars that already flip with .dark, so one rule set covers
+   both) — this is the one piece of the final light-theme polish pass that's
+   explicitly allowed to touch dark theme, since it was already shared
+   infrastructure rather than a light-only surface. */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+/* Idle thumb sits at reduced opacity so it recedes when the page is at
+   rest — full color (and the accent swap) only kicks in on hover/active,
+   per the "reduce idle prominence, react on interaction" polish pass. */
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--accent); opacity: 1; }
+::-webkit-scrollbar-thumb:active { opacity: 1; }
+
+/* Firefox doesn't support ::-webkit-scrollbar-*; this is its equivalent
+   (thumb color, transparent track). "thin" is Firefox's closest built-in
+   match to the 8px WebKit width above — there's no way to set an exact
+   pixel width via this property. Applied on :root so it inherits into every
+   scrollable element by default, same reach as the unscoped ::-webkit-
+   scrollbar rules above; anything using scrollbar-gutter or its own
+   scrollbar-color (like .announcement-scroll below) still overrides it
+   locally as before. */
+:root {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
 
 /* Announcement carousel content scroller.
    The global thumb above uses var(--border-strong), which follows the AMBIENT
@@ -475,6 +538,8 @@ html {
 .announcement-scroll::-webkit-scrollbar-thumb:hover { background: #475569; }
 .announcement-scroll.on-dark::-webkit-scrollbar-thumb { background: #5A6E8C; }
 .announcement-scroll.on-dark::-webkit-scrollbar-thumb:hover { background: #7189AD; }
+.announcement-scroll { scrollbar-width: thin; scrollbar-color: #64748B transparent; }
+.announcement-scroll.on-dark { scrollbar-color: #5A6E8C transparent; }
 
 /* Keyboard focus visibility — one ring, themed */
 :focus-visible {
@@ -547,7 +612,7 @@ html:not(.dark) select { color-scheme: light; }
    flush against the right edge with no breathing room (Insurance
    Plan/Mapping Status/Mapping Source filters, Plan Management, Announcement
    forms, PED Suggestions, Profile Access, Specific Illness Ledger, etc).
-   The Health Insurance Plan select on the Declaration Assistant page
+   The Health Insurance Plan select on the Ditto Assist page
    (#insurance-plan-dropdown) already renders its own hand-placed
    ChevronDown + padding, so it's excluded here to avoid a double arrow. */
 select:not(#insurance-plan-dropdown) {
@@ -676,14 +741,21 @@ html:not(.dark) select:not(#insurance-plan-dropdown) {
 .bg-sky-50, .bg-sky-100, .bg-sky-50\/60,
 .bg-indigo-50\/50, .bg-indigo-50\/60, .bg-indigo-50\/65 { background-color: var(--accent-subtle-bg); }
 
-/* Solid accent surfaces (primary buttons, primary badges) */
+/* Solid accent surfaces (primary buttons, primary badges) — brand navy,
+   theme-independent, replacing the old per-theme accent-blue/cyan fill.
+   Deliberately a SEPARATE token from --accent-solid (not a redefinition of
+   it) — --accent-solid still feeds decorative uses elsewhere (gradients,
+   from-blue-600/purple-/violet- stops) that should stay the per-theme
+   accent color, not navy. Red (danger) and emerald/green (success/confirm)
+   buttons are untouched — they're a different color family entirely, not
+   covered by these classes. */
 .bg-blue-600, .bg-blue-500, .bg-blue-700, .bg-cyan-400, .bg-\[\#117FDA\] {
-  background-color: var(--accent-solid);
-  color: var(--on-accent);
+  background-color: var(--action-navy);
+  color: var(--on-action-navy);
 }
 .hover\:bg-blue-700:hover, .hover\:bg-blue-600:hover, .hover\:bg-blue-500:hover {
-  background-color: var(--accent-solid-hover);
-  color: var(--on-accent);
+  background-color: var(--action-navy-hover);
+  color: var(--on-action-navy);
 }
 
 /* --------------------------------------------------------------

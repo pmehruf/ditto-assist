@@ -1,0 +1,589 @@
+Titles,Severity,QA Announcement,Announcement,Announcement Date,Effective Date
+Chats/Calls/Payments,1,QA Announcement,"Updated Maternity Recommendations
+i. Niva Bupa Aspire Titanium+
+ii. Aditya Birla Activ Fit Preferred
+iii. HDFC Ergo Optima Secure (with Parenthood add-on)
+Please refer to the ppt attached for reasoning and narrative.
+Latest Maternity Recommendations (29/01/2026)
+
+Rating Implications:
+
+1. Not adhering to the above recommendations for maternity use cases would be rated 1.
+2. Not sharing the maternity snips along with the plan features comparison snips would be rated 1.
+3. If the customer has a requirement of having higher maternity coverage with less waiting period or if the customer feels Aspire Titanium+ maternity coverage is too low then advisors are expected to pitch Fast Forward add-on else it would be rated 1.Giving any wrong information or omission of clauses related to the fast forward add-on would also be rated 1.  
+
+Effective date - 9-2-26",02/2/2026,02/9/2026
+Payments,1,QA Announcement,"Payments
+
+The below mentioned points in the document are expected to be followed by the advisors. 
+Other PEDs Section Framework
+
+Rating Implications:
+
+1. Not following the framework would be rated 1
+Note - Order can be flexible within the others section but in case of word limit the priority order should be followed.
+2. Not selecting the peds which exist in the main journey and mentioning those directly in the others section would be rated 1
+
+Effective Date - 13-02-2026",07/2/2026,13/02/2026
+Payments,1,QA Announcement,"Payments:
+
+Advisors are not allowed to fill proposal form/application on the behalf of customers either on Ditto Payment links or on Redirection links. Any deviation from this directive exposes the organization to significant regulatory risk and will be treated as a serious compliance violation.
+
+Application filling guidelines:
+Only customers will be filling the data on Ditto payment interface or Redirection links. Advisor should refrain from filling the application on behalf of the customers on Ditto Journey & Redirection links except for Porting cases happening via Portals like 1up, Faveo, etc where login credentials are applicable. Any deviation from this constitutes an error. 
+
+
+Rating Implication:
+
+If the advisors fill the form on behalf of the customers for payment made via redirectional links then it will be marked under 1 under SOP clause 1.2.C.
+Note - the above clause is already inforce for ditto payment journey. 
+
+No exceptions allowed: Any approvals, Verbal confirmation, recorded consent, or email approvals will also not qualify as exceptions from the above mentioned guideline
+
+ ",12/2/2026,12/2/2026
+Payments,,QA Announcement,"Payments:
+
+1. In HDFC porting cases or Faveo porting portals, if advisor filled the form without the customer being on the call which would be considered as an error. Advisors should cross verify the details filled, with the customers by keeping them on G meet call. This is to avoid any potential escalation where the detials got filled without the customer's interference. For the next 1 month this would be highlighted, if we observe advisors deviating from this clause which can lead to escalation then we shall introduce marking for the same.
+",12/2/2026,
+Chats/Calls/Payments,,QA Announcement,"Context: Removal of disclaimer for Aditya Birla
+
+The SOP clause that mandated sharing a disclaimer for Aditya Birla as an insurer new to the market with limited claims data whenever recommended need not be followed going forward.
+
+Advisory, QA, and management are aligned on this change, and the disclaimer has been officially discontinued. We request the Advisory and QA teams to follow the updated process going forward.
+
+Effective date: 17 Feb 2025
+
+Note: QA team will highlight this update in audits if any advisor continues to provide the disclaimer for Aditya Birla. Currently, this change has no rating implications.",16/2/2026,
+Payments,1,QA Announcement,"Payments
+
+Considering the lack of clarity for a lot of specific use cases, instead of implementing the entire framework, we are planning to monitor a few critical aspects of disclosure to avoid any issues as those are very important to be followed.
+
+We are planning to resume rating implications for the following points alone. Please check and let us know for any queries:
+
+Other section disclosure:
+
+QA will reduce the ratings only for the following:
+1) Any PED available in the main journey is not disclosed or disclosed only under other section
+2) Other section is not triggered at all
+3) Missed mentioning the reports/details availability in PED cases.
+4) Missed disclosing any details that are not available in the main journey (PED, Lifestyle. Applicable diagnostic tests) even when there is no word limit issue in other section.
+5) Mentioning ""Reports not available"".
+6) High BP medications, if applicable (can be mentioned under specific question in the main journey too if we have space).
+7) Other section should be triggered for all Insured members if they have something to be disclosed and reports availability should be mentioned
+
+For cases where both QA and Advisory lacks clarity, QA will mark it as an observation for reference, but ratings won't be impacted. Cases include:
+1) Elevated levels for any tests in AHC (No medical intervention or diagnosis)
+2) Priority list in the framework is not followed considering there is no incorrect disclosure or nondisclosure
+3) Other new use cases that is ambiguous or unclear which are not covered under rating reduction category mentioned above.
+
+Rating Implication
+
+Failing to adhere to the above points will result in a rating of 1.
+
+Effective Date -  10-03-2026",03/3/2026,03/10/2026
+Payments,,QA Announcement,"Payments:
+
+SOP Clause 4.1 - ""Not asking the customers to click on the “What’s Next” and ""things to know"" button under the policy issuance section after completing the payment if the customer did not click that during the payment call.""
+
+The above point from the payment SOP has been reworded as below for better understanding.
+
+Not nudging the customer to go through the ""What's Next"" or ""Things to know"" section in both cases mentioned below:
+1. After payment is successful in payment call
+2. If customer decides to complete payment on his own and drops from the payment call",18/2/2026,
+Payments,1,QA Announcement,"Payments
+
+1. Advisors should cross verify the details filled during Porting cases happening on HDFC or Faveo porting portals with the customers by keeping them on G meet call. This is to avoid any potential escalation where the details got filled without the customer's interference.
+
+Rating Implication:
+
+In HDFC porting cases or Faveo porting portals, if advisor filled the form without the customer being on the call which would be considered as an error. This would be rated 1 if we observe advisors deviating from this clause which can lead to escalation.
+
+Note: If the advisor filled the form but vetted the details by the customer before submitting the application then such cases are accepted and does not fall under this marking.
+
+Effective date - 02-03-2026",24/2/2026,03/2/2026
+Payments,1,QA Announcement,"Payments
+
+It was noticed that advisors are only asking if the lead has any of the lifestyle habits and not probing further for past/occasional habits. The advisor should probe for past/present/occasional and occasional past habits when we ask about lifestyle habits, regardless of quantity. 
+
+Rating Implication:
+
+1. Not adhering to the above clause would be rated 1. Please note that this will be highlighted till 06-03-2026
+
+Effective date - 07-03-2026",25/2/2026,03/7/2026
+Chats/Calls,1,QA Announcement,"  
+The SOP Clause 3.6.F 
+
+""Note: If the customer, being an NRI (proposer), is looking for the person who lives in India, advisors should nudge to have either the insured to be the proposer or any sibling or any person from Indian who can become the proposer. Not nudging the same would be rated -1.""
+
+After discussing with the product team, we understood that this is a point to highlight for the customer convinience but not an operational difficulty in case of OS/CS. Please note in Aditya Birla as we know if self who is NRI is the proposer or the insured then he can't purchase through us which stands the same.
+
+Please note that the above clause is moved to rating 4 from 28-02-2026.",27/2/2026,28/02/2026
+Payments,1,QA Announcement,"Payments
+
+Disclosure Norms:
+
+A new section titled “Disclosure Norms” has now been introduced in the Disease Wise Tool (Health) for select medical conditions.
+Going forward, please ensure that you refer to and use this section while disclosing or appropriately nudging leads regarding medical conditions during payment calls.
+For conditions where the Disclosure Norms section has not yet been added, please continue to follow the existing guidelines as currently practiced.
+
+1. Must be disclosed
+
+If the condition falls under must disclose catogery then the advisor has to make sure that this is getting disclosed.
+
+2. Recommended to be disclosed
+
+If the condition falls under recommended to be disclosed catogery then the advisor has to make sure that we advise the lead to disclose and leave it for their choice.
+
+3. Fine if not disclosed
+
+In this catogery , we will let the customer know that based on our experience in these cases we saw insurers are not much focused on these conditions and doesn't put wps etc so it is fine not to disclose this.
+
+Rating Implications:
+
+1. If the advisor suggests to not disclose the condition that falls under ""must be disclosed"" catogery then this would be rated 1.
+
+2.a. If the condition falls under ""recommended to be disclosed"" category, the advisor must nudge the customer that we recommend to disclose the condition in the application but final decision to disclose lies with the customer. Failing to follow this will be highlighted. 
+
+b. The advisor must not force the customer or make it mandatory for them to disclose the condition falling in “recommended to be disclosed”. Failing to follow this will be highlighted. 
+
+c. The advisor must not actively discourage the customer from disclosing the condition under “recommended to be disclosed” as this is for the customer to decide. Failing to adhere will lead to rating 1. 
+
+3. If the condition falls under ""fine if not disclosed"" category, advisor should nudge the customer that it is fine if this condition is not disclosed in the application. If the advisor mandates the lead to disclose the condition then this would be highlighted.
+ 
+Effective Date - 13-03-2026
+
+Note: Please adhere to the above instructions, the highlighted points will be observed for a month and if they are more in number then QA will introduce rating for those as well.",06/3/2026,13/03/2026
+Chats/Calls/Payments,,QA Announcement,"Removal of Overpromising about claim history of the recommended companies
+
+Please note that QA will no longer mark the advisors if they say that we never had any issues our recommended companies It is a good practice to highlight to the lead about complete PED disclosure to avoid issues during claims with any insurer.
+
+ ",03/3/2026,03/3/2026
+Chats and Calls,4,QA Announcement," 
+
+1. Mandatory PPC tests for HDFC Ergo Porting Applications:
+
+For any porting case where the current insurer is Star, ICICI Lombard or Care Health; HDFC Ergo can request for a mandatory PPC test for all insured (Adults or children) based on the pincodes used to login the application.
+
+Rating Implication:
+
+Advisors should give a headsup about possibility of PPC test based on the pincode when informing the customer about docs required for OS porting, specifically if the customer's current plan is from Star, ICICI Lombard or Care health. Else it would be rated 4.
+
+Effective Date : 18-03-2026",11/3/2026,18/03/2026
+Chats and Calls,1,QA Announcement,"  
+
+Reiterating the existing SOP clause in line with the care add on changes
+
+Care Add-ons update:
+
+Care Health has made some changes in the mandatory and optional add-ons for Care Supreme Porting and fresh business applications based on the pincode and ages so do check the revised premiums on the payment calls and inform the leads of the same if required due to difference in the premiums amount.
+
+SOP clauses & Rating implications:
+
+Existing SOP clauses 1.2.B and 3.6.B will remain valid. No change in the SOP, advisors are requested to check for mandatory and optional add ons based on location & age and assist the customer accordingly. Not adding the mandatory riders in the premium calculation would be rated 1 and not informing about mandatory add-ons to the customer would be rated 3.
+
+No buffer time applicable as there is no change in the SOP",10/3/2026,
+Chats/Calls/Payments,4,QA Announcement," 
+
+If self and his spouse are looking for a plan with 3 children, advisors are expected to recommend OS and AOM depending upon medical eligibility. 
+Note: Advisors can also give 2 separate plans in CS if they want to along with the above reco.
+
+Rating Implication:
+
+1. Not recommending OS and AOM as reco in such cases would be rated 4.
+
+Effective Date - 19-03-2026",12/3/2026,19/03/2026
+Chats and Calls,3,QA Announcement," 
+
+Removal of LC range in Energy in insulin cases
+
+The SOP point under 3.3 note that we should not inform the LC range in insulin cases when we recommend Energy as per the tool, else it would be rated-3. Going forward, it is fine if we give the LC range in insulin cases when Energy is the recommendation.
+
+Going forward, we shall not mark advisors if they give the LC range or if they do not specify the range in insulin cases when Energy is recommended as per the tool.
+
+ ",11/3/2026,11/3/2026
+Payments,,QA Announcement,"Payments
+
+Pitching loyalty discount on hold until further notice
+
+Advisors won't be marked for the loyalty discount point under 4.1.F until further notice due to lack of clarity on the discount implementation procedure. Nudging and asking customers if they are existing ergo customers is not required till we have clarity.
+ 
+ ",16/3/2026,16/3/2026
+Chats/Calls/Payments,1,QA Announcement," 
+
+For Aditya Birla applications BMI range up to 39.9 is acceptable (Final decision of acceptance will be subject to underwriting). 
+We have implemented the same in our journey to restrict customers from making payments if their BMI is greater than 39.9
+
+Rating Implications:
+
+1. Recommending Aditya Birla plans when the BMI is more than 39.9 would be rated 1 (No need to check for BMI upfront, if the customer discloses explicitly, then Advisor can recommend accordingly).
+2. AB plans can be recommended based on eligibility if BMI > 37 and within 39.9. Not adhering to this would be considered as an error and will be rated 1.
+3. In general giving wrong information about ideal BMI range for our recommended plans in discussion would be rated 3. 
+Note: Please refer to the BMI tool for ideal range.
+
+Effective Date: 01-04-2026",25/3/2026,04/1/2026
+Chats/Calls/Payments,1,QA Announcement," 
+
+1. If the customer is adamant to not disclose his PED even after giving non-disclosure disclaimer(claim rejection and also possible policy termination), we have to inform the lead that we will help with the application but if any claim issue related to the non disclosed PED arise or if the claim gets denied due to the non disclosure, we will not be able to help with that particular claim on the account of non disclosure.
+
+Rating Implication:
+
+1. Not adhering to the above guideline would be rated 1
+
+Effective Date:  01-04-2026",21/3/2026,04/1/2026
+Chats and Calls,,QA Announcement,"Health Updates:
+
+Please find the link to the updated https://script.google.com/a/macros/joinditto.in/s/AKfycbxkyQjHUNi6l9otyUxlBic4uZhg4NobCMfAnBA9lHjMg-d-3EhPv4qFkWLAq00UAYO0/exec
+Kindly use the same to check the porting guidelines related to pincode for porting to HDFC Ergo Optima Secure.
+
+Please refrain from using the old link.
+
+Please note that this is already an existing point under 1.7.I in the   SOP and under 1.6.B in the payment SOP. There is no buffer time.",18/3/2026,
+Payments,1,QA Announcement,"Payments 
+
+1. If two or more specific questions for a PED in the medical questionarre are overlapping in the main journey then advisors are expected to declare in those relevant sections. Please note that by ""specific"" we mean the PED specific question not the generic medication question or the tests and elevated values question.
+2. If there is any surgery which cannot be mentioned under any specific question then advisors are expected to declare the same under general surgery question mandatorily in the main journey. 
+3. If the customer got hospitalizaed for a PED, for example - if the customer got hospitalized for fatty liver then advisors should declare this under liver specific question. Declaring in the generic hospitalization question alone cannot be accepted.
+
+Not adhering to the above mentioned conditions would be rated 3
+
+Note Points
+
+1. For example if Hypothyroid is declared under generic medication only and not under endocrine/thyroid related conditions, it will be marked. 
+2. UW issuance stance cannot be considered for marking revision.
+3. If a particular PED is not available in the main journey where there is an exact name match then it is ok to directly mention this under others.
+4. If a surgery is declared under generic surgery and not under specific question. For example - Cataract, if declared under generic surgery question and not under eye disorders then it won't be marked.
+5. All the undiagnosed conditions where some elevated values were observed in the AHC report, then it is fine to mention these under tests generic question in HDFC.
+6. Please note the rating 3 is only when you select/declare in any of medical questions in the main journey instead following the above points. If main journey declaration is completely skipped then it leads to rating 1 (already inforce)
+
+These markings will be highlighted till 30th April
+
+Effective Date: 01-05-26",18/4/2026,05/1/2026
+Chats/Calls/Payments,3,QA Announcement," :
+
+Care Supreme Policy Updates
+
+Cumulative Bonus (CB) Switching: Switching between ""CB Super"" and ""CB Booster"" is no longer recommended. While technically possible, doing so causes the forfeiture of all existing bonuses under the current add-on. This change is due to the two options being distinct policy products; therefore, benefits cannot be carried forward.
+
+Rating Implications:
+
+1. If the customer asks us whether he can switch from CBS to CBB or vice-versa and if the advisor didn't inform the lead that he can't carry forward accumulated bonus and should start fresh then it would be rated 3.
+
+Effective Date: 01-04-2026",25/3/2026,04/1/2026
+Chats/Calls/Payments,3,QA Announcement,"Care Supreme Policy Updates
+
+Durable Medical Equipment (DME) Add-on: Care Supreme has introduced a DME add-on for an approximate cost of ₹500 with a coverage limit of ₹50,000 per policy year. This add-on is currently available exclusively for renewal leads and is not applicable to fresh or porting cases.
+
+Care OPD Plus: This add-on for renewal customers has updated its general physician consultation cap from ₹500 to ₹1,000. To encourage responsible claim submission, a mandatory 10% co-payment has been introduced. Specialist consultations are capped at ₹2,000 per sitting with a 5% co-payment.
+
+Rating Implications:
+
+1.If the customer enquires about DME and Care OPD Plus add-ons and if the advisor doesn't inform the details related to the same as per the playbook would be rated 3. Not informing the lead that these add-ons are available only for renewal leads would be rated 4 under 4.1.E.
+Note: OPD related discussion if missed or incorrectly shared or anything as such is usually marked under 1.9.G in the   SOP but since this OPD Plus rider is only available for renewal leads, this will be rated 3.
+
+Effective Date: 01-04-2026",25/3/2026,04/1/2026
+Chats and Calls,3,QA Announcement,"Reduction in rating for aggregate deductible from 2 to 3
+
+Failure to address a query on the Aggregate deductible, or failure to explain the following to the customer when the customer is interested about the Aggregate deductible in the base plan.
+Disclaimer should be given when the customer is interested about the aggregate deductible in base plans.
+Available aggregate deductible cover amounts as per the cover the customer preferred or the advisor pitched if the customer wants to proceed even after disclaimer.
+Waiver of aggregate deductible clauses, if applicable, in the plans recommended will now be marked under rating 3.
+
+HDFC Porting Restriction 
+
+If a mandatory aggregate deductible is required for porting to HDFC OS, and if the customer enquires if he can remove the deductible in future then advisor should inform the customer that he can attempt to waive it after 5 years of policy purchase by opting for the ""waiver of aggregate deductible,"" provided the conditions for the waiver of the aggregate deductible are met. Not informing the same would be rated 3 as per   SOP 3.2. No buffer time for the same as it is an existing point.",26/3/2026,
+Chats/Calls,1,QA Announcement," 
+
+Not informing about the expected time of issuance in porting and non porting cases when the customer enquires about the same. 
+Note: Advisors need not convey the exact date.
+FYI:  TAT for policy issuance is 
+Approximately 7-14 working days for non-porting cases.
+Approximately 3 weeks for porting cases
+
+Rating Implication:
+
+1. Not following the mentioned TAT for policy issuance would be rated 3
+Note: Overpromising/wrong timeline given when the customer enquires about the timeline of issuance, according to the profile, along with the disclaimer that if additional docs are asked or medical is triggered, then due to back and forth, the timeline may get extended for non-porting cases would be rated 3 and for porting cases, this would be rated 1.
+
+
+Effective Date: 25-04-26",18/4/2026,25/04/2026
+Payments,1,QA Announcement,"Please find the simplified version of others section in the below document. Advisors are expected to follow the framework.
+Simplified Others section
+
+Rating Implication
+
+1. Not following the framework and Universal Guardrails would be rated 1.
+
+Note Points:
+
+1. If everything is declared in the main journey properly (PEDs, Tests etc) then advisors are not expected to repeat it in others. If nothing is left to mention then just write ""medical details available"" in others to trigger underwriting
+2. In Care if surgeries or hospitalizations were selected in the main journey and the name of those were not mentioned in the others then it won't be marked. However it is recommended to write in 'others' as it will ensure that underwriting is not missed out for those conditions
+3.If medication for Hypertension / Cholesterol / Diabetes / Thyroid is declared in the main journey properly in either medication question or the specific PED question, advisors are advised to mention it in others too, however they will not be marked for not repeating it in 'others'",13/4/2026,
+Payments,,QA Announcement,"SOP Point 3.1.C - Not updating/incorrectly updating the PED details in notes/persona when there is any change or new disclosure of the same in the payment call which was not the same as in the chat/call happened earlier. 
+
+The above SOP point will be applicable for only redirection link payments from now on. Updated the same in the SOP under 1.8.N.  .",06/4/2026,06/4/2026
+Chats and Calls,4,QA Announcement," 
+
+SOP Point 4.1.O - Advisors should give a heads-up about the possibility of a PPC test based on the pincode when informing the customer about the docs required for OS porting if the customer's current plan is from Star, ICICI Lombard or Care health. Else it would be rated 4 
+
+The above point is no longer valid as PPC depends upon UW and can be triggered in any case.  .",07/4/2026,07/4/2026
+Chats/Calls/Payments,3,QA Announcement," 
+
+HDFC Ergo Optima Secure variants changes as per the latest update:
+a). Introduction of 6 tiers for premium calculation.
+b). Introduction of 4 and 5 pay options which is currently not available via Ditto.
+c). Reduction in Long term discount from 7.5% to 6% for 2pay, 10% to 8% for 3 pay and 8% for 4 and 5 pay tenure too.
+d). Introduction of Serious Illness Booster add-on for additional 100% hospitalisation coverage for 9 listed serious illnesses.
+e). Introduced 2 additional discounts namely Lifetime discount of 5% for new customers with eldest members aged max upto 35 years; continued at renewals and Favourable Claims Discount upto 21% based on the claims history.
+
+Rating Implications
+
+1. Sharing incorrect tiers list when enquired by the customer would be rated 3 under 3.2
+2. Not informing the lead that 4 and 5 pay option and Serious Illness Booster are not available through us as of now would be rated 4 under 4.1.E. 
+3. Not informing and any wrong information about the multipay(long term) discounts after sharing the multipay premiums would be rated 3 under 3.2
+Note - If this is mentioned as pending or if this is visible in the premium snips shared with the customer then this won't be marked. But this information should be shared before booking a payment call. 
+4. Missed/Incomplete/Wrong information related to Serious Illness Booster add-on as per the playbook when the lead enquires about the same would be rated 3 under 3.2
+5. Not informing/Wrong information related to the lifetime discount and favourable claims discount as per the playbook and any mistakes/omissions related to the calculation of these discounts based on customer's profile when the lead enquires about the same would be rated 3 under 3.2
+
+Effective Date - 20-04-26",13/4/2026,20/04/2026
+Chats/Calls/Payments,1,QA Announcement," 
+
+Optima Secure+ 
+
+1. Optima Secure+ can be slighty expensive compared to Optima Secure. Currently the plan is not available for purchase through us as we are still evaluating the stability and performance of the plan in the market. It is also slightly expensive.
+2. Secure+ cover amounts start with 10L 
+3. There is no plus benefit but there is infinity benefit where the customer will get 100% loyalty bonus on each renewal upto infinity. This is an inbuilt feature.
+4. The maximum entry age for Secure+ is 60 years.
+5. Unlimited restoration is inbuilt unlike other Secure variants.
+
+Rating Implications
+
+1. Not informing the lead that Secure+ is not available through us when the lead enquires about purchase of this plan would be rated 4 under 4.1.E.
+2. Not mentioning and incorrectly mentioning the differences between OS and OS+ or OSS and OS+ whenever the lead enquires about the same would be rated 3 under 3.6
+Note - If the differences were shared through snip, it is acceptable.
+3. Recommending the customer to go ahead with purchase of Secure+ when the insured is more than 60 years old would be rated 1
+
+Effective Date - 20-04-26",13/4/2026,20/04/2026
+Payments,3,QA Announcement,"Current SOP Point: Not sending the ""G/Delay in joining"" QR, when the advisor is unable to join the payment call at the scheduled time would be rated 4.
+
+Revised SOP Point:  Not sending the ""G/Delay in joining"" QR 5 mins before the payment call scheduled time when the advisor anticipates delay would be rated 4. Sending the ""G/Delay in joining"" QR, within 5 minutes of scheduled time would be rated 4. Sending the ""G/Delay in joining"" QR, post 5 minutes of the scheduled time would rated 3.
+
+Effective Date - 25-04-2026",18/4/2026,25/04/2026
+Chats/Calls/Payments,3,QA Announcement," 
+
+1. It was observed that advisors are informing about only 3rd year discount of 10% and not talking about 7.5% discount applicability on 2nd year premium even if the lead opts for 3 years.
+
+Rating Implication
+
+1. Not conveying the discounts properly while explaining 3-pay in CS would be rated 3
+
+Effective Date - 25-04-2026
+
+More details:
+
+Current incorrect narrative: In calls or payments where advisors have to verbally explain, they say - if you opt for 2-pay you will get 7.5 discount on 2nd yr premium but if you opt for 3-pay you will get 10% discount on 3rd yr premium.
+
+Issue - This narrative gives customer an impression that when we opt for 3-pay, we can't get any discount on 2nd yr premium or they may even think its 10% for both years
+
+Proposed Narrative: If you opt for 2-pay you will get 7.5 discount on 2nd yr premium but if you opt for 3-pay you will get 7.5 discount on 2nd yr premium and 10% discount on 3rd yr premium.",18/4/2026,25/04/2026
+Payments,3,QA Announcement,"Loyalty Discount: Failing to ask the customer if they already have a plan with HDFC Ergo where the proposer is also the same for which they are applying to, would be rated 4. Additionally, failing to inform the customer about the loyalty discount—which they would receive if they already have an HDFC plan with the same proposer, will be rated 3. This is applicable for redirection link and 1 up portal.
+Note: This clause is applicable for HDFC OS/OSS purchase. ",27/4/2026,Already inforce
+Payments,4,QA Announcement,"Loyalty Discount: In our Ditto payment journey, if the lead confirms that they have an existing Ergo plan then not confirming if the proposer is the same for their existing plan and for the plan that they are applying to would be rated 4.
+Note: This clause is applicable for HDFC OS/OSS purchase. 
+
+Effective Date - 4-5-26",27/4/2026,05/4/2026
+Payments,,QA Announcement,"Following the recent tech implementations, a few points have been identified for removal from the SOP in relation to our payment journey, as they are now addressed within the current Payment Journey but the advisors are still requested to follow the procedure like it was before as this helps the customer to not miss any detail
+
+SOP Revisions Following Recent Tech Changes - Bliss
+
+  ",24/4/2026,24/4/2026
+Chats/Calls,3,QA Announcement," 
+
+1. If the conversation with the same lead happened in two different chats then advisors are expected to leave the chat IDs in the notes for the evaluation of both the chat IDs. Not adhering to the same would be rated 3.
+
+Effective Date - 9-5-26",02/5/2026,05/9/2026
+Chats/Calls/Payments,1,QA Announcement,"CARE PRICE REVISION
+
+Care has introduced a welcome discount which is available as follows:
+For Tenure 1 - 7.5%
+For Tenure 2 - 5%
+For Tenure 3 - 0%
+
+For Porting - Depends on the policy inception date! 
+If policy is one year old - 5%
+If policy is more than one year old - 0%
+
+Please enter the valid policy inception date during the Purchase journey to avoid any mismatch in the premium!
+
+Rating Implications:
+
+1. Giving wrong or incomplete information when the lead asks any query about welcome discount as per playbook would be rated 3.
+2. If wrong premiums were shared in the chat/call as a result of entering wrong inception date would be rated 1
+3. Not ensuring that correct inception date is filled in the application to get the welcome discount would be rated 1 under payment sop 1.1.D
+
+Effective Date - 9-5-26",02/5/2026,05/9/2026
+Chats/Calls/Payments,1,QA Announcement,"Primary Recommendations Update: 
+
+Now we can provide OS+ instead of OS as primary reco from HDFC till 60 years of age as per their medical profile. Above 60 years fresh profiles and for all porting cases that can be purchased through us irrespecitve of age, we will continue to give OS as primary recommendation from HDFC. 
+
+
+Note: HDFC Ergo has started porting to Optima Secure+ but Ditto cannot yet assist with this as of now.
+
+Rating Implications:
+
+1. Not adhering to the new recommendations from HDFC would be rated 1
+2. Not sharing OS+ snip whenever recommended would be rated 1
+3. If the lead enquires about porting to OS+, then not informing that its not live yet for porting through us would rated 4
+
+Effective Date - 16-05-2026",09/5/2026,16/05/2026
+Payments,,QA Announcement,"1. Advisors are not required to probe for past lifestyle habits for HDFC plans.
+
+ ",02/5/2026,02/5/2026
+Chats/Calls/Payments,3,QA Announcement," 
+
+HDFC Ergo has changed the order for Sum Insured utilisation for Secure/Super Secure/Secure+ plan.
+
+Old Logic: 
+Base SI > Plus Benefit (Bonus) > Secure Benefit > Restoration
+
+New Logic:
+Base SI > Secure Benefit > Plus/Infinite Bonus > Restoration
+
+Rating Implication
+
+Not adhering to the new logic when the lead enquires about utilisation order would be rated 3 under 3.6
+
+Effective Date: 29-05-26",22/5/2026,29/05/2026
+Payments,1,QA Announcement,"The advisors are expected not to guide the customer to reduce or increase height and weight to standardize the BMI. As this is on record, it could lead to wrong disclosure issues during claims.
+
+Rating Implications:
+
+Not adhering to the above guideline would be rated 1
+
+Effective Date: 13-06-26",06/6/2026,13/06/2026
+Payments,4,QA Announcement,"If the lead confirmed that he holds HDFC Ergo plan where the proposer is also the same for their existing plan and for the plan that they are applying to, advisors are expected to give a headsup to the lead that if the premium for the existing plan is less than 2000 rupees then loyalty discount is not applicable for them. If the lead still wants to try, they can proceed but later the insurer will issue a shortfall notice to the customer requiring payment of the remainder.
+
+Rating Implications:
+
+Not giving the above headsup to the customer would be rated 4
+
+Effective Date: 13-06-26",06/6/2026,13/06/2026
+Chats/Calls/Payments,3,QA Announcement,"Difference between issuance date and start date.
+
+Issuance Date: This date is used to determine the timeline for the 30-day free-look period.
+
+Start Date: This date serves as the basis for calculating the Coverage Start Date and  Waiting Periods 
+
+Note: The Start Date corresponds to the beginning date specified in the ""Period of Insurance"" section (which clearly outlines the start and end dates of the coverage). For example, if the Period of Insurance is stated as (12-05-2026 to 11-05-2027), then 12-05-2026 will be considered the start date. 
+
+Rating Implications:
+
+1. Not adhering to the above points when the customer enquired about the same would be rated 3
+
+Effective Date: 13-06-26",06/6/2026,05/11/2027
+Chats/Calls,3,QA Announcement," 
+
+For customer who has purchased policy through us previously and wants to explore porting, advisor should redirect them to the renewal team. Since they are our leads, the renewal team will take it ahead based on the possibility to port. 
+Note: For every customer, advisors must check who is the agent for the existing policy. If the existing agent is Ditto, advisors must route these customers to renewals team instead of denying porting possibility for them. 
+
+To check if the existing agent is Ditto, advisors can check the same in the policy copy of the customer or check for past payments in the payments tab on falcon tool if that policy was issued by Ditto or directly ask the customer.
+
+Rating Implications
+
+1. Not adhering to the above guidelines would be rated 3
+
+Effective Date - 08-08-2026",01/8/2026,08/8/2026
+Chats/Calls/Payments,4,QA Announcement," 
+
+If the customer specifically asks us if he can pay the premiums through any account then advisors are expected to give them the heads-up that if the proposer is looking for tax benefits then its better to pay from proposer's bank account itself to avoid any hassles when they claim the tax benefits or they can check with their CA if this is feasible.
+
+Rating Implication:
+
+Not adhering to the above guidelines would be rated 4
+
+Effective Date - 08-08-2026",01/8/2026,08/8/2026
+Chats/Calls/Payments,3,QA Announcement,"Health Update
+
+Temporary Removal of Limitless Rider from HDFC ERGO Products
+
+
+Please note that the Limitless Rider has been temporarily removed from all HDFC ERGO products.
+
+For cases where recommendations including the Limitless Rider have already been shared, the rider will continue to be available temporarily, at least until 10th July for purchase.
+
+Rating Implication
+
+If any new customer asks for unlimited coverage in HDFC plans then if advisor informs about limitless rider though its not available anymore, it will be marked under 3
+
+Effective Date - 16-06-2026",08/6/2026,16/06/2026
+Chats and Calls,,QA Announcement,"Payment SOP
+
+Hello team, this is to inform that we have included all the product feature related and recommendations related markings in the payment SOP itself so now we no longer have to refer to the   SOP for these markings.
+
+Green Highlights (existing markings) - All are product features related and recommendations related markings which were done as per   SOP were highlighted in green color for everyone's reference. Markings are already inforce.
+
+Blue Highlights (new announcements) - All new announcements are highlighted in blue. These will be marked from 13-06-2026 as per the announcement. Until then, the QA team will highlight them.
+
+Orange Highlights (reduced ratings) - Rating was reduced for all the markings highlighted under orange color which will be inforce immediately.
+
+Please find all the changes made in the below SOP
+
+
+SOP #QAB01 - Health Payments",06/6/2026,13/06/2026
+Chats/Calls/Payments,3,QA Announcement,"Care Update
+
+1. Care has made all add-ons optional (which were previously mandatory like Air ambulance, wellness benefit, AHC, OPD, Bonus riders, etc)  for all Care plans except some specific variants like Care Supreme Shine, Care Supreme - Senior Super, Care Supreme Senior Premium, etc.
+Note: Health Check+ add-on is no longer mandatory for Insulin dependent insured members under Care Freedom Policy.
+
+Care add-ons will still be mandatory when doing the applications via Faveo.
+
+2. Payment Specific: Try not to do the payment through Faveo unless its absoulutely required. If we are using Faveo for the payment due to an unavoidable reason, please inform the lead that the mandatory riders can be removed during the next renewal.
+
+Changes have been made live on the payment journey, product playbook and premium tools along with the website.
+
+Rating Implication
+
+1. If any advisor wrongly informs that any particular rider is mandatory in any of the Care plans except the specific variants like Care Supreme Shine, Care Supreme - Senior Super, Care Supreme Senior Premium, etc then it would be marked under rating 3. 
+2. A few riders that were mandatory previously have now been made non-mandatory, however Ditto will still actively pitch as ""recommended"" for a few of them as per Product Playbook Update. Not pitching the same would be rated 3
+3. Payment Specific - Not informing the lead that they can remove the mandatory riders at the time of renewal if the payment is done through Faveo would be rated 3
+
+Effective Date - 26-06-2026
+
+Note: 
+Advisors are requested to check the Playbook to understand what all riders (that were previously mandatory) are recategorized as ""recommended"", ""not recommended"" and ""case dependent"".",25/6/2026,26/06/2026
+Chats and Calls,1,QA Announcement,"Rating Severity Reduction
+
+  SOP Code 3.6.J and Payments SOP Code 3.1.A
+
+If the advisor missed to inform that if additional docs are asked or medical is triggered, then due to back and forth, the timeline may get extended for non-porting cases would be rated 3 and for porting cases, this would be rated 1.
+
+The severity for the above point has been reduced and for this disclaimer both in non-porting and porting cases. 
+
+ , if the advisor misses to mention that the timelines for issuance may get extended due to additional doc / medicals trigger from Insurer’s end - while talking about issuance timelines, It will be marked under 4 for all cases
+
+Note: QA will keep a track of this mistake and if due to less severity the number of markings increases, QA might bring the ratings back to 1 and 3.",06/11/2026,06/11/2026
+Payments,3,QA Announcement,"HDFC KYC
+
+We have observed that even if there is any discrepancy in the name or DOB during the KYC stage, some advisors are proceeding with the payment.
+
+When the KYC is fetched ask the customer to check the name and DOB carefully if its the same as Govt ID or not. If its not the same, suggest the customer to reschedule the call and in the meantime we can get the KYC deleted and then we can try again. If the KYC details fetched are wrong even after deleting it, considering the hassle for the customer we can login such cases by letting telling the customer to get the correct details endorsed post purchase.
+
+Rating Implication
+
+Not letting the customer know to get the correct details endorsed post purchase.would be rated 3
+
+Effective Date - 25-07-2026",18-07-2026,25/07/2026
+Chats and Calls,3,QA Announcement,"Update
+
+  SOP Code 1.8.D - For customer who has purchased policy through us previously and wants to explore migration/for renewals, advisor should redirect them to the Renewal team.
+Note: Advisors can confirm with the customer if the plan was purchased through us or check the payment history for the details of the purchase of the plan.
+
+The above SOP point would be moved to rating 3.  ",15-06-2026,15-06-2026
+Chats and Calls,3,QA Announcement,"  SOP Update
+
+Removal of SOP Code 2.1.2 - Not sharing the other cover, which is close to the preferred cover amount if the preferred cover is not available
+
+SOP Code 3.6.I is moved to 4.1 - If the advisor didn’t provide UW disclaimer when the lead is asking about porting/migration scenarios for future cases would be rated 4 from now 
+
+SOP Code 1.9 is moved to 3.6- NRI discount if missed would be rated 3. 
+
+ ",20-06-2026,20-06-2026

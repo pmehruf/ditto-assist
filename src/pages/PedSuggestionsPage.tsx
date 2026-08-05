@@ -41,12 +41,15 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
   // in the L2 AI Memory cache).
   const [activeSubTab, setActiveSubTab] = useState<"library" | "queue">("library");
 
+  // Active state uses the app-wide --tab-active-bg/-text tokens (solid
+  // brand navy, same as Coverage Projection Studio's Add Claim/Copy Table
+  // buttons) — same tab-selection color used by every other tab toggle in
+  // the app (Plan Reference, Plan Management, Activity Log). Previously a
+  // one-off pale cyan "ghost" fill that didn't match any of those.
   const tabClass = (isActive: boolean) =>
     `px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-2 ${
       isActive
-        ? theme === "dark"
-          ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300"
-          : "bg-cyan-50 border-cyan-300 text-cyan-800"
+        ? "bg-[var(--tab-active-bg)] border-transparent text-[var(--tab-active-text)] shadow-md"
         : theme === "dark"
         ? "bg-white/[0.03] border-white/[0.08] text-stone-400 hover:bg-white/[0.06]"
         : "bg-black/[0.02] border-black/[0.08] text-stone-500 hover:bg-black/[0.04]"

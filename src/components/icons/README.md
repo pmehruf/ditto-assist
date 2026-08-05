@@ -1,6 +1,6 @@
 # Icon Components Usage Guide
 
-This directory contains reusable icon components for the Declaration Assistant application.
+This directory contains reusable icon components for the Ditto Assist application.
 
 ## Components Overview
 

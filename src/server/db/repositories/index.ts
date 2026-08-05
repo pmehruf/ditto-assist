@@ -5,6 +5,7 @@
 
 import type { AnyDb } from "../client.js";
 import { AnnouncementsRepository } from "./announcementsRepository.js";
+import { AnnouncementAcksRepository } from "./announcementAcksRepository.js";
 import { ChangeLogRepository } from "./changeLogRepository.js";
 import { ExternalResourcesRepository } from "./externalResourcesRepository.js";
 import { FlaggedIssuesRepository } from "./flaggedIssuesRepository.js";
@@ -37,6 +38,8 @@ export type {
   CreateAnnouncementEntry,
   UpdateAnnouncementEntry,
 } from "./announcementsRepository.js";
+
+export { AnnouncementAcksRepository } from "./announcementAcksRepository.js";
 
 export { FlaggedIssuesRepository } from "./flaggedIssuesRepository.js";
 export type {
@@ -110,6 +113,7 @@ export interface Repositories {
   searchHistory: SearchHistoryRepository;
   changeLogs: ChangeLogRepository;
   announcements: AnnouncementsRepository;
+  announcementAcks: AnnouncementAcksRepository;
   flaggedIssues: FlaggedIssuesRepository;
   users: UsersRepository;
   externalResources: ExternalResourcesRepository;
@@ -134,6 +138,7 @@ export function createRepositories(db: AnyDb): Repositories {
     searchHistory: new SearchHistoryRepository(db),
     changeLogs: new ChangeLogRepository(db),
     announcements: new AnnouncementsRepository(db),
+    announcementAcks: new AnnouncementAcksRepository(db),
     flaggedIssues: new FlaggedIssuesRepository(db),
     users: new UsersRepository(db),
     externalResources: new ExternalResourcesRepository(db),

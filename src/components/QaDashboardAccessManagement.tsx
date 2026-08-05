@@ -217,7 +217,7 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
               type="button"
               onClick={() => setAssigning(true)}
               cornerBg={dark ? "#0e2236" : "#ffffff"}
-              style={{ backgroundColor: "var(--accent-solid)", borderColor: "var(--accent-solid)", color: "var(--on-accent)" }}
+              style={{ backgroundColor: "var(--action-navy)", borderColor: "var(--action-navy)", color: "var(--on-action-navy)" }}
               className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
             >
               <UserPlus className="w-3.5 h-3.5 shrink-0" />

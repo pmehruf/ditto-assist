@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { announcements, type AnnouncementRow, type NewAnnouncementRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
@@ -18,6 +18,11 @@ export interface AnnouncementListOptions {
   /** Whitelisted to "createdAt" | "announcementDate" | "effectiveDate" | "category" | "title"; defaults to "createdAt". */
   sortBy?: string;
   sortDir?: "asc" | "desc";
+  /** Inclusive "YYYY-MM-DD" range filter over announcementDate — used by the
+   * advisor-facing Announcements archive's date filter. Either bound may be
+   * given alone. */
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 const SORTABLE_COLUMNS = {
@@ -103,6 +108,8 @@ export class AnnouncementsRepository {
       const pattern = containsPattern(options.search);
       conditions.push(or(ilike(announcements.announcement, pattern), ilike(announcements.title, pattern), ilike(announcements.fromTeam, pattern)));
     }
+    if (options.dateFrom) conditions.push(gte(announcements.announcementDate, options.dateFrom));
+    if (options.dateTo) conditions.push(lte(announcements.announcementDate, options.dateTo));
     return conditions;
   }
 
@@ -136,7 +143,7 @@ export class AnnouncementsRepository {
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * kept for parity with the other repositories' export path, even though
    * this table is already retention-capped at 100 rows/type. */
-  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir"> = {}): Promise<AnnouncementRow[]> {
+  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir" | "dateFrom" | "dateTo"> = {}): Promise<AnnouncementRow[]> {
     const conditions = this.buildListConditions(options);
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? announcements.createdAt;

@@ -99,8 +99,36 @@ export const announcements = pgTable("announcements", {
   announcementDate: date("announcement_date"),
   // Renamed from the client-side `from` field to avoid the SQL keyword.
   fromTeam: text("from_team"),
+  // Whether this announcement participates in the blocking read-and-
+  // acknowledge flow (see announcementAcks below). Everything posted before
+  // migration 0023 shipped was grandfathered to false; new rows default
+  // true so every announcement from then on gates the app per-user until
+  // acknowledged.
+  requiresAck: boolean("requires_ack").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// announcement_acks — one row per (announcement, user) "I have read this"
+// acknowledgement, powering the mandatory read-and-acknowledge modal that
+// blocks app usage until every applicable announcement is acked. Which
+// announcements apply to a given user is decided at query time:
+// requires_ack = true AND announcements.created_at >= users.created_at
+// (new joiners are never asked to acknowledge history from before they
+// joined). ON DELETE CASCADE keeps acks from outliving their announcement.
+// ─────────────────────────────────────────────────────────────────────────
+export const announcementAcks = pgTable(
+  "announcement_acks",
+  {
+    id: serial("id").primaryKey(),
+    announcementId: integer("announcement_id")
+      .notNull()
+      .references(() => announcements.id, { onDelete: "cascade" }),
+    userEmail: varchar("user_email", { length: 320 }).notNull(),
+    ackedAt: timestamp("acked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("announcement_acks_announcement_user_unique").on(table.announcementId, table.userEmail)]
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // flagged_issues — advisor-reported mismatches, triaged by Developers/Admins.
@@ -695,6 +723,9 @@ export type NewChangeLogRow = typeof changeLogs.$inferInsert;
 
 export type AnnouncementRow = typeof announcements.$inferSelect;
 export type NewAnnouncementRow = typeof announcements.$inferInsert;
+
+export type AnnouncementAckRow = typeof announcementAcks.$inferSelect;
+export type NewAnnouncementAckRow = typeof announcementAcks.$inferInsert;
 
 export type FlaggedIssueRow = typeof flaggedIssues.$inferSelect;
 export type NewFlaggedIssueRow = typeof flaggedIssues.$inferInsert;

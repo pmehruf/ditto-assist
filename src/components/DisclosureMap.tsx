@@ -29,8 +29,8 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
 
       {/* DECISION SWITCH (Compact Horizontal Reminder) */}
       <div className={`p-5 rounded-2xl border backdrop-blur-md relative overflow-hidden space-y-4 ${
-        theme === "dark" 
-          ? "border-[#2a9bff]/40 bg-gradient-to-b from-[#152d49]/60 to-[#0e1f33]/50 shadow-[0_8px_24px_rgba(0,0,0,0.26),0_0_18px_rgba(42,155,255,0.1)]" 
+        theme === "dark"
+          ? "border-[#2a9bff]/40 bg-gradient-to-b from-[#152d49]/60 to-[#0e1f33]/50 shadow-[0_8px_24px_rgba(0,0,0,0.26),0_0_18px_rgba(42,155,255,0.1)]"
           : "border-sky-200 bg-gradient-to-b from-sky-50 to-white shadow-xs"
       }`}>
         <div className="flex gap-3 items-center">
@@ -533,8 +533,8 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
 
           {/* THE CRITICAL RULES (Strict Adherence Mandates - Left side, under Priority Ladder) */}
           <div className={`p-5 rounded-2xl border transition-all relative overflow-hidden space-y-4 ${
-            theme === "dark" 
-              ? "bg-gradient-to-b from-[#2a171d] to-[#161214] border-red-500/55 text-stone-200 shadow-[inset_0_0_25px_rgba(255,90,110,0.1)]" 
+            theme === "dark"
+              ? "bg-gradient-to-b from-[#2a171d] to-[#161214] border-red-500/55 text-stone-200 shadow-[inset_0_0_25px_rgba(255,90,110,0.1)]"
               : "bg-[#FFF5F6] border-red-300 text-rose-950 shadow-sm"
           }`}>
             <div className="absolute right-0 top-0 w-32 h-32 bg-red-500/5 dark:bg-red-500/5 rounded-full blur-3xl pointer-events-none" />

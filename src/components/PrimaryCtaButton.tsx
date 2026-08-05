@@ -13,7 +13,9 @@ interface PrimaryCtaButtonProps {
   title?: string;
   id?: string;
   /**
-   * "accent" (default) matches the Home page's cyan/blue CTA.
+   * "accent" (default) is the app's brand-navy CTA fill (--action-navy),
+   * theme-independent — same navy used app-wide for primary/neutral action
+   * buttons (Add Plan, Generate, Save, etc.).
    * "danger" keeps the same clipped-corner shape and typography but in red —
    * for the rare page whose single primary action is itself a warning/report
    * action (e.g. "Submit Report" in the Flag dialog).
@@ -28,7 +30,7 @@ interface PrimaryCtaButtonProps {
 
 /**
  * Shared "primary action" CTA button — the clipped-corner, uppercase mono
- * button style originated on the Declaration Assistant Home page ("LETS PUT
+ * button style originated on the Ditto Assist Home page ("LETS PUT
  * THEM IN THEIR PLACE"). Extracted here so every page's single main action
  * button (Find a Match, Submit Report, Sign in, Add, etc.) shares the same
  * visual identity, matching the Home page.
@@ -53,7 +55,10 @@ export function PrimaryCtaButton({
   style,
   children,
 }: PrimaryCtaButtonProps) {
-  const dark = theme === "dark";
+  // `theme` is kept in the public props for backward compatibility with
+  // every existing call site, but the button itself no longer branches on
+  // it — brand navy (--action-navy) is deliberately the same in both
+  // themes now (see the variant doc comment above).
   const isDanger = variant === "danger";
   return (
     <button
@@ -71,17 +76,18 @@ export function PrimaryCtaButton({
       } ${
         isDanger
           ? "bg-red-600 border-red-600 text-white hover:bg-red-700 hover:border-red-700 hover:shadow-[0_0_40px_rgba(220,38,38,0.15)]"
-          : dark
-            ? "bg-[#00afce] text-[#0a0a0c] border-[#00afce] hover:bg-[#009cb8] hover:border-[#009cb8] hover:shadow-[0_0_40px_rgba(0,175,206,0.15)]"
-            : "hover:bg-[#06469c] hover:border-[#06469c]"
+          // Primary/neutral CTA — brand navy, theme-independent (same as
+          // Coverage Projection Studio's Add Claim/Copy Table buttons), not
+          // the old accent-blue (light) / cyan (dark) split. Plain Tailwind
+          // arbitrary-value classes (not inline style) so hover: actually
+          // takes effect — an inline backgroundColor would otherwise beat
+          // the hover class in specificity regardless of pseudo-state.
+          : "bg-[var(--action-navy)] border-[var(--action-navy)] text-[var(--on-action-navy)] hover:bg-[var(--action-navy-hover)] hover:border-[var(--action-navy-hover)] hover:shadow-[0_0_40px_rgba(31,45,61,0.18)]"
       } ${className}`}
       style={{
         clipPath: "polygon(100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 0)",
         paddingTop: "clamp(8px, 1.2vh, 12px)",
         paddingBottom: "clamp(8px, 1.2vh, 12px)",
-        backgroundColor: !isDanger && !dark ? "var(--accent-solid)" : undefined,
-        color: !isDanger && !dark ? "var(--on-accent)" : undefined,
-        borderColor: !isDanger && !dark ? "var(--accent-solid)" : undefined,
         ...style,
       }}
     >

@@ -155,7 +155,10 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
   };
 
   const cardClass = `rounded-2xl border ${
-    dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated/70 border-[#D2DFEC]"
+    // --surface-elevated already carries its own baked-in translucency
+    // (Unified Surface Philosophy) — no extra opacity modifier, or it
+    // would compound past the app-wide standard.
+    dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[#D2DFEC]"
   }`;
 
   return (

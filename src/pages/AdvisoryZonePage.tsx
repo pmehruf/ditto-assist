@@ -111,7 +111,7 @@ export function AdvisoryZonePage({
   const totalIllnesses = (specificIllnessesDict[selectedPlan] || []).length;
 
   const cardClass = `rounded-2xl border ${
-    dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated/70 border-[#D2DFEC]"
+    dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)]"
   }`;
 
   return (
@@ -148,7 +148,7 @@ export function AdvisoryZonePage({
               onChange={setSelectedPlan}
               placeholder="Select Plan"
               options={productionPlans.map((p) => ({ value: p, label: p }))}
-              triggerClassName={`w-full flex items-center justify-between gap-2 pl-3 pr-8 h-[42px] rounded-xl border outline-none font-bold text-xs cursor-pointer shadow-sm relative ${
+              triggerClassName={`w-full flex items-center justify-between gap-2 pl-2.5 pr-8 py-1.5 rounded-lg border outline-none font-semibold text-xs cursor-pointer shadow-sm relative ${
                 dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
               }`}
             />
@@ -164,7 +164,7 @@ export function AdvisoryZonePage({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={section === "questions" ? "e.g. diabetes, surgery, medication..." : "e.g. cataract, hernia, piles..."}
-                className={`w-full h-[42px] pl-9 pr-3 rounded-xl border outline-none text-xs font-semibold placeholder:font-normal ${
+                className={`w-full py-1.5 pl-9 pr-3 rounded-lg border outline-none text-xs font-semibold placeholder:font-normal ${
                   dark
                     ? "bg-[#102236] border-[#1e3e5c] text-white placeholder-stone-500"
                     : "bg-white border-stone-250 text-stone-850 placeholder-stone-400"
@@ -184,7 +184,7 @@ export function AdvisoryZonePage({
               role="tab" aria-selected={section === "questions"} onClick={() => setSection("questions")}
               className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                 section === "questions"
-                  ? "bg-blue-600 text-white shadow-md font-extrabold"
+                  ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
                   : dark
                     ? "text-stone-400 hover:text-stone-200"
                     : "text-stone-600 hover:text-stone-900 font-bold"
@@ -196,7 +196,7 @@ export function AdvisoryZonePage({
               role="tab" aria-selected={section === "illnesses"} onClick={() => setSection("illnesses")}
               className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                 section === "illnesses"
-                  ? "bg-blue-600 text-white shadow-md font-extrabold"
+                  ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
                   : dark
                     ? "text-stone-400 hover:text-stone-200"
                     : "text-stone-600 hover:text-stone-900 font-bold"

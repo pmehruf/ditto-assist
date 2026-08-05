@@ -12,6 +12,7 @@ import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "../components/ClippedButton";
 import { SortableTh } from "../components/SortableTh";
 import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
+import { formatDateDMY } from "../utils/dateFormat";
 
 interface FlaggedResponsesPageProps {
   theme: "light" | "dark";
@@ -322,7 +323,7 @@ export function FlaggedResponsesPage({
                         </td>
                         <td className={`${tdClass} font-bold whitespace-nowrap`}>{issue.planName}</td>
                         <td className={`${tdClass} font-mono text-[10.5px] whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                          {new Date(issue.timestamp).toLocaleDateString()}
+                          {formatDateDMY(issue.timestamp)}
                           <br />
                           {new Date(issue.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </td>

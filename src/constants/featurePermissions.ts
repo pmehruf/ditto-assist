@@ -8,7 +8,7 @@ import { FeaturePermission } from "../types/permissions";
 export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   {
     id: "lookup",
-    name: "Declaration Assistant",
+    name: "Ditto Assist",
     description: "Search and medical policy category mapping assistant",
     defaultTier: "General",
     generalAccess: "Editor",
@@ -30,6 +30,18 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     id: "advisory_zone",
     name: "Plan Reference",
     description: "Read-only reference of every plan's payment journey questions and specific illness list",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer"
+  },
+  {
+    // ANNOUNCEMENTS ARCHIVE — read-only history of every posted announcement
+    // (both QA and General), visible to every tier just like advisory_zone
+    // above. The lookup page's carousel only ever shows the latest ~10; this
+    // is the full searchable/filterable backlog.
+    id: "announcement_archive",
+    name: "Announcements",
+    description: "Full searchable archive of every posted announcement, with a date filter",
     defaultTier: "General",
     generalAccess: "Viewer",
     adminAccess: "Viewer"

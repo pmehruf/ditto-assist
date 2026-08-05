@@ -146,11 +146,21 @@ export function CustomSelect({
       {open && !disabled && (
         <div
           role="listbox"
+          // Deliberately a plain opaque hex here, not the `bg-white`/
+          // `bg-surface` classes cards use — those resolve to the app's
+          // translucent card surface (Unified Surface Philosophy), which is
+          // right for a stationary card sitting on the page background, but
+          // wrong for a FLOATING panel: it sits on top of arbitrary other
+          // content (whatever's behind the trigger), and a translucent
+          // background lets that content bleed through and become
+          // illegible. Every floating overlay (this panel, modals,
+          // tooltips) needs to stay fully opaque regardless of the card
+          // surface treatment.
           className={`absolute left-0 right-0 z-50 rounded-xl border shadow-lg overflow-hidden flex flex-col ${
             openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"
           } ${
             panelClassName ??
-            (dark ? "bg-stone-900 border-white/[0.08] text-white" : "bg-white border-stone-200 text-stone-900")
+            (dark ? "bg-[#14181f] border-white/[0.08] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900")
           }`}
         >
           <div className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>

@@ -63,7 +63,7 @@ export function Pagination({ theme, page, totalPages, onPageChange, className = 
                 ? "text-stone-400 hover:text-stone-200 hover:bg-white/[0.06]"
                 : "text-stone-500 hover:text-stone-800 hover:bg-black/[0.04]"
             }`}
-            style={p === page ? { backgroundColor: "var(--accent-solid)" } : undefined}
+            style={p === page ? { backgroundColor: "var(--action-navy)" } : undefined}
           >
             {p}
           </button>

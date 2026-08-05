@@ -39,5 +39,12 @@ export function formatDisplayTimestamp(ts: string): string {
   if (!ts) return "";
   const dateObj = parseGlobalLogTimestamp(ts);
   if (!dateObj) return ts;
-  return dateObj.toLocaleDateString() + " " + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // DD-MM-YYYY built explicitly (not `toLocaleDateString()`, whose
+  // no-locale-argument form renders MM/DD/YYYY on an en-US machine/browser)
+  // so this always reads in the conventional Indian date order regardless
+  // of the viewer's device locale.
+  const dd = String(dateObj.getDate()).padStart(2, "0");
+  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const yyyy = dateObj.getFullYear();
+  return `${dd}-${mm}-${yyyy} ` + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

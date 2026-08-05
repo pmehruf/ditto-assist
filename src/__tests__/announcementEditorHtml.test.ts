@@ -73,8 +73,8 @@ describe("markupToEditableHtml", () => {
     );
   });
 
-  it("renders a quote line as a blockquote, stripping the '> ' prefix", () => {
-    expect(markupToEditableHtml("> quoted text", "dark")).toBe("<blockquote>quoted text</blockquote>");
+  it("renders a quote line as a blockquote, stripping the '> ' prefix (italic made explicit — the old renderer forced quote italics via CSS; the v3 shared styling doesn't, so the legacy import wraps <i> to preserve how legacy quotes always looked)", () => {
+    expect(markupToEditableHtml("> quoted text", "dark")).toBe("<blockquote><i>quoted text</i></blockquote>");
   });
 
   it("renders a bullet line as a <ul><li>, stripping the '• ' prefix", () => {
@@ -87,7 +87,7 @@ describe("markupToEditableHtml", () => {
       "<div>Title line</div>" +
         "<div><br></div>" +
         "<div><b>Bold</b> and <i>italic</i></div>" +
-        "<blockquote>a quote</blockquote>" +
+        "<blockquote><i>a quote</i></blockquote>" +
         "<ul><li>a bullet</li></ul>"
     );
   });

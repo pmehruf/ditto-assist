@@ -1143,9 +1143,11 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         "Arthritis, Spondylitis, Fracture or any other disorder of Muscle / Bone / Joint / Ligament / Cartilage?",
         "Any other disease / condition not mentioned above?"
       ],
-      overrides: {
-        excludePrediabetes: true
-      },
+      // No `excludePrediabetes` override here (unlike Care Supreme): this
+      // plan's diabetes question ("Diabetes / High blood sugar / Sugar in
+      // urine?") already names elevated blood sugar generically, so
+      // prediabetes/borderline-diabetes correctly maps to it as a normal
+      // category match instead of being excluded to the catch-all.
       categoryMap: {
         hypertension: "Hypertension / High blood pressure?",
         diabetes: "Diabetes / High blood sugar / Sugar in urine?",

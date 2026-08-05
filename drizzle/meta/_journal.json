@@ -1,167 +1,174 @@
 {
-    "version": "7",
-    "dialect": "postgresql",
-    "entries": [
-        {
-            "idx": 0,
-            "version": "7",
-            "when": 1782984655831,
-            "tag": "0000_massive_piledriver",
-            "breakpoints": true
-        },
-        {
-            "idx": 1,
-            "version": "7",
-            "when": 1783862278678,
-            "tag": "0001_old_galactus",
-            "breakpoints": true
-        },
-        {
-            "idx": 2,
-            "version": "7",
-            "when": 1783873463784,
-            "tag": "0002_calm_goblin_queen",
-            "breakpoints": true
-        },
-        {
-            "idx": 3,
-            "version": "7",
-            "when": 1783878549478,
-            "tag": "0003_lively_speed",
-            "breakpoints": true
-        },
-        {
-            "idx": 4,
-            "version": "7",
-            "when": 1783885465750,
-            "tag": "0004_dusty_tarot",
-            "breakpoints": true
-        },
-        {
-            "idx": 5,
-            "version": "7",
-            "when": 1783951396083,
-            "tag": "0005_misty_black_widow",
-            "breakpoints": true
-        },
-        {
-            "idx": 6,
-            "version": "7",
-            "when": 1783954176038,
-            "tag": "0006_reflective_secret_warriors",
-            "breakpoints": true
-        },
-        {
-            "idx": 7,
-            "version": "7",
-            "when": 1783954913605,
-            "tag": "0007_small_argent",
-            "breakpoints": true
-        },
-        {
-            "idx": 8,
-            "version": "7",
-            "when": 1783958674447,
-            "tag": "0008_mixed_hellcat",
-            "breakpoints": true
-        },
-        {
-            "idx": 9,
-            "version": "7",
-            "when": 1783963161531,
-            "tag": "0009_backfill_ped_categories",
-            "breakpoints": true
-        },
-        {
-            "idx": 10,
-            "version": "7",
-            "when": 1783965016834,
-            "tag": "0010_rename_ped_directory",
-            "breakpoints": true
-        },
-        {
-            "idx": 11,
-            "version": "7",
-            "when": 1784028143346,
-            "tag": "0011_add_specific_illnesses",
-            "breakpoints": true
-        },
-        {
-            "idx": 12,
-            "version": "7",
-            "when": 1784114543346,
-            "tag": "0012_add_smoke_test_peds",
-            "breakpoints": true
-        },
-        {
-            "idx": 13,
-            "version": "7",
-            "when": 1784200000000,
-            "tag": "0013_ped_directory_cleanup",
-            "breakpoints": true
-        },
-        {
-            "idx": 14,
-            "version": "7",
-            "when": 1784200100000,
-            "tag": "0014_ped_directory_status_cleanup",
-            "breakpoints": true
-        },
-        {
-            "idx": 15,
-            "version": "7",
-            "when": 1784300000000,
-            "tag": "0015_add_ai_memory",
-            "breakpoints": true
-        },
-        {
-            "idx": 16,
-            "version": "7",
-            "when": 1784400000000,
-            "tag": "0016_add_page_visibility",
-            "breakpoints": true
-        },
-        {
-            "idx": 17,
-            "version": "7",
-            "when": 1784500000000,
-            "tag": "0017_ped_repository_db_migration",
-            "breakpoints": true
-        },
-        {
-            "idx": 18,
-            "version": "7",
-            "when": 1784600000000,
-            "tag": "0018_ped_governance_rules",
-            "breakpoints": true
-        },
-        {
-            "idx": 19,
-            "version": "7",
-            "when": 1785200000000,
-            "tag": "0019_rename_owner_tier_to_developer",
-            "breakpoints": true
-        },
-        {
-            "idx": 20,
-            "version": "7",
-            "when": 1785300000000,
-            "tag": "0020_qa_dashboard_google_connection",
-            "breakpoints": true
-        },
-        {
-            "idx": 21,
-            "version": "7",
-            "when": 1785400000000,
-            "tag": "0021_change_logs_plan_name_nullable",
-            "breakpoints": true
-        },
-        {
-            "idx": 22,
-            "version": "7",
-            "when": 1785500000000,
-            "tag": "0022_qa_dashboard_roles",
-            "breakpoints": true
-        }
-    ]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1782984655831,
+      "tag": "0000_massive_piledriver",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783862278678,
+      "tag": "0001_old_galactus",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783873463784,
+      "tag": "0002_calm_goblin_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783878549478,
+      "tag": "0003_lively_speed",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783885465750,
+      "tag": "0004_dusty_tarot",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783951396083,
+      "tag": "0005_misty_black_widow",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783954176038,
+      "tag": "0006_reflective_secret_warriors",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783954913605,
+      "tag": "0007_small_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783958674447,
+      "tag": "0008_mixed_hellcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783963161531,
+      "tag": "0009_backfill_ped_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783965016834,
+      "tag": "0010_rename_ped_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784028143346,
+      "tag": "0011_add_specific_illnesses",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784114543346,
+      "tag": "0012_add_smoke_test_peds",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784200000000,
+      "tag": "0013_ped_directory_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784200100000,
+      "tag": "0014_ped_directory_status_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784300000000,
+      "tag": "0015_add_ai_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784400000000,
+      "tag": "0016_add_page_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784500000000,
+      "tag": "0017_ped_repository_db_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784600000000,
+      "tag": "0018_ped_governance_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0019_rename_owner_tier_to_developer",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785300000000,
+      "tag": "0020_qa_dashboard_google_connection",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785400000000,
+      "tag": "0021_change_logs_plan_name_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785500000000,
+      "tag": "0022_qa_dashboard_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0023_announcement_acks",
+      "breakpoints": true
+    }
+  ]
 }

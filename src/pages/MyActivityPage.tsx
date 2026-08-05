@@ -13,6 +13,7 @@ import { translateSourceToLayman } from "../utils/labelTranslation";
 import { CustomSelect } from "../components/CustomSelect";
 import { SortableTh } from "../components/SortableTh";
 import { Pagination } from "../components/Pagination";
+import { DateInputDMY } from "../components/DateInputDMY";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 
@@ -145,14 +146,14 @@ export function MyActivityPage({
           with the Advisor Profile card dropped (the signed-in email is
           already shown in the top nav bar). */}
       <div
-        className={`p-4 rounded-xl border ${
+        className={`p-4 rounded-2xl border ${
           theme === "dark"
             ? "bg-white/[0.03] border-white/[0.08]"
-            : "bg-black/[0.02] border-black/[0.08]"
+            : "bg-surface-elevated border-[var(--border-strong)]"
         }`}
       >
         {/* Quick stats row */}
-        <div className={`flex items-center gap-6 pb-3.5 mb-3.5 border-b ${theme === "dark" ? "border-white/[0.06]" : "border-stone-200/70"}`}>
+        <div className={`flex items-center gap-6 pb-3 mb-3 border-b ${theme === "dark" ? "border-white/[0.06]" : "border-stone-200/70"}`}>
           <div>
             <p className={`text-[10px] font-bold uppercase tracking-wider ${theme === "dark" ? "text-zinc-400" : "text-stone-600"}`}>Total Lookups</p>
             <p className="text-xl font-black mt-0.5" style={{ color: theme === "dark" ? "#22d3ee" : "#0284c7" }}>{totalLookups.toLocaleString()}</p>
@@ -164,141 +165,117 @@ export function MyActivityPage({
           </div>
         </div>
 
-        {/* Search + filters row */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-        {/* Live Filter Search Input */}
-        <div className="relative w-full md:w-80 shrink-0">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search your search logs..."
-            value={myActivitySearch}
-            onChange={(e) => setMyActivitySearch(e.target.value)}
-            className={`w-full py-2 pl-10 pr-4 text-xs font-semibold rounded-lg border outline-none transition-all ${
-              theme === "dark"
-                ? "bg-[#060A10] border-[#252A34] text-white focus:border-[#3B82F6]"
-                : "bg-white border-stone-250 text-stone-900 focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/50 shadow-inner"
-            }`}
-          />
-          {myActivitySearch && (
-            <button
-              onClick={() => setMyActivitySearch("")}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 hover:text-stone-100"
-              title="Clear search"
-            >
-              &times;
-            </button>
-          )}
-        </div>
-
-        {/* Filter Dropdowns container */}
-        <div style={{ color: "var(--text-primary)" }} className="w-full flex flex-col sm:flex-row gap-3 items-center md:justify-end">
-          {/* Plan Filter */}
-          <div className="flex items-center gap-2">
-            <span style={{ color: theme === "dark" ? "var(--text-primary)" : "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">Plan:</span>
-            <div className="w-36">
-              <CustomSelect
-                theme={theme}
-                value={myActivityPlanFilter}
-                onChange={setMyActivityPlanFilter}
-                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-bold pl-2 pr-7 py-1.5 rounded-lg border outline-none cursor-pointer relative ${
+        {/* Search + filters row — one row, label-above-control (matches the
+            filter pattern used on QA Dashboard / Coverage Projection Studio /
+            Plan Reference / Announcements), search widest, plan medium,
+            dates equal-width, all controls sharing the same py-1.5 height. */}
+        <div className="flex flex-wrap items-end gap-3">
+          {/* Search — widest control */}
+          <div className="flex-1 min-w-[220px]">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+              Search Logs
+            </label>
+            <div className="relative">
+              <Search className={`w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`} />
+              <input
+                type="text"
+                placeholder="Search your search logs..."
+                value={myActivitySearch}
+                onChange={(e) => setMyActivitySearch(e.target.value)}
+                className={`w-full py-1.5 pl-8 pr-8 text-xs font-semibold rounded-lg border outline-none transition-all ${
                   theme === "dark"
                     ? "bg-[#060A10] border-[#252A34] text-white focus:border-[#3B82F6]"
-                    : "bg-white border-stone-250 text-stone-850 shadow-xs"
+                    : "bg-white border-stone-250 text-stone-900 focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/50 shadow-inner"
                 }`}
-                options={[
-                  { value: "All", label: "All Plans" },
-                  ...PLANS.map((p) => ({ value: p, label: p })),
-                ]}
               />
+              {myActivitySearch && (
+                <button
+                  onClick={() => setMyActivitySearch("")}
+                  className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold ${theme === "dark" ? "text-stone-400 hover:text-stone-100" : "text-stone-400 hover:text-stone-700"}`}
+                  title="Clear search"
+                >
+                  &times;
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Date Range Filter */}
-          <div className="flex flex-col sm:flex-row gap-2.5 items-start sm:items-center">
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: theme === "dark" ? "var(--text-primary)" : "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">From:</span>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={myActivityStartDate || ""}
-                  onChange={(e) => setMyActivityStartDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                />
-                <div
-                  className={`text-xs font-mono font-bold py-1 px-2.5 rounded-lg border flex items-center gap-1.5 select-none min-w-[115px] justify-between ${
-                    theme === "dark"
-                      ? "bg-[#14181D] border-[#252A34] text-white"
-                      : "bg-white border-stone-250 text-stone-850 shadow-xs"
-                  }`}
-                >
-                  <span>{myActivityStartDate ? (() => {
-                    const parts = myActivityStartDate.split("-");
-                    if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                    return myActivityStartDate;
-                  })() : "dd-mm-yyyy"}</span>
-                  <Clock className="w-3 h-3 text-stone-400 shrink-0" />
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span style={{ color: theme === "dark" ? "var(--text-primary)" : "var(--text-secondary)" }} className="text-[10px] font-bold uppercase tracking-wider">To:</span>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={myActivityEndDate || ""}
-                  onChange={(e) => setMyActivityEndDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                />
-                <div
-                  className={`text-xs font-mono font-bold py-1 px-2.5 rounded-lg border flex items-center gap-1.5 select-none min-w-[115px] justify-between ${
-                    theme === "dark"
-                      ? "bg-[#14181D] border-[#252A34] text-white"
-                      : "bg-white border-stone-250 text-stone-850 shadow-xs"
-                  }`}
-                >
-                  <span>{myActivityEndDate ? (() => {
-                    const parts = myActivityEndDate.split("-");
-                    if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
-                    return myActivityEndDate;
-                  })() : "dd-mm-yyyy"}</span>
-                  <Clock className="w-3 h-3 text-stone-400 shrink-0" />
-                </div>
-              </div>
-            </div>
-            {(myActivityStartDate || myActivityEndDate) && (
-              <button
-                onClick={() => {
-                  setMyActivityStartDate("");
-                  setMyActivityEndDate("");
-                }}
-                className={`text-[10px] font-bold px-2 py-1 rounded-lg cursor-pointer ${
-                  theme === "dark"
-                    ? "text-red-400 hover:bg-stone-800 bg-stone-900/40 border border-red-500/10"
-                    : "text-red-650 hover:bg-red-50 bg-red-50/40 border border-red-100"
-                }`}
-              >
-                Reset
-              </button>
-            )}
+          {/* Plan — medium width */}
+          <div className="w-36 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+              Plan
+            </label>
+            <CustomSelect
+              theme={theme}
+              value={myActivityPlanFilter}
+              onChange={setMyActivityPlanFilter}
+              triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-7 py-1.5 rounded-lg border outline-none cursor-pointer relative ${
+                theme === "dark"
+                  ? "bg-[#060A10] border-[#252A34] text-white focus:border-[#3B82F6]"
+                  : "bg-white border-stone-250 text-stone-850 shadow-xs"
+              }`}
+              options={[
+                { value: "All", label: "All Plans" },
+                ...PLANS.map((p) => ({ value: p, label: p })),
+              ]}
+            />
           </div>
-        </div>
+
+          {/* From Date */}
+          <div className="shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+              From Date
+            </label>
+            <DateInputDMY
+              value={myActivityStartDate || ""}
+              onChange={setMyActivityStartDate}
+              displayClassName={`text-xs font-mono font-semibold py-1.5 px-2.5 rounded-lg border flex items-center gap-1.5 select-none min-w-[115px] justify-between ${
+                theme === "dark"
+                  ? "bg-[#14181D] border-[#252A34] text-white"
+                  : "bg-white border-stone-250 text-stone-850 shadow-xs"
+              }`}
+              icon={<Clock className="w-3 h-3 text-stone-400 shrink-0" />}
+            />
+          </div>
+
+          {/* To Date */}
+          <div className="shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+              To Date
+            </label>
+            <DateInputDMY
+              value={myActivityEndDate || ""}
+              onChange={setMyActivityEndDate}
+              displayClassName={`text-xs font-mono font-semibold py-1.5 px-2.5 rounded-lg border flex items-center gap-1.5 select-none min-w-[115px] justify-between ${
+                theme === "dark"
+                  ? "bg-[#14181D] border-[#252A34] text-white"
+                  : "bg-white border-stone-250 text-stone-850 shadow-xs"
+              }`}
+              icon={<Clock className="w-3 h-3 text-stone-400 shrink-0" />}
+            />
+          </div>
+
+          {(myActivityStartDate || myActivityEndDate) && (
+            <button
+              onClick={() => {
+                setMyActivityStartDate("");
+                setMyActivityEndDate("");
+              }}
+              className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer shrink-0 ${
+                theme === "dark"
+                  ? "text-red-400 hover:bg-stone-800 bg-stone-900/40 border border-red-500/10"
+                  : "text-red-650 hover:bg-red-50 bg-red-50/40 border border-red-100"
+              }`}
+            >
+              Reset
+            </button>
+          )}
         </div>
       </div>
 
       {/* ACTIVITIES TABLE / ACCORDION — same flat transparent-grey card. */}
       <div className={`rounded-xl border overflow-hidden ${
-        theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
+        theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)]"
       }`}>
         {loading ? (
           <div className="p-16 text-center font-sans">
@@ -313,7 +290,7 @@ export function MyActivityPage({
             </p>
             <p className="text-xs text-stone-500 mt-1">
               {!hasActiveFilter
-                ? "Initiate a medical term lookup in the Declaration Assistant page to populate this history."
+                ? "Initiate a medical term lookup in the Ditto Assist page to populate this history."
                 : "Try relaxing your search terms or filters to reveal matching logs."}
             </p>
           </div>
@@ -323,15 +300,15 @@ export function MyActivityPage({
               <thead className={`text-[11px] font-bold uppercase tracking-wider border-b ${
                 theme === "dark"
                   ? "bg-white/[0.02] text-[#9CA3AF] border-white/[0.08]"
-                  : "bg-stone-100 text-stone-600 border-stone-200"
+                  : "bg-stone-100 text-stone-700 border-stone-200"
               }`}>
                 <tr>
-                  <SortableTh label="Medical Term / PED Query" sortKey="pedInput" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
-                  <SortableTh label="Time" sortKey="timestamp" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
-                  <SortableTh label="Insurance Plan" sortKey="planName" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
-                  <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
-                  <SortableTh label="Match Outcome" sortKey="matchType" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-3.5 px-4" />
-                  <th className="py-3.5 px-4 text-right">Action</th>
+                  <SortableTh label="Medical Term / PED Query" sortKey="pedInput" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-2 px-4" />
+                  <SortableTh label="Time" sortKey="timestamp" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-2 px-4" />
+                  <SortableTh label="Insurance Plan" sortKey="planName" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-2 px-4" />
+                  <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-2 px-4" />
+                  <SortableTh label="Match Outcome" sortKey="matchType" activeSort={myLogsSort} onSort={toggleMyLogsSort} className="py-2 px-4" />
+                  <th className="py-2 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className={`divide-y text-sm font-semibold ${
@@ -342,7 +319,7 @@ export function MyActivityPage({
 
                   // Shared taxonomy (src/utils/matchTier.ts) — same Level
                   // 1/2/3 + Needs Clarification / Not a Medical Ailment
-                  // scheme as the live Declaration Assistant results screen
+                  // scheme as the live Ditto Assist results screen
                   // and the admin Audit page. This replaces a previous
                   // lookup keyed on "perfect"/"approx"/"not matched" —
                   // values that never actually occur in real match_type
@@ -428,7 +405,7 @@ export function MyActivityPage({
                           className="py-4 px-4"
                         >
                           <span
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider ${matchBadgeClass}`}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase whitespace-nowrap ${matchBadgeClass}`}
                           >
                             {tier.levelLabel}
                           </span>

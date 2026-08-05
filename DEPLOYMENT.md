@@ -1,0 +1,48 @@
+# Deployment Reference
+
+Secrets (SESSION_SECRET, DATABASE_URL, GOOGLE_CLIENT_SECRET, GEMINI_API_KEY) live only in
+`.env.production.yaml` / `.env.staging.yaml` on your machine — both are git-ignored.
+Never paste real secret values into this file; it's a normal tracked doc, not a secrets store.
+
+```
+Production
+----------
+Branch:      main
+Cloud Run:   ditto-assist                 (pending — currently still "declaration-assistant")
+Database:    Neon "production" branch     (the original/root branch — untouched)
+APP_URL:     https://ditto-assist-93120856554.asia-south1.run.app   (assigned on first deploy)
+Env file:    .env.production.yaml (local, git-ignored)
+
+Staging
+-------
+Branch:      develop
+Cloud Run:   ditto-assist-staging
+Database:    Neon "ditto-assist-staging" branch (branched from production, isolated)
+APP_URL:     https://ditto-assist-staging-93120856554.asia-south1.run.app
+Env file:    .env.staging.yaml (local, git-ignored)
+```
+
+## Deploy commands
+
+**Staging** (from `develop` branch):
+```
+gcloud run deploy ditto-assist-staging --source . --region asia-south1 --allow-unauthenticated --env-vars-file .env.staging.yaml
+```
+
+**Production** (from `main` branch):
+```
+gcloud run deploy ditto-assist --source . --region asia-south1 --allow-unauthenticated --env-vars-file .env.production.yaml
+```
+
+## Rules
+
+- Never point `.env.production.yaml` at the staging database, or vice versa.
+- Staging is safe to break — it has its own isolated Neon branch.
+- Every OAuth redirect URI (production + staging) must be registered in Google Cloud Console → APIs & Services → Credentials → same OAuth client → Authorized redirect URIs.
+
+## Status
+
+- [x] Staging deployed and verified isolated from production (2026-08-05)
+- [ ] `develop` branch created
+- [ ] Production service `ditto-assist` deployed
+- [ ] `declaration-assistant` converted to a 301-redirect stub pointing at `ditto-assist`

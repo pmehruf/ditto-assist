@@ -4,13 +4,14 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
-import { Check, Plus, Bold, Italic, Underline, Code, List, Quote, Link2, Baseline, X } from "lucide-react";
+import { Check, Plus, Bold, Italic, Underline, Code, List, Quote, Link2, Baseline, X, IndentIncrease, IndentDecrease } from "lucide-react";
 import { QAAnnouncement } from "../../types/announcements";
 import { LoggedUser } from "../../types/user";
 import { ChangeLogEntry } from "../../types/changeLog";
 import { ClippedButton } from "../ClippedButton";
 import { CustomSelect } from "../CustomSelect";
-import { markupToEditableHtml, editableHtmlToMarkup } from "../../utils/announcementEditorHtml";
+import { DateInputDMY } from "../DateInputDMY";
+import { announcementContentToEditorHtml, editorHtmlToStoredContent, announcementSurfaceClasses, DEFAULT_INK } from "../../utils/announcementHtml";
 
 /**
  * A single labelled field — label sits directly above its control with a
@@ -139,6 +140,39 @@ export function QAAnnouncementForm({
   const [text, setText] = useState("");
   const [date, setDate] = useState(""); // Effective Date — Optional, when the policy/rule takes effect
   const [announcementDate, setAnnouncementDate] = useState(todayStr()); // Announcement Date — when this notice was posted; defaults to today but editable
+  // Two mutually-exclusive convenience checkboxes next to the Effective Date
+  // picker — pure UI shortcuts, nothing new persisted. "Already in-Force"
+  // means there's no distinct future effective date (the rule already
+  // applies), so it just clears the field. "Effective Immediately" means
+  // the rule takes effect the moment this is posted, so it mirrors
+  // Announcement Date into Effective Date and keeps following it if the
+  // author later changes the Announcement Date. Both disable manual editing
+  // of the Effective Date input while checked; unchecking restores it.
+  const [alreadyInForce, setAlreadyInForce] = useState(false);
+  const [effectiveImmediately, setEffectiveImmediately] = useState(false);
+
+  const toggleAlreadyInForce = (checked: boolean) => {
+    setAlreadyInForce(checked);
+    if (checked) {
+      setEffectiveImmediately(false);
+      setDate("");
+    }
+  };
+
+  const toggleEffectiveImmediately = (checked: boolean) => {
+    setEffectiveImmediately(checked);
+    if (checked) {
+      setAlreadyInForce(false);
+      setDate(announcementDate);
+    }
+  };
+
+  // Keep Effective Date mirroring Announcement Date live while "Effective
+  // Immediately" is checked (e.g. the author picks a different Announced
+  // date after already checking the box).
+  useEffect(() => {
+    if (effectiveImmediately) setDate(announcementDate);
+  }, [effectiveImmediately, announcementDate]);
   const [category, setCategory] = useState("");
   const [title, setTitle] = useState("");
   const [validTillDate, setValidTillDate] = useState(""); // Valid Till Date — optional; blank means the notice never auto-expires
@@ -154,25 +188,20 @@ export function QAAnnouncementForm({
   // IS the preview, the same way Slack/Notion/Gmail compose boxes work —
   // Bold shows as bold immediately, a color picked shows as that color
   // immediately, etc. That means the authoring surface is a real
-  // `contentEditable` div, not a plain `<textarea>` (a textarea can only
-  // ever show plain monospace-ish text — there is no way to render actual
-  // bold/colored/quoted text inside one).
+  // `contentEditable` div, not a plain `<textarea>`.
   //
-  // The STORAGE format is completely unchanged: `text` is still the exact
-  // same plain-markup string every existing announcement and the read-side
-  // renderer (renderFormattedAnnouncement.tsx) already understand. Only the
-  // authoring surface changed. Two converters (announcementEditorHtml.ts)
-  // bridge the two representations:
-  //   - markupToEditableHtml(text) → sets the editor's innerHTML, but ONLY
-  //     when content is loaded from OUTSIDE a keystroke (opening the form,
-  //     switching to Edit on a different announcement, resetting after
-  //     submit) — see the effects below.
-  //   - editableHtmlToMarkup(editor.innerHTML) → reads the editor's current
-  //     HTML back into `text` on every `input` event.
-  // Normal typing therefore only ever READS from the DOM, never WRITES
-  // `innerHTML` back into it — the browser's native contentEditable caret
-  // handling is what keeps the cursor in place; there's no re-render to
-  // guard against losing it.
+  // v3 STORAGE (see announcementHtml.tsx's file header): what's stored IS
+  // this editor's own HTML, passed through the whitelist sanitizer and
+  // prefixed with a format sentinel. The published views render that exact
+  // same HTML with the exact same CSS — WYSIWYG by construction, replacing
+  // the old bidirectional plain-markup conversion whose HTML->markup
+  // direction repeatedly corrupted nested formatting. Legacy (pre-v3)
+  // markup rows are converted one-way into the same HTML the first time
+  // they're loaded here, and become v3 rows when saved.
+  // Normal typing only ever READS from the DOM, never WRITES `innerHTML`
+  // back into it — the browser's native contentEditable caret handling is
+  // what keeps the cursor in place; there's no re-render to guard against
+  // losing it.
   const editorRef = useRef<HTMLDivElement>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [linkPromptOpen, setLinkPromptOpen] = useState(false);
@@ -189,37 +218,53 @@ export function QAAnnouncementForm({
 
   const effectiveTheme: "light" | "dark" = theme === "dark" ? "dark" : "light";
 
-  // Re-reads the editor's current HTML back into `text` — called after
-  // every keystroke and after every toolbar action.
+  // Snapshots the editor's current HTML into `text` as v3 stored content
+  // (sentinel + sanitized HTML) — called after every keystroke and toolbar
+  // action. An editor with no actual text (just empty line scaffolding)
+  // stores as "" so the empty-content validation keeps working.
   const syncTextFromDom = () => {
     const el = editorRef.current;
     if (!el) return;
-    setText(editableHtmlToMarkup(el.innerHTML, effectiveTheme));
+    if ((el.textContent ?? "").trim() === "") {
+      setText("");
+      return;
+    }
+    setText(editorHtmlToStoredContent(el.innerHTML, effectiveTheme));
   };
 
-  // Programmatically loads `markup` into the editor (see the effects below
-  // for the only two times this should ever run: loading an existing
-  // announcement for editing, and resetting the form). Never called from a
-  // keystroke handler.
-  const loadIntoEditor = (markup: string) => {
+  // Programmatically loads stored content (v3 HTML or legacy markup — the
+  // converter handles both) into the editor. Only ever runs from OUTSIDE a
+  // keystroke: opening the form, switching to Edit, resetting after submit.
+  const loadIntoEditor = (content: string) => {
     const el = editorRef.current;
     if (!el) return;
-    el.innerHTML = markupToEditableHtml(markup, effectiveTheme);
+    el.innerHTML = announcementContentToEditorHtml(content, effectiveTheme);
   };
 
   // Text color palette — kept to hex values already used elsewhere in the
-  // app (see renderFormattedAnnouncement.tsx's COLOR_HEX for why each one
+  // app (see announcementHtml.tsx's COLOR_HEX for why each one
   // was picked) so "red text" here is the same red as everywhere else.
   // Black/White sits first as an explicit, always-visible swatch (per
   // design feedback: the default text color should be a selectable option
   // in the palette itself, not only reachable via a separate reset action).
+  // Google Chat-style palette order: (default swatch first, rendered
+  // separately) red, blue, green, yellow, gray. Orange was removed from the
+  // picker — legacy orange content still renders via COLOR_HEX.
   const COLOR_OPTIONS = [
     { key: "red", label: "Red", swatch: "#ef4444" },
-    { key: "orange", label: "Orange", swatch: theme === "dark" ? "#b45309" : "#92400e" },
-    { key: "green", label: "Green", swatch: theme === "dark" ? "#10b981" : "#059669" },
     { key: "blue", label: "Blue", swatch: theme === "dark" ? "#00D3F3" : "#0754B7" },
+    { key: "green", label: "Green", swatch: theme === "dark" ? "#10b981" : "#059669" },
+    { key: "yellow", label: "Yellow", swatch: theme === "dark" ? "#fbbf24" : "#a16207" },
+    { key: "gray", label: "Gray", swatch: theme === "dark" ? "#9ca3af" : "#57534e" },
   ] as const;
-  const DEFAULT_COLOR_SWATCH = theme === "dark" ? "#f5f5f4" : "#111827";
+  // Sourced from announcementHtml.tsx's DEFAULT_INK — the sanitizer now
+  // recognizes exactly these two literals as "no real color choice" and
+  // lets the text inherit the viewer's own theme color instead of freezing
+  // it at whichever theme it was authored under (see isDefaultInkColor's
+  // comment for the regression this fixes). Importing the same constant
+  // here instead of re-declaring it keeps the editor and the sanitizer from
+  // ever silently drifting apart on what "default" means again.
+  const DEFAULT_COLOR_SWATCH = theme === "dark" ? DEFAULT_INK.dark : DEFAULT_INK.light;
 
   const applyBold = () => {
     editorRef.current?.focus();
@@ -323,23 +368,24 @@ export function QAAnnouncementForm({
     const endLine = getLineEl(range.endContainer);
     if (!startLine) return;
 
-    const allLines = Array.from(el.children);
+    const allLines: Element[] = Array.from(el.children);
     const startIdx = allLines.indexOf(startLine);
     const endIdx = endLine ? allLines.indexOf(endLine) : startIdx;
     if (startIdx === -1) return;
     const [lo, hi] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
-    const targetLines = allLines.slice(lo, hi + 1);
+    const targetLines: Element[] = allLines.slice(lo, hi + 1);
     if (targetLines.length === 0) return;
 
     // Toggle off only if every targeted line is already a bullet; otherwise
     // toggle everything on, same "uniform state wins" rule the Bold/Italic
     // toolbar highlighting already implies.
-    const allAlreadyBullets = targetLines.every((line) => line.tagName === "UL");
+    const allAlreadyBullets = targetLines.every((line: Element) => line.tagName === "UL");
     let lastReplacement: Element | null = null;
 
-    targetLines.forEach((line) => {
+    targetLines.forEach((line: Element) => {
       if (allAlreadyBullets) {
-        Array.from(line.children).forEach((li) => {
+        const listItems: Element[] = Array.from(line.children);
+        listItems.forEach((li: Element) => {
           const div = document.createElement("div");
           while (li.firstChild) div.appendChild(li.firstChild);
           el.insertBefore(div, line);
@@ -371,6 +417,22 @@ export function QAAnnouncementForm({
     syncTextFromDom();
   };
 
+  // Indent / outdent — nests list items one level deeper (real nested
+  // <ul>s) and indents plain lines (Chrome emits a margin-carrying
+  // blockquote that the sanitizer maps to an indented div — see
+  // sanitizeAnnouncementHtml). Outdent reverses either.
+  const applyIndent = () => {
+    editorRef.current?.focus();
+    document.execCommand("indent");
+    syncTextFromDom();
+  };
+
+  const applyOutdent = () => {
+    editorRef.current?.focus();
+    document.execCommand("outdent");
+    syncTextFromDom();
+  };
+
   // Toggles the current line(s) between a normal paragraph and a
   // blockquote — `execCommand('formatBlock', ...)` already operates on
   // whichever line(s) the selection spans, matching the old
@@ -384,15 +446,10 @@ export function QAAnnouncementForm({
     syncTextFromDom();
   };
 
-  // Color is always applied as the OUTERMOST wrapper in the stored markup
-  // (see renderFormattedAnnouncement.tsx's file header) — `foreColor`
-  // naturally produces that shape here too, since it wraps a fresh <span>
-  // around the current selection (any bold/italic tags inside the
-  // selection stay nested inside that span). "Default" resets to `inherit`
-  // rather than trying to surgically unwrap a color span — see
-  // announcementEditorHtml.ts's `resolveNamedColor`, which treats an
-  // unresolvable/inherited color as "no color tag" on the way back out.
-  const applyColor = (color: "default" | "red" | "orange" | "green" | "blue") => {
+  // `foreColor` wraps a fresh <span style="color:...">, which the v3
+  // sanitizer resolves to a named palette color (data-color) so the same
+  // announcement renders with the right hex under either theme.
+  const applyColor = (color: "default" | "red" | "blue" | "green" | "yellow" | "gray") => {
     const el = editorRef.current;
     if (!el) return;
     el.focus();
@@ -403,10 +460,15 @@ export function QAAnnouncementForm({
       // argument is to silently fall back to some internal default that
       // renders as a brownish color, not to actually clear formatting. Pass
       // the real default swatch hex instead (same as every other color
-      // button below); resolveNamedColor in announcementEditorHtml.ts
-      // already treats anything this far from the 4 named colors as "no
-      // color tag" on the way back out, so this still round-trips to a
-      // clean, colorless line.
+      // button below); the sanitizer specifically recognizes THIS theme's
+      // DEFAULT_INK value (see isDefaultInkColor in announcementHtml.tsx)
+      // and treats it as "no color" — NOT "anything far from the 4 palette
+      // colors", which was the previous, incorrect version of this comment
+      // and the actual root cause of a readability regression: a value
+      // this far from the palette used to be preserved as a literal color
+      // forever, so picking Default while authoring in one theme baked in
+      // that theme's ink color permanently, unreadable once viewed in the
+      // other theme.
       document.execCommand("foreColor", false, DEFAULT_COLOR_SWATCH);
     } else {
       const swatch = COLOR_OPTIONS.find((c) => c.key === color)?.swatch;
@@ -579,6 +641,13 @@ export function QAAnnouncementForm({
         loadIntoEditor(announcementText);
         setDate(item.effectiveDate || "");
         setAnnouncementDate(item.announcementDate || todayStr());
+        // Always start an edit with both convenience checkboxes unchecked —
+        // they're a one-time input shortcut, not a stored fact about the
+        // row, so there's nothing on the loaded row to reliably infer them
+        // from. The loaded Effective Date itself is still shown/editable as
+        // plain text above.
+        setAlreadyInForce(false);
+        setEffectiveImmediately(false);
         if (itemType !== "QA Announcement") {
           setTitle(item.title || item.category || "");
           setValidTillDate(item.validTillDate || "");
@@ -599,6 +668,8 @@ export function QAAnnouncementForm({
       setValidTillDate("");
       setFromTeam("");
       setAnnouncementType("QA Announcement");
+      setAlreadyInForce(false);
+      setEffectiveImmediately(false);
     }
   }, [editingAnnouncementId, qaAnnouncements]);
 
@@ -743,6 +814,8 @@ export function QAAnnouncementForm({
       setRating(0);
       setDate("");
       setAnnouncementDate(todayStr());
+      setAlreadyInForce(false);
+      setEffectiveImmediately(false);
     }
 
     // Auto-clear success message after 6 seconds
@@ -855,43 +928,59 @@ export function QAAnnouncementForm({
                 Effective = when the rule it describes kicks in (optional). */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Announced" theme={theme}>
-                <input
-                  type="date"
+                <DateInputDMY
                   title="Announcement date — when this notice was posted"
                   value={announcementDate}
-                  onChange={(e) => setAnnouncementDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none cursor-pointer ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                      : "bg-white border-stone-250 text-stone-800 focus:border-blue-500"
-                  }`}
+                  onChange={setAnnouncementDate}
                   required
+                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                    theme === "dark"
+                      ? "bg-[#12151A] border-[#252A34] text-white"
+                      : "bg-white border-stone-250 text-stone-800"
+                  }`}
                 />
               </Field>
 
               <Field label="Effective" hint="optional" theme={theme}>
-                <input
-                  type="date"
+                <DateInputDMY
                   title="Effective date (optional) — when the rule takes effect"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none cursor-pointer ${
+                  disabled={alreadyInForce || effectiveImmediately}
+                  onChange={setDate}
+                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                    alreadyInForce || effectiveImmediately ? "opacity-50" : ""
+                  } ${
                     theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                      : "bg-white border-stone-250 text-stone-800 focus:border-blue-500"
+                      ? "bg-[#12151A] border-[#252A34] text-white"
+                      : "bg-white border-stone-250 text-stone-800"
                   }`}
                 />
               </Field>
+            </div>
+
+            {/* Effective Date convenience checkboxes — mutually exclusive
+                shortcuts (see toggleAlreadyInForce/toggleEffectiveImmediately
+                above); neither is a stored field, they just drive the date
+                input above. */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 -mt-1">
+              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                <input
+                  type="checkbox"
+                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                  checked={alreadyInForce}
+                  onChange={(e) => toggleAlreadyInForce(e.target.checked)}
+                />
+                Already in-Force
+              </label>
+              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                <input
+                  type="checkbox"
+                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                  checked={effectiveImmediately}
+                  onChange={(e) => toggleEffectiveImmediately(e.target.checked)}
+                />
+                Effective Immediately
+              </label>
             </div>
           </>
         ) : (
@@ -929,68 +1018,68 @@ export function QAAnnouncementForm({
               </Field>
             </div>
 
-            {/* Three distinct dates: Announced = when posted (drives which
+            {/* Two dates: Announced = when posted (drives which
                 announcements advisors see); Effective = when the rule kicks
-                in (optional); Valid Till = when this notice expires — left
-                blank it never auto-expires (see the filter in App.tsx). */}
+                in (optional). Valid Till was removed from the form (per
+                design feedback) — announcements no longer auto-expire on a
+                per-notice date; existing rows that still carry one keep
+                their old expiry behavior. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Announced" theme={theme}>
-                <input
-                  type="date"
+                <DateInputDMY
                   title="Announcement date — when this notice was posted"
                   value={announcementDate}
-                  onChange={(e) => setAnnouncementDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none cursor-pointer ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500"
-                  }`}
+                  onChange={setAnnouncementDate}
                   required
+                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                    theme === "dark"
+                      ? "bg-[#12151A] border-[#252A34] text-white"
+                      : "bg-white border-stone-250 text-stone-820"
+                  }`}
                 />
               </Field>
 
               <Field label="Effective" hint="optional" theme={theme}>
-                <input
-                  type="date"
+                <DateInputDMY
                   title="Effective date (optional) — when the rule takes effect"
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none cursor-pointer ${
+                  disabled={alreadyInForce || effectiveImmediately}
+                  onChange={setDate}
+                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                    alreadyInForce || effectiveImmediately ? "opacity-50" : ""
+                  } ${
                     theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500"
+                      ? "bg-[#12151A] border-[#252A34] text-white"
+                      : "bg-white border-stone-250 text-stone-820"
                   }`}
                 />
               </Field>
 
-              <Field label="Valid Till" hint="optional" theme={theme}>
+            </div>
+
+            {/* Effective Date convenience checkboxes — mutually exclusive
+                shortcuts (see toggleAlreadyInForce/toggleEffectiveImmediately
+                above); neither is a stored field, they just drive the date
+                input above. */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 -mt-1">
+              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
                 <input
-                  type="date"
-                  title="Valid till date (optional) — when this notice expires"
-                  value={validTillDate}
-                  onChange={(e) => setValidTillDate(e.target.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (_) {}
-                  }}
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none cursor-pointer ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500"
-                  }`}
+                  type="checkbox"
+                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                  checked={alreadyInForce}
+                  onChange={(e) => toggleAlreadyInForce(e.target.checked)}
                 />
-              </Field>
+                Already in-Force
+              </label>
+              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                <input
+                  type="checkbox"
+                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                  checked={effectiveImmediately}
+                  onChange={(e) => toggleEffectiveImmediately(e.target.checked)}
+                />
+                Effective Immediately
+              </label>
             </div>
           </>
         )}
@@ -1111,6 +1200,12 @@ export function QAAnnouncementForm({
             <ToolbarButton title="Bulleted List (Ctrl+Shift+8)" theme={theme} onClick={applyBulletList}>
               <List className="w-3.5 h-3.5" />
             </ToolbarButton>
+            <ToolbarButton title="Indent (nests list items)" theme={theme} onClick={applyIndent}>
+              <IndentIncrease className="w-3.5 h-3.5" />
+            </ToolbarButton>
+            <ToolbarButton title="Outdent" theme={theme} onClick={applyOutdent}>
+              <IndentDecrease className="w-3.5 h-3.5" />
+            </ToolbarButton>
             <ToolbarButton title="Insert Link (Ctrl+K)" theme={theme} active={linkPromptOpen} onClick={openLinkPrompt}>
               <Link2 className="w-3.5 h-3.5" />
             </ToolbarButton>
@@ -1194,10 +1289,15 @@ export function QAAnnouncementForm({
               onInput={syncTextFromDom}
               onKeyDown={handleContentKeyDown}
               onPaste={handleContentPaste}
-              className={`w-full flex-1 min-h-[160px] text-xs font-semibold leading-relaxed p-3 rounded-lg border outline-none overflow-y-auto [&_blockquote]:pl-3 [&_blockquote]:border-l-2 [&_blockquote]:italic [&_ul]:list-disc [&_ul]:pl-5 [&_a]:underline [&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded ${
+              // announcementSurfaceClasses is the SAME class set the
+              // published views render with (see announcementHtml.tsx) —
+              // sharing it is what makes the editor a true WYSIWYG preview.
+              // Only the chrome (border, padding, height, focus ring)
+              // differs.
+              className={`w-full flex-1 min-h-[160px] font-normal p-3 rounded-lg border outline-none overflow-y-auto ${announcementSurfaceClasses(effectiveTheme)} ${
                 theme === "dark"
-                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 [&_blockquote]:border-white/20 [&_a]:text-[#00D3F3] [&_code]:bg-white/10"
-                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500 [&_blockquote]:border-black/15 [&_a]:text-[#0754B7] [&_code]:bg-black/[0.06]"
+                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
+                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
               }`}
             />
           </div>
