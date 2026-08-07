@@ -375,7 +375,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
                 three same-colored elements in a row read as a mistake
                 rather than a signal. Gold stars are also just the familiar
                 rating convention on their own, independent of any tier. */}
-            <StarRating score={state.consolidated} size={27} color={headerIconColor} />
+            <StarRating score={state.consolidated} size={27} color="#FBBF24" />
             <span className={`text-[42px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
               {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
             </span>
@@ -434,7 +434,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
                     reads as the plain hero number and Lead/Payments carry the
                     tier signal beside it. */}
                 <div className="flex items-baseline gap-2 mb-1.5 flex-wrap">
-                  <StarRating score={score} size={17} color={headerIconColor} />
+                  <StarRating score={score} size={17} color="#FBBF24" />
                   <span className="text-[22px] leading-none font-black font-mono" style={{ color: t.color }}>
                     {score !== null ? score.toFixed(2) : "—"}
                   </span>
