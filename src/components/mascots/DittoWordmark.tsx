@@ -9,9 +9,9 @@ import React from "react";
 export function DittoWordmark({ className = "", isWhite = false, style, imgStyle }: { className?: string; isWhite?: boolean; style?: React.CSSProperties; imgStyle?: React.CSSProperties }) {
   return (
     <div className={`flex items-center select-none ${className}`} style={{ ...style, height: "26px" }}>
-      <img 
-        src="/assets/.aistudio/ditto-logo.png" 
-        alt="Ditto Logo" 
+      <img
+        src="/assets/.aistudio/ditto-logo.png"
+        alt="Ditto Logo"
         referrerPolicy="no-referrer"
         className="h-full object-contain"
         style={{

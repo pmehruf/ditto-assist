@@ -51,6 +51,7 @@ import {
 import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDataEngine.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClient.js";
+import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 
 dotenv.config();
 
@@ -63,6 +64,26 @@ const app = express();
 // of the real caller's — silently defeating the rate limiter. `1` trusts
 // exactly one hop (the platform's own proxy), which matches Cloud Run.
 app.set("trust proxy", 1);
+
+// ─────────────────────────────────────────────────────────────────────────
+// LEGACY HOST REDIRECT — the app was rebranded from "Declaration Assistant"
+// to "Ditto Assist" (2026-08-07). Cloud Run has no built-in way to rename a
+// service in place, so the old service (declaration-assistant-...) keeps
+// running as its own separate resource, with its own URL, unless someone
+// deletes it — and that old URL is still bookmarked/linked in places.
+// This must be deployed to BOTH the old and new Cloud Run services (same
+// image, same code): on the new service the hostname simply won't match
+// and every request passes straight through unaffected; on the old service
+// it 301-redirects the visitor straight to the equivalent path on the new
+// domain, before any other route/middleware runs.
+const LEGACY_HOST = "declaration-assistant-93120856554.asia-south1.run.app";
+const NEW_ORIGIN = "https://ditto-assist-93120856554.asia-south1.run.app";
+app.use((req, res, next) => {
+  if (req.hostname === LEGACY_HOST) {
+    return res.redirect(301, `${NEW_ORIGIN}${req.originalUrl}`);
+  }
+  next();
+});
 
 // Baseline security headers (audit fix, see Production_Readiness_Audit.md
 // Finding 7). CSP is deliberately left off for now rather than guessed at:
@@ -1377,7 +1398,9 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
       const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement"] as const);
       const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
       const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
-      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir, dateFrom, dateTo };
+      const effectiveDateFrom = typeof req.query.effectiveDateFrom === "string" && req.query.effectiveDateFrom.trim() ? req.query.effectiveDateFrom.trim() : undefined;
+      const effectiveDateTo = typeof req.query.effectiveDateTo === "string" && req.query.effectiveDateTo.trim() ? req.query.effectiveDateTo.trim() : undefined;
+      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir, dateFrom, dateTo, effectiveDateFrom, effectiveDateTo };
       if (req.query.export) {
         const rows = await announcements.listMatching(listOptions);
         return res.json({ entries: rows });
@@ -2949,6 +2972,22 @@ app.get("/api/qa-dashboard/dashboard", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("QA Dashboard: failed to load dashboard data:", err);
     return res.status(500).json({ error: `Failed to load QA dashboard: ${err.message}` });
+  }
+});
+
+// Real trigger history for processRawDump (Phase1_DataEngine.gs), via the
+// Apps Script Executions API — backs the QA Performance card's "Last
+// updated" label. lastRunAt is null (still HTTP 200) whenever this can't be
+// answered yet (grant not (re)connected with the script.processes scope,
+// or the connected account lacks access to the script project) — that's an
+// expected, non-error state for an optional label, not a 500.
+app.get("/api/qa-dashboard/last-processed", requireAuth, async (req, res) => {
+  try {
+    const lastRun = await getLastExecutionTime("processRawDump");
+    return res.json({ lastRunAt: lastRun ? lastRun.toISOString() : null });
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load last-processed time:", err);
+    return res.status(500).json({ error: `Failed to load last-processed time: ${err.message}` });
   }
 });
 

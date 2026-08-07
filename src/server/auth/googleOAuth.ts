@@ -120,12 +120,20 @@ export async function exchangeCodeForIdentity(code: string): Promise<GoogleIdent
 // ─────────────────────────────────────────────────────────────────────────
 
 const QA_SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+// Lets this same grant also read the QA Google Sheet's Apps Script project's
+// execution history (Executions/Processes API) — used for the "Last
+// updated" timestamp on the Workspace's QA Performance card, sourced from
+// processRawDump's actual trigger history rather than a guess. Anyone who
+// (re)connects needs Editor/Owner access to that Apps Script project itself,
+// not just Viewer access to the Sheet — Viewer-on-Sheet doesn't carry
+// visibility into the bound script's executions.
+const QA_SCRIPT_PROCESSES_SCOPE = "https://www.googleapis.com/auth/script.processes";
 
 export function getQaDashboardSheetsAuthUrl(state: string, loginHint?: string): string {
   const client = getOAuthClient();
   return client.generateAuthUrl({
     access_type: "offline",
-    scope: ["openid", "email", QA_SHEETS_READONLY_SCOPE],
+    scope: ["openid", "email", QA_SHEETS_READONLY_SCOPE, QA_SCRIPT_PROCESSES_SCOPE],
     hd: ALLOWED_DOMAIN,
     prompt: "consent",
     include_granted_scopes: true,

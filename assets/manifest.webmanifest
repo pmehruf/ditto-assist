@@ -1,0 +1,29 @@
+{
+  "name": "Ditto Assist",
+  "short_name": "Ditto Assist",
+  "description": "Ditto's advisor workspace for declaration mapping, QA scoring, and coverage projection.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#03101A",
+  "background_color": "#03101A",
+  "icons": [
+    {
+      "src": "/assets/favicon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512-any.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

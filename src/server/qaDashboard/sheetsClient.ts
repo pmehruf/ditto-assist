@@ -78,7 +78,14 @@ function requireEnv(name: string): string {
 // grant instead of reusing a stale client for the old one.
 let cachedOAuthClient: { client: OAuth2Client; email: string } | null = null;
 
-async function getStoredUserGrantClient(): Promise<OAuth2Client | null> {
+// Exported (not just used internally) so appsScriptClient.ts can reuse the
+// exact same stored grant — the "Connect Google Sheets" consent now also
+// carries the script.processes scope needed for Apps Script's Executions
+// API (see googleOAuth.ts), so it's the same token either way. A service
+// account (path 2/3 below) can never substitute here: it isn't a
+// collaborator on the Apps Script project, so it has no execution history
+// to read regardless of Sheet access.
+export async function getStoredUserGrantClient(): Promise<OAuth2Client | null> {
   const { qaDashboardConnection } = createRepositories(getDb());
   const row = await qaDashboardConnection.get();
   if (!row) return null;

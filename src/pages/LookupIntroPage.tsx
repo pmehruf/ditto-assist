@@ -3,304 +3,766 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { motion } from "motion/react";
-import { AlertTriangle } from "lucide-react";
-import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
-import { GridTexture } from "../components/GridTexture";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Sparkles,
+  FileSpreadsheet,
+  BookOpen,
+  Lightbulb,
+  Flag,
+  MousePointerClick,
+  Megaphone,
+  ArrowUpRight,
+  Clock,
+  Search,
+  History,
+  AlertTriangle,
+  CheckCircle2,
+  Zap,
+  ShieldCheck,
+} from "lucide-react";
+import { QaDashboardIcon, DeclarationMapIcon } from "../components/icons";
+import { QaPerformancePeek } from "../components/QaPerformancePeek";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
+import { AnnouncementStatModal } from "../components/AnnouncementStatModal";
+import { ScaleToFit } from "../components/ScaleToFit";
+import { QAAnnouncement, AuditLogEntry } from "../types/announcements";
+import { LoggedUser } from "../types/user";
+
+type HomeTabId =
+  | "lookup"
+  | "qa_dashboard"
+  | "coverage_projection"
+  | "advisory_zone"
+  | "announcement_archive"
+  | "resources"
+  | "my_activity";
 
 interface LookupIntroPageProps {
   theme: "light" | "dark";
+  currentUser: LoggedUser | null;
   setShowIntro: (value: boolean) => void;
+  setActiveTab: (value: HomeTabId) => void;
+  activeAnnouncements: QAAnnouncement[];
+  // Full, uncapped announcement list (App.tsx's qaAnnouncements) — used only
+  // for the weekly stats (new / went live / going live today) below the
+  // Announcements card's preview, since activeAnnouncements is capped to 8.
+  allAnnouncements: QAAnnouncement[];
+  // Opens the Announcements archive pre-filtered to a specific effective
+  // date — used by "Open Today's Announcements".
+  onOpenAnnouncementsForDate: (date: string) => void;
+  // Same gate the sidebar uses (App.tsx's hasAccess) — Quick Actions should
+  // only ever offer tools this advisor can actually open.
+  hasAccess: (featureId: string, action: "Viewer" | "Editor") => boolean;
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+function fmtDateOnly(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function parseDateOnly(s?: string): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffMs = Date.now() - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay === 1) return "Yesterday";
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+/** Every accent hex on this page was picked for the dark theme (mostly
+ * Tailwind -400/-500 shades), which reads fine on a near-black card but
+ * washes out against the light theme's white/60 cards — low contrast,
+ * "blends into the card" instead of standing out. This maps each of those
+ * accents to a darker (-700-ish) equivalent used ONLY in light theme;
+ * dark theme always gets the original hex back unchanged. */
+const ACCENT_LIGHT_MODE: Record<string, string> = {
+  "#FACC15": "#B45309", // yellow-400 -> amber-700
+  "#2DD4BF": "#0F766E", // teal-400 -> teal-700
+  "#F87171": "#B91C1C", // red-400 -> red-700
+  "#34D399": "#047857", // emerald-400 -> emerald-700
+  "#0EA5E9": "#0369A1", // sky-500 -> sky-700
+  "#22C55E": "#15803D", // green-500 -> green-700
+  "#8B5CF6": "#6D28D9", // violet-500 -> violet-700
+  "#F59E0B": "#B45309", // amber-500 -> amber-700
+  "#EC4899": "#BE185D", // pink-500 -> pink-700
+  "#64748B": "#334155", // slate-500 -> slate-700
+  "#38BDF8": "#0369A1", // sky-400 -> sky-700
+  "#FB923C": "#C2410C", // orange-400 -> orange-700
+  "#FB7185": "#BE123C", // rose-400 -> rose-700
+};
+function lightSafe(hex: string, theme: "light" | "dark"): string {
+  if (theme === "dark") return hex;
+  return ACCENT_LIGHT_MODE[hex] ?? hex;
+}
+
+const QUICK_TIPS: Array<{ icon: ReactNode; text: string; hex: string }> = [
+  {
+    icon: <Lightbulb className="w-4 h-4" />,
+    text: "Use the dropdown suggestions when searching — it cuts down PED spelling mismatches.",
+    hex: "#FACC15",
+  },
+  {
+    icon: <MousePointerClick className="w-4 h-4" />,
+    text: "Queue multiple conditions before running the engine — they're all mapped in one pass.",
+    hex: "#2DD4BF",
+  },
+  {
+    icon: <Flag className="w-4 h-4" />,
+    text: "Spot an incorrect mapping? Flag it straight from your results — so the same mistake doesn't get repeated for another person.",
+    hex: "#F87171",
+  },
+  {
+    icon: <ShieldCheck className="w-4 h-4" />,
+    text: "Results may not be accurate in every case — this tool supports your judgement, it doesn't replace it. Always verify before disclosing.",
+    hex: "#34D399",
+  },
+];
+
+/**
+ * A small uppercase-tracked label used above every section, so the page
+ * reads as a set of clearly-titled modules rather than one continuous
+ * surface — the same visual device the Quick Tips strip already used.
+ */
+function SectionLabel({ icon, text, hex }: { icon: ReactNode; text: string; hex: string }) {
+  return (
+    <div className="flex items-center gap-2 select-none mb-3">
+      <span style={{ color: hex }}>{icon}</span>
+      <span
+        style={{ color: hex }}
+        className="font-mono uppercase tracking-[0.2em] text-[12px] font-bold"
+      >
+        {text}
+      </span>
+    </div>
+  );
 }
 
 /**
- * "Declaration Assistant" lookup tab — intro/splash screen content.
- * Extracted verbatim from App.tsx (Phase 1.3). The `activeTab === "lookup"
- * && showIntro` condition and wrapping `<motion.div key="intro">`
- * deliberately stay in App.tsx (see ResourcesPage.tsx for why — moving them
- * here would break the AnimatePresence exit animation).
+ * Home page — the advisor's *workspace*, not a dashboard for any one
+ * module. Two tiers:
+ *  1. PRIMARY — Quick Actions: every tool in the platform (Declaration
+ *     Assistant, Coverage Projection Studio, QA Dashboard, Plan References,
+ *     Declaration Map, My Activity) as uniform, equally-weighted tiles. QA
+ *     Dashboard gets no special treatment here — it's one tile among six.
+ *  2. SECONDARY — Quick Peek, two rows under one section label:
+ *     - Row 1: QA Performance as the hero (wide, leading column — real
+ *       day-to-day signal) beside Recent Searches as a compact, self-sized
+ *       companion (narrow column, latest 3 only, visibly smaller — that's
+ *       the de-emphasis, not just a smaller number of rows).
+ *     - Row 2: Announcements and Quick Tips as two standard, equal-height
+ *       cards, so neither leaves a slab of unused space and neither needs
+ *       its own full-width strip.
+ * The `activeTab === "lookup" && showIntro` condition and wrapping
+ * `<motion.div key="intro">` deliberately stay in App.tsx (see
+ * ResourcesPage.tsx for why — moving them here would break the
+ * AnimatePresence exit animation).
  */
-export function LookupIntroPage({ theme, setShowIntro }: LookupIntroPageProps) {
+export function LookupIntroPage({
+  theme,
+  currentUser,
+  setShowIntro,
+  setActiveTab,
+  activeAnnouncements,
+  allAnnouncements,
+  onOpenAnnouncementsForDate,
+  hasAccess,
+}: LookupIntroPageProps) {
+  const firstName = currentUser?.name?.split(" ")[0];
+  // Every Quick Action tile expands the same inline panel below the grid
+  // instead of navigating immediately — clicking a tile shows a short blurb
+  // + a CTA that does the actual navigating. Accordion-style: one tile's
+  // panel open at a time, keyed by id (not a boolean) so switching tiles
+  // swaps the content instead of stacking multiple panels.
+  const [expandedTileId, setExpandedTileId] = useState<string | null>(null);
+
+  const ALL_QUICK_ACTIONS: Array<{
+    id: string;
+    featureId: string;
+    title: string;
+    tag: string;
+    icon: ReactNode;
+    hex: string;
+    instructions: string;
+    ctaLabel: string;
+    onOpen: () => void;
+  }> = [
+    {
+      id: "lookup",
+      featureId: "lookup",
+      title: "Declaration Assistant",
+      tag: "Map conditions to declarations",
+      icon: <Sparkles className="w-[18px] h-[18px]" />,
+      hex: "#0EA5E9",
+      instructions:
+        "Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Always verify before disclosing, and reach out to your mentor when you need clarity.",
+      ctaLabel: "Lets Put Them In Their Place",
+      onOpen: () => setShowIntro(false),
+    },
+    {
+      id: "coverage_projection",
+      featureId: "coverage_projection",
+      title: "Coverage Projection Studio",
+      tag: "Base, bonus & restoration cover",
+      icon: <FileSpreadsheet className="w-[18px] h-[18px]" />,
+      hex: "#22C55E",
+      instructions:
+        "Enter the plan and premium details to project Base Cover, Bonus accrual, and Restoration Benefit growth across the policy term.",
+      ctaLabel: "Open Coverage Projection Studio",
+      onOpen: () => setActiveTab("coverage_projection"),
+    },
+    {
+      id: "qa_dashboard",
+      featureId: "qa_dashboard",
+      title: "QA Dashboard",
+      tag: "Lead & payments QA scoring",
+      icon: <QaDashboardIcon width={18} height={18} color="currentColor" />,
+      hex: "#8B5CF6",
+      instructions:
+        "Review your Lead and Payments QA scores, track how they're trending, and read detailed feedback on flagged calls and chats.",
+      ctaLabel: "Open QA Dashboard",
+      onOpen: () => setActiveTab("qa_dashboard"),
+    },
+    {
+      id: "advisory_zone",
+      featureId: "advisory_zone",
+      title: "Plan References",
+      tag: "Payment-journey & illness lists",
+      icon: <BookOpen className="w-[18px] h-[18px]" />,
+      hex: "#F59E0B",
+      instructions: "Look up payment-journey questions and plan-specific illness lists before you're mid-call with a customer.",
+      ctaLabel: "Open Plan References",
+      onOpen: () => setActiveTab("advisory_zone"),
+    },
+    {
+      id: "resources",
+      featureId: "resources",
+      title: "Declaration Map",
+      tag: "Visual rules & payout mapping",
+      icon: <DeclarationMapIcon width={18} height={18} color="currentColor" />,
+      hex: "#EC4899",
+      instructions: "Browse the visual guide to medical declaration rules and payout mapping structures.",
+      ctaLabel: "Open Declaration Map",
+      onOpen: () => setActiveTab("resources"),
+    },
+    {
+      id: "my_activity",
+      featureId: "my_activity",
+      title: "My Activity",
+      tag: "Your full search & lookup log",
+      icon: <History className="w-[18px] h-[18px]" />,
+      hex: "#64748B",
+      instructions: "See your full history of declaration searches, matched plans, and past lookups in one place.",
+      ctaLabel: "Open My Activity",
+      onOpen: () => setActiveTab("my_activity"),
+    },
+  ];
+
+  // Every advisor sees Declaration Assistant (it's the app's default tab,
+  // never gated); everything else follows the exact same permission check
+  // the sidebar uses, so Quick Actions never offers a tool this advisor
+  // couldn't otherwise reach.
+  const QUICK_ACTIONS = ALL_QUICK_ACTIONS.filter(
+    (mod) => mod.id === "lookup" || hasAccess(mod.featureId, "Viewer")
+  );
+
+  const expandedTile = QUICK_ACTIONS.find((mod) => mod.id === expandedTileId) || null;
+
+  // Recent Declaration Searches + Recently Used Plans — real data from the
+  // same /api/search-history endpoint My Activity uses, latest 5 entries.
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(true);
+
+  useEffect(() => {
+    const userEmail = currentUser?.email || "";
+    if (!userEmail) {
+      setEntriesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setEntriesLoading(true);
+    const params = new URLSearchParams({
+      paginated: "1",
+      userEmail,
+      page: "1",
+      pageSize: "5",
+      sortBy: "timestamp",
+      sortDir: "desc",
+    });
+    fetch(`/api/search-history?${params.toString()}`)
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+        if (cancelled) return;
+        setEntries(body.entries || []);
+      })
+      .catch((err) => console.error("Failed to load recent searches:", err))
+      .finally(() => {
+        if (!cancelled) setEntriesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.email]);
+
+  // Weekly Announcements stats — from the full (uncapped) list, not the
+  // carousel's top-8 activeAnnouncements, so these counts are accurate even
+  // when more than 8 announcements exist.
+  const todayStr = fmtDateOnly(new Date());
+  const { newThisWeekList, wentLiveThisWeekList, liveToday } = useMemo(() => {
+    const today = parseDateOnly(todayStr)!;
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    const newList: QAAnnouncement[] = [];
+    const wentLiveList: QAAnnouncement[] = [];
+    const liveTodayList: QAAnnouncement[] = [];
+    for (const a of allAnnouncements) {
+      const posted = parseDateOnly(a.announcementDate);
+      if (posted && posted >= weekAgo && posted <= today) newList.push(a);
+      const effective = parseDateOnly(a.effectiveDate);
+      if (effective && effective >= weekAgo && effective <= today) wentLiveList.push(a);
+      if (a.effectiveDate === todayStr) liveTodayList.push(a);
+    }
+    return { newThisWeekList: newList, wentLiveThisWeekList: wentLiveList, liveToday: liveTodayList };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allAnnouncements, todayStr]);
+
+  // Which stat tile's popup (if any) is open — holds the tile's label +
+  // the exact filtered list it represents, so AnnouncementStatModal never
+  // has to re-derive the filter itself.
+  const [openStat, setOpenStat] = useState<{ title: string; list: QAAnnouncement[] } | null>(null);
+
+  // Quick Tips — one featured tip at a time instead of all 4 at once (see
+  // the Quick Tips card below), auto-advancing so every tip still gets seen
+  // over time without asking the reader to take in 4 blocks of text at a
+  // glance. Paused implicitly whenever the tab isn't visible would be nice
+  // but isn't worth the extra complexity for a low-stakes rotating tip.
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTipIndex((i) => (i + 1) % QUICK_TIPS.length), 7000);
+    return () => clearInterval(id);
+  }, []);
+
+  const cardClass = `rounded-2xl border p-5 flex flex-col ${
+    theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
+  }`;
+
+  const cardHeader = (label: string, icon: ReactNode, onOpen: () => void, hex: string) => {
+    const resolvedHex = lightSafe(hex, theme);
+    return (
+    <div className="flex items-center justify-between mb-3.5">
+      <div className="flex items-center gap-2 select-none min-w-0">
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${resolvedHex}1A`, color: resolvedHex }}
+        >
+          {icon}
+        </div>
+        <span className={`text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+          {label}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onOpen}
+        className={`flex items-center gap-0.5 text-[12px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
+          theme === "dark" ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-800"
+        }`}
+      >
+        View all
+        <ArrowUpRight className="w-3 h-3" />
+      </button>
+    </div>
+    );
+  };
+
   return (
+    <>
+    <ScaleToFit baseWidth={1440} className="flex-grow">
     <div
-      style={{ marginTop: "2px", marginBottom: "4px" }}
-      className={`relative overflow-hidden w-full rounded-2xl border font-sans flex-grow flex flex-col justify-center h-auto lg:h-[calc(100vh-175px)] lg:max-h-[680px] lg:min-h-[480px] ${
-        theme === "dark" ? "border-white/[0.08] bg-transparent text-[#FFFFFF]" : "border-[#a1b7c3] bg-transparent text-stone-900"
+      className={`w-full font-sans flex flex-col gap-6 pb-3 ${
+        theme === "dark" ? "text-[#FFFFFF]" : "text-stone-900"
       }`}
     >
-      {/* Optimized grid / texture overlay based on theme to prevent moire and maintain premium feel */}
-      <GridTexture theme={theme} />
-
-      {/* Workspace grid: 2 columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-10 w-full relative z-10 h-full">
-
-        {/* LEFT HERO PANEL (lg:col-span-7) */}
-        <div className={`col-span-1 lg:col-span-7 p-4 sm:p-5 md:p-6 lg:p-6 xl:p-8 flex flex-col justify-center relative border-b lg:border-b-0 lg:border-r bg-radial-[circle_at_10%_20%] bg-radial-from-[rgba(0,211,243,0.03)] bg-radial-to-transparent text-left ${
-          theme === "dark" ? "border-white/[0.08]" : "border-[#a1b7c3]"
-        }`}>
-
-          {/* flex-wrap (not a breakpoint) decides whether the mascot sits
-              beside the text or drops below it — that reflow now tracks the
-              row's actual rendered width continuously, so it responds
-              correctly to browser zoom too, instead of the mascot just
-              vanishing at a fixed viewport-width cutoff (which is what
-              "hidden xl:flex" caused — zooming in shrinks the effective CSS
-              viewport, so it could drop below the xl breakpoint and hide the
-              mascot entirely even on a huge window). */}
-          <div className="flex flex-row flex-wrap items-center h-full w-full relative z-10 py-1 gap-4">
-            {/* Text content — flex-1 with a real min-width (not min-w-0) so
-                it stops shrinking at a readable size and hands off to wrap
-                instead of squeezing itself unreadably thin to keep the
-                mascot on the same line. */}
-            <div
-              style={{ paddingTop: "0px", marginRight: "0px", marginLeft: "0px" }}
-              className="flex flex-col justify-center flex-1 min-w-[240px]"
+        {/* WORKSPACE HEADER */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <div className="flex items-baseline gap-2.5 min-w-0">
+            <div className="w-6 h-0.5 flex-shrink-0 self-center" style={{ backgroundColor: "var(--accent)" }} />
+            <h1
+              className={`font-black tracking-tight truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}
+              style={{ fontSize: "26px" }}
             >
-              <div className="flex items-center gap-2 select-none mb-2">
-                <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: "var(--accent)" }} />
-                <span
-                  style={{ fontSize: "11px" }}
-                  className={`font-mono tracking-[0.4em] uppercase ${
-                    theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
+              {getGreeting()}{firstName ? `, ${firstName}` : ""}.
+            </h1>
+          </div>
+        </div>
+
+        {/* PRIMARY — QUICK ACTIONS. Every tool in the platform, uniform
+            weight — Declaration Assistant and QA Dashboard are just two
+            tiles among six, not the page's focus. One fixed 6-column
+            layout, no per-viewport reflow — ScaleToFit (see below) scales
+            this whole canonical design uniformly to whatever screen it's
+            on instead of rewrapping columns. */}
+        <div>
+          {/* Sky-400 (#38BDF8) is too pale against the light theme's
+              background — deepen it in light mode only, same treatment as
+              the other section labels; dark mode is untouched. */}
+          <SectionLabel icon={<Sparkles className="w-4 h-4" />} text="Quick Actions" hex={lightSafe("#38BDF8", theme)} />
+          <div className="grid grid-cols-6 gap-3">
+            {QUICK_ACTIONS.map((mod) => {
+              const expanded = expandedTileId === mod.id;
+              return (
+                <button
+                  key={mod.id}
+                  type="button"
+                  onClick={() => setExpandedTileId((prev) => (prev === mod.id ? null : mod.id))}
+                  title={`${mod.title} — show quick guide`}
+                  aria-expanded={expanded}
+                  className={`group relative text-left rounded-xl border p-3.5 transition-all duration-200 cursor-pointer hover:-translate-y-0.5 ${
+                    expanded
+                      ? theme === "dark"
+                        ? "bg-white/[0.06] border-white/[0.24]"
+                        : "bg-white border-stone-400 shadow-sm"
+                      : theme === "dark"
+                      ? "bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.16]"
+                      : "bg-white/60 border-stone-300 hover:bg-white hover:border-stone-400 hover:shadow-sm"
                   }`}
                 >
-                  ADVISORY PROTOCOL
-                </span>
-              </div>
+                  <div
+                    className="w-9 h-9 rounded-lg border flex items-center justify-center mb-2.5 transition-transform duration-200 group-hover:scale-105"
+                    style={{
+                      backgroundColor: `${lightSafe(mod.hex, theme)}1A`,
+                      borderColor: `${lightSafe(mod.hex, theme)}4D`,
+                      color: lightSafe(mod.hex, theme),
+                    }}
+                  >
+                    {mod.icon}
+                  </div>
+                  <h3 className={`font-black text-[13px] uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+                    {mod.title}
+                  </h3>
+                  <p className={`text-[12px] font-semibold leading-snug truncate mt-0.5 ${theme === "dark" ? "text-white/50" : "text-stone-500"}`}>
+                    {mod.tag}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
 
-              <h1
-                style={{ fontSize: "clamp(24px, 5vw, 60px)", lineHeight: "1.15" }}
-                className={`font-sans font-bold uppercase tracking-tight mb-3 select-none max-w-full ${
-                  theme === "dark" ? "text-white" : "text-stone-900"
-                }`}
-              >
-                {/* Each line forced onto a single row (no internal wrap) so the
-                    heading always renders as exactly 2 lines — matching the
-                    80%-zoom appearance — instead of the browser's page-zoom
-                    shrinking the effective container width faster than this
-                    capped font-size shrinks, which used to wrap each line a
-                    second time into 4 lines total at 100% zoom. */}
-                <span className="block whitespace-nowrap">
-                  Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>What</b> To Declare.
-                </span>
-                <span className="block whitespace-nowrap">
-                  Know <b className={`font-bold ${theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7]"}`}>Where</b> To Declare.
-                </span>
-              </h1>
+          {/* QUICK GUIDE — expands inline below the grid when any tile is
+              clicked, instead of navigating immediately. One shared panel
+              (not one per tile) whose content swaps to match whichever tile
+              is active — presented as a contextual strip (left accent bar
+              in that tile's own icon colour), not another card, so it reads
+              as guidance belonging to the tile above it. Pure-CSS grid-rows
+              height animation — no extra motion dependency needed just for
+              this collapse/expand. */}
+          <div className={`grid transition-all duration-300 ease-out ${expandedTile ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0 mt-0"}`}>
+            <div className="overflow-hidden">
+              {expandedTile && (
+                <div
+                  className="rounded-xl border-l-[3px] pl-4 pr-4 py-3.5 flex flex-row items-center gap-5"
+                  style={{
+                    borderLeftColor: lightSafe(expandedTile.hex, theme),
+                    backgroundColor: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(250,250,249,0.6)",
+                  }}
+                >
+                  <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                    <span className="shrink-0 mt-0.5" style={{ color: lightSafe(expandedTile.hex, theme) }}>
+                      {expandedTile.id === "lookup" ? <AlertTriangle className="w-[18px] h-[18px]" /> : expandedTile.icon}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-black uppercase tracking-wide mb-1" style={{ color: lightSafe(expandedTile.hex, theme) }}>
+                        {expandedTile.id === "lookup" ? "Before You Start" : "Quick Guide"}
+                      </div>
+                      <p className={`text-[14px] leading-relaxed font-medium ${theme === "dark" ? "text-white/80" : "text-stone-700"}`}>
+                        {expandedTile.instructions}
+                      </p>
+                    </div>
+                  </div>
+                  <PrimaryCtaButton theme={theme} onClick={expandedTile.onOpen} className="shrink-0 self-center">
+                    {expandedTile.ctaLabel}
+                  </PrimaryCtaButton>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
-              <p
-                style={{ fontSize: "clamp(12px, 1.8vh, 14px)", lineHeight: "1.5" }}
-                className={`max-w-[37.5rem] mb-3 font-sans ${
-                  theme === "dark" ? "text-white/60" : "text-stone-600 font-medium"
-                }`}
-              >
-                Accurate disclosure is not just about what you declare. It is also about where you declare it. Your Declaration Assistant helps you identify the most appropriate place to disclose a medical condition by considering both medical context and policy logic.
-              </p>
+        {/* SECONDARY — Quick Peek, two rows instead of one flat row of
+            equal-weight cards. Row 1 puts QA Performance forward as the
+            hero (2fr of a 2fr/1fr split, leading position) with Recent
+            Searches trimmed down to a compact, self-sized companion — real
+            day-to-day signal (a rating trend) outranks a short list of past
+            searches, so the layout should say so instead of treating them
+            as equals. Row 2 pairs Announcements with Quick Tips (moved up
+            from its old full-width strip at the page bottom) as two
+            standard, equal-height cards, closing the gap that used to open
+            up under a full-width tips band nobody needed that much room
+            for. Same cards, same per-card visual design throughout — only
+            their relative size and position changed. */}
+        <div className="flex flex-col gap-4">
+          {/* Orange-400 (#FB923C) is too pale against the light theme's
+              background — deepen it in light mode only; dark mode is
+              untouched. */}
+          <SectionLabel icon={<Clock className="w-4 h-4" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
 
-              {/* Advisory Note — was a thin amber left-border strip with a
-                  single inline "SYSTEM WARNING❗:" sentence; now a full
-                  rounded card with its own icon+title header row and a
-                  diagonal navy→red gradient background (dark) / soft
-                  indigo→rose gradient (light), mirroring the same blue-to-red
-                  diagonal wash already used for the QA Announcement card in
-                  LookupPage.tsx so warning-style cards read consistently
-                  across the app. Title/icon keep the same amber accent
-                  color the old inline warning text used. */}
-              <div
-                style={{
-                  padding: "clamp(10px, 1.8vh, 14px)",
-                  ...(theme === "dark"
-                    ? { background: "linear-gradient(135deg, #0f1f3d 0%, #14243f 45%, #7f1d1d 100%)" }
-                    : {}),
-                }}
-                className={`rounded-2xl mb-3 max-w-[34.375rem] shadow-xs ${
-                  theme === "light" ? "bg-gradient-to-br from-indigo-100 via-rose-100 to-red-200" : ""
-                }`}
-              >
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <AlertTriangle className={`w-3.5 h-3.5 shrink-0 ${theme === "dark" ? "text-[#ff9f43]" : "text-amber-700"}`} />
-                  <span
-                    style={{ fontSize: "clamp(10px, 1.5vh, 12px)" }}
-                    className={`font-mono uppercase tracking-wide font-black ${
-                      theme === "dark" ? "text-[#ff9f43]" : "text-amber-700"
+          {/* ROW 1 — QA Performance (hero) + Recent Searches (compact). */}
+          <div className="grid grid-cols-[2fr_1fr] gap-4">
+            {/* QA PERFORMANCE PEEK — replaces "Recently Used Plans", which
+                didn't add day-to-day value. A glanceable, role-scoped rating
+                widget (own score for an Advisor, team for a Guide/Mentor,
+                company-wide for an Admin) — see QaPerformancePeek.tsx for
+                why this isn't a miniature QA Dashboard. Leading, wide column
+                is what makes this the page's hero card — the component
+                itself is untouched. */}
+            <QaPerformancePeek
+              theme={theme}
+              userEmail={currentUser?.email || ""}
+              onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
+            />
+
+            {/* RECENT DECLARATION SEARCHES — compact: narrow column, only
+                the latest 3, `self-start` so it sits at its own natural
+                (shorter) height next to the taller hero rather than
+                stretching to match it. A visibly smaller card is the point —
+                it reads as lower-priority at a glance, not just in theory. */}
+            <div className={`${cardClass} self-start`}>
+              {cardHeader("Recent Searches", <Clock className="w-4 h-4" />, () => setActiveTab("my_activity"), "#FB923C")}
+              {entriesLoading ? (
+                <div className="space-y-2.5 animate-pulse">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className={`h-9 rounded-lg ${theme === "dark" ? "bg-white/[0.04]" : "bg-stone-200/60"}`} />
+                  ))}
+                </div>
+              ) : entries.length === 0 ? (
+                <div className={`flex flex-col items-center justify-center text-center py-4 gap-1.5 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                  <Search className="w-5 h-5 opacity-50" />
+                  <span className="text-[13px] font-medium">No searches yet — your recent lookups will show up here.</span>
+                </div>
+              ) : (
+                <div className="flex flex-col divide-y divide-dashed" style={{ borderColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(168,162,158,0.35)" }}>
+                  {entries.slice(0, 3).map((entry, idx) => (
+                    <button
+                      type="button"
+                      key={`${entry.timestamp}-${idx}`}
+                      onClick={() => setActiveTab("my_activity")}
+                      className={`flex items-center justify-between gap-3 py-1.5 text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
+                        theme === "dark" ? "hover:bg-white/[0.03]" : "hover:bg-stone-100/60"
+                      }`}
+                      title="Open in My Activity"
+                    >
+                      {/* Condition name is the one thing worth scanning for
+                          here, so it's the only bold/high-contrast text in
+                          the row; plan name and timestamp both step down in
+                          weight and contrast to read as clearly secondary
+                          rather than competing with it. */}
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-[14px] font-extrabold tracking-tight truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+                          {entry.pedInput}
+                        </div>
+                        <div className={`text-[11.5px] font-normal truncate ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                          {entry.planName || "—"}
+                        </div>
+                      </div>
+                      <span className={`text-[11px] font-normal shrink-0 ${theme === "dark" ? "text-stone-600" : "text-stone-400"}`}>
+                        {formatRelativeTime(entry.timestamp)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ROW 2 — Announcements + Quick Tips, standard equal-width,
+              equal-height cards (default grid stretch, no self-start). */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* ANNOUNCEMENTS — a pure numerical overview, not a text preview.
+                Each stat is its own reactive tile: click it and it opens a
+                popup (AnnouncementStatModal) listing exactly the
+                announcements behind that number — New / Went Live / Live
+                Today — instead of a static excerpt that either duplicated
+                the archive or left a lot of dead space when there was
+                nothing to preview.
+                `content-center` on the tile row: stretched to match Quick
+                Tips' height (same row), so the tiles center as a compact
+                group rather than each one stretching individually. */}
+            <div
+              className={cardClass}
+              style={
+                liveToday.length > 0
+                  ? { borderColor: theme === "dark" ? "rgba(34,211,238,0.35)" : "rgba(7,84,183,0.3)" }
+                  : undefined
+              }
+            >
+              {cardHeader("Announcements", <Megaphone className="w-4 h-4" />, () => setActiveTab("announcement_archive"), "#FB7185")}
+
+              <div className="grid grid-cols-3 gap-2 flex-1 content-center">
+                {(
+                  [
+                    {
+                      label: "New",
+                      sub: "This Week",
+                      value: newThisWeekList.length,
+                      list: newThisWeekList,
+                      title: "New This Week",
+                      icon: <Sparkles className="w-4 h-4" />,
+                      color: theme === "dark" ? "#60A5FA" : "#2563EB",
+                    },
+                    {
+                      label: "Went Live",
+                      sub: "This Week",
+                      value: wentLiveThisWeekList.length,
+                      list: wentLiveThisWeekList,
+                      title: "Went Live This Week",
+                      icon: <CheckCircle2 className="w-4 h-4" />,
+                      color: theme === "dark" ? "#34D399" : "#059669",
+                    },
+                    {
+                      label: "Live",
+                      sub: "Today",
+                      value: liveToday.length,
+                      list: liveToday,
+                      title: "Live Today",
+                      icon: <Zap className="w-4 h-4" />,
+                      color: theme === "dark" ? "#22D3EE" : "#0754b7",
+                    },
+                  ] as const
+                ).map((stat) => (
+                  <button
+                    key={stat.label}
+                    type="button"
+                    onClick={() => setOpenStat({ title: stat.title, list: [...stat.list] })}
+                    title={`View ${stat.title.toLowerCase()}`}
+                    className={`relative w-full flex flex-col items-center justify-center gap-1 rounded-xl border py-2.5 px-1.5 text-center cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
+                      theme === "dark"
+                        ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.16]"
+                        : "border-stone-200 bg-stone-50/70 hover:bg-white hover:border-stone-300 hover:shadow-sm"
                     }`}
                   >
-                    Advisory Note
-                  </span>
-                </div>
-                <p
-                  style={{ fontSize: "clamp(10px, 1.5vh, 12px)" }}
-                  className={`leading-relaxed font-medium ${
-                    theme === "dark" ? "text-white/85" : "text-stone-800"
-                  }`}
-                >
-                  Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Always verify before disclosing, and reach out to your mentor when you need clarity.
-                </p>
+                    {stat.label === "Live" && stat.value > 0 && (
+                      <span className="absolute top-2 right-2 flex w-1.5 h-1.5">
+                        <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style={{ backgroundColor: stat.color }} />
+                        <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: stat.color }} />
+                      </span>
+                    )}
+                    <span style={{ color: stat.color }}>{stat.icon}</span>
+                    {/* Bumped 26px -> 29px: the metric value is the one
+                        number worth reading in this tile, so it should
+                        out-weigh its own label more clearly than before. */}
+                    <span className="text-[29px] font-black font-mono leading-none" style={{ color: stat.value > 0 ? stat.color : theme === "dark" ? "#F8FAFC" : "#1E293B" }}>
+                      {stat.value}
+                    </span>
+                    <span className={`text-[11px] font-bold uppercase tracking-wide leading-tight ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                      {stat.label}
+                      <br />
+                      {stat.sub}
+                    </span>
+                  </button>
+                ))}
               </div>
-
-              <PrimaryCtaButton
-                theme={theme}
-                onClick={() => setShowIntro(false)}
-                className="self-start"
-                style={{ marginTop: "clamp(6px, 1.5vh, 14px)" }}
-              >
-                LETS PUT THEM IN THEIR PLACE
-              </PrimaryCtaButton>
             </div>
 
-            {/* Mascot — a normal flex sibling (its own reserved column) instead
-                of an absolutely-positioned overlay, so it can never share
-                space with the text above regardless of window size or zoom.
-                Always rendered (no breakpoint hide) — flex-wrap above moves
-                it below the text on narrow rows instead of it disappearing
-                outright. Sized with clamp() (viewport-relative) rather than
-                a fixed px box, so it scales proportionally instead of
-                staying pinned at one physical size while everything around
-                it changes. */}
-            <motion.div
-              animate={{ y: [0, -10, 0], scale: [1, 1.03, 1] }}
-              transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-              className="flex items-center justify-center shrink-0 mx-auto pointer-events-none select-none"
-              style={{ width: "clamp(120px, 14vw, 220px)", height: "clamp(130px, 15vw, 240px)" }}
-            >
-              <MascotWithFallback
-                src="/assets/.aistudio/mapping-mascot.png"
-                alt="Mapping Mascot"
-                className="object-contain w-full h-full"
-                type="magnifier"
+            {/* QUICK TIPS — moved here from a full-width strip at the very
+                bottom of the page, now a standard card matching
+                Announcements' size. Shows ONE tip at a time (was all 4 in a
+                2x2 grid) — that grid still felt visually dense for a
+                low-priority widget, so it's now a single featured tip that
+                auto-advances every 7s (see the `tipIndex` state above),
+                with small dots to jump to any tip directly. The tip block
+                is centered in the space above the dots (`flex-1 items-
+                center`), and the dots are pinned to the card's bottom edge
+                (`mt-auto`) — so they land at a fixed, predictable spot
+                regardless of how many lines a given tip wraps to. */}
+            <div className={cardClass}>
+              {/* Pale yellow (#FACC15) reads fine on the dark card but
+                  nearly disappears on the light theme's white/60 card —
+                  swap to a deeper amber in light mode only; dark mode is
+                  untouched. */}
+              <SectionLabel
+                icon={<Lightbulb className="w-4 h-4" />}
+                text="Quick Tips · Declaration Assistant"
+                hex={lightSafe("#FACC15", theme)}
               />
-            </motion.div>
-          </div>
-        </div>
+              <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex-1 flex items-center mt-2">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={tipIndex}
+                      initial={{ opacity: 0, y: 3 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -3 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="flex items-start gap-2.5 w-full"
+                    >
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{
+                          backgroundColor: `${lightSafe(QUICK_TIPS[tipIndex].hex, theme)}1A`,
+                          color: lightSafe(QUICK_TIPS[tipIndex].hex, theme),
+                        }}
+                      >
+                        {QUICK_TIPS[tipIndex].icon}
+                      </div>
+                      <p className={`text-[12px] leading-relaxed font-medium text-pretty ${theme === "dark" ? "text-white/65" : "text-stone-600"}`}>
+                        {QUICK_TIPS[tipIndex].text}
+                      </p>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
 
-        {/* RIGHT SPECS/MANUAL PANEL (lg:col-span-3) */}
-        <div className={`col-span-1 lg:col-span-3 flex flex-col h-full text-left overflow-hidden ${
-          theme === "dark" ? "bg-white/[0.01]" : "bg-stone-50/40"
-        }`}>
-          <div className={`py-3 px-4 lg:px-5 border-b flex flex-col gap-0.5 shrink-0 ${
-            theme === "dark" ? "border-white/[0.08]" : "border-[#6a787f]"
-          }`}>
-            <div className="flex items-center gap-2 select-none">
-              <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: "var(--accent)" }} />
-              <span
-                style={{ color: "var(--accent)" }}
-                className="font-mono uppercase tracking-[0.2em] text-[10px] font-bold"
-              >
-                Mapping Engine
-              </span>
-            </div>
-            <span className={`text-[15px] font-black uppercase tracking-wider font-sans ${
-              theme === "dark" ? "text-white" : "text-stone-900"
-            }`}>
-              Instruction Manual
-            </span>
-          </div>
-
-          {/* SPEC CARDS — hugged as a compact group directly under the header,
-              rather than each card stretching (flex-1) to fill an equal,
-              oversized slice of the full panel height (old approach spread
-              the 5 cards out with large empty gaps at taller viewport/zoom
-              combinations) or being centered as a group (left a large gap
-              between the header and card 1). justify-start keeps card 1
-              flush against the header. */}
-          <div className={`divide-y flex-grow flex flex-col justify-start overflow-hidden ${
-            theme === "dark" ? "divide-white/[0.08]" : "divide-[#a1b7c3]"
-          }`}>
-
-            {/* CARD 1 */}
-            <div
-              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
-            >
-              <span className={`block font-mono text-[9px] mb-0.5 ${
-                theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
-              }`}>0x01</span>
-              <h4 className={`uppercase font-bold text-[13px] tracking-wide mb-0.5 font-sans ${
-                theme === "dark" ? "text-white" : "text-stone-900"
-              }`}>Multi-condition lookup</h4>
-              <p className={`text-[12px] leading-snug font-sans ${
-                theme === "dark" ? "text-white/50" : "text-stone-700 font-semibold"
-              }`}>
-                Enter <strong className={theme === "dark" ? "text-white font-bold" : "text-stone-900 font-bold"}>all pre-existing diseases (PEDs)</strong> together before running the engine.
-              </p>
-            </div>
-
-            {/* CARD 2 */}
-            <div
-              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
-            >
-              <span className={`block font-mono text-[9px] mb-0.5 ${
-                theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
-              }`}>0x02</span>
-              <h4 className={`uppercase font-bold text-[13px] tracking-wide mb-0.5 font-sans ${
-                theme === "dark" ? "text-white" : "text-stone-900"
-              }`}>Input accuracy</h4>
-              <p className={`text-[12px] leading-snug font-sans ${
-                theme === "dark" ? "text-white/50" : "text-stone-700 font-semibold"
-              }`}>
-                Use dropdown suggestions when available to reduce spelling errors. If not listed, enter it manually and proceed.
-              </p>
-            </div>
-
-            {/* CARD 3 */}
-            <div
-              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
-            >
-              <span className={`block font-mono text-[9px] mb-0.5 ${
-                theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
-              }`}>0x03</span>
-              <h4 className={`uppercase font-bold text-[13px] tracking-wide mb-0.5 font-sans ${
-                theme === "dark" ? "text-white" : "text-stone-900"
-              }`}>Diagnoses only</h4>
-              <p className={`text-[12px] leading-snug font-sans mb-0.5 ${
-                theme === "dark" ? "text-white/50" : "text-stone-700 font-semibold"
-              }`}>
-                Run the engine for medical conditions (diagnosis), not the treatments.
-              </p>
-              <div className="flex flex-col gap-0.5 text-[11px] leading-none mt-1">
-                <div><strong className={theme === "dark" ? "text-emerald-400 font-bold" : "text-emerald-600 font-semibold"}>Correct:</strong> Hypothyroidism</div>
-                <div><strong className={theme === "dark" ? "text-rose-400 font-bold" : "text-rose-600 font-semibold"}>Incorrect:</strong> Thyroid surgery</div>
+                <div className="flex items-center justify-center gap-1.5 mt-auto pt-3">
+                  {QUICK_TIPS.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setTipIndex(idx)}
+                      aria-label={`Show tip ${idx + 1} of ${QUICK_TIPS.length}`}
+                      className={`h-1 rounded-full transition-all duration-200 cursor-pointer ${idx === tipIndex ? "w-4" : "w-1"} ${
+                        idx === tipIndex
+                          ? theme === "dark"
+                            ? "bg-[#FACC15]/80"
+                            : "bg-[#B45309]"
+                          : theme === "dark"
+                          ? "bg-white/10 hover:bg-white/20"
+                          : "bg-stone-250 hover:bg-stone-300"
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-
-            {/* CARD 4 */}
-            <div
-              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
-            >
-              <span className={`block font-mono text-[9px] mb-0.5 ${
-                theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
-              }`}>0x04</span>
-              <h4 className={`uppercase font-bold text-[13px] tracking-wide mb-0.5 font-sans ${
-                theme === "dark" ? "text-white" : "text-stone-900"
-              }`}>Output verification</h4>
-              <p className={`text-[12px] leading-snug font-sans ${
-                theme === "dark" ? "text-white/50" : "text-stone-700 font-semibold"
-              }`}>
-                After lookup, verify each mapped question against actual payment journey questions to ensure accuracy.
-              </p>
-            </div>
-
-            {/* CARD 5 */}
-            <div
-              className="flex flex-col justify-center py-1.5 sm:py-2 lg:py-2 xl:py-2.5 px-4 lg:px-5 text-left overflow-hidden"
-            >
-              <span className={`block font-mono text-[9px] mb-0.5 ${
-                theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
-              }`}>0x05</span>
-              <h4 className={`uppercase font-bold text-[13px] tracking-wide mb-0.5 font-sans ${
-                theme === "dark" ? "text-white" : "text-stone-900"
-              }`}>Flag mismatch</h4>
-              <p className={`text-[12px] leading-snug font-sans ${
-                theme === "dark" ? "text-white/50" : "text-stone-700 font-semibold"
-              }`}>
-                If you find an incorrect mapped question or error, use the <strong className={theme === "dark" ? "text-white font-bold" : "text-stone-900 font-bold"}>Flag</strong> option to report it immediately.
-              </p>
-            </div>
-
           </div>
         </div>
-
-      </div>
     </div>
+    </ScaleToFit>
+    {openStat && (
+      <AnnouncementStatModal theme={theme} title={openStat.title} announcements={openStat.list} onClose={() => setOpenStat(null)} />
+    )}
+    </>
   );
 }

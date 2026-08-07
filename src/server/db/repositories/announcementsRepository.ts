@@ -23,6 +23,13 @@ export interface AnnouncementListOptions {
    * given alone. */
   dateFrom?: string;
   dateTo?: string;
+  /** Inclusive "YYYY-MM-DD" range filter over effectiveDate — separate from
+   * dateFrom/dateTo above (those filter announcementDate, the posted date).
+   * Used by the Workspace's "Open Today's Announcements" CTA to jump
+   * straight to whatever goes live on a specific day, regardless of when it
+   * was posted. */
+  effectiveDateFrom?: string;
+  effectiveDateTo?: string;
 }
 
 const SORTABLE_COLUMNS = {
@@ -110,6 +117,8 @@ export class AnnouncementsRepository {
     }
     if (options.dateFrom) conditions.push(gte(announcements.announcementDate, options.dateFrom));
     if (options.dateTo) conditions.push(lte(announcements.announcementDate, options.dateTo));
+    if (options.effectiveDateFrom) conditions.push(gte(announcements.effectiveDate, options.effectiveDateFrom));
+    if (options.effectiveDateTo) conditions.push(lte(announcements.effectiveDate, options.effectiveDateTo));
     return conditions;
   }
 
@@ -143,7 +152,7 @@ export class AnnouncementsRepository {
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * kept for parity with the other repositories' export path, even though
    * this table is already retention-capped at 100 rows/type. */
-  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir" | "dateFrom" | "dateTo"> = {}): Promise<AnnouncementRow[]> {
+  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir" | "dateFrom" | "dateTo" | "effectiveDateFrom" | "effectiveDateTo"> = {}): Promise<AnnouncementRow[]> {
     const conditions = this.buildListConditions(options);
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? announcements.createdAt;

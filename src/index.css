@@ -305,6 +305,20 @@
 
   --teal: #2DD4BF;
 
+  /* --action-navy override — the light theme's #1f2d3d (declared
+     theme-independent in :root) reads as solid and prominent against a
+     white page, but against this theme's near-black backgrounds
+     (--bg: #041B2E and darker sidebar/header tones) that same dark navy has
+     almost no luminance contrast — the CTA visually "loses significance"
+     (reported against Coverage Projection Studio's Generate Illustration
+     button). Lightened specifically for dark theme so the fill is clearly
+     raised off the page while staying in the same navy family (not the
+     bright cyan --accent, which is reserved for links/active-state icons,
+     not button fills). --tab-active-bg intentionally NOT overridden here —
+     nobody has reported the active tab fill reading as muted. */
+  --action-navy: #355F87;
+  --action-navy-hover: #294A69;
+
   /* Mapping / AI result card panels */
   --panel-bg: #0E2236;
   --panel-bg-strong: #1E4D7E;

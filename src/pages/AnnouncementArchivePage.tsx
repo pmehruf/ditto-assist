@@ -19,6 +19,12 @@ const PAGE_SIZE = 15;
 
 interface AnnouncementArchivePageProps {
   theme: "light" | "dark";
+  /** "YYYY-MM-DD" — when set (e.g. via the Workspace's "Open Today's
+   * Announcements" CTA), the archive opens pre-filtered to announcements
+   * whose *effective* date matches, instead of the normal announcement-date
+   * browsing view. Shown as its own clearable chip, distinct from the
+   * Announcement Date range filter below. */
+  initialEffectiveDate?: string;
 }
 
 // Same raw-row -> client-shape mapping every other announcements fetch in
@@ -55,7 +61,7 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
  * when they need something older. Search is a plain server-side text filter
  * (no in-page find/highlight overlay — that's the browser's own Ctrl+F job).
  */
-export function AnnouncementArchivePage({ theme }: AnnouncementArchivePageProps) {
+export function AnnouncementArchivePage({ theme, initialEffectiveDate }: AnnouncementArchivePageProps) {
   const dark = theme === "dark";
 
   const [entries, setEntries] = useState<QAAnnouncement[]>([]);
@@ -69,12 +75,23 @@ export function AnnouncementArchivePage({ theme }: AnnouncementArchivePageProps)
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [openItem, setOpenItem] = useState<QAAnnouncement | null>(null);
+  // Separate from the Announcement Date range above — filters on
+  // *effective* date instead of posted date, and only ever gets set via the
+  // Workspace's "Open Today's Announcements" CTA (see initialEffectiveDate).
+  const [effectiveDateFilter, setEffectiveDateFilter] = useState(initialEffectiveDate || "");
 
-  const hasFilters = Boolean(searchInput.trim() || dateFrom || dateTo);
+  // If the CTA is clicked again with a different date while this page is
+  // already mounted, pick up the new value instead of staying stuck on the
+  // first one.
+  useEffect(() => {
+    if (initialEffectiveDate) setEffectiveDateFilter(initialEffectiveDate);
+  }, [initialEffectiveDate]);
+
+  const hasFilters = Boolean(searchInput.trim() || dateFrom || dateTo || effectiveDateFilter);
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, dateFrom, dateTo]);
+  }, [debouncedSearch, dateFrom, dateTo, effectiveDateFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +107,10 @@ export function AnnouncementArchivePage({ theme }: AnnouncementArchivePageProps)
     if (trimmed) params.set("search", trimmed);
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
+    if (effectiveDateFilter) {
+      params.set("effectiveDateFrom", effectiveDateFilter);
+      params.set("effectiveDateTo", effectiveDateFilter);
+    }
 
     fetch(`/api/announcements?${params.toString()}`)
       .then((res) => res.json())
@@ -110,7 +131,7 @@ export function AnnouncementArchivePage({ theme }: AnnouncementArchivePageProps)
     return () => {
       cancelled = true;
     };
-  }, [page, debouncedSearch, dateFrom, dateTo]);
+  }, [page, debouncedSearch, dateFrom, dateTo, effectiveDateFilter]);
 
   const cardClass = `rounded-2xl border ${
     dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)]"
@@ -213,6 +234,7 @@ export function AnnouncementArchivePage({ theme }: AnnouncementArchivePageProps)
                 setSearchInput("");
                 setDateFrom("");
                 setDateTo("");
+                setEffectiveDateFilter("");
               }}
               cornerBg={dark ? "#0e2236" : "#ffffff"}
               className={`px-3 py-1.5 text-[10.5px] font-bold flex items-center gap-1.5 shrink-0 ${dark ? "text-stone-300" : "text-stone-600"}`}
@@ -222,6 +244,30 @@ export function AnnouncementArchivePage({ theme }: AnnouncementArchivePageProps)
             </ClippedButton>
           )}
         </div>
+
+        {/* Effective-date filter chip — only ever appears via the
+            Workspace's "Open Today's Announcements" CTA; kept visually
+            separate from the Announcement Date range above since it filters
+            a different field. */}
+        {effectiveDateFilter && (
+          <div className="flex items-center gap-2 mt-3">
+            <span
+              className={`inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-[10.5px] font-bold border ${
+                dark ? "bg-cyan-400/10 border-cyan-400/30 text-cyan-300" : "bg-[#0754b7]/10 border-[#0754b7]/30 text-[#0754b7]"
+              }`}
+            >
+              Effective date: {isoDateToDMY(effectiveDateFilter)}
+              <button
+                type="button"
+                onClick={() => setEffectiveDateFilter("")}
+                className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black/10 cursor-pointer"
+                title="Clear effective-date filter"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Table */}

@@ -41,7 +41,10 @@ import {
   Stethoscope,
   Flame,
   ShieldAlert,
-  Newspaper
+  ShieldCheck,
+  Newspaper,
+  Search,
+  TrendingUp
 } from "lucide-react";
 
 import {
@@ -210,6 +213,17 @@ export default function App() {
   // list on login, and every create/edit/delete round-trips through the
   // API (see QAAnnouncementForm.tsx and AnnouncementLogPage.tsx).
   const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>([]);
+
+  // Set by the Workspace's "Open Today's Announcements" CTA just before it
+  // switches to the announcement_archive tab, so that page opens already
+  // filtered to whatever's effective on that date instead of the normal
+  // browse-everything view. Empty string = no pending filter (normal open
+  // via the sidebar/nav behaves exactly as before).
+  const [announcementEffectiveDateFilter, setAnnouncementEffectiveDateFilter] = useState<string>("");
+  const openAnnouncementsForDate = (date: string) => {
+    setAnnouncementEffectiveDateFilter(date);
+    setActiveTab("announcement_archive");
+  };
 
   // Developer-hidden pages (feature ids). Fetched for every signed-in user
   // because the nav needs it; only the Developer can change it. See hasAccess()
@@ -2064,10 +2078,19 @@ export default function App() {
 
   // Render Login state if not authenticated
   if (!currentUser) {
+    // Two-column layout: CSS Grid (not a fixed w-3/5 + flex-1 split) so both
+    // columns scale proportionally with the viewport instead of freezing at
+    // a fixed fraction. The hero column's share of the grid widens at
+    // successive breakpoints (60/40 on laptops → ~62/38 at 2xl → ~67/33
+    // past ~1800px) so large monitors get more hero real estate instead of
+    // dumping the surplus into blank space — see the matching
+    // clamp()-based inner max-widths below, which is what actually lets the
+    // hero content use that extra column width rather than staying capped
+    // at its old fixed-px size.
     return (
-      <div className={`h-screen max-h-screen flex flex-col md:flex-row font-sans relative overflow-hidden w-full transition-all duration-500 ${
-        isDark 
-          ? "bg-[#001322] text-[#F5F7FA]" 
+      <div className={`h-screen max-h-screen flex flex-col md:grid md:grid-cols-[3fr_2fr] 2xl:grid-cols-[8fr_5fr] min-[1800px]:grid-cols-[2fr_1fr] font-sans relative overflow-hidden w-full transition-all duration-500 ${
+        isDark
+          ? "bg-[#001322] text-[#F5F7FA]"
           : "bg-[#F1F6FB] text-stone-900"
       }`}>
         {/* Modern, Simple, and Futuristic Ambient Background */}
@@ -2088,8 +2111,11 @@ export default function App() {
         {/* Optimized grid / texture overlay based on theme to prevent moire and maintain premium feel */}
         <GridTexture theme={theme} />
 
-        {/* LEFT SIDE: Neural Policy Network Graphic & Atmosphere */}
-        <div className="hidden md:flex md:w-3/5 relative overflow-hidden bg-transparent p-8 lg:p-12 flex-col justify-between transition-colors duration-500">
+        {/* LEFT SIDE: Neural Policy Network Graphic & Atmosphere — width now
+            comes purely from the parent grid column (see grid-cols above),
+            not a hardcoded w-3/5; padding uses a vw-scaled clamp() instead
+            of a two-step p-8/lg:p-12 breakpoint jump. */}
+        <div className="hidden md:flex relative overflow-hidden bg-transparent p-[clamp(24px,3vw,56px)] flex-col justify-between transition-colors duration-500">
           {/* Subtle animated mesh background */}
           <div className="absolute inset-0 z-0 pointer-events-none opacity-85 animate-fade-in">
             <div className={`absolute top-[10%] left-[10%] w-[350px] h-[350px] rounded-full blur-[120px] animate-pulse ${isDark ? "bg-blue-500/6" : "bg-blue-500/10"}`} style={{ animationDuration: "8s" }} />
@@ -2102,97 +2128,164 @@ export default function App() {
               <Sparkles className="w-5 h-5 text-white animate-spin" style={{ animationDuration: "15s" }} />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <DittoWordmark className="text-lg" isWhite={isDark} />
               </div>
             </div>
           </div>
 
-          {/* Core Info & Graphic Mesh */}
-          <div className="z-10 my-auto max-w-[1000px] space-y-8 relative">
-            <div className="space-y-4">
+          {/* Core Info & Graphic Mesh — max-width and vertical rhythm are
+              now clamp()-based (viewport-scaled) instead of a fixed
+              max-w-[1000px]/space-y-8, so this block actually grows to use
+              the wider hero column on large monitors instead of freezing at
+              its old laptop-sized cap and leaving the rest of the column
+              empty. */}
+          <div className="z-10 my-auto max-w-[clamp(560px,52vw,1400px)] space-y-[clamp(20px,3vh,40px)] relative">
+            <div className="space-y-[clamp(12px,1.8vh,24px)]">
               <div className="flex items-center gap-2 select-none">
                 <div className="w-8 h-0.5" style={{ backgroundColor: "var(--accent)" }} />
                 <span className="font-black uppercase tracking-widest" style={{ color: "var(--accent)", fontSize: "15px" }}>
-                  DECLARATION ENGINE ACTIVE
+                  AI-POWERED ADVISORY SUITE
                 </span>
               </div>
-              <h1 
+              <h1
                 className="font-black tracking-wider leading-[1.0] uppercase select-none font-sans flex flex-col gap-1 text-left"
               >
-                <span 
+                <span
                   className="bg-clip-text text-transparent bg-gradient-to-r"
                   style={{
-                    width: "700px",
+                    width: "clamp(480px, 46vw, 1200px)",
                     maxWidth: "100%",
-                    fontSize: "60px",
+                    fontSize: "76px",
                     display: "block",
                     backgroundImage: "var(--gradient-heading)"
                   }}
                 >
-                  PAYMENT GUIDANCE
+                  DITTO ASSIST
                 </span>
-                <span 
+                <span
                   className="bg-clip-text text-transparent bg-gradient-to-r"
                   style={{
-                    width: "900px",
+                    width: "clamp(480px, 46vw, 1200px)",
                     maxWidth: "100%",
-                    fontSize: "60px",
+                    fontSize: "38px",
                     display: "block",
                     backgroundImage: "var(--gradient-accent)"
                   }}
                 >
-                  DELIVERED INTELLIGENTLY
+                  THE INTELLIGENT ADVISOR HUB.
                 </span>
               </h1>
-              <p 
+              <p
                 className={`text-sm font-medium leading-relaxed ${isDark ? "text-slate-300" : "text-stone-600"}`}
                 style={{
-                  width: "700px",
+                  width: "clamp(420px, 40vw, 900px)",
                   maxWidth: "100%"
                 }}
               >
-                Enter your customer's PEDs and instantly find where they should be declared, whether they are covered under the plan's specific illness list, and the correct declaration approach when multiple questions seem applicable.
+                An intelligent advisor hub that brings together AI assistance, operational tools, policy references, coverage projections, QA insights, announcements, and team resources—helping every advisor work faster and with greater confidence.
               </p>
             </div>
 
-            {/* Simulated Live Analytics Grid */}
-            <div className={`grid grid-cols-4 gap-2 lg:gap-4 pt-4 border-t ${isDark ? "border-slate-800" : "border-stone-300"}`}>
-              <div className="space-y-1">
-                <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Accuracy</span>
-                <span className="text-base lg:text-xl font-black font-mono flex items-center gap-1" style={{ color: "var(--accent)" }}>
-                  99.94%
-                </span>
-              </div>
-              <div className="space-y-1">
-                <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Avg Lookup</span>
-                <span className="text-base lg:text-xl font-black font-mono" style={{ color: "var(--accent)" }}>
-                  &lt;350ms
-                </span>
-              </div>
-              <div className="space-y-1">
-                <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Plans Covered</span>
-                <span className="text-base lg:text-xl font-black font-mono" style={{ color: "var(--accent)" }}>
-                  4 Active
-                </span>
-              </div>
-              <div className="space-y-1">
-                <span className={`text-[9px] lg:text-xs font-black uppercase tracking-wider block font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>Conditions</span>
-                <span className="text-base lg:text-xl font-black font-mono" style={{ color: "var(--accent)" }}>
-                  900+
-                </span>
-              </div>
+            {/* Platform stats — real figures (PED Repository: 1,153 PEDs
+                synced, 6 plans). Health Plans / AI / Medical Conditions icons
+                are the user-supplied glow-art PNGs, background-removed and
+                recolored (assets/.aistudio/icon-*-clean.png — HSV
+                saturation/value thresholding to isolate each icon's line art
+                from its glow, flattened to a flat color, verified at the
+                actual ~40px render size on both themes before wiring in).
+                Medical Conditions specifically failed this test repeatedly
+                while extracted as a hollow outline (spikes/dots or
+                glow-blurred strokes collapsed into a blob at 40px) — the fix
+                was extracting the germ's solid filled silhouette (body +
+                spikes as one shape, not a line) with the glow discarded
+                entirely; that reads clearly at true size. PED Lookups /
+                Month is a composed lucide icon (Search + TrendingUp badge)
+                — its source PNG had no recoverable line detail at all (a
+                uniform soft gradient, no crisp edge anywhere). Value text is
+                deliberately left uncolored (plain ink) per instruction —
+                only the icon carries each stat's color. */}
+            {/* gap/pt use clamp() so the metrics row breathes more on wide
+                monitors instead of staying pinned to a fixed gap-8 cap. */}
+            <div className={`grid grid-cols-2 sm:grid-cols-4 gap-[clamp(16px,2vw,32px)] pt-[clamp(12px,2vh,24px)] border-t ${isDark ? "border-slate-800" : "border-stone-300"}`}>
+              {[
+                {
+                  icon: (
+                    <span className="relative flex items-center justify-center w-full h-full">
+                      <TrendingUp className="w-6 h-6 lg:w-7 lg:h-7" />
+                      <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center border" style={{ backgroundColor: "#0EA5E9", borderColor: isDark ? "#001322" : "#F1F6FB" }}>
+                        <Search className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                      </span>
+                    </span>
+                  ),
+                  value: "2,800+",
+                  label: "PED Lookups / Month",
+                  hex: "#0EA5E9",
+                },
+                {
+                  icon: <img src="/assets/.aistudio/icon-medical-clean.png" alt="" className="w-9 h-9 lg:w-10 lg:h-10 object-contain" />,
+                  value: "1100+",
+                  label: "Medical Conditions on Sync",
+                  hex: "#DC2626",
+                },
+                {
+                  icon: <img src="/assets/.aistudio/icon-health-plan-clean.png" alt="" className="w-9 h-9 lg:w-10 lg:h-10 object-contain" />,
+                  value: "6",
+                  label: "Active Health Plans",
+                  hex: "#22C55E",
+                },
+                {
+                  icon: <img src="/assets/.aistudio/icon-ai-clean.png" alt="" className="w-9 h-9 lg:w-10 lg:h-10 object-contain" />,
+                  value: "AI Powered",
+                  label: "Gemini Intelligence",
+                  hex: "#22D3EE",
+                },
+              ].map((stat) => (
+                <div key={stat.label} className="flex items-center gap-3.5">
+                  <div
+                    className="w-14 h-14 rounded-2xl border flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${stat.hex}1A`, borderColor: `${stat.hex}4D`, color: stat.hex }}
+                  >
+                    {stat.icon}
+                  </div>
+                  <div className="min-w-0">
+                    {/* Primary value: darker slate (#1E293B) in light theme for
+                        stronger contrast/hierarchy vs. the label below; dark
+                        theme keeps a bright white since #1E293B would be
+                        nearly invisible on the near-black card background. */}
+                    <div
+                      className="text-xl lg:text-2xl font-black font-mono leading-tight"
+                      style={{ color: isDark ? "#F8FAFC" : "#1E293B" }}
+                    >
+                      {stat.value}
+                    </div>
+                    {/* Secondary label: muted slate (#64748B) at a lighter
+                        weight than before so it recedes behind the value. */}
+                    <div
+                      className="text-[10px] font-semibold tracking-wide leading-tight"
+                      style={{ color: "#64748B" }}
+                    >
+                      {stat.label}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
           {/* Footer of left side */}
           <div className={`z-10 flex items-center justify-between font-bold font-mono uppercase tracking-wider ${isDark ? "text-slate-500" : "text-stone-550"}`} style={{ fontSize: "10px" }}>
-            <span>YOUR PAYMENT GUIDE🤖</span>
+            <span className="flex items-center gap-1.5">
+              ADVISOR PRODUCTIVITY PLATFORM
+              <ShieldCheck className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
+            </span>
           </div>
         </div>
 
-        {/* RIGHT SIDE: Authentication Container (Glass Panel) */}
-        <div className="flex-1 flex flex-col justify-between p-6 md:p-8 lg:p-10 relative bg-transparent transition-colors duration-500 overflow-y-auto">
+        {/* RIGHT SIDE: Authentication Container (Glass Panel) — width comes
+            from the parent grid column; padding is now a vw-scaled clamp()
+            instead of a fixed p-6/md:p-8/lg:p-10 step. */}
+        <div className="flex flex-col justify-between p-[clamp(24px,3vw,48px)] relative bg-transparent transition-colors duration-500 overflow-y-auto">
           {/* Subtle responsive background blobs for mobile */}
           <div className="md:hidden absolute inset-0 z-0 pointer-events-none opacity-25">
             <div className={`absolute top-1/4 left-1/4 w-80 h-80 rounded-full blur-[100px] ${isDark ? "bg-blue-500/5" : "bg-blue-500/10"}`} />
@@ -2215,7 +2308,12 @@ export default function App() {
             </button>
           </div>
 
-          <div className="my-auto w-full max-w-md mx-auto z-10 py-4">
+          {/* max-width is now a clamp() instead of a flat max-w-md, so the
+              card grows slightly on large/ultra-wide monitors (per the
+              "slightly increase login card width on large screens"
+              requirement) rather than staying pinned to its laptop size
+              while empty space grows around it. */}
+          <div className="my-auto w-full max-w-[clamp(28rem,34vw,38rem)] mx-auto z-10 py-[clamp(12px,2vh,24px)]">
             <AnimatePresence mode="wait">
               {isFirstTimeSetup ? (
                 <motion.div
@@ -2361,15 +2459,15 @@ export default function App() {
                     <div className="flex items-center gap-2 mb-2 select-none">
                       <div className="w-6 h-0.5" style={{ backgroundColor: "var(--accent)" }} />
                       <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: "var(--accent)" }}>
-                        PORTAL ACCESS
+                        SECURE ACCESS
                       </span>
                     </div>
 
                     <h2 className={`text-2xl font-black uppercase tracking-wider ${isDark ? "text-white" : "text-stone-900"}`}>
-                      DITTO ADVISOR PORTAL
+                      Ready When You Are
                     </h2>
                     <p className={`text-xs leading-relaxed font-semibold mt-2 ${isDark ? "text-[#9CA3AF]" : "text-stone-650"}`}>
-                      Your @joinditto.in ID gets you in. Everything else is ready for your next PED Mapping session.
+                      Sign in with your @joinditto.in account to access your advisor workspace, productivity tools, and operational resources.
                     </p>
                   </div>
 
@@ -3437,7 +3535,7 @@ export default function App() {
                   >
                     <Home className="title-badge-icon w-4 h-4 shrink-0 text-cyan-400" style={{ color: "#fafafa", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }} />
                     <span style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }} className="title-badge-text font-sans font-black uppercase tracking-wider">
-                      Advisor Home
+                      Home
                     </span>
                   </button>
                 );
@@ -3899,10 +3997,12 @@ export default function App() {
       </AnimatePresence>
 
       {/* SCROLLABLE BODY AREA */}
-      <div 
-        id="main-scrollable-body" 
+      <div
+        id="main-scrollable-body"
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
-          activeTab === "lookup" || activeTab === "qa_announcement_log"
+          activeTab === "lookup" && showIntro
+            ? "overflow-hidden min-h-0"
+            : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log"
             ? "lg:overflow-hidden overflow-y-auto"
             : "overflow-y-auto"
         }`}
@@ -3914,7 +4014,7 @@ export default function App() {
           style={{ color: "var(--text-primary)", marginTop: showIntro && activeTab === "lookup" ? "2px" : "6px", marginBottom: showIntro && activeTab === "lookup" ? "2px" : "12px" }}
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
-              ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-center"
+              ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-start min-h-0"
               : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log"
               ? "lg:p-5 pt-1.5 sm:pt-2 lg:flex lg:flex-col lg:min-h-0"
               : "lg:p-5 pt-1.5 sm:pt-2"
@@ -3923,7 +4023,7 @@ export default function App() {
           {/* Expanded premium layout container, reducing margin distance to human-optimal minimums */}
           <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto ${
             showIntro && activeTab === "lookup"
-              ? "flex-grow flex flex-col"
+              ? "flex-grow flex flex-col min-h-0"
               : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log"
               ? "lg:flex-grow lg:flex lg:flex-col lg:min-h-0"
               : ""
@@ -3938,11 +4038,20 @@ export default function App() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
               style={{ width: "100%", maxWidth: "100%", marginTop: "2px", marginBottom: "2px" }}
-              className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-center"
+              className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-start min-h-0"
             >
               <ErrorBoundary theme={theme} label="Declaration Assistant">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-                  <LookupIntroPage theme={theme} setShowIntro={setShowIntro} />
+                  <LookupIntroPage
+                    theme={theme}
+                    currentUser={currentUser}
+                    setShowIntro={setShowIntro}
+                    setActiveTab={setActiveTab}
+                    activeAnnouncements={activeAnnouncements}
+                    allAnnouncements={qaAnnouncements}
+                    onOpenAnnouncementsForDate={openAnnouncementsForDate}
+                    hasAccess={hasAccess}
+                  />
                 </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4169,7 +4278,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Announcements Archive">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <AnnouncementArchivePage theme={theme} />
+              <AnnouncementArchivePage theme={theme} initialEffectiveDate={announcementEffectiveDateFilter} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
