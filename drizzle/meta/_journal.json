@@ -169,6 +169,13 @@
       "when": 1785600000000,
       "tag": "0023_announcement_acks",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0024_add_advisor_role",
+      "breakpoints": true
     }
   ]
 }

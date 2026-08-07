@@ -31,7 +31,6 @@ import {
   getAdvisorsBatchMetrics,
   getAdvisorFeedback,
   getAdvisorReviews,
-  isInScoreDashboardAllowlist,
   parseDateFilters,
   type Advisor,
   type DateFilters,
@@ -144,7 +143,12 @@ export async function listAdvisorsForCaller(
     else if (role.isGuide) pool = await getAdvisorsForGuide(role.callerName);
     else pool = await getAdvisorsForMentor(role.callerName);
 
-    pool = pool.filter((a) => isInScoreDashboardAllowlist(a.tactId));
+    // No further allowlist filtering (2026-08-07) — eligibility is now
+    // entirely "Currently Employed" on master_advisors, applied once inside
+    // getAllAdvisors/getAdvisorsForGuide/getAdvisorsForMentor. See
+    // EMPLOYED_STATUS_VALUES's comment in qaDataEngine.ts for why the old
+    // hardcoded TACT ID allowlist was removed from this and the two call
+    // sites below.
     return { advisors: pool, isGuide: role.isGuide, isMentor: role.isMentor };
   } catch (err: any) {
     return { error: "SERVER_ERROR", message: err.message };
@@ -209,7 +213,7 @@ export async function getAdvisorsDashboardListFor(
     if (role.isAdmin) pool = await getAllAdvisors();
     else if (role.isGuide) pool = await getAdvisorsForGuide(role.callerName);
     else pool = await getAdvisorsForMentor(role.callerName);
-    pool = pool.filter((a) => isInScoreDashboardAllowlist(a.tactId));
+    // No allowlist filter — see the comment on listAdvisorsForCaller above.
 
     const tactIds = pool.map((a) => String(a.tactId).trim());
     const parsed = parseDateFilters(dateFilters);
@@ -244,6 +248,52 @@ export async function getAdvisorsDashboardListFor(
     });
 
     return { advisors, isAdmin: role.isAdmin, isGuide: role.isGuide, isMentor: role.isMentor, callerName: role.callerName };
+  } catch (err: any) {
+    return { error: "SERVER_ERROR", message: err.message };
+  }
+}
+
+/**
+ * Aggregate-only, ANY-authenticated-caller company-wide QA summary —
+ * deliberately no role check. Added so the Home page's QA Performance Peek
+ * widget can show a real number to a user with no assigned QA Dashboard
+ * role (not Admin/Guide/Mentor, and not an advisor with their own QA
+ * record) instead of an empty "not tracked" state, while the actual QA
+ * Dashboard page stays exactly as restricted as before. This intentionally
+ * does NOT reuse getAdvisorsDashboardListFor's return shape — it only ever
+ * returns 4 aggregate numbers, never the per-advisor roster/names/
+ * individual scores that a real QA Dashboard role is needed to see.
+ */
+export async function getCompanyWideQaAggregateFor(
+  dateFilters: DateFilters
+): Promise<{ lead: number | null; payments: number | null; leadCount: number; paymentsCount: number } | ErrorResult> {
+  try {
+    const pool = await getAllAdvisors();
+    // No allowlist filter — see the comment on listAdvisorsForCaller above.
+
+    const tactIds = pool.map((a) => String(a.tactId).trim());
+    const parsed = parseDateFilters(dateFilters);
+    const metricsByTact = await getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate);
+
+    const leadVals: number[] = [];
+    const paymentsVals: number[] = [];
+    let leadCount = 0;
+    let paymentsCount = 0;
+    for (const tact of tactIds) {
+      const m = metricsByTact[tact];
+      if (!m) continue;
+      if (m.leadScoreAvg !== null) {
+        leadVals.push(m.leadScoreAvg);
+        leadCount += m.leadScoreInstances || 0;
+      }
+      if (m.paymentsAvg !== null) {
+        paymentsVals.push(m.paymentsAvg);
+        paymentsCount += m.paymentsInstances || 0;
+      }
+    }
+    const avg = (vals: number[]) => (vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null);
+
+    return { lead: avg(leadVals), payments: avg(paymentsVals), leadCount, paymentsCount };
   } catch (err: any) {
     return { error: "SERVER_ERROR", message: err.message };
   }

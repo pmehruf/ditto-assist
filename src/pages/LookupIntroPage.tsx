@@ -225,7 +225,7 @@ export function LookupIntroPage({
     {
       id: "coverage_projection",
       featureId: "coverage_projection",
-      title: "Coverage Projection Studio",
+      title: "Coverage Projection",
       tag: "Base, bonus & restoration cover",
       icon: <FileSpreadsheet className="w-[18px] h-[18px]" />,
       hex: "#22C55E",
@@ -728,7 +728,7 @@ export function LookupIntroPage({
                       >
                         {QUICK_TIPS[tipIndex].icon}
                       </div>
-                      <p className={`text-[12px] leading-relaxed font-medium text-pretty ${theme === "dark" ? "text-white/65" : "text-stone-600"}`}>
+                      <p className={`text-[13.5px] leading-relaxed font-medium text-pretty ${theme === "dark" ? "text-white/65" : "text-stone-600"}`}>
                         {QUICK_TIPS[tipIndex].text}
                       </p>
                     </motion.div>

@@ -20,7 +20,7 @@ interface ProfileAccessPageProps {
 }
 
 /**
- * "User Directory" tab content — thin wrapper page. The
+ * "User Management" tab content — thin wrapper page. The
  * `activeTab === "profile_access"` condition and wrapping
  * `<motion.div key="profile_access">` deliberately stay in App.tsx
  * (see ResourcesPage.tsx for why).
@@ -45,7 +45,7 @@ export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTie
             theme === "dark" ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
-            <span>User Directory & Management</span>
+            <span>User Management</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {activeSubTab === "directory"
@@ -57,7 +57,7 @@ export function ProfileAccessPage({ theme, usersList, setUsersList, effectiveTie
 
       <nav className={`flex gap-1 border-b-2 ${dark ? "border-white/10" : "border-stone-200"}`}>
         {([
-          { id: "directory", label: "User Directory" },
+          { id: "directory", label: "Directory" },
           { id: "qa_access", label: "QA Dashboard Access" },
         ] as const).map((tab) => (
           <button

@@ -57,6 +57,11 @@ export interface Advisor {
   name: string;
   guide: string | null;
   mentor: string | null;
+  /** master_advisors column F ("Health"/"Term"/"Both", etc.) — see
+   * skillDomainColIndex's comment. Not a filter criterion (that's status
+   * only, see EMPLOYED_STATUS_VALUES) — just attached to the advisor
+   * record for the User Directory / a future skill-domain-based feature. */
+  skillDomain: string | null;
 }
 
 export interface DateFilters {
@@ -136,7 +141,41 @@ function statusColIndex(headers: string[]): number {
   return headers.findIndex((h) => STATUS_COL_NAMES.includes(String(h).trim().toLowerCase()));
 }
 
-const INACTIVE_STATUS_KEYWORDS = ["resign", "terminat", "moved to other", "early"];
+// Positive match, not a blacklist — mirrors the live source-of-truth query
+// the QA team itself uses against this sheet:
+//   =QUERY(FILTER(master_advisors!A1:U, master_advisors!M:M="Currently Employed"), ...)
+// (2026-08-07) Replaces a previous blacklist-of-keywords approach, and — more
+// importantly — replaces a hardcoded, manually-maintained TACT ID allowlist
+// (qaDashboardAdvisorAllowlist.ts) that the roster views used to additionally
+// filter through on top of this. That list drifted out of sync with reality
+// (118 shown vs. 132 actually "Currently Employed" advisors) because nothing
+// kept it updated as people joined/left. This status check is now the ONLY
+// eligibility filter for the roster views, so it stays correct automatically
+// as the sheet changes — see getAllAdvisors below and qaDashboardService.ts's
+// getAdvisorsDashboardListFor/getCompanyWideQaAggregateFor, which no longer
+// filter through that allowlist.
+const EMPLOYED_STATUS_VALUES = ["currently employed"];
+
+// Column F on master_advisors — the product(s) an advisor is assigned to
+// (e.g. "Health", "Term", "Both"). Business significance: attached to each
+// advisor as their "skill domain" and surfaced in the app's User Directory,
+// for a future feature the skill-domain data will drive (2026-08-07). Tried
+// by header name first (resilient to sheet edits); falls back to the raw
+// column F position (index 5) if none of these header names are present,
+// since that's the exact column the QA team pointed at.
+const SKILL_DOMAIN_COL_NAMES = ["product", "product assigned", "assigned product", "skill domain", "line of business", "lob"];
+const SKILL_DOMAIN_FALLBACK_COL_INDEX = 5; // column F, 0-indexed
+function skillDomainColIndex(headers: string[]): number {
+  const byName = headers.findIndex((h) => SKILL_DOMAIN_COL_NAMES.includes(String(h).trim().toLowerCase()));
+  if (byName !== -1) return byName;
+  return headers.length > SKILL_DOMAIN_FALLBACK_COL_INDEX ? SKILL_DOMAIN_FALLBACK_COL_INDEX : -1;
+}
+function readSkillDomain(headers: string[], row: unknown[]): string | null {
+  const idx = skillDomainColIndex(headers);
+  if (idx === -1) return null;
+  const v = row[idx];
+  return v != null && String(v).trim() ? String(v).trim() : null;
+}
 
 // ==================== IDENTITY ====================
 
@@ -156,6 +195,7 @@ export async function getAdvisorByEmail(email: string): Promise<Advisor | null> 
         name: String(row[nameCol]),
         guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
         mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
+        skillDomain: readSkillDomain(headers, row),
       };
     }
   }
@@ -177,6 +217,7 @@ export async function findAdvisorByTactId(tactId: string): Promise<Advisor | nul
         name: String(row[nameCol]),
         guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
         mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
+        skillDomain: readSkillDomain(headers, row),
       };
     }
   }
@@ -191,18 +232,26 @@ export async function getAllAdvisors(): Promise<Advisor[]> {
   const mentorCol = mentorColIndex(headers);
   const statusCol = statusColIndex(headers);
 
+  if (statusCol === -1) {
+    console.warn(
+      `[QA Dashboard] Could not find an employment-status column on master_advisors (looked for: ${STATUS_COL_NAMES.join(", ")}) — ` +
+        "the \"Currently Employed\" filter can't be applied, so getAllAdvisors() is returning every row with a Tact ID, active or not. Check the sheet's header row."
+    );
+  }
+
   const advisors: Advisor[] = [];
   for (const row of rows) {
     if (!row[tactCol]) continue;
     if (statusCol !== -1) {
       const s = String(row[statusCol] ?? "").trim().toLowerCase();
-      if (INACTIVE_STATUS_KEYWORDS.some((kw) => s.includes(kw))) continue;
+      if (!EMPLOYED_STATUS_VALUES.includes(s)) continue;
     }
     advisors.push({
       tactId: String(row[tactCol]),
       name: String(row[nameCol]),
       guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
       mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
+      skillDomain: readSkillDomain(headers, row),
     });
   }
   return advisors;

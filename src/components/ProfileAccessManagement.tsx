@@ -32,13 +32,18 @@ const TIERS: UserProfile["tier"][] = ["General", "Admin", "Developer"];
 // the server-side check in POST /api/users.
 const ADMIN_ADDABLE_TIERS: UserProfile["tier"][] = ["General", "Admin"];
 const STATUSES: UserProfile["status"][] = ["Active", "Disabled"];
+// Must match ADVISOR_ROLE_VALUES in server.ts exactly — the server rejects
+// anything outside this set. "" (Unassigned) isn't sent to the server as a
+// literal value; it's translated to null.
+const ADVISOR_ROLES = ["Health advisor", "Term advisor", "Both advisor", "Manager"] as const;
 
 const emptyDraft = (): UserProfile => ({
   email: "",
   name: "",
   tactId: "",
   tier: "General",
-  status: "Active"
+  status: "Active",
+  advisorRole: null,
 });
 
 /**
@@ -171,7 +176,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const res = await fetch(`/api/users/${encodeURIComponent(editingEmail)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status }),
+        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, advisorRole: draft.advisorRole || null }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
@@ -388,6 +393,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="Name" sortKey="name" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <SortableTh label="Role" sortKey="advisorRole" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Joined" sortKey="createdAt" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -405,6 +411,15 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   </td>
                   <td className={tdClass}>
                     <input className={inputClass} placeholder="e.g. TACT128" value={newDraft.tactId} onChange={e => setNewDraft(d => ({ ...d, tactId: e.target.value }))} />
+                  </td>
+                  <td className={tdClass}>
+                    <CustomSelect
+                      theme={theme}
+                      value={newDraft.advisorRole || ""}
+                      onChange={(val) => setNewDraft(d => ({ ...d, advisorRole: val || null }))}
+                      triggerClassName={selectTriggerClass}
+                      options={[{ value: "", label: "Unassigned" }, ...ADVISOR_ROLES.map(r => ({ value: r, label: r }))]}
+                    />
                   </td>
                   <td className={tdClass}>
                     <CustomSelect
@@ -442,7 +457,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
               {!loading && entries.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 7 : 6} className="py-10 text-center text-xs font-semibold text-stone-400">
+                  <td colSpan={canManage ? 8 : 7} className="py-10 text-center text-xs font-semibold text-stone-400">
                     {searchQuery ? `No directory entries match "${searchQuery}".` : "No directory entries yet."}
                   </td>
                 </tr>
@@ -473,6 +488,21 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                         <input className={inputClass} value={row.tactId} onChange={e => setDraft(d => d && { ...d, tactId: e.target.value })} />
                       ) : (
                         <span className={`font-mono text-[10.5px] ${dark ? "text-stone-300" : "text-stone-700"}`}>{user.tactId}</span>
+                      )}
+                    </td>
+                    <td className={tdClass}>
+                      {isEditing ? (
+                        <CustomSelect
+                          theme={theme}
+                          value={row.advisorRole || ""}
+                          onChange={(val) => setDraft(d => d && { ...d, advisorRole: val || null })}
+                          triggerClassName={selectTriggerClass}
+                          options={[{ value: "", label: "Unassigned" }, ...ADVISOR_ROLES.map(r => ({ value: r, label: r }))]}
+                        />
+                      ) : (
+                        <span className={`text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                          {user.advisorRole ?? "Unassigned"}
+                        </span>
                       )}
                     </td>
                     <td className={tdClass}>

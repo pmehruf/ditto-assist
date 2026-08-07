@@ -169,6 +169,25 @@ async function fetchOwnAggregate(
   };
 }
 
+/** Fallback for a caller with no QA Dashboard role AND no advisor record of
+ * their own — hits the aggregate-only /company-summary route (see its doc
+ * comment on the server) instead of leaving them with an empty widget. This
+ * never grants access to the real QA Dashboard page itself: it's a
+ * different, narrower endpoint that only ever returns 4 numbers. */
+async function fetchCompanyWideAggregate(
+  qs: string
+): Promise<{ lead: number | null; payments: number | null; leadCount: number; paymentsCount: number } | null> {
+  const res = await fetch(`/api/qa-dashboard/company-summary?${qs}`);
+  const body = await res.json();
+  if (!res.ok || body.error) return null;
+  return {
+    lead: body.lead ?? null,
+    payments: body.payments ?? null,
+    leadCount: body.leadCount ?? 0,
+    paymentsCount: body.paymentsCount ?? 0,
+  };
+}
+
 /**
  * "QA Performance Peek" — a premium, glanceable rating widget, deliberately
  * NOT a miniature QA Dashboard (no tables, no dense stats, no red). Role-
@@ -177,7 +196,13 @@ async function fetchOwnAggregate(
  * Admin sees the company-wide numbers — same summary/dashboard endpoints,
  * same FORBIDDEN-in-200-body role signal QaScoreWidget originally used,
  * just queried over the current calendar month (twice — this month and last
- * month) so a trend delta can be shown.
+ * month) so a trend delta can be shown. A 4th case: someone with NO QA
+ * Dashboard role and no advisor record of their own still sees the same
+ * company-wide number an Admin would (via the separate, aggregate-only
+ * /company-summary endpoint — see fetchCompanyWideAggregate) instead of an
+ * empty widget, even though the real QA Dashboard page stays off-limits to
+ * them; "glanceable for everyone" and "gated for the full dashboard" are
+ * deliberately different bars here.
  * "Consolidated Score" = the average of Lead QA and Payments QA — there's
  * no other composite score defined anywhere in the QA data model, and
  * averaging the two is the simplest, most explainable definition of "one
@@ -207,21 +232,45 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           // Plain Advisor — own-record endpoint.
           const ownThis = await fetchOwnAggregate(qsThis);
           if (cancelled) return;
-          if (!ownThis) {
+          if (ownThis) {
+            const ownLast = await fetchOwnAggregate(qsLast);
+            if (cancelled) return;
+            setState({
+              kind: "own",
+              scopeLabel: "Your Score",
+              consolidated: avgOf(ownThis.lead, ownThis.payments),
+              lead: ownThis.lead,
+              payments: ownThis.payments,
+              leadCount: ownThis.leadCount,
+              paymentsCount: ownThis.paymentsCount,
+              prevConsolidated: ownLast ? avgOf(ownLast.lead, ownLast.payments) : null,
+            });
+            return;
+          }
+
+          // No QA Dashboard role (not Admin/Guide/Mentor) AND no advisor
+          // record of their own — e.g. a General-tier user with no QA
+          // identity at all. Rather than an empty "not tracked" widget,
+          // show the same company-wide number an Admin sees (via the
+          // aggregate-only endpoint above); this does NOT unlock the real
+          // QA Dashboard page, which still requires an assigned role.
+          const companyThis = await fetchCompanyWideAggregate(qsThis);
+          if (cancelled) return;
+          if (!companyThis) {
             setState({ kind: "unavailable" });
             return;
           }
-          const ownLast = await fetchOwnAggregate(qsLast);
+          const companyLast = await fetchCompanyWideAggregate(qsLast);
           if (cancelled) return;
           setState({
-            kind: "own",
-            scopeLabel: "Your Score",
-            consolidated: avgOf(ownThis.lead, ownThis.payments),
-            lead: ownThis.lead,
-            payments: ownThis.payments,
-            leadCount: ownThis.leadCount,
-            paymentsCount: ownThis.paymentsCount,
-            prevConsolidated: ownLast ? avgOf(ownLast.lead, ownLast.payments) : null,
+            kind: "team",
+            scopeLabel: "Company-Wide",
+            consolidated: avgOf(companyThis.lead, companyThis.payments),
+            lead: companyThis.lead,
+            payments: companyThis.payments,
+            leadCount: companyThis.leadCount,
+            paymentsCount: companyThis.paymentsCount,
+            prevConsolidated: companyLast ? avgOf(companyLast.lead, companyLast.payments) : null,
           });
           return;
         }

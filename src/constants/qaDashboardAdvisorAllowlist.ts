@@ -4,19 +4,22 @@
  */
 
 /**
- * QA DASHBOARD — ADVISOR ALLOWLIST
+ * QA DASHBOARD — ADVISOR ALLOWLIST (DEPRECATED, no longer read anywhere)
  * ---------------------------------------------------------------
- * Ported verbatim from the standalone QA Dashboard's SCORE_DASHBOARD_TACT_IDS
- * (BackendAPI.gs). Only these TACT IDs appear in the admin/guide/mentor
- * picker and the landing-page summary table — everyone else can still see
- * their OWN dashboard (that path doesn't consult this list at all), but
- * won't show up when an Admin/Guide/Mentor is browsing the roster.
+ * 2026-08-07: removed from qaDataEngine.ts/qaDashboardService.ts. This
+ * static, manually-maintained list of TACT IDs drifted out of sync with
+ * the real roster (118 shown here vs. 132 actually "Currently Employed" in
+ * master_advisors) because nothing kept it updated as advisors joined or
+ * left. Advisor eligibility for the roster views is now derived LIVE from
+ * master_advisors column M ("Status" = "Currently Employed"), matching the
+ * QA team's own source-of-truth spreadsheet formula — see
+ * EMPLOYED_STATUS_VALUES in qaDataEngine.ts. Left in place (unused) rather
+ * than deleted, in case anything still imports it or a rollback is needed.
  *
- * Update this set (no redeploy needed for the Node app, just a restart) to
- * add or remove advisors from the roster views. Kept as a plain TypeScript
- * constant (like commonSmokeTestPeds.ts) rather than an env var, since it's
- * long, static, and versioned alongside the code that reads it — matching
- * how the original Apps Script project hardcoded it too.
+ * Original doc, for history:
+ * Ported verbatim from the standalone QA Dashboard's SCORE_DASHBOARD_TACT_IDS
+ * (BackendAPI.gs). Only these TACT IDs used to appear in the admin/guide/
+ * mentor picker and the landing-page summary table.
  */
 export const QA_SCORE_DASHBOARD_TACT_IDS = new Set<string>([
   "TACT487", "TACT493", "TACT546", "TACT548", "TACT590", "TACT609", "TACT642",

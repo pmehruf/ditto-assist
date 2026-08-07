@@ -47,6 +47,7 @@ import {
   getFeedbackRowsFor as getQaFeedbackRowsFor,
   getReviewRowsFor as getQaReviewRowsFor,
   getAdvisorsDashboardListFor as getQaAdvisorsDashboardListFor,
+  getCompanyWideQaAggregateFor as getQaCompanyWideAggregateFor,
 } from "./src/server/qaDashboard/qaDashboardService.js";
 import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDataEngine.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
@@ -1001,6 +1002,17 @@ interface DirectoryUser {
   status: "Active" | "Disabled";
 }
 
+// The only 4 values advisorRole may hold (users.advisor_role — see
+// drizzle/0024_add_advisor_role.sql). "Health advisor"/"Term advisor"/
+// "Both advisor" are seeded once from the QA sheet's Health/Term/Both
+// column by scripts/backfillAdvisorRole.ts; "Manager" has no sheet
+// equivalent and is only ever set here, by an Admin/Developer.
+const ADVISOR_ROLE_VALUES = ["Health advisor", "Term advisor", "Both advisor", "Manager"] as const;
+type AdvisorRoleValue = (typeof ADVISOR_ROLE_VALUES)[number];
+function isValidAdvisorRole(v: unknown): v is AdvisorRoleValue | null {
+  return v === null || v === undefined || v === "" || (ADVISOR_ROLE_VALUES as readonly string[]).includes(v as string);
+}
+
 /** Users not yet present in the directory default to "General" — matches the
  * client's existing fallback for a first-time Google sign-in. */
 async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<"General" | "Admin" | "Developer"> {
@@ -1022,6 +1034,13 @@ function isValidDirectoryUser(u: any): u is DirectoryUser {
 }
 
 // Admin and Developer can view the directory; anyone else is refused.
+// advisorRole (Health advisor/Term advisor/Both advisor/Manager) is a real
+// column on `users` now (see drizzle/0024_add_advisor_role.sql) — it used
+// to be live-joined from the QA Google Sheet on every request, but that
+// only worked while it was read-only; once it needed to be directly
+// editable (and "Manager" has no equivalent in the sheet at all), it had to
+// become real, persisted state. usersRepo's plain `select()` already
+// returns it on every row, so no extra wiring is needed here.
 app.get("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
@@ -1065,14 +1084,15 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
     }
 
     const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
-    const { name, tactId, tier, status } = req.body;
+    const { name, tactId, tier, status, advisorRole } = req.body;
     if (
       typeof name !== "string" || !name.trim() ||
       typeof tactId !== "string" || !tactId.trim() ||
       (tier !== "General" && tier !== "Admin" && tier !== "Developer") ||
-      (status !== "Active" && status !== "Disabled")
+      (status !== "Active" && status !== "Disabled") ||
+      !isValidAdvisorRole(advisorRole)
     ) {
-      return res.status(400).json({ error: "name, tactId, tier, and status are all required." });
+      return res.status(400).json({ error: `name, tactId, tier, and status are all required. advisorRole, if present, must be one of: ${ADVISOR_ROLE_VALUES.join(", ")}.` });
     }
 
     const existing = await usersRepo.findByEmail(targetEmail);
@@ -1089,7 +1109,13 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
       }
     }
 
-    const row = await usersRepo.updateUser(targetEmail, { name: name.trim(), tactId: tactId.trim(), tier, status });
+    const row = await usersRepo.updateUser(targetEmail, {
+      name: name.trim(),
+      tactId: tactId.trim(),
+      tier,
+      status,
+      advisorRole: advisorRole ? advisorRole : null,
+    });
     return res.json({ success: true, user: row });
   } catch (err: any) {
     console.error("Failed to update directory entry:", err);
@@ -1188,9 +1214,9 @@ app.post("/api/users", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
     }
 
-    const { email, name, tactId, tier, status } = req.body;
-    if (!isValidDirectoryUser({ email, name, tactId, tier, status })) {
-      return res.status(400).json({ error: "email, name, tactId, tier, and status are all required." });
+    const { email, name, tactId, tier, status, advisorRole } = req.body;
+    if (!isValidDirectoryUser({ email, name, tactId, tier, status }) || !isValidAdvisorRole(advisorRole)) {
+      return res.status(400).json({ error: `email, name, tactId, tier, and status are all required. advisorRole, if present, must be one of: ${ADVISOR_ROLE_VALUES.join(", ")}.` });
     }
     // Admin can add users, but shouldn't be able to mint a new Developer from
     // this lightweight endpoint — that's still an Developer-only directory edit.
@@ -1210,6 +1236,7 @@ app.post("/api/users", requireAuth, async (req, res) => {
       tactId: tactId.trim(),
       tier,
       status,
+      advisorRole: advisorRole ? advisorRole : null,
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -3168,6 +3195,23 @@ app.get("/api/qa-dashboard/summary", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("QA Dashboard: failed to load advisors summary:", err);
     return res.status(500).json({ error: `Failed to load advisors summary: ${err.message}` });
+  }
+});
+
+// Deliberately open to ANY signed-in user (no Admin/Guide/Mentor/Advisor
+// role check) — see getCompanyWideQaAggregateFor's doc comment. Only ever
+// returns 4 aggregate numbers, never the per-advisor roster the route
+// above returns, so this can't be used to see the real QA Dashboard's data
+// through a side door.
+app.get("/api/qa-dashboard/company-summary", requireAuth, async (req, res) => {
+  try {
+    const dateFilters = parseQaDateFilters(req.query);
+    if (!dateFilters) return res.status(400).json({ error: "checkedFrom, checkedTo, and tillDate (yyyy-MM-dd) are required." });
+    const result = await getQaCompanyWideAggregateFor(dateFilters);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to load company-wide aggregate:", err);
+    return res.status(500).json({ error: `Failed to load company-wide aggregate: ${err.message}` });
   }
 });
 

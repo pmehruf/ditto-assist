@@ -185,6 +185,12 @@ export const users = pgTable("users", {
   // to stamp it on each sign-in.
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastLogin: timestamp("last_login", { withTimezone: true }),
+  // "Health advisor" | "Term advisor" | "Both advisor" | "Manager" — see
+  // drizzle/0024_add_advisor_role.sql's comment for why this is persisted
+  // (editable, incl. "Manager") rather than live-joined from the QA sheet.
+  // Nullable = unassigned; validated against the 4 allowed values in
+  // server.ts's PATCH /api/users/:email, not enforced at the DB level.
+  advisorRole: text("advisor_role"),
 });
 
 export type UserRow = typeof users.$inferSelect;

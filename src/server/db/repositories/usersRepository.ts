@@ -10,7 +10,7 @@ import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage 
 
 export type CreateUserEntry = NewUserRow;
 
-export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status">>;
+export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status" | "advisorRole">>;
 
 export interface UserListOptions {
   page?: number;
@@ -32,6 +32,7 @@ const SORTABLE_COLUMNS = {
   status: users.status,
   createdAt: users.createdAt,
   lastLogin: users.lastLogin,
+  advisorRole: users.advisorRole,
 } as const;
 
 /**

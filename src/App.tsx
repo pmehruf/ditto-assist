@@ -2543,15 +2543,27 @@ export default function App() {
             theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
           }`}
         >
-          <div className="flex flex-col">
-            {/* Explicit "text-white" (not the var(--sidebar-bg)-adjacent hex
-                this used to carry) so the title stays fully opaque white
-                against the sidebar's locked dark-navy chrome in BOTH themes
-                — it was reading as a barely-visible gray smudge in Light
-                theme. Sidebar bg is intentionally dark-navy in both themes
-                (see index.css's --sidebar-bg "LOCKED VALUE" note). */}
-            <span className="text-xs font-bold uppercase tracking-wider text-white">Ditto Assist</span>
-            <span className="text-[10px] font-medium text-[#C4CDD8]">A Powerful Suite of Advisory Tools</span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            {/* .png, not favicon.svg — the SVG just wraps one giant embedded
+                base64 PNG, which some browsers fail to rasterize inside an
+                <img> (shows the broken-image icon) even though the file
+                itself decodes to a perfectly valid image. The plain PNG
+                sidesteps that entirely. */}
+            <img
+              src="/assets/favicon-180.png"
+              alt=""
+              className="w-8 h-8 rounded-md shrink-0 object-contain"
+            />
+            <div className="flex flex-col min-w-0">
+              {/* Explicit "text-white" (not the var(--sidebar-bg)-adjacent hex
+                  this used to carry) so the title stays fully opaque white
+                  against the sidebar's locked dark-navy chrome in BOTH themes
+                  — it was reading as a barely-visible gray smudge in Light
+                  theme. Sidebar bg is intentionally dark-navy in both themes
+                  (see index.css's --sidebar-bg "LOCKED VALUE" note). */}
+              <span className="text-xs font-bold uppercase tracking-wider text-white truncate">Ditto Assist</span>
+              <span className="text-[10px] font-medium text-[#C4CDD8] truncate">A Powerful Suite of Advisory Tools</span>
+            </div>
           </div>
           <button
             onClick={() => setIsMenuOpen(false)}
@@ -2798,7 +2810,7 @@ export default function App() {
                   } rounded-r-lg border-y-transparent border-r-transparent`}
                 >
                   <User className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>User Directory & Management</span>
+                  <span>User Management</span>
                 </button>
               )}
 
@@ -3194,7 +3206,7 @@ export default function App() {
                       : "hover:bg-white/5"
                   }`}
                   style={{ color: activeTab === "profile_access" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="User Directory & Management"
+                  title="User Management"
                 >
                   <User style={{ width: "18px", height: "18px" }} />
                 </button>
@@ -3546,7 +3558,7 @@ export default function App() {
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                profile_access: { label: "User Directory & Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                profile_access: { label: "User Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 plan_scope: { label: "Plan Management", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4223,7 +4235,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="User Directory & Management">
+              <ErrorBoundary theme={theme} label="User Management">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <ProfileAccessPage
                 theme={theme}
