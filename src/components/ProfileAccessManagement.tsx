@@ -384,7 +384,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
               disabled={exporting || total === 0}
               size="sm"
               title="Export the filtered user directory as a CSV file"
-              className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+              className="flex items-center gap-1.5 px-3 py-2 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb] shrink-0"
             >
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>Export CSV</span>
