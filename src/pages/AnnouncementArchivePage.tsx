@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Search, X, CalendarRange, Maximize2 } from "lucide-react";
+import { Search, X, CalendarRange, Maximize2, Download } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
 import { AnnouncementContent } from "../utils/announcementHtml";
 import { isoDateToDMY } from "../utils/dateFormat";
@@ -14,6 +14,7 @@ import { DateInputDMY } from "../components/DateInputDMY";
 import { Pagination } from "../components/Pagination";
 import { ClippedButton } from "../components/ClippedButton";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { downloadCSV } from "../utils/csvExport";
 
 const PAGE_SIZE = 15;
 
@@ -79,6 +80,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
   // *effective* date instead of posted date, and only ever gets set via the
   // Workspace's "Open Today's Announcements" CTA (see initialEffectiveDate).
   const [effectiveDateFilter, setEffectiveDateFilter] = useState(initialEffectiveDate || "");
+  const [exporting, setExporting] = useState(false);
 
   // If the CTA is clicked again with a different date while this page is
   // already mounted, pick up the new value instead of staying stuck on the
@@ -132,6 +134,42 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
       cancelled = true;
     };
   }, [page, debouncedSearch, dateFrom, dateTo, effectiveDateFilter]);
+
+  // Same filters as the paginated fetch above, minus paging — matches the
+  // export=1 pattern already used by search-history/users/change-logs.
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ paginated: "1", pageSize: "10000", sortBy: "announcementDate", sortDir: "desc" });
+      const trimmed = debouncedSearch.trim();
+      if (trimmed) params.set("search", trimmed);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      if (effectiveDateFilter) {
+        params.set("effectiveDateFrom", effectiveDateFilter);
+        params.set("effectiveDateTo", effectiveDateFilter);
+      }
+      const res = await fetch(`/api/announcements?${params.toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
+      const rows = (Array.isArray(body.entries) ? body.entries.map(mapAnnouncementRow) : []) as QAAnnouncement[];
+      downloadCSV(
+        rows.map((item) => ({
+          Title: item.title || item.category || "",
+          Team: teamLabel(item),
+          Severity: item.type === "QA Announcement" ? item.rating ?? "" : "",
+          Announcement: item.announcement.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+          "Announcement Date": item.announcementDate ? isoDateToDMY(item.announcementDate) : "",
+          "Effective Date": item.effectiveDate ? isoDateToDMY(item.effectiveDate) : "",
+        })),
+        "announcements-archive.csv"
+      );
+    } catch (err) {
+      console.error("Failed to export the announcement archive:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const cardClass = `rounded-2xl border ${
     dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface-elevated border-[var(--border-strong)]"
@@ -277,6 +315,16 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
             <h3 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
               {hasFilters ? `Matching Announcements (${total})` : `All Announcements (${total})`}
             </h3>
+            <ClippedButton
+              onClick={exportCsv}
+              disabled={exporting || total === 0}
+              size="sm"
+              title="Export the filtered announcements as a CSV file"
+              className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>Export CSV</span>
+            </ClippedButton>
           </div>
 
           <div className={`flex-grow min-h-0 overflow-auto rounded-xl border ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>

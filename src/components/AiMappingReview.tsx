@@ -21,6 +21,7 @@ import { SortableTh } from "./SortableTh";
 import { Pagination } from "./Pagination";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
+import { downloadCSV } from "../utils/csvExport";
 
 const PAGE_SIZE = 50;
 
@@ -203,33 +204,8 @@ export function AiMappingReview({
     }
   };
 
-  // Same CSV-building logic as the Activity Log's "Export CSV" (App.tsx's
-  // downloadCSV) — kept local here rather than threaded down as a prop
-  // since this component already owns and fetches its own entries.
-  const downloadCSV = (data: Record<string, unknown>[], filename: string) => {
-    if (data.length === 0) return;
-    const headers = Object.keys(data[0]);
-    const csvContent = [
-      headers.join(","),
-      ...data.map(row =>
-        headers.map(field => {
-          let val = row[field];
-          if (typeof val === "object") val = JSON.stringify(val);
-          return `"${String(val ?? "").replace(/"/g, '""')}"`;
-        }).join(",")
-      )
-    ].join("\r\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  // downloadCSV now lives in utils/csvExport.ts (shared app-wide) —
+  // previously a local duplicate of App.tsx's copy.
 
   // Flattens the whole currently-filtered set (fetched fresh from the
   // server, not just the visible page) into plain rows — the nested

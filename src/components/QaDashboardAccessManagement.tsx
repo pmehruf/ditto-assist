@@ -4,12 +4,13 @@
  */
 
 import { useEffect, useState } from "react";
-import { Search, UserPlus, Trash2, RefreshCw, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Search, UserPlus, Trash2, RefreshCw, AlertTriangle, ShieldCheck, Download } from "lucide-react";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { formatDisplayTimestamp } from "../utils/timestamps";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
+import { downloadCSV } from "../utils/csvExport";
 
 type QaRoleType = "admin" | "guide" | "mentor";
 
@@ -212,7 +213,29 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
             )}
           </div>
 
-          {canManage && !assigning && (
+          <div className="flex items-center gap-2 shrink-0">
+            <ClippedButton
+              onClick={() =>
+                downloadCSV(
+                  roles.map((r) => ({
+                    Email: r.email,
+                    Role: ROLE_LABEL[r.role],
+                    "Display Name": r.displayName || "",
+                    "Assigned By": r.assignedBy,
+                    "Assigned At": r.assignedAt ? formatDisplayTimestamp(r.assignedAt) : "",
+                  })),
+                  "qa-dashboard-access.csv"
+                )
+              }
+              disabled={roles.length === 0}
+              size="sm"
+              title="Export QA Dashboard access as a CSV file"
+              className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>Export CSV</span>
+            </ClippedButton>
+            {canManage && !assigning && (
             <ClippedButton
               type="button"
               onClick={() => setAssigning(true)}
@@ -223,7 +246,8 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
               <UserPlus className="w-3.5 h-3.5 shrink-0" />
               Assign Access
             </ClippedButton>
-          )}
+            )}
+          </div>
         </div>
 
         {actionError && (

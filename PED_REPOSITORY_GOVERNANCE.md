@@ -2,6 +2,19 @@
 
 Status: **approved, permanent governance policy** (established 2026-07-28, during the PED Repository DB migration's Checkpoint B). This document is the source of truth for how PED data is organized going forward — every future PED Library edit, seed script, or admin UI change should be consistent with it.
 
+## Repository Architecture v1.0 — Stable (tagged 2026-08-07)
+
+Architecture validated and formally approved via the congenital-routing governance review (`MAPPING_GOVERNANCE_REVIEW_CONGENITAL_FINAL.md`, supersedes its v1–v4 drafts). Sign-off basis:
+
+- Repository architecture (`ped_repository` → medical category → `plan_overrides` → per-plan `categoryMap` → question) held up under an extended real-world stress test — 60+ conditions reviewed, several genuine architectural tensions surfaced and resolved (Optima Secure's disability/deformity routing) without any schema change or new routing stage.
+- Runtime engine (`engine.ts`) required zero modification — only one regex-list edit (removing a stale `huntington` token now superseded by the dictionary) and data-layer changes throughout.
+- Regression validation performed: baseline snapshot suite run, one pre-existing unrelated failure diagnosed to its root cause (stale snapshot, not a live regression) and resolved separately from this work.
+- 12 governance principles documented and registered (see the review doc's Part D-equivalent section), including that `categoryKey = 'genetic'` on a structural anomaly is an implementation compromise, not a medical claim — logged specifically to prevent future misreading of the taxonomy.
+- Explicit trade-offs recorded rather than hidden (the Optima Secure `genetic` repoint's wider blast radius on that one plan).
+- Remaining ambiguous conditions (Ebstein's Anomaly, Eisenmenger Syndrome, Horseshoe/Duplex Kidney, Meckel's Diverticulum, Malrotation, Hirschsprung Disease, Congenital Glaucoma) intentionally held for manual review rather than force-resolved.
+
+**Direction going forward:** repository enrichment (new conditions, alias coverage, AI-assisted governance review of ambiguous cases) rather than further core-architecture redesign. Any future change proposing a new `categories` row, a new routing stage, or a runtime-engine structural change should be treated as reopening this v1.0 baseline, not a routine repository update — flag it accordingly.
+
 ## The three layers
 
 ### 1. Repository (visible) — the source of truth

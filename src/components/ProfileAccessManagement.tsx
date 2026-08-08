@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search } from "lucide-react";
+import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download } from "lucide-react";
 import { UserProfile, LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
@@ -15,6 +15,7 @@ import { SortableTh } from "./SortableTh";
 import { Pagination } from "./Pagination";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
+import { downloadCSV } from "../utils/csvExport";
 
 const PAGE_SIZE = 25;
 
@@ -152,6 +153,27 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
     loadEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchQuery, usersSort?.key, usersSort?.direction]);
+
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ paginated: "1", pageSize: "10000" });
+      if (searchQuery) params.set("search", searchQuery);
+      if (usersSort) {
+        params.set("sortBy", usersSort.key);
+        params.set("sortDir", usersSort.direction);
+      }
+      const res = await fetch(`/api/users?${params.toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
+      downloadCSV(Array.isArray(body.entries) ? body.entries : [], "user-directory.csv");
+    } catch (err) {
+      console.error("Failed to export the user directory:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const startEdit = (user: UserProfile) => {
     setEditingEmail(user.email);
@@ -356,7 +378,18 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
             </div>
           </div>
 
-          {canManage && !addingNew && (
+          <div className="flex items-center gap-2 shrink-0">
+            <ClippedButton
+              onClick={exportCsv}
+              disabled={exporting || total === 0}
+              size="sm"
+              title="Export the filtered user directory as a CSV file"
+              className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>Export CSV</span>
+            </ClippedButton>
+            {canManage && !addingNew && (
             <ClippedButton
               type="button"
               onClick={() => { setAddingNew(true); setSaveError(null); }}
@@ -376,7 +409,8 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
               <UserPlus className="w-3.5 h-3.5 shrink-0" />
               Add User
             </ClippedButton>
-          )}
+            )}
+          </div>
         </div>
 
         {saveError && (

@@ -4,11 +4,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, RefreshCw, ArrowLeft, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2 } from "lucide-react";
+import { Search, RefreshCw, ArrowLeft, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download } from "lucide-react";
 import { QaDashboardIcon } from "../components/icons";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { DateInputDMY } from "../components/DateInputDMY";
+import { downloadCSV } from "../utils/csvExport";
 
 /**
  * QA Dashboard — native React port of the standalone Apps Script "Advisor
@@ -180,6 +181,32 @@ function qs(params: Record<string, string | null | undefined>): string {
     if (v !== null && v !== undefined && v !== "") p.set(k, v);
   }
   return p.toString();
+}
+
+// Exports exactly the columns SheetTableView renders (not every raw column
+// the sheet API returns) — the CSV matches what's on screen.
+function pickVisibleColumns(table: SheetTable, columns: string[] | null): Record<string, unknown>[] {
+  const visible = columns ? table.headers.filter((h) => columns.some((c) => norm(c) === norm(h))) : table.headers;
+  return table.rows.map((row) => {
+    const picked: Record<string, unknown> = {};
+    for (const h of visible) picked[h] = row[h] ?? "";
+    return picked;
+  });
+}
+
+function ExportCsvButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <ClippedButton
+      onClick={onClick}
+      disabled={disabled}
+      size="sm"
+      title="Export this table as a CSV file"
+      className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb] h-8"
+    >
+      <Download className="w-3.5 h-3.5 shrink-0" />
+      <span>Export CSV</span>
+    </ClippedButton>
+  );
 }
 
 // ── Small reusable advisor combobox (name/TACT ID search) ─────────────────
@@ -942,6 +969,34 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
     return { ...tabData.feedback, rows };
   }, [tabData.feedback, feedbackDomain, feedbackSearch]);
 
+  const exportFeedbackCsv = () => {
+    if (!filteredFeedbackTable) return;
+    downloadCSV(pickVisibleColumns(filteredFeedbackTable, FEEDBACK_COLUMNS), `qa-feedback-${dashboard?.advisor?.tactId || "advisor"}.csv`);
+  };
+  const exportReviewsCsv = () => {
+    if (!filteredReviewTable) return;
+    downloadCSV(pickVisibleColumns(filteredReviewTable, REVIEW_COLUMNS), `qa-reviews-${dashboard?.advisor?.tactId || "advisor"}.csv`);
+  };
+  const exportSummaryCsv = () => {
+    downloadCSV(
+      filteredSummary.map((a) => ({
+        Advisor: a.name || a.tactId,
+        "TACT ID": a.tactId,
+        Guide: a.guide || "",
+        Mentor: a.mentor || "",
+        "Chat QA": a.chatAvg ?? "",
+        "Chat Instances": a.chatInstances,
+        "Call QA": a.callAvg ?? "",
+        "Call Instances": a.callInstances,
+        "Lead Score": a.leadScoreAvg ?? "",
+        "Lead Score Instances": a.leadScoreInstances,
+        "Payments QA": a.paymentsAvg ?? "",
+        "Payments Instances": a.paymentsInstances,
+      })),
+      "qa-advisors-summary.csv"
+    );
+  };
+
   const dateFilterBar = (
     <div className={`flex flex-wrap items-end gap-3 rounded-2xl border p-4 ${dark ? "bg-white/[0.05] border-white/[0.10]" : "bg-surface-elevated border-[var(--border-strong)]"}`}>
       {(["checkedFrom", "checkedTo", "tillDate"] as const).map((field) => (
@@ -1169,6 +1224,10 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
         {advisorsSummary === null ? (
           <p className="text-xs text-content-muted py-6">Loading advisors…</p>
         ) : (
+          <>
+          <div className="flex justify-end">
+            <ExportCsvButton onClick={exportSummaryCsv} disabled={filteredSummary.length === 0} />
+          </div>
           <div className={`overflow-auto rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
             <table className="w-full text-xs border-collapse">
               <thead>
@@ -1226,6 +1285,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     );
@@ -1422,6 +1482,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                 Clear
               </ClippedButton>
             )}
+            <ExportCsvButton onClick={exportFeedbackCsv} disabled={!filteredFeedbackTable || filteredFeedbackTable.rows.length === 0} />
           </div>
           <SheetTableView table={filteredFeedbackTable ?? null} loading={!!tabLoading.feedback} error={tabError.feedback || ""} columns={FEEDBACK_COLUMNS} theme={theme} />
         </>
@@ -1481,6 +1542,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                 />
               </div>
             </label>
+            <ExportCsvButton onClick={exportReviewsCsv} disabled={!filteredReviewTable || filteredReviewTable.rows.length === 0} />
           </div>
           <SheetTableView table={filteredReviewTable ?? null} loading={!!tabLoading.reviews} error={tabError.reviews || ""} columns={REVIEW_COLUMNS} theme={theme} />
         </>

@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { Search, Clock, History, ChevronDown } from "lucide-react";
+import { Search, Clock, History, ChevronDown, Download } from "lucide-react";
 import { PLANS } from "../types";
 import { AuditLogEntry } from "../types/announcements";
 import { LoggedUser } from "../types/user";
@@ -14,8 +14,10 @@ import { CustomSelect } from "../components/CustomSelect";
 import { SortableTh } from "../components/SortableTh";
 import { Pagination } from "../components/Pagination";
 import { DateInputDMY } from "../components/DateInputDMY";
+import { ClippedButton } from "../components/ClippedButton";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
+import { downloadCSV } from "../utils/csvExport";
 
 const PAGE_SIZE = 50;
 
@@ -75,15 +77,19 @@ export function MyActivityPage({
   const [totalPages, setTotalPages] = useState(1);
   const [totalLookups, setTotalLookups] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setPage(1);
   }, [debouncedSearch, myActivityPlanFilter, myActivityStartDate, myActivityEndDate, myLogsSort?.key, myLogsSort?.direction]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const params = new URLSearchParams({ paginated: "1", userEmail, page: String(page), pageSize: String(PAGE_SIZE) });
+  // Shared between the paginated fetch and CSV export, so the export always
+  // reflects the exact same filters currently applied to the table (not
+  // just whatever's visible on the current page).
+  const buildParams = (forExport: boolean) => {
+    const params = new URLSearchParams({ paginated: "1", userEmail });
+    if (!forExport) params.set("page", String(page));
+    params.set("pageSize", forExport ? "10000" : String(PAGE_SIZE));
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (myActivityPlanFilter !== "All") params.set("planName", myActivityPlanFilter);
     if (myActivityStartDate) params.set("from", myActivityStartDate);
@@ -92,7 +98,27 @@ export function MyActivityPage({
       params.set("sortBy", MY_ACTIVITY_SORT_KEY_MAP[myLogsSort.key] || myLogsSort.key);
       params.set("sortDir", myLogsSort.direction);
     }
-    fetch(`/api/search-history?${params.toString()}`)
+    return params;
+  };
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/search-history?${buildParams(true).toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      downloadCSV(Array.isArray(body.entries) ? body.entries : [], "my-activity-journal.csv");
+    } catch (err) {
+      console.error("Failed to export My Activity:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/search-history?${buildParams(false).toString()}`)
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -135,6 +161,16 @@ export function MyActivityPage({
             Analyze and search your history of medical declaration lookups and underwriting decisions.
           </p>
         </div>
+        <ClippedButton
+          onClick={exportCsv}
+          disabled={exporting || filteredTotal === 0}
+          size="sm"
+          title="Export the filtered activity log as a CSV file"
+          className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+        >
+          <Download className="w-3.5 h-3.5 shrink-0" />
+          <span>Export CSV</span>
+        </ClippedButton>
       </div>
 
       {/* SEARCH + STATS — merged into one card. Flat transparent-grey glass

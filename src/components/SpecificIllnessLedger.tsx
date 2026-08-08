@@ -19,6 +19,7 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Download,
 } from "lucide-react";
 import {
   MASTER_ILLNESSES,
@@ -31,6 +32,7 @@ import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { SortableTh } from "./SortableTh";
 import { useSortableData, stringComparator, numberComparator } from "../utils/useSortableData";
+import { downloadCSV } from "../utils/csvExport";
 
 interface SpecificIllnessLedgerProps {
   theme: "light" | "dark";
@@ -678,6 +680,28 @@ export function SpecificIllnessLedger({
                   ]}
                 />
               </div>
+              <ClippedButton
+                onClick={() =>
+                  downloadCSV(
+                    sortedCatalog.map((def) => ({
+                      "Specific Illness": def.parent_illness,
+                      Category: def.category,
+                      Aliases: def.aliases.join("; "),
+                      Procedures: def.procedures.join("; "),
+                      "Sub-Conditions": def.sub_conditions.join("; "),
+                      "Applicable Plans": Object.keys(def.plan_schedules).join("; "),
+                    })),
+                    "specific-illness-catalog.csv"
+                  )
+                }
+                disabled={sortedCatalog.length === 0}
+                size="sm"
+                title="Export the filtered catalog as a CSV file"
+                className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb] sm:w-auto"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>Export CSV</span>
+              </ClippedButton>
             </div>
 
             <div className="overflow-x-auto">

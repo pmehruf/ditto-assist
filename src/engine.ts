@@ -941,6 +941,69 @@ export function classifyDeterministic(
     }
   }
 
+  // 0.75 FREE-TEXT PLAN-OVERRIDE RESOLUTION (added 2026-08-08 — production
+  // readiness fix). Stage 0.4 above only fires on an EXACT alias match, so a
+  // PED with a plan_overrides row could still fall through to the disease-
+  // family regex sections below when the advisor's text doesn't exactly
+  // match a stored alias (e.g. "Family history of Marfan syndrome" instead
+  // of exactly "Marfan Syndrome") — those regex sections resolve a category
+  // directly and never consult plan_overrides, so the same underlying PED
+  // could reach two different questions depending only on phrasing. That
+  // violates the approved architecture's intent: every identification path
+  // that resolves to the same canonical PED must reach the plan-override
+  // stage before category routing.
+  //
+  // Fix, scoped as narrowly as possible: if the exact match above found
+  // nothing, try every contiguous word-sequence in the input against the
+  // same alias map, longest first, exactly the way the regex sections below
+  // already do substring/word-boundary matching — but tied back to a real
+  // pedId so plan_overrides can be checked. If a plan override exists for
+  // the matched PED, return it immediately, identically to stage 0.4. If NO
+  // override exists for the matched PED, this is a deliberate no-op —
+  // `categoryKey` is left untouched and control falls through to the regex
+  // sections completely unchanged, exactly as before this stage existed.
+  // This only ever changes behavior for the specific case being fixed
+  // (a plan override that free text would otherwise have missed); it never
+  // changes which category free text resolves to when no override applies.
+  //
+  // Gated behind `dbSource` (PED_SOURCE=db) like every other Phase 3
+  // addition — a no-op on the legacy path. Capped at 15 words to bound the
+  // worst case; real declarations are short phrases, not paragraphs.
+  if (!categoryKey && dbSource) {
+    const words = cleanInputLower.split(" ").filter(Boolean);
+    if (words.length <= 15) {
+      let bestPedId: number | null = null;
+      let bestSpan = 0;
+      for (let start = 0; start < words.length; start++) {
+        for (let end = words.length; end > start; end--) {
+          const span = end - start;
+          if (span <= bestSpan) break; // no shorter span from here can beat the current best
+          const candidate = words.slice(start, end).join(" ");
+          const entry = dbSource.aliasLookup.get(candidate);
+          if (entry) {
+            bestPedId = entry.pedId;
+            bestSpan = span;
+            break;
+          }
+        }
+      }
+      if (bestPedId !== null) {
+        const dbOverride = dbSource.planOverrideLookup(planName, bestPedId);
+        if (dbOverride) {
+          const qTarget = questionForCategory(config, dbOverride.categoryKey);
+          if (qTarget) {
+            return makeOutput(
+              pedText,
+              "P1",
+              qTarget,
+              `👉 *${pedText}* maps to the ${getCategoryLabel(dbOverride.categoryKey)} question in this plan${dbOverride.reason ? ` — ${dbOverride.reason}` : ""} (PED Repository, plan override — matched via free-text phrase, not an exact alias).`
+            );
+          }
+        }
+      }
+    }
+  }
+
   // Override: benign CNS tumors → benign_growth (not neoplasm)
   if (/\b(meningioma|acoustic\s*neuroma|craniopharyngioma|benign\s*brain\s*tu?mou?r)\b/i.test(text)) {
     categoryKey = "benign_growth";

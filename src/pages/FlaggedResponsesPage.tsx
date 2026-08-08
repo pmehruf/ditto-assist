@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { CheckCircle2, Check, Trash2, ArrowUpCircle, RotateCcw } from "lucide-react";
+import { CheckCircle2, Check, Trash2, ArrowUpCircle, RotateCcw, Download } from "lucide-react";
 import { ReportedIssue } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
@@ -13,6 +13,7 @@ import { ClippedButton } from "../components/ClippedButton";
 import { SortableTh } from "../components/SortableTh";
 import { useSortableData, stringComparator, dateComparator } from "../utils/useSortableData";
 import { formatDateDMY } from "../utils/dateFormat";
+import { downloadCSV } from "../utils/csvExport";
 
 interface FlaggedResponsesPageProps {
   theme: "light" | "dark";
@@ -188,6 +189,25 @@ export function FlaggedResponsesPage({
   }`;
   const tdClass = "px-3 py-2.5 align-top text-xs";
 
+  const exportCsv = () => {
+    downloadCSV(
+      sortedIssues.map((issue) => ({
+        "Flagged By": issue.userName,
+        Email: issue.userEmail,
+        "TACT ID": issue.userTactId,
+        Plan: issue.planName,
+        Timestamp: issue.timestamp,
+        PED: issue.pedInput,
+        "Matched Question": issue.matchedQuestion,
+        Category: issue.matchType,
+        Comment: issue.issueNotes,
+        Status: issue.status,
+        "Owner Notes": issue.ownerNotes || "",
+      })),
+      "flagged-responses.csv"
+    );
+  };
+
   return (
     <div className="space-y-5 text-left">
       {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
@@ -205,10 +225,22 @@ export function FlaggedResponsesPage({
             Review and resolve advisor-flagged policy mapping discrepancies, medical code differences, and underwriting exceptions.
           </p>
         </div>
-        <div className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-xl font-mono ${
-          dark ? 'text-red-400 bg-red-950/20' : 'text-red-700 bg-red-50 border border-red-200'
-        }`}>
-          Unresolved: {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-xl font-mono ${
+            dark ? 'text-red-400 bg-red-950/20' : 'text-red-700 bg-red-50 border border-red-200'
+          }`}>
+            Unresolved: {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length}
+          </div>
+          <ClippedButton
+            onClick={exportCsv}
+            disabled={sortedIssues.length === 0}
+            size="sm"
+            title="Export the filtered flagged responses as a CSV file"
+            className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+          >
+            <Download className="w-3.5 h-3.5 shrink-0" />
+            <span>Export CSV</span>
+          </ClippedButton>
         </div>
       </div>
 

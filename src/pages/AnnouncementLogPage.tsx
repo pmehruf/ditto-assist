@@ -5,7 +5,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useState } from "react";
-import { Pencil, Trash2, Search, Maximize2 } from "lucide-react";
+import { Pencil, Trash2, Search, Maximize2, Download } from "lucide-react";
 import { QAAnnouncementForm } from "../components/forms/QAAnnouncementForm";
 import { AnnouncementContent } from "../utils/announcementHtml";
 import { QAAnnouncement } from "../types/announcements";
@@ -17,6 +17,7 @@ import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { isoDateToDMY } from "../utils/dateFormat";
 import { ratingColorClasses, teamLabel } from "../utils/announcementDisplay";
 import { AnnouncementReadModal } from "../components/AnnouncementReadModal";
+import { downloadCSV } from "../utils/csvExport";
 
 const PAGE_SIZE = 25;
 
@@ -202,6 +203,36 @@ export function AnnouncementLogPage({
     };
   }, [page, debouncedSearch, refreshTick]);
 
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ paginated: "1", pageSize: "10000", sortBy: "announcementDate", sortDir: "desc" });
+      const trimmed = debouncedSearch.trim();
+      if (trimmed) params.set("search", trimmed);
+      const res = await fetch(`/api/announcements?${params.toString()}&export=1`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
+      const rows = (Array.isArray(body.entries) ? body.entries.map(mapAnnouncementRow) : []) as QAAnnouncement[];
+      downloadCSV(
+        rows.map((item) => ({
+          Title: item.title || item.category || "",
+          Team: teamLabel(item),
+          Severity: item.type === "QA Announcement" ? item.rating ?? "" : "",
+          Announcement: item.announcement.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
+          "Announcement Date": item.announcementDate ? isoDateToDMY(item.announcementDate) : "",
+          "Effective Date": item.effectiveDate ? isoDateToDMY(item.effectiveDate) : "",
+          "Added By": item.addedBy || "",
+        })),
+        "announcement-manager.csv"
+      );
+    } catch (err) {
+      console.error("Failed to export announcements:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // QAAnnouncementForm updates the app-wide `qaAnnouncements` array directly
   // on create/edit — this wrapper just also nudges this gallery to refetch
   // its own current page so the change shows up here too.
@@ -311,9 +342,21 @@ export function AnnouncementLogPage({
                 <h3 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
                   Active Announcements ({total})
                 </h3>
-                <span className="text-[10px] font-mono text-content-muted">
-                  Newest First
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] font-mono text-content-muted">
+                    Newest First
+                  </span>
+                  <ClippedButton
+                    onClick={exportCsv}
+                    disabled={exporting || total === 0}
+                    size="sm"
+                    title="Export the filtered announcements as a CSV file"
+                    className="shrink-0 gap-1.5 pl-2 pr-2.5 py-1.5 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb]"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span>Export CSV</span>
+                  </ClippedButton>
+                </div>
               </div>
 
               {/* Search — server-side, across the full announcements table

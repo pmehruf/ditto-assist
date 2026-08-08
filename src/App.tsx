@@ -84,6 +84,7 @@ import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { usePersistentState } from "./hooks/usePersistentState";
+import { downloadCSV } from "./utils/csvExport";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
 
 // ─────────────────────────────────────────────
@@ -2039,30 +2040,9 @@ export default function App() {
     }
   }, [lookupResults, activeTab, isLookupLoading]);
 
-  // CSV Export Utility
-  const downloadCSV = (data: Record<string, unknown>[], filename: string) => {
-    if (data.length === 0) return;
-    const headers = Object.keys(data[0]);
-    const csvContent = [
-      headers.join(","),
-      ...data.map(row =>
-        headers.map(field => {
-          let val = row[field];
-          if (typeof val === "object") val = JSON.stringify(val);
-          return `"${String(val || "").replace(/"/g, '""')}"`;
-        }).join(",")
-      )
-    ].join("\r\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  // CSV Export Utility — moved to utils/csvExport.ts so components can
+  // import it directly; kept as a bound local name here since it's still
+  // threaded down as a prop to a couple of pages (e.g. AuditPage).
 
   // Verifying the real Google session with the server — avoid flashing the
   // login screen (or the app) before we know the answer.
