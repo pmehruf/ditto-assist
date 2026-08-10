@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, count, desc, eq, ilike, ne, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, isNull, lte, ne, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { users, type UserRow, type NewUserRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
@@ -17,6 +17,12 @@ export interface UserListOptions {
   pageSize?: number;
   tier?: NewUserRow["tier"];
   status?: NewUserRow["status"];
+  /** One of the 4 advisor role labels, or the sentinel "Unassigned" for
+   * users with a null advisorRole (see server.ts's ADVISOR_ROLE_VALUES). */
+  advisorRole?: string;
+  /** Inclusive createdAt ("Joined") range — "YYYY-MM-DD" date strings. */
+  dateFrom?: string;
+  dateTo?: string;
   /** Matches against name, email, or tactId (case-insensitive substring). */
   search?: string;
   /** Whitelisted to "name" | "email" | "tactId" | "tier" | "status" | "createdAt" | "lastLogin"; defaults to "createdAt". */
@@ -69,6 +75,20 @@ export class UsersRepository {
     const conditions = [];
     if (options.tier) conditions.push(eq(users.tier, options.tier));
     if (options.status) conditions.push(eq(users.status, options.status));
+    if (options.advisorRole) {
+      conditions.push(
+        options.advisorRole === "Unassigned" ? isNull(users.advisorRole) : eq(users.advisorRole, options.advisorRole)
+      );
+    }
+    if (options.dateFrom) conditions.push(gte(users.createdAt, new Date(options.dateFrom)));
+    if (options.dateTo) {
+      // Inclusive of the whole "to" day — a bare "YYYY-MM-DD" parses to
+      // 00:00:00 UTC, which would otherwise exclude every user who joined
+      // later that same day.
+      const end = new Date(options.dateTo);
+      end.setUTCHours(23, 59, 59, 999);
+      conditions.push(lte(users.createdAt, end));
+    }
     if (options.search) {
       const pattern = containsPattern(options.search);
       conditions.push(or(ilike(users.name, pattern), ilike(users.email, pattern), ilike(users.tactId, pattern)));
@@ -106,7 +126,7 @@ export class UsersRepository {
 
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * kept for parity with the other repositories' export path. */
-  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
+  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "advisorRole" | "dateFrom" | "dateTo" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
     const conditions = this.buildListConditions(options);
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? users.createdAt;

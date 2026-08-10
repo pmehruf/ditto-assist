@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download } from "lucide-react";
+import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar } from "lucide-react";
 import { UserProfile, LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
@@ -13,6 +13,7 @@ import { CustomSelect } from "./CustomSelect";
 import { formatDisplayTimestamp } from "../utils/timestamps";
 import { SortableTh } from "./SortableTh";
 import { Pagination } from "./Pagination";
+import { DateInputDMY } from "./DateInputDMY";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 import { downloadCSV } from "../utils/csvExport";
@@ -112,6 +113,31 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   const searchQuery = useDebouncedValue(searchInput, 350);
   const { sort: usersSort, toggleSort: toggleUsersSort } = useServerSort();
 
+  // Filter row — role/tier/status/joined-date, all server-side (same
+  // paginated /api/users endpoint the search box already used). "" means
+  // "All" for every one of these.
+  const [roleFilter, setRoleFilter] = useState("");
+  const [tierFilter, setTierFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [joinedFrom, setJoinedFrom] = useState("");
+  const [joinedTo, setJoinedTo] = useState("");
+  const hasActiveFilters = Boolean(roleFilter || tierFilter || statusFilter || joinedFrom || joinedTo);
+  const resetFilters = () => {
+    setRoleFilter("");
+    setTierFilter("");
+    setStatusFilter("");
+    setJoinedFrom("");
+    setJoinedTo("");
+  };
+
+  const buildFilterParams = (params: URLSearchParams) => {
+    if (roleFilter) params.set("advisorRole", roleFilter);
+    if (tierFilter) params.set("tier", tierFilter);
+    if (statusFilter) params.set("status", statusFilter);
+    if (joinedFrom) params.set("dateFrom", joinedFrom);
+    if (joinedTo) params.set("dateTo", joinedTo);
+  };
+
   const loadEntries = async () => {
     setLoading(true);
     try {
@@ -121,6 +147,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         params.set("sortBy", usersSort.key);
         params.set("sortDir", usersSort.direction);
       }
+      buildFilterParams(params);
       const res = await fetch(`/api/users?${params.toString()}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -143,16 +170,16 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
     }
   };
 
-  // Search/sort changes jump back to page 1; the fetch effect below re-runs
-  // regardless (it depends on all of these plus `page`).
+  // Search/sort/filter changes jump back to page 1; the fetch effect below
+  // re-runs regardless (it depends on all of these plus `page`).
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, usersSort?.key, usersSort?.direction]);
+  }, [searchQuery, usersSort?.key, usersSort?.direction, roleFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
 
   useEffect(() => {
     loadEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchQuery, usersSort?.key, usersSort?.direction]);
+  }, [page, searchQuery, usersSort?.key, usersSort?.direction, roleFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
 
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
@@ -164,6 +191,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         params.set("sortBy", usersSort.key);
         params.set("sortDir", usersSort.direction);
       }
+      buildFilterParams(params);
       const res = await fetch(`/api/users?${params.toString()}&export=1`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
@@ -411,6 +439,83 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
             </ClippedButton>
             )}
           </div>
+        </div>
+
+        {/* Filter row — Role / Tier / Status / Joined date range, all
+            server-side (same /api/users?paginated=1 endpoint search already
+            used). Label-above-control, matching the filter pattern used on
+            My Activity / QA Dashboard / Coverage Projection Studio. */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-40 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              <span className="inline-flex items-center gap-1"><Filter className="w-3 h-3" /> Role</span>
+            </label>
+            <CustomSelect
+              theme={theme}
+              value={roleFilter}
+              onChange={setRoleFilter}
+              triggerClassName={selectTriggerClass}
+              options={[
+                { value: "", label: "All Roles" },
+                { value: "Unassigned", label: "Unassigned" },
+                ...ADVISOR_ROLES.map((r) => ({ value: r, label: r })),
+              ]}
+            />
+          </div>
+          <div className="w-36 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Tier</label>
+            <CustomSelect
+              theme={theme}
+              value={tierFilter}
+              onChange={setTierFilter}
+              triggerClassName={selectTriggerClass}
+              options={[{ value: "", label: "All Tiers" }, ...TIERS.map((t) => ({ value: t, label: t }))]}
+            />
+          </div>
+          <div className="w-36 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Status</label>
+            <CustomSelect
+              theme={theme}
+              value={statusFilter}
+              onChange={setStatusFilter}
+              triggerClassName={selectTriggerClass}
+              options={[{ value: "", label: "All Statuses" }, ...STATUSES.map((s) => ({ value: s, label: s }))]}
+            />
+          </div>
+          <div className="shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined From</span>
+            </label>
+            <DateInputDMY
+              value={joinedFrom}
+              onChange={setJoinedFrom}
+              max={joinedTo || undefined}
+              displayClassName={`min-w-[128px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center ${
+                dark ? "bg-[#060a12] border-stone-850 text-white" : "bg-white border-stone-200 text-stone-900"
+              }`}
+            />
+          </div>
+          <div className="shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Joined To</label>
+            <DateInputDMY
+              value={joinedTo}
+              onChange={setJoinedTo}
+              min={joinedFrom || undefined}
+              displayClassName={`min-w-[128px] px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center ${
+                dark ? "bg-[#060a12] border-stone-850 text-white" : "bg-white border-stone-200 text-stone-900"
+              }`}
+            />
+          </div>
+          {hasActiveFilters && (
+            <button
+              onClick={resetFilters}
+              className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer shrink-0 ${
+                dark ? "text-red-400 hover:bg-stone-800 bg-stone-900/40 border border-red-500/10" : "text-red-650 hover:bg-red-50 bg-red-50/40 border border-red-100"
+              }`}
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
 
         {saveError && (

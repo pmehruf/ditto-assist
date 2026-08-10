@@ -1053,7 +1053,10 @@ app.get("/api/users", requireAuth, async (req, res) => {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
       const tier = pickEnumValue(req.query.tier, ["General", "Admin", "Developer"] as const);
       const status = pickEnumValue(req.query.status, ["Active", "Disabled"] as const);
-      const listOptions = { page, pageSize, search, tier, status, sortBy, sortDir };
+      const advisorRole = pickEnumValue(req.query.advisorRole, [...ADVISOR_ROLE_VALUES, "Unassigned"] as const);
+      const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
+      const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
+      const listOptions = { page, pageSize, search, tier, status, advisorRole, dateFrom, dateTo, sortBy, sortDir };
       if (req.query.export) {
         const rows = await usersRepo.listMatching(listOptions);
         return res.json({ entries: rows });
