@@ -1391,7 +1391,16 @@ export function classifyDeterministic(
   }
 
   // 13. DIGESTIVE
-  if (/\b(gerd|acid reflux|gastroesophageal|gord|irritable bowel|ibs|ibd|achalasia|peptic ulcer|gastric ulcer|stomach ulcer|gastritis|gastric issue|stomach disease|intestinal disorder|bowel obstruction|duodenal ulcer|crohn|colitis|ulcerative colitis|piles|ha?emorrhoid\w*|anal fissure|anal fistula|appendicitis|appendix|diverticulitis|diverticular disease|celiac|coeliac|pancreatitis|pancreatic disease|gall bladder disease|gallbladder disease|gall.?stone|cholelithiasis|cholecystitis|biliary stent|biliary stone|bile duct stent|cbd stent|common bile duct stent|esophageal stent|oesophageal stent|pancreatic duct stent|hernia|inguinal hernia|hiatal hernia|hiatus hernia|umbilical hernia|colon polyp|rectal polyp|gastric polyp|stomach polyp|intestinal polyp)\b/i.test(text)) {
+  // NOTE: gallbladder/biliary-tract terms (gallstone, cholecystitis, gall
+  // bladder disease, biliary/bile-duct/CBD stents, etc.) are intentionally
+  // NOT here — they're liver/gallbladder-system conditions, not stomach/
+  // intestinal ones, and several plans (e.g. Optima Secure) ask about them
+  // under a dedicated "Liver or Gall Bladder ailment" question that's
+  // DIFFERENT from this digestive question. Since this DIGESTIVE section
+  // runs before LIVER/HEPATIC below, leaving them here would have them win
+  // and misroute — see rule 14 instead (mirrors the same fix already
+  // applied to TOP_PED_DICTIONARY in types.ts for the exact-match path).
+  if (/\b(gerd|acid reflux|gastroesophageal|gord|irritable bowel|ibs|ibd|achalasia|peptic ulcer|gastric ulcer|stomach ulcer|gastritis|gastric issue|stomach disease|intestinal disorder|bowel obstruction|duodenal ulcer|crohn|colitis|ulcerative colitis|piles|ha?emorrhoid\w*|anal fissure|anal fistula|appendicitis|appendix|diverticulitis|diverticular disease|celiac|coeliac|pancreatitis|pancreatic disease|esophageal stent|oesophageal stent|pancreatic duct stent|hernia|inguinal hernia|hiatal hernia|hiatus hernia|umbilical hernia|colon polyp|rectal polyp|gastric polyp|stomach polyp|intestinal polyp)\b/i.test(text)) {
     if (planName === "Activ Fit Preferred" && /\bulcer\b/i.test(text)) {
       const qNeoplasm = questionForCategory(config, "neoplasm");
       return makeOutput(pedText, "P0", qNeoplasm, `Exact condition match🎯: "${pedText}" is explicitly listed in this plan's tumor/ulcer questionnaire.`);
@@ -1401,9 +1410,9 @@ export function classifyDeterministic(
   }
 
   // 14. LIVER / HEPATIC
-  if (/\b(liver disease|liver disorder|liver infection|liver abscess|jaundice|cirrhosis|hepatomegaly|fatty liver|hepatic steatosis|alcoholic liver|nash|nafld|hepatitis|portal hypertension|ascites|liver failure|liver transplant|wilson.?disease)\b/i.test(text)) {
-    q = questionForCategory(config, "liver") || questionForCategory(config, "digestive") || findQuestion(config, /liver|jaundice/i);
-    if (q) return makeOutput(pedText, "P1", q, `${pedText} is a chronic liver or hepatic condition.`);
+  if (/\b(liver disease|liver disorder|liver infection|liver abscess|jaundice|cirrhosis|hepatomegaly|fatty liver|hepatic steatosis|alcoholic liver|nash|nafld|hepatitis|portal hypertension|ascites|liver failure|liver transplant|wilson.?disease|gall bladder disease|gallbladder disease|gall.?stone|cholelithiasis|cholecystitis|cholecystectomy|biliary stent|biliary stone|bile duct stent|cbd stent|common bile duct stent)\b/i.test(text)) {
+    q = questionForCategory(config, "liver") || questionForCategory(config, "digestive") || findQuestion(config, /liver|jaundice|gall/i);
+    if (q) return makeOutput(pedText, "P1", q, `${pedText} is a liver or gallbladder condition.`);
   }
 
   // 15. ENDOCRINE

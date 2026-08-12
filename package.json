@@ -19,7 +19,8 @@
     "db:backfill:ai-memory": "tsx scripts/backfillAiMemory.ts",
     "db:backfill:advisor-role": "tsx scripts/backfillAdvisorRole.ts",
     "db:backfill:advisor-tags-csv": "tsx scripts/assignAdvisorTagsFromCsv.ts",
-    "db:import:qa-history": "tsx scripts/importQaEvaluationHistory.ts"
+    "db:import:qa-history": "tsx scripts/importQaEvaluationHistory.ts",
+    "db:fix:gallbladder-category": "tsx scripts/fixGallbladderCategory.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
