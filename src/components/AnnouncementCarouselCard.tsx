@@ -183,7 +183,12 @@ export function AnnouncementCarouselCard({
       <AnnouncementContent
         content={text}
         theme={theme}
-        forceLightContrast={annType !== "General Announcement"}
+        // Every announcement type's inner content card is light-colored in
+        // both themes now (QA always was; General Announcement's dark-theme
+        // card was just switched to match — see the background block
+        // further down), so the rich content always needs light-contrast
+        // (dark-text) rendering rather than following the app theme.
+        forceLightContrast={true}
       />
     );
   };
@@ -210,7 +215,7 @@ export function AnnouncementCarouselCard({
         containerClass:
           theme === "dark"
             ? "shadow-xs"
-            : "bg-gradient-to-br from-[#3a608e] via-red-200 to-red-400 shadow-xs",
+            : "bg-gradient-to-br from-[#c7d2fe] to-[#a8b6f0] shadow-xs",
         containerBg:
           theme === "dark"
             ? "linear-gradient(135deg, rgba(190,18,60,0) 0%, rgba(220,38,38,0.38) 100%), #061a2b"
@@ -323,12 +328,19 @@ export function AnnouncementCarouselCard({
       {/* BODY CONTENT (Row 2 of Layout) — secondary card */}
       <div
         style={{
+          // Both announcement types now show a light inner content card
+          // regardless of theme (dark theme keeps its dark OUTER card —
+          // only this inner card goes light, matching QA's card, which has
+          // always done this). See the text-color overrides below this
+          // block for the corresponding readability fix.
           background:
             annType === "General Announcement"
               ? theme === "dark"
-                ? "#0a1f33"
+                ? "linear-gradient(135deg, #dbeafe, #bfdbfe)"
                 : "#EDF6F3"
-              : "linear-gradient(135deg, #dbeafe, #bfdbfe)",
+              : theme === "dark"
+                ? "linear-gradient(135deg, #dbeafe, #bfdbfe)"
+                : "#ffffff",
           paddingTop: "10px",
           paddingBottom: "8px",
           paddingLeft: "12px",
@@ -340,9 +352,11 @@ export function AnnouncementCarouselCard({
           border:
             annType === "General Announcement"
               ? theme === "dark"
-                ? "1px solid rgba(255,255,255,0.06)"
+                ? "1px solid #93c5fd"
                 : "1px solid #A9C9C2"
-              : "1px solid #93c5fd",
+              : theme === "dark"
+                ? "1px solid #93c5fd"
+                : "1px solid #dbe0f5",
           flexGrow: 1,
           minHeight: "170px",
         }}
@@ -354,12 +368,9 @@ export function AnnouncementCarouselCard({
           <span
             style={{
               fontFamily: "system-ui",
-              color:
-                annType === "General Announcement"
-                  ? theme === "dark"
-                    ? "#94a3b8"
-                    : "#134E4A"
-                  : "#0f2942",
+              // Always the light-card value now — this card's background is
+              // light in both themes (see the background block above).
+              color: annType === "General Announcement" ? "#134E4A" : "#0f2942",
               marginTop: "0px",
               marginBottom: "0px",
             }}
@@ -374,7 +385,8 @@ export function AnnouncementCarouselCard({
               <span
                 className="text-[9px] font-semibold"
                 style={{
-                  color: theme === "dark" ? "#00D3F3" : "#0754B7",
+                  // Always the light-card value — see the background block above.
+                  color: "#0754B7",
                 }}
               >
                 From: {item.from}
@@ -387,17 +399,11 @@ export function AnnouncementCarouselCard({
               overflowY: "auto",
               overflowX: "hidden",
               scrollbarWidth: "thin",
-              scrollbarColor:
-                annType === "General Announcement" &&
-                theme === "dark"
-                  ? "#5A6E8C transparent"
-                  : "#64748B transparent",
+              // "on-dark" scrollbar styling no longer applies to General
+              // Announcement — its inner card is light in both themes now.
+              scrollbarColor: "#64748B transparent",
             }}
-            className={`announcement-scroll ${
-              annType === "General Announcement" && theme === "dark"
-                ? "on-dark "
-                : ""
-            }relative w-full flex-1 min-h-0 flex flex-col justify-start bg-transparent pr-1 overflow-x-hidden`}
+            className="announcement-scroll relative w-full flex-1 min-h-0 flex flex-col justify-start bg-transparent pr-1 overflow-x-hidden"
           >
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
@@ -420,12 +426,8 @@ export function AnnouncementCarouselCard({
                     maxWidth: "100%",
                     fontFamily: "system-ui",
                     marginRight: "0px",
-                    color:
-                      annType === "General Announcement"
-                        ? theme === "dark"
-                          ? "#F5F7FA"
-                          : "#1E293B"
-                        : "#0f2942",
+                    // Always the light-card value now — see the background block above.
+                    color: annType === "General Announcement" ? "#1E293B" : "#0f2942",
                   }}
                 >
                   {/* Desktop/MD Floated Spacer to push mascot to bottom right */}
@@ -464,12 +466,8 @@ export function AnnouncementCarouselCard({
               <span
                 className="text-[9.5px] font-semibold tracking-wide"
                 style={{
-                  color:
-                    annType === "General Announcement"
-                      ? theme === "dark"
-                        ? "#94a3b8"
-                        : "#57534e"
-                      : "#57534e",
+                  // Always the light-card value — see the background block above.
+                  color: "#57534e",
                 }}
               >
                 Posted {formatOrdinal(item.announcementDate)}

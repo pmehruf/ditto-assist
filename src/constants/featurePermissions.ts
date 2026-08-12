@@ -65,6 +65,18 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Viewer"
   },
   {
+    // Read-only checker — Viewer-only like coverage_projection/advisory_zone
+    // above, visible to every tier including General advisors (no persisted
+    // data to edit; this reads the same specificIllnessEngine.ts logic as
+    // the Admin Zone's Specific Illness Ledger sandbox, minus its editor).
+    id: "specific_illness_check",
+    name: "Specific Illness Check",
+    description: "Check whether a declared medical condition falls under a plan's 2-year specific illness waiting period",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer"
+  },
+  {
     // QA DASHBOARD — read-only advisor QA scorecard, ported from the
     // standalone Apps Script tool. Visible to every tier (Viewer for both,
     // like coverage_projection above), matching that tool's "Anyone within

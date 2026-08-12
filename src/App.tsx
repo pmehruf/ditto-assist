@@ -111,6 +111,9 @@ const ResourcesPage = lazy(() =>
 const CoverageProjectionStudioPage = lazy(() =>
   import("./pages/CoverageProjectionStudioPage").then((m) => ({ default: m.CoverageProjectionStudioPage }))
 );
+const SpecificIllnessCheckPage = lazy(() =>
+  import("./pages/SpecificIllnessCheckPage").then((m) => ({ default: m.SpecificIllnessCheckPage }))
+);
 const QaDashboardPage = lazy(() =>
   import("./pages/QaDashboardPage").then((m) => ({ default: m.QaDashboardPage }))
 );
@@ -207,7 +210,7 @@ function resolveResourceIcon(resource: { title: string; icon?: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "qa_dashboard" | "owner_controls">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "qa_dashboard" | "owner_controls">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -2683,6 +2686,27 @@ export default function App() {
             </button>
           )}
 
+          {/* Specific Illness Check — sits directly below Cover Projection,
+              same Advisory Zone (all-tiers) visibility. General-user-facing
+              read-only surface over the Admin Zone's Specific Illness Ledger
+              sandbox logic (see SpecificIllnessCheckPage.tsx). */}
+          {hasAccess("specific_illness_check", "Viewer") && (
+            <button
+              onClick={() => {
+                setActiveTab("specific_illness_check");
+                if (isMobile) setIsMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                activeTab === "specific_illness_check"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+              } rounded-r-lg border-y-transparent border-r-transparent`}
+            >
+              <ShieldCheck className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>Specific Illness Check</span>
+            </button>
+          )}
+
           {/* Advisory Zone — sits ABOVE the Admin Zone divider because it is
               advisor-facing and visible to every tier. */}
           {hasAccess("advisory_zone", "Viewer") && (
@@ -3112,6 +3136,21 @@ export default function App() {
                   title="Cover projection"
                 >
                   <FileSpreadsheet style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("specific_illness_check", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("specific_illness_check")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "specific_illness_check"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "specific_illness_check" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Specific Illness Check"
+                >
+                  <ShieldCheck style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -3597,6 +3636,7 @@ export default function App() {
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                specific_illness_check: { label: "Specific Illness Check", icon: <ShieldCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4346,6 +4386,29 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Coverage Projection Studio">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <CoverageProjectionStudioPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* SPECIFIC ILLNESS CHECK — read-only, general-user-facing surface
+              over the same matchSpecificIllness() logic the Admin Zone's
+              Specific Illness Ledger sandbox uses (see
+              SpecificIllnessCheckPage.tsx). Visible to every tier (same
+              Advisory Zone visibility as Coverage Projection Studio above;
+              see featurePermissions.ts). */}
+          {activeTab === "specific_illness_check" && (
+            <motion.div
+              key="specific_illness_check"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Specific Illness Check">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <SpecificIllnessCheckPage theme={theme} dynamicSuggestions={dynamicSuggestions} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

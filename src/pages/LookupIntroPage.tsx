@@ -16,7 +16,6 @@ import {
   ArrowUpRight,
   Clock,
   Search,
-  History,
   AlertTriangle,
   CheckCircle2,
   Zap,
@@ -34,6 +33,7 @@ type HomeTabId =
   | "lookup"
   | "qa_dashboard"
   | "coverage_projection"
+  | "specific_illness_check"
   | "advisory_zone"
   | "announcement_archive"
   | "resources"
@@ -235,6 +235,18 @@ export function LookupIntroPage({
       onOpen: () => setActiveTab("coverage_projection"),
     },
     {
+      id: "specific_illness_check",
+      featureId: "specific_illness_check",
+      title: "Specific Illness Check",
+      tag: "2-year waiting period lookup",
+      icon: <ShieldCheck className="w-[18px] h-[18px]" />,
+      hex: "#14B8A6",
+      instructions:
+        "Check whether a declared medical condition carries a 2-year specific illness waiting period, and see exactly how it's mapped under each plan.",
+      ctaLabel: "Open Specific Illness Check",
+      onOpen: () => setActiveTab("specific_illness_check"),
+    },
+    {
       id: "qa_dashboard",
       featureId: "qa_dashboard",
       title: "QA Dashboard",
@@ -267,17 +279,6 @@ export function LookupIntroPage({
       instructions: "Browse the visual guide to medical declaration rules and payout mapping structures.",
       ctaLabel: "Open Declaration Map",
       onOpen: () => setActiveTab("resources"),
-    },
-    {
-      id: "my_activity",
-      featureId: "my_activity",
-      title: "My Activity",
-      tag: "Your full search & lookup log",
-      icon: <History className="w-[18px] h-[18px]" />,
-      hex: "#64748B",
-      instructions: "See your full history of declaration searches, matched plans, and past lookups in one place.",
-      ctaLabel: "Open My Activity",
-      onOpen: () => setActiveTab("my_activity"),
     },
   ];
 
