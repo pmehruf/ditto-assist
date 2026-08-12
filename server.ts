@@ -1013,6 +1013,19 @@ function isValidAdvisorRole(v: unknown): v is AdvisorRoleValue | null {
   return v === null || v === undefined || v === "" || (ADVISOR_ROLE_VALUES as readonly string[]).includes(v as string);
 }
 
+/** Which announcement `team` a caller's advisorRole is restricted to seeing —
+ * undefined means "no restriction" (both), used for unassigned users and for
+ * "Both advisor"/"Manager", per the "Dedicated Announcements" spec. */
+function teamForAdvisorRole(advisorRole: string | null | undefined): "Health" | "Term" | undefined {
+  if (advisorRole === "Health advisor") return "Health";
+  if (advisorRole === "Term advisor") return "Term";
+  return undefined;
+}
+
+function isValidAnnouncementTeam(v: unknown): v is "Health" | "Term" {
+  return v === "Health" || v === "Term";
+}
+
 /** Users not yet present in the directory default to "General" — matches the
  * client's existing fallback for a first-time Google sign-in. */
 async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<"General" | "Admin" | "Developer"> {
@@ -1420,8 +1433,22 @@ app.post("/api/change-logs", requireAuth, async (req, res) => {
 
 app.get("/api/announcements", requireAuth, async (req, res) => {
   try {
-    const { announcements } = createRepositories(getDb());
+    const { announcements, users: usersRepo } = createRepositories(getDb());
     const category = typeof req.query.category === "string" ? req.query.category : undefined;
+
+    // Team-based visibility (Health Advisors see only Health, Term Advisors
+    // only Term, everyone else sees both — see teamForAdvisorRole above).
+    // Admin/Developer callers may pass includeAllTeams=1 to bypass this and
+    // always see every announcement regardless of their OWN advisorRole —
+    // used only by the Announcement Manager's own fetch, since an admin
+    // editing announcements needs to find/edit ones for either audience.
+    let team: "Health" | "Term" | undefined;
+    if (req.query.includeAllTeams === "1") {
+      if (!(await requireAdminOrDeveloper(req, res, "Viewing announcements across all teams"))) return;
+    } else {
+      const caller = await usersRepo.findByEmail(req.user!.email);
+      team = teamForAdvisorRole(caller?.advisorRole);
+    }
 
     if (req.query.paginated) {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
@@ -1430,7 +1457,7 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
       const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
       const effectiveDateFrom = typeof req.query.effectiveDateFrom === "string" && req.query.effectiveDateFrom.trim() ? req.query.effectiveDateFrom.trim() : undefined;
       const effectiveDateTo = typeof req.query.effectiveDateTo === "string" && req.query.effectiveDateTo.trim() ? req.query.effectiveDateTo.trim() : undefined;
-      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir, dateFrom, dateTo, effectiveDateFrom, effectiveDateTo };
+      const listOptions = { page, pageSize, search, category, type, sortBy, sortDir, dateFrom, dateTo, effectiveDateFrom, effectiveDateTo, team };
       if (req.query.export) {
         const rows = await announcements.listMatching(listOptions);
         return res.json({ entries: rows });
@@ -1439,7 +1466,7 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
       return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
     }
 
-    const rows = await announcements.list({ category });
+    const rows = await announcements.list({ category, team });
     return res.json({ entries: rows });
   } catch (err: any) {
     console.error("Failed to list announcements:", err);
@@ -1450,9 +1477,12 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
 app.post("/api/announcements", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Creating announcements"))) return;
-    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate } = req.body;
+    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate, team } = req.body;
     if (typeof announcement !== "string" || !announcement.trim() || typeof category !== "string" || !category.trim()) {
       return res.status(400).json({ error: "announcement and category are required." });
+    }
+    if (team !== undefined && !isValidAnnouncementTeam(team)) {
+      return res.status(400).json({ error: "team must be 'Health' or 'Term'." });
     }
     const { announcements } = createRepositories(getDb());
     const resolvedType = type === "General Announcement" ? "General Announcement" : "QA Announcement";
@@ -1469,6 +1499,10 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
       // Distinct from effectiveDate (see schema.ts) — when this notice was
       // posted, not when the policy it describes takes effect.
       announcementDate: announcementDate || null,
+      // Which advisor audience this targets (Health Advisor / Term Advisor
+      // visibility rules — see teamForAdvisorRole). Defaults to "Health",
+      // matching the column default and the spec's retroactive backfill.
+      team: isValidAnnouncementTeam(team) ? team : "Health",
     });
     // Retention: auto-delete the oldest announcements of THIS SAME type once
     // the configured limit is exceeded — QA and General are pruned entirely
@@ -1494,7 +1528,10 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
 
-    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate } = req.body;
+    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate, team } = req.body;
+    if (team !== undefined && !isValidAnnouncementTeam(team)) {
+      return res.status(400).json({ error: "team must be 'Health' or 'Term'." });
+    }
     const { announcements } = createRepositories(getDb());
     const row = await announcements.update(id, {
       ...(announcement !== undefined ? { announcement } : {}),
@@ -1506,6 +1543,7 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
       ...(title !== undefined ? { title } : {}),
       ...(fromTeam !== undefined ? { fromTeam } : {}),
       ...(announcementDate !== undefined ? { announcementDate } : {}),
+      ...(team !== undefined ? { team } : {}),
     });
     if (!row) return res.status(404).json({ error: "Announcement not found." });
     return res.json({ entry: row });

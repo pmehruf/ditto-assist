@@ -82,6 +82,13 @@ export const announcementTypeEnum = pgEnum("announcement_type", [
   "General Announcement",
 ]);
 
+// Which advisor audience an announcement is targeted at. Health Advisors see
+// only "Health" announcements, Term Advisors see only "Term" announcements,
+// and everyone else (advisorRole null, "Both advisor", "Manager") sees both.
+// Defaults to "Health" so every pre-existing announcement (posted before
+// this concept existed) is retroactively tagged Health, per spec.
+export const announcementTeamEnum = pgEnum("announcement_team", ["Health", "Term"]);
+
 export const announcements = pgTable("announcements", {
   id: serial("id").primaryKey(),
   announcement: text("announcement").notNull(),
@@ -92,6 +99,7 @@ export const announcements = pgTable("announcements", {
   type: announcementTypeEnum("type").default("QA Announcement"),
   validTillDate: date("valid_till_date"),
   title: text("title"),
+  team: announcementTeamEnum("team").notNull().default("Health"),
   // Distinct from effectiveDate (when the policy/rule described actually
   // kicks in — can be future-dated) and from createdAt (an exact server
   // timestamp). This is the admin-editable "posted on" date shown to

@@ -44,6 +44,7 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
+    team: row.team === "Term" ? "Term" : "Health",
   };
 }
 

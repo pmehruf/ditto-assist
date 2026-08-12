@@ -137,6 +137,10 @@ export function QAAnnouncementForm({
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
   const [announcementType, setAnnouncementType] = useState<"QA Announcement" | "General Announcement">("QA Announcement");
+  // Which advisor audience this announcement targets — see teamForAdvisorRole
+  // in server.ts. Defaults to "Health" (matches the column default and the
+  // spec's retroactive backfill of pre-existing announcements).
+  const [announcementTeam, setAnnouncementTeam] = useState<"Health" | "Term">("Health");
   const [text, setText] = useState("");
   const [date, setDate] = useState(""); // Effective Date — Optional, when the policy/rule takes effect
   const [announcementDate, setAnnouncementDate] = useState(todayStr()); // Announcement Date — when this notice was posted; defaults to today but editable
@@ -636,6 +640,7 @@ export function QAAnnouncementForm({
       if (item) {
         const itemType = item.type || "QA Announcement";
         setAnnouncementType(itemType);
+        setAnnouncementTeam(item.team === "Term" ? "Term" : "Health");
         const announcementText = item.announcement || "";
         setText(announcementText);
         loadIntoEditor(announcementText);
@@ -668,6 +673,7 @@ export function QAAnnouncementForm({
       setValidTillDate("");
       setFromTeam("");
       setAnnouncementType("QA Announcement");
+      setAnnouncementTeam("Health");
       setAlreadyInForce(false);
       setEffectiveImmediately(false);
     }
@@ -687,6 +693,7 @@ export function QAAnnouncementForm({
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
+    team: row.team === "Term" ? "Term" : "Health",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -728,6 +735,9 @@ export function QAAnnouncementForm({
       // Distinct from effectiveDate — when this notice was posted, not when
       // the policy it describes takes effect. Applies to both types.
       announcementDate: announcementDate || null,
+      // Which advisor audience this targets — see teamForAdvisorRole in
+      // server.ts. Applies to both QA and General announcement types.
+      team: announcementTeam,
     };
 
     try {
@@ -861,22 +871,41 @@ export function QAAnnouncementForm({
         <div className="shrink-0">
           <SectionLabel theme={theme}>Announcement Details</SectionLabel>
           <div className="space-y-3">
-        <Field label="Type" theme={theme}>
-          <CustomSelect
-            theme={theme === "dark" ? "dark" : "light"}
-            value={announcementType}
-            onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement")}
-            triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
-              theme === "dark"
-                ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
-            }`}
-            options={[
-              { value: "QA Announcement", label: "QA Announcement" },
-              { value: "General Announcement", label: "General Announcement" },
-            ]}
-          />
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Type" theme={theme}>
+            <CustomSelect
+              theme={theme === "dark" ? "dark" : "light"}
+              value={announcementType}
+              onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement")}
+              triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
+                theme === "dark"
+                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
+                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
+              }`}
+              options={[
+                { value: "QA Announcement", label: "QA Announcement" },
+                { value: "General Announcement", label: "General Announcement" },
+              ]}
+            />
+          </Field>
+
+          <Field label="Audience" hint="who sees this" theme={theme}>
+            <CustomSelect
+              theme={theme === "dark" ? "dark" : "light"}
+              value={announcementTeam}
+              onChange={(val) => setAnnouncementTeam(val as "Health" | "Term")}
+              triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
+                theme === "dark"
+                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
+                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
+              }`}
+              options={[
+                { value: "Health", label: "Health Advisors" },
+                { value: "Term", label: "Term Advisors" },
+              ]}
+            />
+          </Field>
+        </div>
 
         {/* CONDITIONAL FORMS */}
         {announcementType === "QA Announcement" ? (

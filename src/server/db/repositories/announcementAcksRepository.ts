@@ -49,17 +49,22 @@ export class AnnouncementAcksRepository {
 
     const todayIso = new Date().toISOString().slice(0, 10);
 
+    const conditions = [
+      eq(announcements.requiresAck, true),
+      gte(announcements.createdAt, user.createdAt),
+      or(isNull(announcements.validTillDate), gte(announcements.validTillDate, todayIso)),
+      notInArray(announcements.id, ackedIds),
+    ];
+    // Health Advisors only need to ack Health announcements, Term Advisors
+    // only Term; everyone else (unassigned, "Both advisor", "Manager") must
+    // ack both, so no team condition is added for them.
+    if (user.advisorRole === "Health advisor") conditions.push(eq(announcements.team, "Health"));
+    else if (user.advisorRole === "Term advisor") conditions.push(eq(announcements.team, "Term"));
+
     return this.db
       .select()
       .from(announcements)
-      .where(
-        and(
-          eq(announcements.requiresAck, true),
-          gte(announcements.createdAt, user.createdAt),
-          or(isNull(announcements.validTillDate), gte(announcements.validTillDate, todayIso)),
-          notInArray(announcements.id, ackedIds)
-        )
-      )
+      .where(and(...conditions))
       .orderBy(asc(announcements.createdAt));
   }
 

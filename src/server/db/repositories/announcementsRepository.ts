@@ -30,6 +30,10 @@ export interface AnnouncementListOptions {
    * was posted. */
   effectiveDateFrom?: string;
   effectiveDateTo?: string;
+  /** Restricts to a single advisor audience ("Health" | "Term"). Omit to
+   * return both — used for the caller's own unrestricted team, and for the
+   * Admin/Developer "includeAllTeams" bypass on the Announcement Manager. */
+  team?: NewAnnouncementRow["team"];
 }
 
 const SORTABLE_COLUMNS = {
@@ -57,6 +61,8 @@ export interface AnnouncementFilter {
   type?: NewAnnouncementRow["type"];
   /** Only announcements still valid on/after this ISO date (validTillDate >= this). */
   validAsOf?: string;
+  /** Restricts to a single advisor audience ("Health" | "Term"). Omit to return both. */
+  team?: NewAnnouncementRow["team"];
   limit?: number;
 }
 
@@ -97,6 +103,7 @@ export class AnnouncementsRepository {
     if (filter.category) conditions.push(eq(announcements.category, filter.category));
     if (filter.type) conditions.push(eq(announcements.type, filter.type));
     if (filter.validAsOf) conditions.push(gte(announcements.validTillDate, filter.validAsOf));
+    if (filter.team) conditions.push(eq(announcements.team, filter.team));
 
     const query = this.db
       .select()
@@ -119,6 +126,7 @@ export class AnnouncementsRepository {
     if (options.dateTo) conditions.push(lte(announcements.announcementDate, options.dateTo));
     if (options.effectiveDateFrom) conditions.push(gte(announcements.effectiveDate, options.effectiveDateFrom));
     if (options.effectiveDateTo) conditions.push(lte(announcements.effectiveDate, options.effectiveDateTo));
+    if (options.team) conditions.push(eq(announcements.team, options.team));
     return conditions;
   }
 
@@ -152,7 +160,7 @@ export class AnnouncementsRepository {
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * kept for parity with the other repositories' export path, even though
    * this table is already retention-capped at 100 rows/type. */
-  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir" | "dateFrom" | "dateTo" | "effectiveDateFrom" | "effectiveDateTo"> = {}): Promise<AnnouncementRow[]> {
+  async listMatching(options: Pick<AnnouncementListOptions, "category" | "type" | "search" | "sortBy" | "sortDir" | "dateFrom" | "dateTo" | "effectiveDateFrom" | "effectiveDateTo" | "team"> = {}): Promise<AnnouncementRow[]> {
     const conditions = this.buildListConditions(options);
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? announcements.createdAt;

@@ -45,7 +45,16 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
+    team: row.team === "Term" ? "Term" : "Health",
   };
+}
+
+/** Advisor-audience badge label — distinct from teamLabel() in
+ * announcementDisplay.ts, which labels the unrelated `from`/fromTeam
+ * "posted from which department" field. This is who the announcement is
+ * VISIBLE to (Health Advisors vs Term Advisors), not who wrote it. */
+function audienceLabel(item: QAAnnouncement): string {
+  return item.team === "Term" ? "Term Advisors" : "Health Advisors";
 }
 
 /**
@@ -176,6 +185,12 @@ export function AnnouncementLogPage({
       pageSize: String(PAGE_SIZE),
       sortBy: "announcementDate",
       sortDir: "desc",
+      // This gallery is the Announcement Manager (Admin/Developer only, per
+      // featurePermissions.ts) — it must show announcements for BOTH
+      // advisor audiences regardless of the admin's own advisorRole, since
+      // they're managing on behalf of everyone. See teamForAdvisorRole in
+      // server.ts for the tier-gated bypass this triggers server-side.
+      includeAllTeams: "1",
     });
     const trimmed = debouncedSearch.trim();
     if (trimmed) params.set("search", trimmed);
@@ -207,7 +222,7 @@ export function AnnouncementLogPage({
   const exportCsv = async () => {
     setExporting(true);
     try {
-      const params = new URLSearchParams({ paginated: "1", pageSize: "10000", sortBy: "announcementDate", sortDir: "desc" });
+      const params = new URLSearchParams({ paginated: "1", pageSize: "10000", sortBy: "announcementDate", sortDir: "desc", includeAllTeams: "1" });
       const trimmed = debouncedSearch.trim();
       if (trimmed) params.set("search", trimmed);
       const res = await fetch(`/api/announcements?${params.toString()}&export=1`);
@@ -217,7 +232,8 @@ export function AnnouncementLogPage({
       downloadCSV(
         rows.map((item) => ({
           Title: item.title || item.category || "",
-          Team: teamLabel(item),
+          Audience: audienceLabel(item),
+          "From Team": teamLabel(item),
           Severity: item.type === "QA Announcement" ? item.rating ?? "" : "",
           Announcement: item.announcement.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(),
           "Announcement Date": item.announcementDate ? isoDateToDMY(item.announcementDate) : "",
@@ -324,7 +340,12 @@ export function AnnouncementLogPage({
                 card's full height — no outer scroll wrapper. */}
             <QAAnnouncementForm
               theme={theme}
-              qaAnnouncements={qaAnnouncements}
+              // This gallery's own `entries` (fetched with includeAllTeams=1
+              // above) — NOT App.tsx's `qaAnnouncements` prop — so the
+              // form's by-id edit lookup finds a Term announcement even
+              // though the current admin's own advisorRole would otherwise
+              // scope App.tsx's array to Health only (or vice versa).
+              qaAnnouncements={entries}
               setQaAnnouncements={handleFormAnnouncementsChange}
               currentUser={currentUser}
               setChangeLogs={setChangeLogs}
@@ -446,6 +467,17 @@ export function AnnouncementLogPage({
                                     {item.type}
                                   </span>
                                 )}
+                                {/* Which advisor audience this is visible to
+                                    — always shown (both announcement types),
+                                    since it's a new independent axis from
+                                    Type/teamLabel below. */}
+                                <span className={`text-[8px] font-mono font-bold px-1 py-[1px] rounded border ${
+                                  item.team === "Term"
+                                    ? dark ? "bg-purple-500/10 text-purple-400 border-purple-500/25" : "bg-purple-50 text-purple-700 border-purple-200"
+                                    : dark ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/25" : "bg-cyan-50 text-cyan-700 border-cyan-200"
+                                }`}>
+                                  {audienceLabel(item)}
+                                </span>
                                 {/* teamLabel() returns "QA Announcement" for
                                     QA rows — identical to the Type pill right
                                     next to it, so showing both duplicated the
