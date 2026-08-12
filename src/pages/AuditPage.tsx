@@ -108,6 +108,11 @@ export function AuditPage({
   setHistoryActionFilter,
   usersList,
 }: AuditPageProps) {
+  // Explicit per-<th> sticky-header background (see the comment at each
+  // table's <thead> for why this can't just live on <thead> + bg-inherit).
+  const auditThBg = theme === "dark" ? "bg-[#132c46] text-stone-300 border-stone-800" : "bg-stone-50 text-[#111827] border-stone-300";
+  const changeLogThBg = theme === "dark" ? "bg-[#132c46] text-stone-300 border-stone-800" : "bg-stone-50 text-[#111827] border-stone-200";
+
   // Which rows have their explanation expanded (keyed by row index).
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
@@ -688,23 +693,30 @@ export function AuditPage({
             )
           ) : (
             <table className="w-full text-left border-collapse text-xs">
-              <thead className={`text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${
-                theme === "dark"
-                  ? "bg-[#132c46] text-stone-300 border-stone-800"
-                  : "bg-stone-50 text-[#111827] border-stone-300"
-              }`}>
+              {/* bg-inherit on each <th> used to rely on inheriting the
+                  <thead>'s background — with border-collapse: collapse,
+                  <thead>/<tr> backgrounds don't reliably paint in every
+                  browser, so in light theme the sticky header ended up
+                  effectively see-through and scrolled row content (e.g. an
+                  expanded mapping explanation) bled through it. Every <th>
+                  now carries its own explicit opaque background instead,
+                  matching the safer pattern already used in
+                  AnnouncementLogPage.tsx/AnnouncementArchivePage.tsx. Dark
+                  theme's solid hex background never had this problem, which
+                  is why only light theme showed it. */}
+              <thead>
                 <tr>
                   {/* Explicit widths: without them the browser sizes columns
                       by content, which let a long medical condition stretch
                       that column and squeeze everything else. */}
-                  <th className="py-3.5 px-5 w-14 text-center bg-inherit">No.</th>
-                  <SortableTh label="Adviser" sortKey="adviser" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-52 bg-inherit" />
-                  <SortableTh label="Date & Time" sortKey="timestamp" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-44 bg-inherit" />
-                  <SortableTh label="Plan Name" sortKey="planName" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-36 bg-inherit" />
-                  <SortableTh label="Medical Condition" sortKey="pedInput" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-40 bg-inherit" />
-                  <SortableTh label="Mapping Status" sortKey="matchType" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-32 bg-inherit" />
-                  <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 bg-inherit" />
-                  <SortableTh label="Source" sortKey="source" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className="py-3.5 px-5 w-32 bg-inherit" />
+                  <th className={`py-3.5 px-5 w-14 text-center text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`}>No.</th>
+                  <SortableTh label="Adviser" sortKey="adviser" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 w-52 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
+                  <SortableTh label="Date & Time" sortKey="timestamp" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 w-44 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
+                  <SortableTh label="Plan Name" sortKey="planName" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 w-36 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
+                  <SortableTh label="Medical Condition" sortKey="pedInput" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 w-40 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
+                  <SortableTh label="Mapping Status" sortKey="matchType" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 w-32 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
+                  <SortableTh label="Matched Question" sortKey="matchedQuestion" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
+                  <SortableTh label="Source" sortKey="source" activeSort={auditLogsSort} onSort={toggleAuditLogsSort} className={`py-3.5 px-5 w-32 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${auditThBg}`} />
                 </tr>
               </thead>
               <tbody className={`divide-y font-semibold ${
@@ -915,18 +927,17 @@ export function AuditPage({
           }`}>
             <div className="overflow-x-auto max-h-[600px]">
               <table id="change-history-table" className="w-full text-left border-collapse text-xs">
-                <thead className={`text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${
-                  theme === "dark"
-                    ? "bg-[#132c46] text-stone-300 border-stone-800"
-                    : "bg-stone-50 text-[#111827] border-stone-200"
-                }`}>
+                {/* See the Audit Logs table's <thead> comment above — same
+                    fix, explicit per-<th> background instead of relying on
+                    <thead>'s (which border-collapse doesn't reliably paint). */}
+                <thead>
                   <tr>
-                    <SortableTh label="Timestamp" sortKey="timestamp" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
-                    <SortableTh label="User" sortKey="userName" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
-                    <SortableTh label="Role" sortKey="role" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
-                    <SortableTh label="Action Event" sortKey="actionType" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
-                    <SortableTh label="Plan" sortKey="planName" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
-                    <SortableTh label="Description Record" sortKey="description" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className="py-3.5 px-5" />
+                    <SortableTh label="Timestamp" sortKey="timestamp" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${changeLogThBg}`} />
+                    <SortableTh label="User" sortKey="userName" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${changeLogThBg}`} />
+                    <SortableTh label="Role" sortKey="role" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${changeLogThBg}`} />
+                    <SortableTh label="Action Event" sortKey="actionType" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${changeLogThBg}`} />
+                    <SortableTh label="Plan" sortKey="planName" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${changeLogThBg}`} />
+                    <SortableTh label="Description Record" sortKey="description" activeSort={changeLogsSort} onSort={toggleChangeLogsSort} className={`py-3.5 px-5 text-[11px] font-extrabold uppercase tracking-wider sticky top-0 z-20 border-b ${changeLogThBg}`} />
                   </tr>
                 </thead>
                 <tbody className={`divide-y font-semibold ${
