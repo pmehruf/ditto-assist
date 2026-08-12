@@ -36,6 +36,7 @@ import {
   date,
   pgEnum,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -730,6 +731,49 @@ export const qaDashboardRoles = pgTable("qa_dashboard_roles", {
 
 export type QaDashboardRoleRow = typeof qaDashboardRoles.$inferSelect;
 export type NewQaDashboardRoleRow = typeof qaDashboardRoles.$inferInsert;
+
+// qa_evaluation_history — one-time archival import of QA evaluation rows
+// (Checked Date, Mistake Date, TACT ID, Advisor, Chat ID, Domain, Score)
+// covering June 2025-May 2026, a period the live master_feedback_dump
+// Google Sheet (src/server/qaDashboard/qaDataEngine.ts) no longer holds —
+// confirmed before building this table, so there's no overlap/double-count
+// risk with the live Sheet. Imported via scripts/importQaEvaluationHistory.ts.
+//
+// checkedDate/mistakeDate are stored as "yyyy-MM-dd" text rather than a
+// native `date` column, matching the rest of the QA Dashboard's date-string
+// convention (see DateFilters in qaDataEngine.ts) — this lets them plug
+// directly into sheetsClient.ts's dateStringToSerial() with no
+// driver-specific date-object handling to reconcile.
+//
+// qaDataEngine.ts's getMergedFeedbackDumpRows() reads this table and
+// stitches its rows in alongside the live Sheet's rows (converted to the
+// same serial-number cell-array shape) before any of the existing
+// aggregation/reporting functions run, so a date range that falls in this
+// window returns real data instead of nothing. This table only carries the
+// six identification columns above — no dispute/escalation/feedback-text
+// columns — so archive rows never appear in dispute/escalation review
+// listings, only in score aggregates.
+export const qaEvaluationHistory = pgTable(
+  "qa_evaluation_history",
+  {
+    id: serial("id").primaryKey(),
+    checkedDate: text("checked_date").notNull(), // yyyy-MM-dd
+    mistakeDate: text("mistake_date"), // yyyy-MM-dd, nullable — ~24 source rows have it blank
+    tactId: text("tact_id").notNull(),
+    advisorName: text("advisor_name").notNull(),
+    chatId: text("chat_id").notNull(),
+    domain: text("domain").notNull(), // "CHAT" | "FIRST_CALL" | "PAYMENT_CALL"
+    score: integer("score"), // nullable — ~31 source rows have no recorded score
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("qa_evaluation_history_tact_id_idx").on(table.tactId),
+    index("qa_evaluation_history_checked_date_idx").on(table.checkedDate),
+  ]
+);
+
+export type QaEvaluationHistoryRow = typeof qaEvaluationHistory.$inferSelect;
+export type NewQaEvaluationHistoryRow = typeof qaEvaluationHistory.$inferInsert;
 
 export type SearchHistoryRow = typeof searchHistory.$inferSelect;
 export type NewSearchHistoryRow = typeof searchHistory.$inferInsert;

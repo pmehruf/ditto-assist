@@ -21,6 +21,9 @@
 
 import { fetchSheetValues, dateStringToSerial, serialToDMY } from "./sheetsClient.js";
 import { QA_SCORE_DASHBOARD_TACT_IDS } from "../../constants/qaDashboardAdvisorAllowlist.js";
+import { getDb } from "../db/client.js";
+import { createRepositories } from "../db/repositories/index.js";
+import type { QaEvaluationHistoryRow } from "../db/schema.js";
 
 const SHEETS = {
   QA_FEEDBACK: "qa_feedback",
@@ -113,9 +116,71 @@ async function getSheetDataCached(sheetName: string): Promise<{ headers: string[
 }
 
 /** Exposed so an admin action ("Refresh") can force a re-read instead of
- * waiting out the TTL, without needing to restart the server. */
+ * waiting out the TTL, without needing to restart the server. Also clears
+ * the qa_evaluation_history cache below, so a corrected re-import is picked
+ * up the same way a live Sheet edit is. */
 export function invalidateQaSheetCache(): void {
   sheetCache.clear();
+  historyCache = null;
+}
+
+// ==================== ARCHIVE MERGE (qa_evaluation_history) ====================
+// One-time-imported historical rows (see drizzle/0027_qa_evaluation_history.sql
+// and scripts/importQaEvaluationHistory.ts) covering a period the live
+// FEEDBACK_DUMP Sheet no longer holds — confirmed before this was built, so
+// there's no overlap/double-count risk. getMergedFeedbackDumpRows() is a
+// drop-in replacement for `getSheetDataCached(SHEETS.FEEDBACK_DUMP)` that
+// stitches the archive's rows in, converted to the same serial-number
+// cell-array shape, so every existing MASTER_DUMP_COLS-based reader below
+// works completely unmodified.
+
+interface HistoryCacheEntry {
+  rows: QaEvaluationHistoryRow[];
+  expiresAt: number;
+}
+let historyCache: HistoryCacheEntry | null = null;
+
+async function getHistoryRowsCached(): Promise<QaEvaluationHistoryRow[]> {
+  if (historyCache && historyCache.expiresAt > Date.now()) return historyCache.rows;
+  const { qaEvaluationHistory } = createRepositories(getDb());
+  const rows = await qaEvaluationHistory.listAll();
+  historyCache = { rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS };
+  return rows;
+}
+
+async function getMergedFeedbackDumpRows(): Promise<{ headers: string[]; rows: unknown[][] }> {
+  const live = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
+  const history = await getHistoryRowsCached();
+  if (history.length === 0 || live.headers.length === 0) return live;
+
+  const iChecked = colIndex(live.headers, MASTER_DUMP_COLS.CHECKED_DATE);
+  const iMistake = colIndex(live.headers, MASTER_DUMP_COLS.MISTAKE_DATE);
+  const iTact = colIndex(live.headers, MASTER_DUMP_COLS.TACT_ID);
+  const iChatId = colIndex(live.headers, MASTER_DUMP_COLS.CHAT_ID);
+  const iDomain = colIndex(live.headers, MASTER_DUMP_COLS.DOMAIN);
+  const iScore = colIndex(live.headers, MASTER_DUMP_COLS.SCORE);
+  // "advisor_name" isn't in MASTER_DUMP_COLS (only used by getAdvisorReviews
+  // below) — looked up defensively with indexOf rather than colIndex so a
+  // future rename there can't break the merge itself.
+  const iAdvisorName = live.headers.indexOf("advisor_name");
+  const width = Math.max(iChecked, iMistake, iTact, iChatId, iDomain, iScore, iAdvisorName) + 1;
+
+  const historyRows: unknown[][] = history.map((h) => {
+    const row = new Array(width);
+    row[iChecked] = dateStringToSerial(h.checkedDate);
+    // Nullable in ~24 source rows — left undefined rather than a fabricated
+    // date, matching how the rest of this file already treats a missing/
+    // non-numeric mistake cell (typeof check, not a truthy/falsy one).
+    if (h.mistakeDate) row[iMistake] = dateStringToSerial(h.mistakeDate);
+    row[iTact] = h.tactId;
+    row[iChatId] = h.chatId;
+    row[iDomain] = h.domain;
+    row[iScore] = h.score;
+    if (iAdvisorName !== -1) row[iAdvisorName] = h.advisorName;
+    return row;
+  });
+
+  return { headers: live.headers, rows: [...live.rows, ...historyRows] };
 }
 
 function colIndex(headers: string[], name: string): number {
@@ -316,7 +381,7 @@ function round2(n: number): number {
 }
 
 export async function getAdvisorMetrics(tactId: string, dateFilters: ParsedDateFilters): Promise<AdvisorMetrics> {
-  const { headers, rows } = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
+  const { headers, rows } = await getMergedFeedbackDumpRows();
   const iChecked = colIndex(headers, MASTER_DUMP_COLS.CHECKED_DATE);
   const iMistake = colIndex(headers, MASTER_DUMP_COLS.MISTAKE_DATE);
   const iTact = colIndex(headers, MASTER_DUMP_COLS.TACT_ID);
@@ -390,7 +455,7 @@ export async function getAdvisorsBatchMetrics(
   checkedTo: number,
   tillDate: number
 ): Promise<Record<string, BatchMetric>> {
-  const { headers, rows } = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
+  const { headers, rows } = await getMergedFeedbackDumpRows();
   const iChecked = colIndex(headers, MASTER_DUMP_COLS.CHECKED_DATE);
   const iMistake = colIndex(headers, MASTER_DUMP_COLS.MISTAKE_DATE);
   const iTact = colIndex(headers, MASTER_DUMP_COLS.TACT_ID);
@@ -545,7 +610,7 @@ export async function getAdvisorReviews(
   const advisor = await findAdvisorByTactId(tactId);
   if (!advisor) return { headers: [], rows: [], error: "Advisor not found" };
 
-  const { headers, rows } = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
+  const { headers, rows } = await getMergedFeedbackDumpRows();
   if (headers.length === 0) return { headers: [], rows: [], sheetMissing: true };
 
   const iTact = colIndex(headers, "advisor_tact");

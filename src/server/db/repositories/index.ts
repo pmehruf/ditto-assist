@@ -25,6 +25,7 @@ import { MappingHistoryRepository } from "./mappingHistoryRepository.js";
 import { CollisionsRepository } from "./collisionsRepository.js";
 import { QaDashboardConnectionRepository } from "./qaDashboardConnectionRepository.js";
 import { QaDashboardRoleRepository } from "./qaDashboardRoleRepository.js";
+import { QaEvaluationHistoryRepository } from "./qaEvaluationHistoryRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -103,6 +104,9 @@ export { QaDashboardConnectionRepository } from "./qaDashboardConnectionReposito
 export { QaDashboardRoleRepository } from "./qaDashboardRoleRepository.js";
 export type { QaDashboardRoleType, UpsertQaDashboardRoleEntry } from "./qaDashboardRoleRepository.js";
 
+export { QaEvaluationHistoryRepository } from "./qaEvaluationHistoryRepository.js";
+export type { NewQaEvaluationHistoryEntry } from "./qaEvaluationHistoryRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -131,6 +135,7 @@ export interface Repositories {
   collisions: CollisionsRepository;
   qaDashboardConnection: QaDashboardConnectionRepository;
   qaDashboardRoles: QaDashboardRoleRepository;
+  qaEvaluationHistory: QaEvaluationHistoryRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -156,5 +161,6 @@ export function createRepositories(db: AnyDb): Repositories {
     collisions: new CollisionsRepository(db),
     qaDashboardConnection: new QaDashboardConnectionRepository(db),
     qaDashboardRoles: new QaDashboardRoleRepository(db),
+    qaEvaluationHistory: new QaEvaluationHistoryRepository(db),
   };
 }
