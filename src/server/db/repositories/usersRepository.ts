@@ -3,23 +3,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, count, desc, eq, gte, ilike, isNull, lte, ne, or } from "drizzle-orm";
+import { and, arrayOverlaps, asc, count, desc, eq, gte, ilike, lte, ne, or, sql } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { users, type UserRow, type NewUserRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
 
 export type CreateUserEntry = NewUserRow;
 
-export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status" | "advisorRole">>;
+export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status" | "tags">>;
 
 export interface UserListOptions {
   page?: number;
   pageSize?: number;
   tier?: NewUserRow["tier"];
   status?: NewUserRow["status"];
-  /** One of the 4 advisor role labels, or the sentinel "Unassigned" for
-   * users with a null advisorRole (see server.ts's ADVISOR_ROLE_VALUES). */
-  advisorRole?: string;
+  /** A single skill-domain tag ("Health" | "Term"), or the sentinel
+   * "Unassigned" for users with an empty tags array (see server.ts's
+   * ADVISOR_TAG_VALUES). Matches any user whose tags include this value —
+   * a user tagged both Health and Term matches either filter. */
+  tag?: string;
   /** Inclusive createdAt ("Joined") range — "YYYY-MM-DD" date strings. */
   dateFrom?: string;
   dateTo?: string;
@@ -38,7 +40,8 @@ const SORTABLE_COLUMNS = {
   status: users.status,
   createdAt: users.createdAt,
   lastLogin: users.lastLogin,
-  advisorRole: users.advisorRole,
+  // No `tags` entry — sorting by a multi-value array column isn't
+  // well-defined, so that column's header simply isn't sortable client-side.
 } as const;
 
 /**
@@ -75,9 +78,11 @@ export class UsersRepository {
     const conditions = [];
     if (options.tier) conditions.push(eq(users.tier, options.tier));
     if (options.status) conditions.push(eq(users.status, options.status));
-    if (options.advisorRole) {
+    if (options.tag) {
       conditions.push(
-        options.advisorRole === "Unassigned" ? isNull(users.advisorRole) : eq(users.advisorRole, options.advisorRole)
+        options.tag === "Unassigned"
+          ? sql`cardinality(${users.tags}) = 0`
+          : arrayOverlaps(users.tags, [options.tag])
       );
     }
     if (options.dateFrom) conditions.push(gte(users.createdAt, new Date(options.dateFrom)));
@@ -126,7 +131,7 @@ export class UsersRepository {
 
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * kept for parity with the other repositories' export path. */
-  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "advisorRole" | "dateFrom" | "dateTo" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
+  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "tag" | "dateFrom" | "dateTo" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
     const conditions = this.buildListConditions(options);
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? users.createdAt;

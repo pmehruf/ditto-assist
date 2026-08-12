@@ -187,8 +187,8 @@ export function AnnouncementLogPage({
       sortDir: "desc",
       // This gallery is the Announcement Manager (Admin/Developer only, per
       // featurePermissions.ts) — it must show announcements for BOTH
-      // advisor audiences regardless of the admin's own advisorRole, since
-      // they're managing on behalf of everyone. See teamForAdvisorRole in
+      // advisor audiences regardless of the admin's own tags, since
+      // they're managing on behalf of everyone. See teamForTags in
       // server.ts for the tier-gated bypass this triggers server-side.
       includeAllTeams: "1",
     });
@@ -343,7 +343,7 @@ export function AnnouncementLogPage({
               // This gallery's own `entries` (fetched with includeAllTeams=1
               // above) — NOT App.tsx's `qaAnnouncements` prop — so the
               // form's by-id edit lookup finds a Term announcement even
-              // though the current admin's own advisorRole would otherwise
+              // though the current admin's own tags would otherwise
               // scope App.tsx's array to Health only (or vice versa).
               qaAnnouncements={entries}
               setQaAnnouncements={handleFormAnnouncementsChange}

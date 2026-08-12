@@ -137,7 +137,7 @@ export function QAAnnouncementForm({
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
   const [announcementType, setAnnouncementType] = useState<"QA Announcement" | "General Announcement">("QA Announcement");
-  // Which advisor audience this announcement targets — see teamForAdvisorRole
+  // Which advisor audience this announcement targets — see teamForTags
   // in server.ts. Defaults to "Health" (matches the column default and the
   // spec's retroactive backfill of pre-existing announcements).
   const [announcementTeam, setAnnouncementTeam] = useState<"Health" | "Term">("Health");
@@ -735,7 +735,7 @@ export function QAAnnouncementForm({
       // Distinct from effectiveDate — when this notice was posted, not when
       // the policy it describes takes effect. Applies to both types.
       announcementDate: announcementDate || null,
-      // Which advisor audience this targets — see teamForAdvisorRole in
+      // Which advisor audience this targets — see teamForTags in
       // server.ts. Applies to both QA and General announcement types.
       team: announcementTeam,
     };

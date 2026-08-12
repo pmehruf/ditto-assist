@@ -10,6 +10,8 @@ import { UserProfile, LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { AdvisorTagCheckboxes, ADVISOR_TAG_OPTIONS } from "./AdvisorTagCheckboxes";
+import { TactIdInput } from "./TactIdInput";
 import { formatDisplayTimestamp } from "../utils/timestamps";
 import { SortableTh } from "./SortableTh";
 import { Pagination } from "./Pagination";
@@ -34,10 +36,6 @@ const TIERS: UserProfile["tier"][] = ["General", "Admin", "Developer"];
 // the server-side check in POST /api/users.
 const ADMIN_ADDABLE_TIERS: UserProfile["tier"][] = ["General", "Admin"];
 const STATUSES: UserProfile["status"][] = ["Active", "Disabled"];
-// Must match ADVISOR_ROLE_VALUES in server.ts exactly — the server rejects
-// anything outside this set. "" (Unassigned) isn't sent to the server as a
-// literal value; it's translated to null.
-const ADVISOR_ROLES = ["Health advisor", "Term advisor", "Both advisor", "Manager"] as const;
 
 const emptyDraft = (): UserProfile => ({
   email: "",
@@ -45,7 +43,7 @@ const emptyDraft = (): UserProfile => ({
   tactId: "",
   tier: "General",
   status: "Active",
-  advisorRole: null,
+  tags: [],
 });
 
 /**
@@ -113,17 +111,17 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   const searchQuery = useDebouncedValue(searchInput, 350);
   const { sort: usersSort, toggleSort: toggleUsersSort } = useServerSort();
 
-  // Filter row — role/tier/status/joined-date, all server-side (same
+  // Filter row — tag/tier/status/joined-date, all server-side (same
   // paginated /api/users endpoint the search box already used). "" means
   // "All" for every one of these.
-  const [roleFilter, setRoleFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [tierFilter, setTierFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [joinedFrom, setJoinedFrom] = useState("");
   const [joinedTo, setJoinedTo] = useState("");
-  const hasActiveFilters = Boolean(roleFilter || tierFilter || statusFilter || joinedFrom || joinedTo);
+  const hasActiveFilters = Boolean(tagFilter || tierFilter || statusFilter || joinedFrom || joinedTo);
   const resetFilters = () => {
-    setRoleFilter("");
+    setTagFilter("");
     setTierFilter("");
     setStatusFilter("");
     setJoinedFrom("");
@@ -131,7 +129,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   };
 
   const buildFilterParams = (params: URLSearchParams) => {
-    if (roleFilter) params.set("advisorRole", roleFilter);
+    if (tagFilter) params.set("tag", tagFilter);
     if (tierFilter) params.set("tier", tierFilter);
     if (statusFilter) params.set("status", statusFilter);
     if (joinedFrom) params.set("dateFrom", joinedFrom);
@@ -174,12 +172,12 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   // re-runs regardless (it depends on all of these plus `page`).
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, usersSort?.key, usersSort?.direction, roleFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
+  }, [searchQuery, usersSort?.key, usersSort?.direction, tagFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
 
   useEffect(() => {
     loadEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchQuery, usersSort?.key, usersSort?.direction, roleFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
+  }, [page, searchQuery, usersSort?.key, usersSort?.direction, tagFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
 
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
@@ -195,7 +193,17 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const res = await fetch(`/api/users?${params.toString()}&export=1`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
-      downloadCSV(Array.isArray(body.entries) ? body.entries : [], "user-directory.csv");
+      const rows = (Array.isArray(body.entries) ? body.entries : []) as UserProfile[];
+      downloadCSV(
+        rows.map((u) => ({
+          ...u,
+          // Plain "Health + Term" instead of downloadCSV's default
+          // JSON.stringify(...) for array fields, which reads as raw
+          // ["Health","Term"] escaped-quote noise in a spreadsheet cell.
+          tags: u.tags && u.tags.length > 0 ? u.tags.join(" + ") : "Unassigned",
+        })),
+        "user-directory.csv"
+      );
     } catch (err) {
       console.error("Failed to export the user directory:", err);
     } finally {
@@ -226,7 +234,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const res = await fetch(`/api/users/${encodeURIComponent(editingEmail)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, advisorRole: draft.advisorRole || null }),
+        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, tags: draft.tags || [] }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
@@ -448,17 +456,17 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-40 shrink-0">
             <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
-              <span className="inline-flex items-center gap-1"><Filter className="w-3 h-3" /> Role</span>
+              <span className="inline-flex items-center gap-1"><Filter className="w-3 h-3" /> Tag</span>
             </label>
             <CustomSelect
               theme={theme}
-              value={roleFilter}
-              onChange={setRoleFilter}
+              value={tagFilter}
+              onChange={setTagFilter}
               triggerClassName={selectTriggerClass}
               options={[
-                { value: "", label: "All Roles" },
+                { value: "", label: "All Tags" },
                 { value: "Unassigned", label: "Unassigned" },
-                ...ADVISOR_ROLES.map((r) => ({ value: r, label: r })),
+                ...ADVISOR_TAG_OPTIONS.map((t) => ({ value: t, label: t })),
               ]}
             />
           </div>
@@ -532,7 +540,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="Name" sortKey="name" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
-                <SortableTh label="Role" sortKey="advisorRole" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
+                <th className={thClass}>Tags</th>
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Joined" sortKey="createdAt" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -549,15 +557,19 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                     <input className={inputClass} placeholder="name@joinditto.in" value={newDraft.email} onChange={e => setNewDraft(d => ({ ...d, email: e.target.value }))} />
                   </td>
                   <td className={tdClass}>
-                    <input className={inputClass} placeholder="e.g. TACT128" value={newDraft.tactId} onChange={e => setNewDraft(d => ({ ...d, tactId: e.target.value }))} />
+                    <TactIdInput
+                      theme={theme}
+                      value={newDraft.tactId}
+                      onChange={(val) => setNewDraft(d => ({ ...d, tactId: val }))}
+                      placeholder="e.g. 128"
+                      className={inputClass}
+                    />
                   </td>
                   <td className={tdClass}>
-                    <CustomSelect
+                    <AdvisorTagCheckboxes
                       theme={theme}
-                      value={newDraft.advisorRole || ""}
-                      onChange={(val) => setNewDraft(d => ({ ...d, advisorRole: val || null }))}
-                      triggerClassName={selectTriggerClass}
-                      options={[{ value: "", label: "Unassigned" }, ...ADVISOR_ROLES.map(r => ({ value: r, label: r }))]}
+                      value={newDraft.tags || []}
+                      onChange={(tags) => setNewDraft(d => ({ ...d, tags }))}
                     />
                   </td>
                   <td className={tdClass}>
@@ -624,23 +636,27 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                     </td>
                     <td className={tdClass}>
                       {isEditing ? (
-                        <input className={inputClass} value={row.tactId} onChange={e => setDraft(d => d && { ...d, tactId: e.target.value })} />
+                        <TactIdInput
+                          theme={theme}
+                          value={row.tactId}
+                          onChange={(val) => setDraft(d => d && { ...d, tactId: val })}
+                          placeholder="e.g. 128"
+                          className={inputClass}
+                        />
                       ) : (
                         <span className={`font-mono text-[10.5px] ${dark ? "text-stone-300" : "text-stone-700"}`}>{user.tactId}</span>
                       )}
                     </td>
                     <td className={tdClass}>
                       {isEditing ? (
-                        <CustomSelect
+                        <AdvisorTagCheckboxes
                           theme={theme}
-                          value={row.advisorRole || ""}
-                          onChange={(val) => setDraft(d => d && { ...d, advisorRole: val || null })}
-                          triggerClassName={selectTriggerClass}
-                          options={[{ value: "", label: "Unassigned" }, ...ADVISOR_ROLES.map(r => ({ value: r, label: r }))]}
+                          value={row.tags || []}
+                          onChange={(tags) => setDraft(d => d && { ...d, tags })}
                         />
                       ) : (
                         <span className={`text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                          {user.advisorRole ?? "Unassigned"}
+                          {user.tags && user.tags.length > 0 ? user.tags.join(" + ") : "Unassigned"}
                         </span>
                       )}
                     </td>

@@ -2,19 +2,21 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * ONE-TIME BACKFILL — users.advisor_role <- master_advisors column F
+ * ONE-TIME BACKFILL — users.tags <- master_advisors column F
  *
- * Seeds the new, directly-editable `advisor_role` column (see
- * drizzle/0024_add_advisor_role.sql) from the QA Google Sheet's current
+ * Seeds the directly-editable `tags` column (see
+ * drizzle/0026_advisor_tags.sql) from the QA Google Sheet's current
  * Health/Term/Both classification, so existing advisors start with a
- * sensible value instead of every row showing "Unassigned" on day one.
- * "Manager" has no equivalent in the sheet and is never set by this script —
- * that's assigned manually, by an Admin/Developer, in the User Management UI.
+ * sensible tag set instead of every row showing "Unassigned" on day one.
+ * Originally written against the single-value `advisor_role` column
+ * (drizzle/0024_add_advisor_role.sql, since replaced) — updated in place for
+ * the multi-select tags model rather than left to bit-rot, since it's still
+ * the same useful one-time seed.
  *
  * SAFETY
- *  - Only ever WRITES to a user row whose advisor_role is currently NULL.
+ *  - Only ever WRITES to a user row whose tags array is currently empty.
  *    Re-running this (or running it after someone has already started
- *    manually assigning roles) never overwrites a real assignment, manual
+ *    manually assigning tags) never overwrites a real assignment, manual
  *    or otherwise — idempotent by construction, not just by accident.
  *  - Matches users to advisors by TACT ID (trimmed, case-insensitive). A
  *    user row with no matching "Currently Employed" advisor in the sheet is
@@ -40,13 +42,13 @@ dotenv.config();
 
 const COMMIT = process.argv.includes("--commit");
 
-// Raw sheet value (column F, lowercased/trimmed) -> the fixed advisor_role
-// label. Anything not in this map is left unassigned and reported, rather
-// than guessed at.
-const SKILL_DOMAIN_TO_ROLE: Record<string, string> = {
-  health: "Health advisor",
-  term: "Term advisor",
-  both: "Both advisor",
+// Raw sheet value (column F, lowercased/trimmed) -> the tag set it seeds.
+// Anything not in this map is left unassigned and reported, rather than
+// guessed at.
+const SKILL_DOMAIN_TO_TAGS: Record<string, string[]> = {
+  health: ["Health"],
+  term: ["Term"],
+  both: ["Health", "Term"],
 };
 
 async function main() {
@@ -64,7 +66,7 @@ async function main() {
   let alreadySet = 0;
   let unrecognizedSkillDomain = 0;
   let noUserMatch = 0;
-  const toUpdate: { email: string; role: string }[] = [];
+  const toUpdate: { email: string; tags: string[] }[] = [];
 
   for (const advisor of advisors) {
     const user = userByTactId.get(String(advisor.tactId).trim().toLowerCase());
@@ -72,23 +74,23 @@ async function main() {
       noUserMatch++;
       continue;
     }
-    if (user.advisorRole) {
+    if (user.tags && user.tags.length > 0) {
       alreadySet++; // Never overwrite — manual or prior-run assignment stands.
       continue;
     }
     const rawSkillDomain = (advisor.skillDomain || "").trim().toLowerCase();
-    const role = SKILL_DOMAIN_TO_ROLE[rawSkillDomain];
-    if (!role) {
+    const tags = SKILL_DOMAIN_TO_TAGS[rawSkillDomain];
+    if (!tags) {
       if (rawSkillDomain) unrecognizedSkillDomain++;
       continue;
     }
     matched++;
-    toUpdate.push({ email: user.email, role });
+    toUpdate.push({ email: user.email, tags });
   }
 
   console.log("\n--- Summary ---");
-  console.log(`Advisors matched to a directory user with no advisor_role yet, ready to set: ${matched}`);
-  console.log(`Directory users already had an advisor_role (left untouched): ${alreadySet}`);
+  console.log(`Advisors matched to a directory user with no tags yet, ready to set: ${matched}`);
+  console.log(`Directory users already had tags set (left untouched): ${alreadySet}`);
   console.log(`Advisors with an unrecognized column-F value (neither Health/Term/Both): ${unrecognizedSkillDomain}`);
   console.log(`Advisors with no matching directory user by TACT ID: ${noUserMatch}`);
 
@@ -96,14 +98,14 @@ async function main() {
     console.log("\nDry run only — no writes made. Re-run with --commit to apply.");
     if (toUpdate.length) {
       console.log("Would set:");
-      for (const u of toUpdate) console.log(`  ${u.email} -> ${u.role}`);
+      for (const u of toUpdate) console.log(`  ${u.email} -> ${u.tags.join(" + ")}`);
     }
     return;
   }
 
   console.log(`\nWriting ${toUpdate.length} update(s)...`);
   for (const u of toUpdate) {
-    await usersRepo.updateUser(u.email, { advisorRole: u.role });
+    await usersRepo.updateUser(u.email, { tags: u.tags });
   }
   console.log("Done.");
 }

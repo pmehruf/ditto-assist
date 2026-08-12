@@ -41,6 +41,7 @@ import { getDb } from "./src/server/db/client.js";
 import { createRepositories, normalizeCondition } from "./src/server/db/repositories/index.js";
 import type { UsersRepository } from "./src/server/db/repositories/index.js";
 import { parseListQuery, pickEnumValue } from "./src/server/pagination.js";
+import { normalizeTactId } from "./src/utils/tactId.js";
 import {
   getDashboardData as getQaDashboardData,
   listAdvisorsForCaller as listQaAdvisorsForCaller,
@@ -1002,23 +1003,31 @@ interface DirectoryUser {
   status: "Active" | "Disabled";
 }
 
-// The only 4 values advisorRole may hold (users.advisor_role — see
-// drizzle/0024_add_advisor_role.sql). "Health advisor"/"Term advisor"/
-// "Both advisor" are seeded once from the QA sheet's Health/Term/Both
-// column by scripts/backfillAdvisorRole.ts; "Manager" has no sheet
-// equivalent and is only ever set here, by an Admin/Developer.
-const ADVISOR_ROLE_VALUES = ["Health advisor", "Term advisor", "Both advisor", "Manager"] as const;
-type AdvisorRoleValue = (typeof ADVISOR_ROLE_VALUES)[number];
-function isValidAdvisorRole(v: unknown): v is AdvisorRoleValue | null {
-  return v === null || v === undefined || v === "" || (ADVISOR_ROLE_VALUES as readonly string[]).includes(v as string);
+// The only 2 skill-domain tags a user may hold (users.tags — see
+// drizzle/0026_advisor_tags.sql). A user can hold either, both, or neither
+// (unassigned) — chosen via a real multi-select at first-time setup ("Skill
+// Domain") and editable afterward by an Admin/Developer in User Management.
+const ADVISOR_TAG_VALUES = ["Health", "Term"] as const;
+type AdvisorTagValue = (typeof ADVISOR_TAG_VALUES)[number];
+/** Validates a `tags` payload: must be an array of only "Health"/"Term",
+ * with no duplicates. An empty array (unassigned) is valid. */
+function isValidAdvisorTags(v: unknown): v is AdvisorTagValue[] {
+  if (!Array.isArray(v)) return false;
+  if (!v.every((t) => (ADVISOR_TAG_VALUES as readonly string[]).includes(t))) return false;
+  return new Set(v).size === v.length;
 }
 
-/** Which announcement `team` a caller's advisorRole is restricted to seeing —
+/** Which announcement `team` a caller's tags restrict them to seeing —
  * undefined means "no restriction" (both), used for unassigned users and for
- * "Both advisor"/"Manager", per the "Dedicated Announcements" spec. */
-function teamForAdvisorRole(advisorRole: string | null | undefined): "Health" | "Term" | undefined {
-  if (advisorRole === "Health advisor") return "Health";
-  if (advisorRole === "Term advisor") return "Term";
+ * users tagged with BOTH Health and Term, per the "Dedicated Announcements"
+ * spec (this also covers what used to be "Both advisor"/"Manager", which are
+ * now just users holding both tags). */
+function teamForTags(tags: string[] | null | undefined): "Health" | "Term" | undefined {
+  const set = new Set(tags ?? []);
+  const hasHealth = set.has("Health");
+  const hasTerm = set.has("Term");
+  if (hasHealth && !hasTerm) return "Health";
+  if (hasTerm && !hasHealth) return "Term";
   return undefined;
 }
 
@@ -1047,13 +1056,12 @@ function isValidDirectoryUser(u: any): u is DirectoryUser {
 }
 
 // Admin and Developer can view the directory; anyone else is refused.
-// advisorRole (Health advisor/Term advisor/Both advisor/Manager) is a real
-// column on `users` now (see drizzle/0024_add_advisor_role.sql) — it used
-// to be live-joined from the QA Google Sheet on every request, but that
-// only worked while it was read-only; once it needed to be directly
-// editable (and "Manager" has no equivalent in the sheet at all), it had to
-// become real, persisted state. usersRepo's plain `select()` already
-// returns it on every row, so no extra wiring is needed here.
+// tags (Health/Term skill-domain tags) is a real column on `users` now (see
+// drizzle/0026_advisor_tags.sql) — it used to be live-joined from the QA
+// Google Sheet on every request, but that only worked while it was
+// read-only; once it needed to be directly editable, it had to become real,
+// persisted state. usersRepo's plain `select()` already returns it on every
+// row, so no extra wiring is needed here.
 app.get("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
@@ -1066,10 +1074,10 @@ app.get("/api/users", requireAuth, async (req, res) => {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
       const tier = pickEnumValue(req.query.tier, ["General", "Admin", "Developer"] as const);
       const status = pickEnumValue(req.query.status, ["Active", "Disabled"] as const);
-      const advisorRole = pickEnumValue(req.query.advisorRole, [...ADVISOR_ROLE_VALUES, "Unassigned"] as const);
+      const tag = pickEnumValue(req.query.tag, [...ADVISOR_TAG_VALUES, "Unassigned"] as const);
       const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
       const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
-      const listOptions = { page, pageSize, search, tier, status, advisorRole, dateFrom, dateTo, sortBy, sortDir };
+      const listOptions = { page, pageSize, search, tier, status, tag, dateFrom, dateTo, sortBy, sortDir };
       if (req.query.export) {
         const rows = await usersRepo.listMatching(listOptions);
         return res.json({ entries: rows });
@@ -1100,15 +1108,21 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
     }
 
     const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
-    const { name, tactId, tier, status, advisorRole } = req.body;
+    const { name, tactId, tier, status, tags } = req.body;
+    const resolvedTags = tags === undefined ? [] : tags;
+    // Normalized regardless of how it was typed/pasted — see
+    // normalizeTactId (utils/tactId.ts). TactIdInput already constrains
+    // entry to digits-only client-side; this is the server-side backstop
+    // for any other caller of this route.
+    const normalizedTactId = typeof tactId === "string" ? normalizeTactId(tactId) : "";
     if (
       typeof name !== "string" || !name.trim() ||
-      typeof tactId !== "string" || !tactId.trim() ||
+      typeof tactId !== "string" || !normalizedTactId ||
       (tier !== "General" && tier !== "Admin" && tier !== "Developer") ||
       (status !== "Active" && status !== "Disabled") ||
-      !isValidAdvisorRole(advisorRole)
+      !isValidAdvisorTags(resolvedTags)
     ) {
-      return res.status(400).json({ error: `name, tactId, tier, and status are all required. advisorRole, if present, must be one of: ${ADVISOR_ROLE_VALUES.join(", ")}.` });
+      return res.status(400).json({ error: `name, tactId, tier, and status are all required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
     }
 
     const existing = await usersRepo.findByEmail(targetEmail);
@@ -1127,10 +1141,10 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
 
     const row = await usersRepo.updateUser(targetEmail, {
       name: name.trim(),
-      tactId: tactId.trim(),
+      tactId: normalizedTactId,
       tier,
       status,
-      advisorRole: advisorRole ? advisorRole : null,
+      tags: resolvedTags,
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -1230,9 +1244,11 @@ app.post("/api/users", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
     }
 
-    const { email, name, tactId, tier, status, advisorRole } = req.body;
-    if (!isValidDirectoryUser({ email, name, tactId, tier, status }) || !isValidAdvisorRole(advisorRole)) {
-      return res.status(400).json({ error: `email, name, tactId, tier, and status are all required. advisorRole, if present, must be one of: ${ADVISOR_ROLE_VALUES.join(", ")}.` });
+    const { email, name, tactId, tier, status, tags } = req.body;
+    const resolvedTags = tags === undefined ? [] : tags;
+    const normalizedTactId = typeof tactId === "string" ? normalizeTactId(tactId) : "";
+    if (!isValidDirectoryUser({ email, name, tactId, tier, status }) || !normalizedTactId || !isValidAdvisorTags(resolvedTags)) {
+      return res.status(400).json({ error: `email, name, tactId, tier, and status are all required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
     }
     // Admin can add users, but shouldn't be able to mint a new Developer from
     // this lightweight endpoint — that's still an Developer-only directory edit.
@@ -1249,10 +1265,10 @@ app.post("/api/users", requireAuth, async (req, res) => {
     const row = await usersRepo.create({
       email: normalizedEmail,
       name: name.trim(),
-      tactId: tactId.trim(),
+      tactId: normalizedTactId,
       tier,
       status,
-      advisorRole: advisorRole ? advisorRole : null,
+      tags: resolvedTags,
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -1436,18 +1452,18 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
     const { announcements, users: usersRepo } = createRepositories(getDb());
     const category = typeof req.query.category === "string" ? req.query.category : undefined;
 
-    // Team-based visibility (Health Advisors see only Health, Term Advisors
-    // only Term, everyone else sees both — see teamForAdvisorRole above).
+    // Team-based visibility (Health-tagged users see only Health, Term-tagged
+    // see only Term, everyone else sees both — see teamForTags above).
     // Admin/Developer callers may pass includeAllTeams=1 to bypass this and
-    // always see every announcement regardless of their OWN advisorRole —
-    // used only by the Announcement Manager's own fetch, since an admin
-    // editing announcements needs to find/edit ones for either audience.
+    // always see every announcement regardless of their OWN tags — used
+    // only by the Announcement Manager's own fetch, since an admin editing
+    // announcements needs to find/edit ones for either audience.
     let team: "Health" | "Term" | undefined;
     if (req.query.includeAllTeams === "1") {
       if (!(await requireAdminOrDeveloper(req, res, "Viewing announcements across all teams"))) return;
     } else {
       const caller = await usersRepo.findByEmail(req.user!.email);
-      team = teamForAdvisorRole(caller?.advisorRole);
+      team = teamForTags(caller?.tags);
     }
 
     if (req.query.paginated) {
@@ -1499,8 +1515,8 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
       // Distinct from effectiveDate (see schema.ts) — when this notice was
       // posted, not when the policy it describes takes effect.
       announcementDate: announcementDate || null,
-      // Which advisor audience this targets (Health Advisor / Term Advisor
-      // visibility rules — see teamForAdvisorRole). Defaults to "Health",
+      // Which advisor audience this targets (Health-tagged / Term-tagged
+      // visibility rules — see teamForTags). Defaults to "Health",
       // matching the column default and the spec's retroactive backfill.
       team: isValidAnnouncementTeam(team) ? team : "Health",
     });
@@ -2969,6 +2985,37 @@ app.get("/api/me", requireAuth, async (req, res) => {
   }
 });
 
+// Self-service "set my own Skill Domain" — powers the post-login prompt
+// (SkillDomainPromptModal in App.tsx) shown to any already-provisioned user
+// whose tags are still empty (unassigned), independent of tier. Deliberately
+// narrow like first-time-setup above: callers can only ever set THEIR OWN
+// tags (email comes from the verified session, never the request body), and
+// this can ONLY change tags — nothing else about the row. The normal
+// Developer-only PATCH /api/users/:email remains the route for editing
+// anyone else's tags (or any other field).
+app.patch("/api/me/tags", requireAuth, async (req, res) => {
+  try {
+    const { tags } = req.body;
+    const resolvedTags = tags === undefined ? [] : tags;
+    if (!isValidAdvisorTags(resolvedTags)) {
+      return res.status(400).json({ error: `tags must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
+    }
+
+    const { users: usersRepo } = createRepositories(getDb());
+    const email = req.user!.email.toLowerCase();
+    const existing = await usersRepo.findByEmail(email);
+    if (!existing) {
+      return res.status(404).json({ error: "No directory entry found for your account." });
+    }
+
+    const row = await usersRepo.updateUser(email, { tags: resolvedTags });
+    return res.json({ user: row });
+  } catch (err: any) {
+    console.error("Failed to save the caller's Skill Domain tags:", err);
+    return res.status(500).json({ error: `Failed to save your Skill Domain: ${err.message}` });
+  }
+});
+
 // Self-service "complete my profile" for a brand-new @joinditto.in sign-in
 // that GET /api/me didn't find in the directory yet. Deliberately narrow:
 // callers can only ever create THEIR OWN record (email comes from the
@@ -2982,9 +3029,17 @@ app.get("/api/me", requireAuth, async (req, res) => {
 // see them in the User Management directory.
 app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
   try {
-    const { name, tactId } = req.body;
-    if (typeof name !== "string" || !name.trim() || typeof tactId !== "string" || !tactId.trim()) {
-      return res.status(400).json({ error: "name and tactId are required." });
+    const { name, tactId, tags } = req.body;
+    // Skill Domain is optional at signup (a new hire may not know their
+    // domain yet, or an Admin/Developer may assign it later) — an omitted
+    // or empty selection just leaves the user unassigned, same as before.
+    const resolvedTags = tags === undefined ? [] : tags;
+    // Normalized regardless of how it was typed — see normalizeTactId
+    // (utils/tactId.ts). TactIdInput already constrains entry to
+    // digits-only client-side; this is the server-side backstop.
+    const normalizedTactId = typeof tactId === "string" ? normalizeTactId(tactId) : "";
+    if (typeof name !== "string" || !name.trim() || typeof tactId !== "string" || !normalizedTactId || !isValidAdvisorTags(resolvedTags)) {
+      return res.status(400).json({ error: `name and tactId are required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
     }
 
     const { users: usersRepo } = createRepositories(getDb());
@@ -2997,9 +3052,10 @@ app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
     const newUser = await usersRepo.create({
       email,
       name: name.trim(),
-      tactId: tactId.trim(),
+      tactId: normalizedTactId,
       tier: "General",
       status: "Active",
+      tags: resolvedTags,
     });
     return res.json({ user: newUser });
   } catch (err: any) {

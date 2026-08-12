@@ -17,7 +17,8 @@
     "db:seed:users": "tsx src/server/db/seedUsers.ts",
     "db:studio": "drizzle-kit studio",
     "db:backfill:ai-memory": "tsx scripts/backfillAiMemory.ts",
-    "db:backfill:advisor-role": "tsx scripts/backfillAdvisorRole.ts"
+    "db:backfill:advisor-role": "tsx scripts/backfillAdvisorRole.ts",
+    "db:backfill:advisor-tags-csv": "tsx scripts/assignAdvisorTagsFromCsv.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

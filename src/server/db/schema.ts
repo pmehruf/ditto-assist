@@ -82,9 +82,9 @@ export const announcementTypeEnum = pgEnum("announcement_type", [
   "General Announcement",
 ]);
 
-// Which advisor audience an announcement is targeted at. Health Advisors see
-// only "Health" announcements, Term Advisors see only "Term" announcements,
-// and everyone else (advisorRole null, "Both advisor", "Manager") sees both.
+// Which advisor audience an announcement is targeted at. Users tagged
+// Health-only see only "Health" announcements, Term-only see only "Term",
+// and everyone else (no tags, or tagged BOTH Health and Term) sees both.
 // Defaults to "Health" so every pre-existing announcement (posted before
 // this concept existed) is retroactively tagged Health, per spec.
 export const announcementTeamEnum = pgEnum("announcement_team", ["Health", "Term"]);
@@ -193,12 +193,14 @@ export const users = pgTable("users", {
   // to stamp it on each sign-in.
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastLogin: timestamp("last_login", { withTimezone: true }),
-  // "Health advisor" | "Term advisor" | "Both advisor" | "Manager" — see
-  // drizzle/0024_add_advisor_role.sql's comment for why this is persisted
-  // (editable, incl. "Manager") rather than live-joined from the QA sheet.
-  // Nullable = unassigned; validated against the 4 allowed values in
-  // server.ts's PATCH /api/users/:email, not enforced at the DB level.
-  advisorRole: text("advisor_role"),
+  // Skill-domain tags — any subset of "Health" and "Term". Replaces the old
+  // single-value advisor_role ("Health advisor"/"Term advisor"/"Both
+  // advisor"/"Manager") — see drizzle/0026_advisor_tags.sql. Empty array =
+  // unassigned (same effective behavior as the old null: not restricted to
+  // either domain). Chosen via a real multi-select at first-time setup
+  // ("Skill Domain") and editable afterward in User Management; validated
+  // against the 2 allowed values in server.ts, not enforced at the DB level.
+  tags: text("tags").array().notNull().default([]),
 });
 
 export type UserRow = typeof users.$inferSelect;

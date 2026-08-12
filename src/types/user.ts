@@ -25,9 +25,9 @@ export interface UserProfile {
   // the directory UI. ISO timestamp string once JSON-serialized.
   createdAt?: string;
   lastLogin?: string | null;
-  // "Health advisor" | "Term advisor" | "Both advisor" | "Manager" | null
-  // (unassigned). Real, persisted, directly editable — see
-  // drizzle/0024_add_advisor_role.sql for why this isn't live-joined from
-  // the QA sheet the way it briefly was.
-  advisorRole?: string | null;
+  // Skill-domain tags — any subset of "Health" and "Term" (empty/undefined
+  // = unassigned). Real, persisted, directly editable via a multi-select —
+  // see drizzle/0026_advisor_tags.sql for why this isn't live-joined from
+  // the QA sheet.
+  tags?: string[];
 }

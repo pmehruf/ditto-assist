@@ -80,8 +80,11 @@ import { DeclarationMapIcon, QaDashboardIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
+import { AdvisorTagCheckboxes } from "./components/AdvisorTagCheckboxes";
+import { TactIdInput } from "./components/TactIdInput";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
+import { SkillDomainPromptModal } from "./components/SkillDomainPromptModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { downloadCSV } from "./utils/csvExport";
@@ -1215,6 +1218,16 @@ export default function App() {
   const [tempSsoEmail, setTempSsoEmail] = useState<string>("");
   const [tempSsoName, setTempSsoName] = useState<string>("");
   const [tempTactId, setTempTactId] = useState<string>("");
+  // Skill Domain — which insurance line(s) this new hire handles (Health
+  // and/or Term). Optional at signup; feeds users.tags (see
+  // drizzle/0026_advisor_tags.sql) and can be changed later by an
+  // Admin/Developer in User Management.
+  const [tempTags, setTempTags] = useState<string[]>([]);
+  // Post-login nudge (NOT first-time setup) for an already-provisioned user
+  // whose tags are still empty — set by the session-hydration effect below
+  // whenever GET /api/me returns a user with no tags. Dismissible; reappears
+  // next login if skipped, since nothing is written until they save.
+  const [showSkillDomainPrompt, setShowSkillDomainPrompt] = useState<boolean>(false);
 
   // Verify the real Google session on mount and hydrate currentUser.
   //
@@ -1265,6 +1278,13 @@ export default function App() {
             next[idx] = existingUser;
             return next;
           });
+          // Ask on next login: an already-provisioned user with no Skill
+          // Domain tags yet gets the dismissible prompt (SkillDomainPromptModal)
+          // instead of the first-time-setup flow, which is only for brand-new
+          // accounts GET /api/me doesn't find at all (the `else` branch below).
+          if (!existingUser.tags || existingUser.tags.length === 0) {
+            setShowSkillDomainPrompt(true);
+          }
           setShowIntro(true);
           setActiveTab("lookup");
         } else if (existingUser) {
@@ -1851,7 +1871,7 @@ export default function App() {
       const res = await fetch("/api/me/first-time-setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nameClean, tactId: tactClean }),
+        body: JSON.stringify({ name: nameClean, tactId: tactClean, tags: tempTags }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1881,11 +1901,32 @@ export default function App() {
       setTempSsoEmail("");
       setTempSsoName("");
       setTempTactId("");
+      setTempTags([]);
     } catch (err: unknown) {
       setLoginError(err instanceof Error ? err.message : "Failed to complete setup. Please try again.");
     } finally {
       setLoginLoading(false);
     }
+  };
+
+  // Save from the post-login Skill Domain prompt (SkillDomainPromptModal) —
+  // self-service, PATCH /api/me/tags only ever touches the caller's own row.
+  const handleSaveSkillDomain = async (tags: string[]) => {
+    const res = await fetch("/api/me/tags", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Failed to save (HTTP ${res.status}).`);
+    const saved: UserProfile = body.user;
+    setUsersList(prev => prev.map(u => (u.email.toLowerCase() === saved.email.toLowerCase() ? saved : u)));
+    setShowSkillDomainPrompt(false);
+  };
+
+  // Dismiss without saving — tags stay empty, so the prompt reappears next login.
+  const handleSkipSkillDomain = () => {
+    setShowSkillDomainPrompt(false);
   };
 
   const handleLogout = () => {
@@ -2370,20 +2411,30 @@ export default function App() {
                       <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
                         TACT ID (Workforce Registration)
                       </label>
-                      <input
-                        type="text"
+                      <TactIdInput
+                        theme={theme}
                         value={tempTactId}
-                        onChange={(e) => {
-                          setTempTactId(e.target.value);
+                        onChange={(val) => {
+                          setTempTactId(val);
                           setLoginError(null);
                         }}
-                        placeholder="e.g. TACT128"
-                        className={`w-full px-4 py-3 rounded-2xl border outline-none text-xs transition-all font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
-                          isDark 
-                            ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500" 
-                            : "bg-stone-50 border-stone-200 text-stone-900 placeholder:text-stone-400 font-bold"
-                        }`}
+                        placeholder="e.g. 128"
                         required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                        Skill Domain <span className="normal-case font-medium opacity-60">(optional)</span>
+                      </label>
+                      <p className={`text-[10.5px] leading-snug font-semibold ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                        Which insurance line(s) do you handle? Select either, both, or leave blank — an Admin can set this for you later.
+                      </p>
+                      <AdvisorTagCheckboxes
+                        theme={theme}
+                        value={tempTags}
+                        onChange={setTempTags}
+                        size="md"
                       />
                     </div>
 
@@ -2408,6 +2459,7 @@ export default function App() {
                       setTempSsoEmail("");
                       setTempSsoName("");
                       setTempTactId("");
+                      setTempTags([]);
                       setLoginError(null);
                     }}
                     className={`w-full text-center text-[10px] font-black tracking-widest uppercase mt-1 cursor-pointer select-none ${
@@ -4673,6 +4725,17 @@ export default function App() {
           theme={theme}
           announcements={unackedAnnouncements}
           onAcknowledge={handleAcknowledgeAnnouncement}
+        />
+      )}
+
+      {/* Dismissible nudge (z-[190], below the blocking ack overlay above) for
+          an already-provisioned user with no Skill Domain tags yet — only
+          shown once any mandatory announcement ack is out of the way. */}
+      {currentUser && showSkillDomainPrompt && unackedAnnouncements.length === 0 && (
+        <SkillDomainPromptModal
+          theme={theme}
+          onSave={handleSaveSkillDomain}
+          onSkip={handleSkipSkillDomain}
         />
       )}
 
