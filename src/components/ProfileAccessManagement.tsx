@@ -343,6 +343,18 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
       : "bg-stone-500/15 text-stone-400 border-stone-500/30";
 
+  // Same cyan/purple split used for the Health/Term audience pill on
+  // AnnouncementLogPage — kept consistent so the same tag always reads the
+  // same color everywhere in the app.
+  const tagBadgeClass = (tag: string) =>
+    tag === "Term"
+      ? dark
+        ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
+        : "bg-purple-50 text-purple-700 border-purple-200"
+      : dark
+        ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+        : "bg-cyan-50 text-cyan-700 border-cyan-200";
+
   return (
     <div className={`rounded-2xl border p-5 transition-all ${
       dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
@@ -654,9 +666,22 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                           value={row.tags || []}
                           onChange={(tags) => setDraft(d => d && { ...d, tags })}
                         />
+                      ) : user.tags && user.tags.length > 0 ? (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {user.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${tagBadgeClass(tag)}`}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       ) : (
-                        <span className={`text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                          {user.tags && user.tags.length > 0 ? user.tags.join(" + ") : "Unassigned"}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${
+                          dark ? "bg-stone-500/15 text-stone-400 border-stone-500/30" : "bg-stone-500/15 text-stone-500 border-stone-500/30"
+                        }`}>
+                          Unassigned
                         </span>
                       )}
                     </td>
