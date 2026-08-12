@@ -15,8 +15,17 @@ interface TactIdInputProps {
   required?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  /** Overrides both segments' classes entirely — use to match an existing
-   * field's exact sizing at a call site instead of the default styling. */
+  /** Styles the OUTER wrapper (border/bg/rounded/padding/sizing) to match a
+   * call site's other inputs — e.g. a table row's compact w-full field
+   * style. Do NOT put flex/width classes meant for a single "TACT"+digits
+   * pair split across two elements: internally this is one bordered box
+   * with "TACT" as a non-editable inline prefix, not two separate input
+   * boxes, so a single className applied to the whole group always renders
+   * correctly regardless of what the caller passes (previously this class
+   * was applied identically to BOTH the fixed label and the real input,
+   * which let a width utility like w-full make the label balloon and
+   * squeeze the actual input down to nearly nothing — see git history for
+   * the table edit-row bug this fixed). */
   className?: string;
 }
 
@@ -34,19 +43,19 @@ export function TactIdInput({ value, onChange, theme, required, disabled, placeh
   const dark = theme === "dark";
   const digits = tactIdDigits(value);
 
-  const segmentClass =
-    className ??
-    `px-3 py-3 rounded-2xl border text-xs font-bold ${
-      dark
-        ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500"
-        : "bg-stone-50 border-stone-200 text-stone-900 placeholder:text-stone-400"
-    }`;
+  const defaultWrapperClass = `px-3 py-3 rounded-2xl border text-xs font-bold ${
+    dark ? "bg-[#102236] border-[#1e3e5c] text-white" : "bg-stone-50 border-stone-200 text-stone-900"
+  }`;
 
   return (
-    <div className="flex items-center gap-2">
+    <div
+      className={`flex items-center gap-1.5 transition-all focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/30 ${
+        className ?? defaultWrapperClass
+      } ${disabled ? "opacity-60" : ""}`}
+    >
       <span
-        className={`shrink-0 select-none tracking-wider ${segmentClass} ${
-          dark ? "text-slate-400" : "text-stone-500"
+        className={`shrink-0 select-none tracking-wider pr-1.5 border-r ${
+          dark ? "text-slate-400 border-white/10" : "text-stone-500 border-stone-300"
         }`}
       >
         TACT
@@ -63,7 +72,9 @@ export function TactIdInput({ value, onChange, theme, required, disabled, placeh
         placeholder={placeholder}
         required={required}
         disabled={disabled}
-        className={`w-full outline-none transition-all focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${segmentClass}`}
+        className={`min-w-0 flex-1 outline-none bg-transparent border-0 p-0 font-bold ${
+          dark ? "text-white placeholder:text-slate-500" : "text-stone-900 placeholder:text-stone-400"
+        }`}
       />
     </div>
   );

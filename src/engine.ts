@@ -1244,7 +1244,17 @@ export function classifyDeterministic(
   // 0.5D/0.5E run earlier with identical regex and conditions.)
 
   // 6. HEART / CARDIAC / VASCULAR
-  if (/\b(coronary|cad|ihd|ischemic heart|ischaemic heart|heart attack|myocardial|angina|atrial fibrillation|afib|arrhythmia|cardiomyopathy|tachycardia|bradycardia|heart failure|chf|congestive heart|bypass|cabg|angioplasty|ptca|stent|valve disease|pacemaker|murmur|rheumatic heart|aortic aneurysm|peripheral vascular|pad|pvd|vascular disease|circulatory disorder|aortic stenosis|heart block|endocarditis|myocarditis)\b/i.test(text)) {
+  // NOTE: bare "stent" is intentionally excluded from the main alternation
+  // below — a stent is used in the biliary tract, ureter, esophagus, etc.,
+  // not just coronary arteries, and an unqualified \bstent\b here was
+  // misrouting e.g. "biliary stent placement" to heart questions. It's
+  // handled separately just below, gated on a nearby cardiac-context word
+  // (see KIDNEY/RENAL rule 11 and DIGESTIVE rule 13 for where the
+  // non-cardiac stent variants route instead).
+  if (
+    /\b(coronary|cad|ihd|ischemic heart|ischaemic heart|heart attack|myocardial|angina|atrial fibrillation|afib|arrhythmia|cardiomyopathy|tachycardia|bradycardia|heart failure|chf|congestive heart|bypass|cabg|angioplasty|ptca|valve disease|pacemaker|murmur|rheumatic heart|aortic aneurysm|peripheral vascular|pad|pvd|vascular disease|circulatory disorder|aortic stenosis|heart block|endocarditis|myocarditis)\b/i.test(text) ||
+    (/\bstent\b/i.test(text) && /\b(coronary|cardiac|heart|artery|arteries)\b/i.test(text))
+  ) {
     q = questionForCategory(config, "heart");
     if (q) return makeOutput(pedText, "P1", q, `${pedText} is a cardiac or circulatory system condition.`);
   }
@@ -1369,7 +1379,7 @@ export function classifyDeterministic(
   }
 
   // 11. KIDNEY / RENAL
-  if (/\b(chronic kidney disease|ckd|aki|esrd|end.?stage renal|kidney stone|renal calculus|renal calculi|nephrolithiasis|ureteric stone|bladder stone|renal failure|kidney transplant|renal transplant|dialysis|nephritis|pyelonephritis|nephrotic syndrome|nephro|urinary tract infection|uti|cystitis|urinary incontinence|urinary obstruction|puj obstruction|pelviureteric)\b/i.test(text)) {
+  if (/\b(chronic kidney disease|ckd|aki|esrd|end.?stage renal|kidney stone|renal calculus|renal calculi|nephrolithiasis|ureteric stone|bladder stone|renal failure|kidney transplant|renal transplant|dialysis|nephritis|pyelonephritis|nephrotic syndrome|nephro|urinary tract infection|uti|cystitis|urinary incontinence|urinary obstruction|puj obstruction|pelviureteric|ureteric stent|ureteral stent|urethral stent|dj stent|double.?j stent)\b/i.test(text)) {
     q = questionForCategory(config, "kidney");
     if (q) return makeOutput(pedText, "P1", q, `${pedText} is a kidney, renal, or urinary tract condition.`);
   }
@@ -1381,7 +1391,7 @@ export function classifyDeterministic(
   }
 
   // 13. DIGESTIVE
-  if (/\b(gerd|acid reflux|gastroesophageal|gord|irritable bowel|ibs|ibd|achalasia|peptic ulcer|gastric ulcer|stomach ulcer|gastritis|gastric issue|stomach disease|intestinal disorder|bowel obstruction|duodenal ulcer|crohn|colitis|ulcerative colitis|piles|ha?emorrhoid\w*|anal fissure|anal fistula|appendicitis|appendix|diverticulitis|diverticular disease|celiac|coeliac|pancreatitis|pancreatic disease|gall bladder disease|gallbladder disease|gall.?stone|cholelithiasis|cholecystitis|hernia|inguinal hernia|hiatal hernia|hiatus hernia|umbilical hernia|colon polyp|rectal polyp|gastric polyp|stomach polyp|intestinal polyp)\b/i.test(text)) {
+  if (/\b(gerd|acid reflux|gastroesophageal|gord|irritable bowel|ibs|ibd|achalasia|peptic ulcer|gastric ulcer|stomach ulcer|gastritis|gastric issue|stomach disease|intestinal disorder|bowel obstruction|duodenal ulcer|crohn|colitis|ulcerative colitis|piles|ha?emorrhoid\w*|anal fissure|anal fistula|appendicitis|appendix|diverticulitis|diverticular disease|celiac|coeliac|pancreatitis|pancreatic disease|gall bladder disease|gallbladder disease|gall.?stone|cholelithiasis|cholecystitis|biliary stent|biliary stone|bile duct stent|cbd stent|common bile duct stent|esophageal stent|oesophageal stent|pancreatic duct stent|hernia|inguinal hernia|hiatal hernia|hiatus hernia|umbilical hernia|colon polyp|rectal polyp|gastric polyp|stomach polyp|intestinal polyp)\b/i.test(text)) {
     if (planName === "Activ Fit Preferred" && /\bulcer\b/i.test(text)) {
       const qNeoplasm = questionForCategory(config, "neoplasm");
       return makeOutput(pedText, "P0", qNeoplasm, `Exact condition match🎯: "${pedText}" is explicitly listed in this plan's tumor/ulcer questionnaire.`);

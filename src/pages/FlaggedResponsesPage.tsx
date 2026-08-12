@@ -378,7 +378,7 @@ export function FlaggedResponsesPage({
                           </span>
                         </td>
                         <td className={`${tdClass} max-w-[360px]`}>
-                          <p className={`font-semibold leading-relaxed line-clamp-3 ${dark ? "text-slate-100" : "text-stone-800"}`} title={issue.issueNotes}>
+                          <p className={`font-semibold leading-relaxed whitespace-pre-wrap break-words ${dark ? "text-slate-100" : "text-stone-800"}`}>
                             {issue.issueNotes}
                           </p>
                         </td>
@@ -499,7 +499,7 @@ export function FlaggedResponsesPage({
                               }`}>
                                 {issue.status}
                               </span>
-                              <p className={`text-[10.5px] font-semibold text-right max-w-[200px] line-clamp-2 ${dark ? "text-stone-305" : "text-stone-600"}`} title={issue.ownerNotes}>
+                              <p className={`text-[10.5px] font-semibold text-right max-w-[200px] whitespace-pre-wrap break-words ${dark ? "text-stone-305" : "text-stone-600"}`}>
                                 {issue.ownerNotes}
                               </p>
                               {effectiveTier === "Developer" && (
