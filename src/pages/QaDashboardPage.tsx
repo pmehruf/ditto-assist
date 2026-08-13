@@ -361,10 +361,26 @@ function StatRow({
   valueClassName?: string;
 }) {
   const isNa = value === null || value === undefined;
+  // The card's headline metric (QA Score / Average Score) gets pulled out
+  // of the compact stat-row list treatment entirely — previously it used
+  // the exact same text-xs size as "Instances"/"Perfect" above it, just a
+  // heavier weight, so the one number that actually matters on the card
+  // didn't read as more important than its neighbors. A divider + real
+  // vertical breathing room + an actual KPI-sized number fixes that.
+  if (bold) {
+    return (
+      <div className="flex justify-between items-baseline gap-2 pt-2.5 mt-1.5 border-t border-stone-200/60 dark:border-white/[0.08]">
+        <span className="text-xs font-bold uppercase tracking-wide text-content-muted">{label}</span>
+        <span className={`text-3xl font-black leading-none tabular-nums ${isNa ? "text-content-faint" : ""} ${valueClassName}`}>
+          {isNa ? "NA" : `${value}${suffix}`}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="flex justify-between text-xs py-1 border-b border-stone-200/60 dark:border-white/[0.06] last:border-b-0">
-      <span className={`text-content-muted ${bold ? "font-bold" : ""}`}>{label}</span>
-      <span className={`${isNa ? "text-content-faint font-normal" : "font-semibold"} ${bold ? "font-black" : ""} ${valueClassName}`}>
+      <span className="text-content-muted">{label}</span>
+      <span className={isNa ? "text-content-faint font-normal" : "font-semibold"}>
         {isNa ? "NA" : `${value}${suffix}`}
       </span>
     </div>
