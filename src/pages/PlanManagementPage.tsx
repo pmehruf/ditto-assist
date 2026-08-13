@@ -975,7 +975,10 @@ export function PlanManagementPage({
                           triggerClassName={`w-full flex items-center justify-between gap-2 text-[11px] pl-1.5 pr-6 py-1.5 rounded-lg border outline-none disabled:opacity-60 relative ${
                             dark ? "bg-white/[0.03] border-white/[0.08] text-[#F5F7FA]" : "bg-white border-stone-200 text-stone-900"
                           }`}
-                          options={manageCatQuestionTexts.map((text) => ({ value: text, label: text }))}
+                          options={[
+                            { value: "", label: "— No mapping (skip to next matching rule / AI fallback) —" },
+                            ...manageCatQuestionTexts.map((text) => ({ value: text, label: text })),
+                          ]}
                         />
                       </div>
                     )}
@@ -1351,7 +1354,10 @@ export function PlanManagementPage({
                         triggerClassName={`w-full flex items-center justify-between gap-2 text-[11px] pl-1.5 pr-6 py-1.5 rounded-lg border outline-none relative ${
                           dark ? "bg-white/[0.03] border-white/[0.08] text-[#F5F7FA]" : "bg-white border-stone-200 text-stone-900"
                         }`}
-                        options={specificAndCatchAllTexts.map((text) => ({ value: text, label: text }))}
+                        options={[
+                          { value: "", label: "— No mapping (skip to next matching rule / AI fallback) —" },
+                          ...specificAndCatchAllTexts.map((text) => ({ value: text, label: text })),
+                        ]}
                       />
                     </div>
                   )}
