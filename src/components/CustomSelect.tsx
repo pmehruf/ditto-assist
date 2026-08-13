@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check } from "lucide-react";
 
 export interface CustomSelectOption {
@@ -52,6 +53,20 @@ interface CustomSelectProps {
  * active/selected row) as that PED dropdown, driven by a plain button +
  * absolutely-positioned panel instead of a native <select>.
  *
+ * The floating panel is rendered through a portal into `document.body`
+ * (position: fixed, coordinates computed from the trigger's own
+ * bounding rect) rather than as a normal absolutely-positioned child of
+ * the trigger. Every table in this app wraps its <table> in an
+ * `overflow-x-auto` container for horizontal scrolling on narrow
+ * viewports — per the CSS spec, setting overflow-x to anything but
+ * `visible` forces overflow-y to compute as `auto` too, so that wrapper
+ * silently clips any in-flow floating panel that would otherwise extend
+ * below it (found via the PED Repository table: a Category dropdown
+ * opened on the last visible row rendered with only its first option
+ * visible, hard-cut at the table's border). Escaping to a portal makes
+ * the panel immune to every ancestor's overflow/clipping, no matter how
+ * short that ancestor's content currently is.
+ *
  * Deliberately a single generic component reused everywhere a native
  * select previously stood — one visual language, one place to keep it
  * consistent, rather than each page re-implementing its own dropdown.
@@ -79,7 +94,11 @@ export function CustomSelect({
   // otherwise render its options panel partly off-screen/under the OS
   // taskbar.
   const [openUpward, setOpenUpward] = useState(false);
+  // Viewport-relative coordinates for the portaled panel (position: fixed),
+  // captured from the trigger's own bounding rect right when it opens.
+  const [panelRect, setPanelRect] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
 
   const handleToggle = () => {
@@ -88,6 +107,7 @@ export function CustomSelect({
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       setOpenUpward(spaceBelow < maxPanelHeightPx + 24 && spaceAbove > spaceBelow);
+      setPanelRect({ top: rect.bottom, bottom: window.innerHeight - rect.top, left: rect.left, width: rect.width });
     }
     setOpen((v) => !v);
   };
@@ -95,18 +115,29 @@ export function CustomSelect({
   useEffect(() => {
     if (!open) return;
     const handlePointerDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      const insideTrigger = containerRef.current?.contains(target);
+      const insidePanel = panelRef.current?.contains(target);
+      if (!insideTrigger && !insidePanel) setOpen(false);
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // Closes on scroll (of the page, or any scrollable ancestor like a
+    // table's overflow-x-auto wrapper) and resize, rather than trying to
+    // keep the portaled panel's fixed-position coordinates in sync with a
+    // moving trigger — simplest way to avoid the panel visually detaching
+    // from its trigger.
+    const handleReposition = () => setOpen(false);
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleReposition, true);
+    window.addEventListener("resize", handleReposition);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleReposition, true);
+      window.removeEventListener("resize", handleReposition);
     };
   }, [open]);
 
@@ -143,65 +174,73 @@ export function CustomSelect({
         } ${dark ? "text-slate-400" : "text-stone-400"}`}
       />
 
-      {open && !disabled && (
-        <div
-          role="listbox"
-          // Deliberately a plain opaque hex here, not the `bg-white`/
-          // `bg-surface` classes cards use — those resolve to the app's
-          // translucent card surface (Unified Surface Philosophy), which is
-          // right for a stationary card sitting on the page background, but
-          // wrong for a FLOATING panel: it sits on top of arbitrary other
-          // content (whatever's behind the trigger), and a translucent
-          // background lets that content bleed through and become
-          // illegible. Every floating overlay (this panel, modals,
-          // tooltips) needs to stay fully opaque regardless of the card
-          // surface treatment.
-          className={`absolute left-0 right-0 z-50 rounded-xl border shadow-lg overflow-hidden flex flex-col ${
-            openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"
-          } ${
-            panelClassName ??
-            (dark ? "bg-[#14181f] border-white/[0.08] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900")
-          }`}
-        >
-          <div className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>
-            {options.length === 0 ? (
-              <div className={`px-4 py-3 text-input-value italic text-left select-none ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                No options available.
-              </div>
-            ) : (
-              options.map((opt) => {
-                const isSelected = opt.value === value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    disabled={opt.disabled}
-                    onClick={() => {
-                      if (opt.disabled) return;
-                      onChange(opt.value);
-                      setOpen(false);
-                    }}
-                    className={`w-full text-left px-3.5 py-2 text-input-value flex items-center justify-between gap-2 transition-all font-sans font-medium border-l-2 ${
-                      opt.disabled
-                        ? "opacity-40 cursor-not-allowed border-transparent pl-[10px]"
-                        : isSelected
-                          ? `${selectedOptionClassName ?? "bg-blue-600/20 text-blue-300 border-blue-500"} pl-[10px]`
-                          : dark
-                            ? "hover:bg-white/[0.04] border-transparent pl-[10px]"
-                            : "hover:bg-stone-100 border-transparent pl-[10px]"
-                    }`}
-                  >
-                    <span className="truncate">{opt.label}</span>
-                    {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? "text-blue-400"}`} />}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
+      {open && !disabled && panelRect &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="listbox"
+            // Deliberately a plain opaque hex here, not the `bg-white`/
+            // `bg-surface` classes cards use — those resolve to the app's
+            // translucent card surface (Unified Surface Philosophy), which is
+            // right for a stationary card sitting on the page background, but
+            // wrong for a FLOATING panel: it sits on top of arbitrary other
+            // content (whatever's behind the trigger), and a translucent
+            // background lets that content bleed through and become
+            // illegible. Every floating overlay (this panel, modals,
+            // tooltips) needs to stay fully opaque regardless of the card
+            // surface treatment.
+            className={`fixed z-50 rounded-xl border shadow-lg overflow-hidden flex flex-col ${
+              panelClassName ??
+              (dark ? "bg-[#14181f] border-white/[0.08] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900")
+            }`}
+            style={{
+              left: panelRect.left,
+              width: panelRect.width,
+              ...(openUpward
+                ? { bottom: panelRect.bottom + 6 }
+                : { top: panelRect.top + 6 }),
+            }}
+          >
+            <div className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>
+              {options.length === 0 ? (
+                <div className={`px-4 py-3 text-input-value italic text-left select-none ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                  No options available.
+                </div>
+              ) : (
+                options.map((opt) => {
+                  const isSelected = opt.value === value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      disabled={opt.disabled}
+                      onClick={() => {
+                        if (opt.disabled) return;
+                        onChange(opt.value);
+                        setOpen(false);
+                      }}
+                      className={`w-full text-left px-3.5 py-2 text-input-value flex items-center justify-between gap-2 transition-all font-sans font-medium border-l-2 ${
+                        opt.disabled
+                          ? "opacity-40 cursor-not-allowed border-transparent pl-[10px]"
+                          : isSelected
+                            ? `${selectedOptionClassName ?? "bg-blue-600/20 text-blue-300 border-blue-500"} pl-[10px]`
+                            : dark
+                              ? "hover:bg-white/[0.04] border-transparent pl-[10px]"
+                              : "hover:bg-stone-100 border-transparent pl-[10px]"
+                      }`}
+                    >
+                      <span className="truncate">{opt.label}</span>
+                      {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? "text-blue-400"}`} />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
