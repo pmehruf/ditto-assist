@@ -23,3 +23,6 @@ export type { } from './DeclarationMapIcon';
 
 export { QaDashboardIcon } from './QaDashboardIcon';
 export type { } from './QaDashboardIcon';
+
+export { ProductAssistIcon } from './ProductAssistIcon';
+export type { } from './ProductAssistIcon';

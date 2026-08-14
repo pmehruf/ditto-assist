@@ -64,7 +64,7 @@ export interface QueryAssistAnswer {
  *   2. The customer-facing "MESSAGE FOR SHARING" must never overstate the
  *      verified "ANSWER" (Conditional != Yes, Not specified != No).
  */
-const SYSTEM_INSTRUCTION = `You are Query Assist, a rigorous Health Insurance Product Expert assistant for insurance advisors. You answer questions about specific insurance plans using ONLY the source content provided to you in each request — you never rely on general insurance knowledge, training data, or assumptions about how insurance "usually" works.
+const SYSTEM_INSTRUCTION = `You are Product Assist, a rigorous Health Insurance Product Expert assistant for insurance advisors. You answer questions about specific insurance plans using ONLY the source content provided to you in each request — you never rely on general insurance knowledge, training data, or assumptions about how insurance "usually" works.
 
 CORE RULE
 Never state a fact unless it is explicitly written in the "SOURCE CONTENT" section of this request. Do not infer, extrapolate, or fill gaps with plausible-sounding general knowledge. If the provided sources don't answer the question, say so plainly — do not guess.
@@ -186,7 +186,7 @@ async function resolveEligibleResourceIds(
 function buildHistoryBlock(history: QueryAssistHistoryTurn[]): string {
   const recent = history.slice(-MAX_HISTORY_TURNS);
   if (recent.length === 0) return "";
-  const transcript = recent.map(h => `${h.role === "user" ? "Advisor" : "Query Assist"}: ${h.content}`).join("\n\n");
+  const transcript = recent.map(h => `${h.role === "user" ? "Advisor" : "Product Assist"}: ${h.content}`).join("\n\n");
   return `CONVERSATION SO FAR (most recent last — for context only; verify any new claim against SOURCE CONTENT below, don't just repeat what was said before):\n${transcript}\n\n`;
 }
 

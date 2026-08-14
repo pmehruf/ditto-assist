@@ -81,7 +81,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // Editor like lookup/resources above rather than the Viewer-only
     // read-only tools — every tier including General can use it.
     id: "query_assist",
-    name: "Query Assist",
+    name: "Product Assist",
     description: "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements",
     defaultTier: "General",
     generalAccess: "Editor",

@@ -123,6 +123,21 @@ function splitAnswer(content: string): { answer: string; share: string | null } 
   return { answer: answerPart, share: sharePart || null };
 }
 
+/** Pulls the trailing "**References**" list (see queryAssist.ts's CITATION
+ * FORMAT / OUTPUT FORMAT — the model always ends Part 1 with a bolded
+ * "References" heading followed by a list) out of the answer body so it can
+ * be rendered as its own clearly-labeled block instead of blending into the
+ * end of the answer prose. Purely a rendering split — the reference content
+ * itself is untouched. */
+function splitReferences(text: string): { body: string; references: string | null } {
+  const headingRe = /\n?\s*\*{0,2}References\*{0,2}\s*:?\s*\n+/i;
+  const match = headingRe.exec(text);
+  if (!match) return { body: text.trim(), references: null };
+  const body = text.slice(0, match.index).trim();
+  const references = text.slice(match.index + match[0].length).trim();
+  return { body, references: references || null };
+}
+
 /**
  * "Query Assist" — advisor-facing chat over the Knowledge Base (see
  * src/server/knowledgeBase/queryAssist.ts). Open to every tier: choose an
@@ -166,7 +181,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
         if (!catRes.ok) throw new Error(catBody.error || `Failed to load insurers (HTTP ${catRes.status}).`);
         setCategories(catBody.entries || []);
       } catch (err: any) {
-        setLoadError(err.message || "Failed to load Query Assist.");
+        setLoadError(err.message || "Failed to load Product Assist.");
       } finally {
         setLoading(false);
       }
@@ -281,7 +296,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   ];
 
   if (loading) {
-    return <div className="text-xs font-semibold text-content-muted py-8 text-center">Loading Query Assist…</div>;
+    return <div className="text-xs font-semibold text-content-muted py-8 text-center">Loading Product Assist…</div>;
   }
 
   return (
@@ -290,7 +305,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
         <div>
           <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Query Assist</span>
+            <span>Product Assist</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Ask. Verify. Understand. Get answers to your product queries, backed by references you can verify.
@@ -326,7 +341,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               key={s.id}
               type="button"
               onClick={() => openSession(s)}
-              className={`w-full text-left px-2.5 py-2 rounded-lg text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
+              className={`group w-full text-left px-2.5 py-2 rounded-lg text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
                 currentSessionId === s.id
                   ? dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-700"
                   : dark ? "text-stone-300 hover:bg-white/[0.05]" : "text-stone-700 hover:bg-stone-50"
@@ -336,7 +351,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 <MessageSquare className="w-3 h-3 shrink-0" />
                 <span className="truncate">{s.title || "Untitled"}</span>
               </span>
-              <span onClick={e => deleteSession(s, e)} className="shrink-0 opacity-50 hover:opacity-100 cursor-pointer" title="Delete">
+              {/* Hidden until the row is hovered (or it's the open
+                  conversation) to cut visual noise in the list — still the
+                  same click target/handler, just not shown by default. */}
+              <span
+                onClick={e => deleteSession(s, e)}
+                className={`shrink-0 cursor-pointer transition-opacity ${
+                  currentSessionId === s.id
+                    ? "opacity-50 hover:opacity-100"
+                    : "opacity-0 pointer-events-none group-hover:opacity-50 group-hover:pointer-events-auto hover:!opacity-100"
+                }`}
+                title="Delete"
+              >
                 <Trash2 className="w-3 h-3" />
               </span>
             </button>
@@ -349,7 +375,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           {/* Scope selector */}
           <div className="shrink-0 flex flex-wrap items-end gap-3 pb-3 border-b border-dashed border-stone-300/30">
             <div className="w-full sm:w-64">
-              <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Insurer</label>
+              {/* Insurer is the primary context — plans below it are a
+                  refinement of that context, not a peer choice, so it gets
+                  the stronger label treatment (full-contrast text vs the
+                  muted/lighter Plans label). */}
+              <label className={`block text-[10.5px] font-black uppercase tracking-wide mb-1 ${dark ? "text-white" : "text-stone-800"}`}>Insurer</label>
               <CustomSelect
                 theme={theme}
                 value={selectedCategoryValue}
@@ -361,7 +391,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
             {selectedCategory && selectedCategory.planNames.length > 0 && (
               <div className="flex-1 min-w-[200px]">
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1 flex items-center gap-1"><Tag className="w-3 h-3" /> Plan(s) — optional</label>
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wide text-content-muted opacity-80 mb-1 flex items-center gap-1"><Tag className="w-3 h-3" /> Plans — optional</label>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedCategory.planNames.map(plan => (
                     <button
@@ -382,7 +412,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               </div>
             )}
             {scopeLocked && (
-              <span className="text-[10.5px] font-semibold text-content-muted italic">Scope locked for this conversation — start a New Chat to change it.</span>
+              <span className="text-[10px] font-medium text-content-muted opacity-80">🔒 Scope locked · Start a new chat to change insurer or plans.</span>
             )}
           </div>
 
@@ -411,17 +441,37 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 );
               }
               const { answer, share } = splitAnswer(m.content);
+              const { body, references } = splitReferences(answer);
               return (
                 <div key={m.id} className="flex justify-start">
-                  <div className={`max-w-[92%] w-full px-3.5 py-3 rounded-xl space-y-2.5 ${dark ? "bg-white/[0.04] border border-white/[0.08]" : "bg-stone-50 border border-stone-200"}`}>
+                  <div className={`max-w-[92%] w-full px-3.5 py-3.5 rounded-xl space-y-3.5 ${dark ? "bg-white/[0.04] border border-white/[0.08]" : "bg-stone-50 border border-stone-200"}`}>
+                    {/* Answer — the verified response to the advisor's question. */}
                     <div>
                       <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted mb-1">Answer</span>
-                      <div className={proseClass}>{renderSimpleMarkdown(answer)}</div>
+                      <div className={proseClass}>{renderSimpleMarkdown(body)}</div>
                     </div>
+
+                    {/* References — the advisor's verification path. Kept
+                        visually distinct from the answer prose above (its
+                        own label + top border + tighter list) so it reads
+                        as a separate, scannable block rather than trailing
+                        off the end of the answer. Content is untouched —
+                        this only changes how it's presented. */}
+                    {references && (
+                      <div className={`pt-2.5 border-t ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted mb-1">References</span>
+                        <div className={`text-[11px] leading-relaxed [&_ul]:space-y-1 [&_li]:pl-0.5 ${dark ? "text-stone-400" : "text-stone-600"}`}>
+                          {renderSimpleMarkdown(references)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Draft Message — a ready-to-use customer-facing
+                        paraphrase, not the final/only appropriate wording. */}
                     {share && (
                       <div className={`p-2.5 rounded-lg border ${dark ? "bg-emerald-500/10 border-emerald-500/25" : "bg-emerald-50 border-emerald-200"}`}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-500">Message for sharing</span>
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-500">Draft message</span>
                           <CopyButton text={stripMarkdownForCopy(share)} dark={dark} />
                         </div>
                         <div className={`${proseClass} ${dark ? "text-emerald-200" : "text-emerald-900"}`}>{renderSimpleMarkdown(share)}</div>
@@ -499,7 +549,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 onClick={sendQuestion}
                 disabled={sending || !questionInput.trim()}
                 title="Send"
-                className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]"
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>

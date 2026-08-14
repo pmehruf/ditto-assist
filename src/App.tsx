@@ -47,7 +47,12 @@ import {
   Search,
   TrendingUp,
   Database,
-  MessageCircle
+  ToolCase,
+  Award,
+  Library,
+  Settings,
+  ShieldUser,
+  Terminal
 } from "lucide-react";
 
 import {
@@ -79,7 +84,7 @@ import { LoggedUser, UserProfile } from "./types/user";
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon, QaDashboardIcon } from "./components/icons";
+import { DeclarationMapIcon, QaDashboardIcon, ProductAssistIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
@@ -686,6 +691,19 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+
+  // Collapsed-rail group flyout — the collapsed sidebar shows one icon per
+  // functional group (not per page); clicking a group icon opens a small
+  // floating panel listing that group's pages, anchored to the icon that
+  // was clicked (same positioning approach as the profile card's dropdown
+  // below). Closed automatically on navigation and whenever the sidebar
+  // state changes out from under it (expands, or the window becomes
+  // mobile-width) so it never lingers pointing at an unmounted icon.
+  const [openGroupFlyout, setOpenGroupFlyout] = useState<SidebarSectionKey | null>(null);
+  const [groupFlyoutPos, setGroupFlyoutPos] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    setOpenGroupFlyout(null);
+  }, [activeTab, isMenuOpen, isMobileWindow]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -2597,6 +2615,206 @@ export default function App() {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Shared sidebar navigation model — Zone -> Functional Group -> Page.
+  // This is the single source of truth both the expanded sidebar (full
+  // hierarchy, below) and the collapsed rail (group icons + flyout child
+  // access, further down) render from, so the two states can never drift
+  // into separate/inconsistent navigation systems — only the presentation
+  // differs between the two render paths. My Activity is deliberately NOT
+  // part of this model (see its own ungrouped rendering below); Home isn't
+  // either (it's reached via the branding block / header wordmark).
+  interface NavPage {
+    tab: typeof activeTab;
+    label: string;
+    Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+    visible: boolean;
+    /** Extra inline style merged onto the icon — currently only Declaration
+     * Map's faux-bold drop-shadow (its thin route-line SVG reads lighter
+     * than the stroke-based icons at this size). */
+    iconStyle?: React.CSSProperties;
+    /** Tailwind color class for the icon given whether this page is active.
+     * Every page is the same blue except Smoke Test, which turns orange
+     * when active (its sandbox/danger cue). */
+    iconColorClass: (isActive: boolean) => string;
+    isActive: boolean;
+    onSelect: () => void;
+    /** Small badge rendered next to the label (expanded list only) — e.g.
+     * Developer Controls' hidden-pages count. */
+    badge?: React.ReactNode;
+    /** Small pinging dot on the icon itself — currently just Flagged
+     * Responses' pending-issue indicator. */
+    hasAlertDot?: boolean;
+  }
+  interface NavGroup {
+    key: SidebarSectionKey;
+    label: string;
+    GroupIcon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+    pages: NavPage[];
+  }
+  interface NavZone {
+    key: "advisor" | "admin" | "developer";
+    label: string;
+    groups: NavGroup[];
+  }
+
+  const navPage = (
+    tab: typeof activeTab,
+    label: string,
+    Icon: NavPage["Icon"],
+    tier: "Viewer" | "Editor",
+    extra: {
+      iconStyle?: React.CSSProperties;
+      iconColorClass?: NavPage["iconColorClass"];
+      isActive?: boolean;
+      onSelect?: () => void;
+      badge?: React.ReactNode;
+      hasAlertDot?: boolean;
+    } = {}
+  ): NavPage => ({
+    tab,
+    label,
+    Icon,
+    visible: hasAccess(tab, tier),
+    iconStyle: extra.iconStyle,
+    iconColorClass: extra.iconColorClass ?? (() => "text-blue-300"),
+    isActive: extra.isActive ?? activeTab === tab,
+    onSelect: extra.onSelect ?? (() => setActiveTab(tab)),
+    badge: extra.badge,
+    hasAlertDot: extra.hasAlertDot,
+  });
+
+  const navZonesRaw: NavZone[] = [
+    {
+      key: "advisor",
+      label: "Advisor Zone",
+      groups: [
+        {
+          key: "advisorWorkspace",
+          label: "Advisor Workspace",
+          GroupIcon: ToolCase,
+          pages: [
+            navPage("lookup", "Declaration Assistant", Sparkles, "Viewer", {
+              isActive: activeTab === "lookup" && !showIntro,
+              onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
+            }),
+            navPage("coverage_projection", "Cover projection", FileSpreadsheet, "Viewer"),
+            navPage("specific_illness_check", "Specific Illness Check", ClipboardCheck, "Viewer"),
+            navPage("query_assist", "Product Assist", ProductAssistIcon, "Editor"),
+          ],
+        },
+        {
+          key: "quality",
+          label: "Quality",
+          GroupIcon: Award,
+          pages: [navPage("qa_dashboard", "QA Dashboard", QaDashboardIcon, "Viewer")],
+        },
+        {
+          key: "reference",
+          label: "Reference",
+          GroupIcon: Library,
+          pages: [
+            navPage("advisory_zone", "Plan Reference", BookOpen, "Viewer"),
+            navPage("announcement_archive", "Announcements", Newspaper, "Viewer"),
+            navPage("resources", "Declaration Map", DeclarationMapIcon, "Viewer", {
+              iconStyle: { filter: "drop-shadow(0 0 0.4px currentColor)" },
+            }),
+          ],
+        },
+      ],
+    },
+    {
+      key: "admin",
+      label: "Admin Zone",
+      groups: [
+        {
+          key: "appOpsControls",
+          label: "App Ops Controls",
+          GroupIcon: Settings,
+          pages: [
+            navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
+            navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
+            navPage("knowledge_base", "Knowledge Base", Database, "Viewer"),
+            navPage("plan_scope", "Plan Management", FileText, "Viewer"),
+          ],
+        },
+        {
+          key: "administration",
+          label: "Administration",
+          GroupIcon: ShieldUser,
+          pages: [
+            navPage("profile_access", "User Management", User, "Viewer"),
+            navPage("audit", "Activity Log", Clock, "Viewer"),
+            navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
+              hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
+            }),
+            navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
+              iconColorClass: isActive => (isActive ? "text-[#E08D4B]" : "text-blue-300"),
+            }),
+          ],
+        },
+      ],
+    },
+    {
+      key: "developer",
+      label: "Developer Zone",
+      groups: [
+        {
+          key: "developer",
+          label: "Developer",
+          GroupIcon: Terminal,
+          pages: [
+            navPage("owner_controls", "Developer Controls", ShieldAlert, "Viewer", {
+              badge:
+                hiddenPages.length > 0 ? (
+                  <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    {hiddenPages.length}
+                  </span>
+                ) : undefined,
+            }),
+          ],
+        },
+      ],
+    },
+  ];
+  // Drop pages the current user can't see, then drop groups/zones left with
+  // nothing in them — the same visibility guards the old flat per-item
+  // `hasAccess(...) && (...)` checks used to apply, just computed once here
+  // instead of re-checked at every render site.
+  const navZones: NavZone[] = navZonesRaw
+    .map(zone => ({ ...zone, groups: zone.groups.map(g => ({ ...g, pages: g.pages.filter(p => p.visible) })).filter(g => g.pages.length > 0) }))
+    .filter(zone => zone.groups.length > 0);
+
+  /** Renders one clickable page row — shared verbatim between the expanded
+   * sidebar's group content and the collapsed rail's group flyout, so the
+   * two are guaranteed to expose exactly the same pages with exactly the
+   * same active/badge/alert treatment. */
+  const renderNavPageRow = (page: NavPage, afterSelect: () => void) => (
+    <button
+      key={page.tab}
+      onClick={() => { page.onSelect(); afterSelect(); }}
+      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+        page.isActive
+          ? page.tab === "smoke_test"
+            ? "border-l-[#E08D4B] bg-[rgba(224,141,75,0.10)] text-white font-bold"
+            : "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+      } rounded-r-lg border-y-transparent border-r-transparent`}
+    >
+      <span className="relative shrink-0 flex items-center justify-center">
+        <page.Icon className={`w-4 h-4 shrink-0 ${page.iconColorClass(page.isActive)}`} style={page.iconStyle} />
+        {page.hasAlertDot && (
+          <span className="absolute -top-1 -right-1 flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+          </span>
+        )}
+      </span>
+      <span>{page.label}</span>
+      {page.badge}
+    </button>
+  );
+
   const renderSidebarContent = (isMobile: boolean = false) => {
     return (
       <div className={`h-full flex flex-col text-[#F5F7FA] ${
@@ -2659,484 +2877,73 @@ export default function App() {
 
         {/* Categories / Navigation items */}
         <div role="navigation" aria-label="Workspace navigation" className="flex-grow p-4 space-y-1.5 overflow-y-auto">
-          {/* Sidebar information architecture — six functional groups (see
-              openSections / SIDEBAR_SECTION_TABS above) instead of the old
-              flat Advisor Zone / Admin Zone split. Each header is a
-              collapse/expand toggle; a section auto-opens the moment the
-              advisor is on one of its pages (see the activeTab effect
-              above), so direct navigation into a collapsed section never
-              hides the active page. Home was removed as a standalone item —
-              it's reached via the branding block above and the header
-              wordmark instead. */}
-
-          {/* ADVISOR WORKSPACE — daily operational tools. Expanded by
-              default: "I have a requirement and need a tool to solve it." */}
-          {(hasAccess("lookup", "Viewer") || hasAccess("coverage_projection", "Viewer") || hasAccess("specific_illness_check", "Viewer") || hasAccess("query_assist", "Editor")) && (
-            <>
-              <button
-                type="button"
-                onClick={() => toggleSidebarSection("advisorWorkspace")}
-                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
-                aria-expanded={openSections.advisorWorkspace}
-              >
-                <span>Advisor Workspace</span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.advisorWorkspace ? "" : "-rotate-90"}`} />
-              </button>
-
-              {openSections.advisorWorkspace && (
-                <div className="space-y-1.5 mb-1 pl-1">
-                  {hasAccess("lookup", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("lookup");
-                        setShowIntro(false);
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "lookup" && !showIntro
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Sparkles className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Declaration Assistant</span>
-                    </button>
-                  )}
-
-                  {hasAccess("coverage_projection", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("coverage_projection");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "coverage_projection"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <FileSpreadsheet className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Cover projection</span>
-                    </button>
-                  )}
-
-                  {hasAccess("specific_illness_check", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("specific_illness_check");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "specific_illness_check"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <ClipboardCheck className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Specific Illness Check</span>
-                    </button>
-                  )}
-
-                  {hasAccess("query_assist", "Editor") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("query_assist");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "query_assist"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <MessageCircle className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Query Assist</span>
-                    </button>
-                  )}
-                </div>
+          {/* Zone -> Functional Group -> Page, driven entirely by the
+              shared navZones model above (see its comment) — the collapsed
+              rail's group-icon + flyout rendering further down reads from
+              the exact same model, so the two states can't drift apart.
+              Each zone is a static (non-collapsible) label; each group
+              inside it is its own collapse/expand toggle that auto-opens
+              the moment the advisor is on one of its pages. Home isn't
+              here — it's reached via the branding block above and the
+              header wordmark. */}
+          {navZones.map((zone, zoneIdx) => (
+            <React.Fragment key={zone.key}>
+              {zoneIdx > 0 && (
+                <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
               )}
-            </>
-          )}
+              <div>
+                <span className="block text-[10px] font-black uppercase tracking-widest px-2 mb-2 text-white/80">
+                  {zone.label}
+                </span>
+                <div className="space-y-4">
+                  {zone.groups.map(group => (
+                    <div key={group.key}>
+                      <button
+                        type="button"
+                        onClick={() => toggleSidebarSection(group.key)}
+                        className="w-full flex items-center justify-between px-3 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                        aria-expanded={openSections[group.key]}
+                      >
+                        <span>{group.label}</span>
+                        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections[group.key] ? "" : "-rotate-90"}`} />
+                      </button>
+                      {openSections[group.key] && (
+                        <div className="space-y-1.5 mb-1 pl-2">
+                          {group.pages.map(page => renderNavPageRow(page, () => { if (isMobile) setIsMenuOpen(false); }))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-          {/* QUALITY — separate from the operational tools above: "How am I
-              performing?" rather than "what tool do I need?" */}
-          {hasAccess("qa_dashboard", "Viewer") && (
-            <>
-              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
-
-              <button
-                type="button"
-                onClick={() => toggleSidebarSection("quality")}
-                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
-                aria-expanded={openSections.quality}
-              >
-                <span>Quality</span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.quality ? "" : "-rotate-90"}`} />
-              </button>
-
-              {openSections.quality && (
-                <div className="space-y-1.5 mb-1 pl-1">
+              {/* My Activity — deliberately left ungrouped (no section of
+                  its own) per standing instruction: it's being redesigned
+                  separately as part of Declaration Assistant search
+                  history, so it isn't assigned to any functional group
+                  here. Kept in its original relative position (end of the
+                  Advisor Zone block) purely so existing bookmarks/links to
+                  it keep working. */}
+              {zone.key === "advisor" && hasAccess("my_activity", "Viewer") && (
+                <div className="mt-4">
                   <button
                     onClick={() => {
-                      setActiveTab("qa_dashboard");
+                      setActiveTab("my_activity");
                       if (isMobile) setIsMenuOpen(false);
                     }}
                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                      activeTab === "qa_dashboard"
+                      activeTab === "my_activity"
                         ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
                         : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
                     } rounded-r-lg border-y-transparent border-r-transparent`}
                   >
-                    <QaDashboardIcon className="w-4 h-4 shrink-0 text-blue-300" />
-                    <span>QA Dashboard</span>
+                    <History className="w-4 h-4 shrink-0 text-blue-300" />
+                    <span>My Activity</span>
                   </button>
                 </div>
               )}
-            </>
-          )}
-
-          {/* REFERENCE — look-up / verification resources: "I need to check
-              or verify something," not an operational tool in itself. */}
-          {(hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer") || hasAccess("resources", "Viewer")) && (
-            <>
-              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
-
-              <button
-                type="button"
-                onClick={() => toggleSidebarSection("reference")}
-                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
-                aria-expanded={openSections.reference}
-              >
-                <span>Reference</span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.reference ? "" : "-rotate-90"}`} />
-              </button>
-
-              {openSections.reference && (
-                <div className="space-y-1.5 mb-1 pl-1">
-                  {hasAccess("advisory_zone", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("advisory_zone");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "advisory_zone"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Plan Reference</span>
-                    </button>
-                  )}
-
-                  {hasAccess("announcement_archive", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("announcement_archive");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "announcement_archive"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Newspaper className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Announcements</span>
-                    </button>
-                  )}
-
-                  {hasAccess("resources", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("resources");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "resources"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      {/* Faux-bold drop-shadow — this filled-path SVG's thin
-                          route lines read lighter than the other
-                          stroke-based icons at 16px; the drop-shadow
-                          thickens the rendered shape itself without
-                          changing the box size. */}
-                      <DeclarationMapIcon
-                        width={16}
-                        height={16}
-                        color="currentColor"
-                        className="shrink-0 text-blue-300"
-                        style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }}
-                      />
-                      <span>Declaration Map</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* My Activity — deliberately left ungrouped (no section header)
-              per standing instruction: its home is being redesigned
-              separately as part of Declaration Assistant search history, so
-              it isn't assigned to any of the new functional groups here.
-              Kept visible only so existing bookmarks/links to it keep
-              working. */}
-          {hasAccess("my_activity", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("my_activity");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "my_activity"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <History className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>My Activity</span>
-            </button>
-          )}
-
-          {/* APP OPS CONTROLS — admin controls that directly shape what
-              advisors see/use (content, product info, resources). Kept
-              separate from general Administration below. */}
-          {(hasAccess("qa_announcement_log", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("knowledge_base", "Viewer") || hasAccess("plan_scope", "Viewer")) && (
-            <>
-              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
-
-              <button
-                type="button"
-                onClick={() => toggleSidebarSection("appOpsControls")}
-                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
-                aria-expanded={openSections.appOpsControls}
-              >
-                <span>App Ops Controls</span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.appOpsControls ? "" : "-rotate-90"}`} />
-              </button>
-
-              {openSections.appOpsControls && (
-                <div className="space-y-1.5 mb-1 pl-1">
-                  {hasAccess("qa_announcement_log", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("qa_announcement_log");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "qa_announcement_log"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Megaphone className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Announcement Manager</span>
-                    </button>
-                  )}
-
-                  {hasAccess("ped_suggestions", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("ped_suggestions");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "ped_suggestions"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Stethoscope className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>PED Repository</span>
-                    </button>
-                  )}
-
-                  {hasAccess("knowledge_base", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("knowledge_base");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "knowledge_base"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Database className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Knowledge Base</span>
-                    </button>
-                  )}
-
-                  {hasAccess("plan_scope", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("plan_scope");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "plan_scope"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <FileText className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Plan Management</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* ADMINISTRATION — general app administration/monitoring, kept
-              separate from App Ops Controls above. */}
-          {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
-            <>
-              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
-
-              <button
-                type="button"
-                onClick={() => toggleSidebarSection("administration")}
-                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
-                aria-expanded={openSections.administration}
-              >
-                <span>Administration</span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.administration ? "" : "-rotate-90"}`} />
-              </button>
-
-              {openSections.administration && (
-                <div className="space-y-1.5 mb-1 pl-1">
-                  {hasAccess("profile_access", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("profile_access");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "profile_access"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <User className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>User Management</span>
-                    </button>
-                  )}
-
-                  {hasAccess("audit", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("audit");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "audit"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Clock className="w-4 h-4 shrink-0 text-blue-300" />
-                      <span>Activity Log</span>
-                    </button>
-                  )}
-
-                  {hasAccess("flagged_responses", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("flagged_responses");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`relative w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "flagged_responses"
-                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <span className="relative shrink-0 flex items-center justify-center">
-                        <Flag className="w-4 h-4 text-blue-300" />
-                        {/* Moved here from the header's standalone Bell icon —
-                            the unresolved-mismatch alert now lives on the nav
-                            item that actually opens that list. */}
-                        {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
-                          <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                          </span>
-                        )}
-                      </span>
-                      <span>Flagged Responses</span>
-                    </button>
-                  )}
-
-                  {hasAccess("smoke_test", "Viewer") && (
-                    <button
-                      onClick={() => {
-                        setActiveTab("smoke_test");
-                        if (isMobile) setIsMenuOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                        activeTab === "smoke_test"
-                          ? "border-l-[#E08D4B] bg-[rgba(224,141,75,0.10)] text-white font-bold"
-                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                      } rounded-r-lg border-y-transparent border-r-transparent`}
-                    >
-                      <Flame className={`w-4 h-4 shrink-0 ${activeTab === "smoke_test" ? "text-[#E08D4B]" : "text-blue-300"}`} />
-                      <span>Smoke Test</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* DEVELOPER — its own group below Administration, kept separate
-              per spec. Only ever renders for the Developer tier
-              (hasAccess short-circuits on tier), so no other user sees
-              this divider or heading at all. */}
-          {hasAccess("owner_controls", "Viewer") && (
-            <>
-              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
-
-              <button
-                type="button"
-                onClick={() => toggleSidebarSection("developer")}
-                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
-                aria-expanded={openSections.developer}
-              >
-                <span>Developer</span>
-                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.developer ? "" : "-rotate-90"}`} />
-              </button>
-
-              {openSections.developer && (
-                <div className="space-y-1.5 mb-1 pl-1">
-                  <button
-                    onClick={() => {
-                      setActiveTab("owner_controls");
-                      if (isMobile) setIsMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                      activeTab === "owner_controls"
-                        ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                        : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                    } rounded-r-lg border-y-transparent border-r-transparent`}
-                  >
-                    <ShieldAlert className="w-4 h-4 shrink-0 text-blue-300" />
-                    <span>Developer Controls</span>
-                    {hiddenPages.length > 0 && (
-                      <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                        {hiddenPages.length}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+            </React.Fragment>
+          ))}
         </div>
 
         {/* Bottom Profile Tab — DP picture + name, tab-styled to match the
@@ -3239,153 +3046,67 @@ export default function App() {
               }}
               className="flex flex-col gap-2.5 w-full flex-grow min-h-0 overflow-y-auto py-2 items-center no-scrollbar"
             >
-              {/* Collapsed rail mirrors the same six functional groups as
-                  the expanded sidebar (renderSidebarContent) — no text
-                  labels here (icon-only), so grouping is conveyed with the
-                  same two-tier divider language the rail already used: a
-                  thin rule between clusters, one thick rule marking the
-                  advisor-side / admin-side boundary. No standalone Home
-                  icon — Home is reached via the branding block / header
-                  wordmark, same as the expanded sidebar. */}
-
-              {/* Advisor Workspace cluster */}
-              {hasAccess("lookup", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("lookup");
-                    setShowIntro(false);
-                  }}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "lookup" && !showIntro
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Declaration Assistant"
-                >
-                  <Sparkles style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("coverage_projection", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("coverage_projection")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "coverage_projection"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "coverage_projection" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Cover projection"
-                >
-                  <FileSpreadsheet style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("specific_illness_check", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("specific_illness_check")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "specific_illness_check"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "specific_illness_check" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Specific Illness Check"
-                >
-                  <ClipboardCheck style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("query_assist", "Editor") && (
-                <button
-                  onClick={() => setActiveTab("query_assist")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "query_assist"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "query_assist" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Query Assist"
-                >
-                  <MessageCircle style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {/* Quality cluster */}
-              {hasAccess("qa_dashboard", "Viewer") && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
-              {hasAccess("qa_dashboard", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("qa_dashboard")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "qa_dashboard"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "qa_dashboard" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="QA Dashboard"
-                >
-                  <QaDashboardIcon style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {/* Reference cluster */}
-              {(hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer") || hasAccess("resources", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
-              {hasAccess("advisory_zone", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("advisory_zone")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "advisory_zone"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "advisory_zone" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Plan Reference"
-                >
-                  <BookOpen style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("announcement_archive", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("announcement_archive")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "announcement_archive"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "announcement_archive" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Announcements"
-                >
-                  <Newspaper style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("resources", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("resources")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "resources"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "resources" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Declaration Map"
-                >
-                  <DeclarationMapIcon width={18} height={18} color="currentColor" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} />
-                </button>
-              )}
+              {/* Collapsed rail shows one icon per functional GROUP (not
+                  per page) — driven by the same navZones model the
+                  expanded sidebar uses, so the two can't drift apart. A
+                  thin rule still separates groups within a zone; a thick
+                  rule still marks each zone boundary, same divider
+                  language the rail already used. Clicking a group icon
+                  opens a floating flyout (portal, below) listing that
+                  group's pages — it never auto-navigates to one child. No
+                  standalone Home icon — Home is reached via the branding
+                  block / header wordmark, same as the expanded sidebar. */}
+              {navZones.map((zone, zoneIdx) => (
+                <React.Fragment key={zone.key}>
+                  {zoneIdx > 0 && (
+                    <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70 shrink-0" />
+                  )}
+                  {zone.groups.map((group, groupIdx) => {
+                    const isGroupActive = group.pages.some(page => page.isActive);
+                    const hasAlert = group.pages.some(page => page.hasAlertDot) || (group.key === "developer" && hiddenPages.length > 0);
+                    return (
+                      <React.Fragment key={group.key}>
+                        {groupIdx > 0 && (
+                          <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
+                        )}
+                        <button
+                          onClick={e => {
+                            if (openGroupFlyout === group.key) {
+                              setOpenGroupFlyout(null);
+                              return;
+                            }
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setGroupFlyoutPos({ top: rect.top, left: rect.right + 8 });
+                            setOpenGroupFlyout(group.key);
+                          }}
+                          className={`relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
+                            isGroupActive || openGroupFlyout === group.key
+                              ? "bg-white/[0.08] border border-white/[0.14]"
+                              : "hover:bg-white/5"
+                          }`}
+                          style={{ color: isGroupActive ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                          title={group.label}
+                          aria-haspopup="true"
+                          aria-expanded={openGroupFlyout === group.key}
+                        >
+                          <group.GroupIcon style={{ width: "18px", height: "18px" }} />
+                          {hasAlert && (
+                            <span className="absolute top-1 right-1 flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                            </span>
+                          )}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
 
               {/* My Activity — ungrouped (see the expanded sidebar's note on
                   why this has no section of its own); its own thin divider
                   just sets it apart as a standalone icon rather than
-                  implying membership in the Reference cluster above it. */}
+                  implying membership in the Reference group above it. */}
               {hasAccess("my_activity", "Viewer") && (
                 <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
@@ -3402,170 +3123,6 @@ export default function App() {
                   title="My Activity"
                 >
                   <History style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {/* Advisor-side / admin-side boundary — mirrors the divider
-                  shown between the advisor-facing groups and App Ops
-                  Controls in the expanded sidebar (renderSidebarContent),
-                  so the same boundary is visible whether the rail is
-                  collapsed or expanded. */}
-              {(hasAccess("qa_announcement_log", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("knowledge_base", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
-                <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70 shrink-0" />
-              )}
-
-              {/* App Ops Controls cluster */}
-              {hasAccess("qa_announcement_log", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("qa_announcement_log")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "qa_announcement_log"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "qa_announcement_log" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Announcement Manager"
-                >
-                  <Megaphone style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("ped_suggestions", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("ped_suggestions")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "ped_suggestions"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "ped_suggestions" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="PED Repository"
-                >
-                  <Stethoscope style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("knowledge_base", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("knowledge_base")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "knowledge_base"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "knowledge_base" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Knowledge Base"
-                >
-                  <Database style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("plan_scope", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("plan_scope")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "plan_scope"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "plan_scope" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Plan Management"
-                >
-                  <FileText style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {/* Administration cluster */}
-              {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
-              {hasAccess("profile_access", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("profile_access")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "profile_access"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "profile_access" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="User Management"
-                >
-                  <User style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("audit", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("audit")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "audit"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "audit" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Activity Log"
-                >
-                  <Clock style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {hasAccess("flagged_responses", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("flagged_responses")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "flagged_responses"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "flagged_responses" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Flagged Responses"
-                >
-                  <Flag style={{ width: "18px", height: "18px" }} />
-                  {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
-                    <span className="absolute top-1 right-1 flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                    </span>
-                  )}
-                </button>
-              )}
-
-              {hasAccess("smoke_test", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("smoke_test")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "smoke_test"
-                      ? "bg-[rgba(224,141,75,0.10)] border border-[#E08D4B]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "smoke_test" ? "#E08D4B" : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Smoke Test"
-                >
-                  <Flame style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
-
-              {/* Developer cluster */}
-              {hasAccess("owner_controls", "Viewer") && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
-              {hasAccess("owner_controls", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("owner_controls")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
-                    activeTab === "owner_controls"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "owner_controls" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="Developer Controls"
-                >
-                  <ShieldAlert style={{ width: "18px", height: "18px" }} />
-                  {hiddenPages.length > 0 && (
-                    <span className="absolute top-1 right-1 inline-flex rounded-full h-2 w-2 bg-rose-500" />
-                  )}
                 </button>
               )}
             </div>
@@ -3691,6 +3248,58 @@ export default function App() {
               </motion.div>
             </>
           )}
+        </AnimatePresence>,
+        document.body
+      )}
+
+      {/* Collapsed-rail group flyout — a portal, so it floats above
+          everything regardless of the sidebar's scroll position. Lists the
+          clicked group's child pages via the same renderNavPageRow used by
+          the expanded sidebar, so a group icon never auto-navigates to one
+          arbitrary child — the advisor always picks from the full list.
+          Positioned off the clicked button's own rect (see the collapsed
+          rail's onClick above), same anchoring approach as the profile
+          card portal above. */}
+      {createPortal(
+        <AnimatePresence>
+          {openGroupFlyout && groupFlyoutPos && (() => {
+            const activeGroup = navZones.flatMap(z => z.groups).find(g => g.key === openGroupFlyout);
+            if (!activeGroup) return null;
+            return (
+              <>
+                <div
+                  className="fixed inset-0 z-[9998] cursor-default"
+                  onClick={() => setOpenGroupFlyout(null)}
+                />
+                <motion.div
+                  initial={{ opacity: 0, x: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: 10, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  style={{
+                    top: groupFlyoutPos.top,
+                    left: groupFlyoutPos.left,
+                    maxHeight: "calc(100vh - 24px)",
+                    overflowY: "auto",
+                  }}
+                  className={`fixed w-56 rounded-lg border shadow-xl z-[9999] p-2 font-sans text-left ${
+                    theme === "dark"
+                      ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
+                      : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
+                  }`}
+                >
+                  <div className={`px-2 pt-1 pb-2 mb-1 border-b border-dashed ${theme === "dark" ? "border-white/10" : "border-stone-200"}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${theme === "dark" ? "text-white/50" : "text-stone-400"}`}>
+                      {activeGroup.label}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {activeGroup.pages.map(page => renderNavPageRow(page, () => setOpenGroupFlyout(null)))}
+                  </div>
+                </motion.div>
+              </>
+            );
+          })()}
         </AnimatePresence>,
         document.body
       )}
@@ -3856,7 +3465,7 @@ export default function App() {
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 specific_illness_check: { label: "Specific Illness Check", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                query_assist: { label: "Query Assist", icon: <MessageCircle className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                query_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4600,7 +4209,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0"
             >
-              <ErrorBoundary theme={theme} label="Query Assist">
+              <ErrorBoundary theme={theme} label="Product Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <QueryAssistPage theme={theme} />
               </Suspense>
