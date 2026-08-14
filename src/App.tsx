@@ -651,6 +651,42 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isMobileWindow, setIsMobileWindow] = useState<boolean>(typeof window !== "undefined" ? window.innerWidth < 768 : false);
 
+  // Sidebar information architecture — functional groupings (see the
+  // renderSidebarContent expanded nav below). Advisor Workspace is the only
+  // section open by default (the advisor's daily-use tools); every other
+  // section starts collapsed and auto-expands the moment the advisor is on
+  // a page that belongs to it, so a direct link/refresh into e.g. Plan
+  // Management always lands with that section visibly open.
+  type SidebarSectionKey = "advisorWorkspace" | "quality" | "reference" | "appOpsControls" | "administration" | "developer";
+  const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
+    advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "query_assist"],
+    quality: ["qa_dashboard"],
+    reference: ["advisory_zone", "announcement_archive", "resources"],
+    appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
+    administration: ["profile_access", "audit", "flagged_responses", "smoke_test"],
+    developer: ["owner_controls"],
+  };
+  const [openSections, setOpenSections] = useState<Record<SidebarSectionKey, boolean>>({
+    advisorWorkspace: true,
+    quality: false,
+    reference: false,
+    appOpsControls: false,
+    administration: false,
+    developer: false,
+  });
+  const toggleSidebarSection = (key: SidebarSectionKey) => {
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  useEffect(() => {
+    const owningSection = (Object.keys(SIDEBAR_SECTION_TABS) as SidebarSectionKey[]).find(key =>
+      SIDEBAR_SECTION_TABS[key].includes(activeTab)
+    );
+    if (owningSection) {
+      setOpenSections(prev => (prev[owningSection] ? prev : { ...prev, [owningSection]: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   useEffect(() => {
     const handleResize = () => {
       setIsMobileWindow(window.innerWidth < 768);
@@ -977,26 +1013,6 @@ export default function App() {
     } catch (_) {}
   }, [planQuestionsState]);
 
-  // Master Simulated Role State
-  const [simulatedRole, setSimulatedRole] = usePersistentState<"General" | "Admin" | "Developer" | null>(
-    "ditto_simulated_role",
-    () => null,
-    {
-      serialize: (value) => value as string,
-      // Migrates a stale pre-rename (2026-07-29) "Owner" value left over in a
-      // browser's localStorage from before the Owner->Developer tier rename.
-      // Without this, effectiveTier (below) reads the literal string "Owner"
-      // straight out of localStorage forever — it's a client-side override
-      // that never goes through the database, so the db:migrate enum rename
-      // has no effect on it. Anyone who had "View as: Owner" simulation
-      // active before the rename would otherwise be stuck seeing "Owner"
-      // everywhere and failing every `=== "Developer"` check, regardless of
-      // their real DB tier, until they manually cleared the key.
-      deserialize: (raw) => (raw === "Owner" ? "Developer" : (raw as "General" | "Admin" | "Developer" | null)),
-      removeWhenFalsy: true,
-    }
-  );
-
   // NOTE (audit fix, see Production_Readiness_Audit.md Findings 1 & 6): this
   // used to hardcode a single Developer email as a bypass and silently defaulted
   // every other signed-in user to "General" tier regardless of what the
@@ -1007,8 +1023,12 @@ export default function App() {
   // when the session bootstraps below, and kept in sync by the effect that
   // watches `usersList`) — trust it instead of re-deriving tier from a
   // client-side special case.
+  //
+  // (The client-side "Preview As" role simulation this used to layer on top
+  // of baseUserTier was removed from the UI — effectiveTier is now always
+  // the advisor's real, server-resolved tier.)
   const baseUserTier: "General" | "Admin" | "Developer" = currentUser?.tier ?? "General";
-  const effectiveTier = simulatedRole || baseUserTier;
+  const effectiveTier = baseUserTier;
 
   // NOTE: this used to eagerly bulk-fetch the ENTIRE change_logs table on
   // every login for Admin/Developer (GET /api/change-logs, no limit) purely
@@ -2311,7 +2331,7 @@ export default function App() {
           <div className={`z-10 flex items-center justify-between font-bold font-mono uppercase tracking-wider ${isDark ? "text-slate-500" : "text-stone-550"}`} style={{ fontSize: "10px" }}>
             <span className="flex items-center gap-1.5">
               ADVISOR PRODUCTIVITY PLATFORM
-              <ShieldCheck className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
+              <ShieldCheck className="w-3.5 h-3.5" />
             </span>
           </div>
         </div>
@@ -2569,7 +2589,7 @@ export default function App() {
 
           {/* Footer of right side */}
           <div className={`z-10 flex justify-end text-[11px] font-bold font-mono uppercase tracking-wider ${isDark ? "text-slate-500" : "text-stone-550"} mt-4 md:mt-0`}>
-            <span>©️BLISS GUIDES . DITTO</span>
+            <span>©BLISS GUIDES . DITTO</span>
           </div>
         </div>
 
@@ -2588,7 +2608,22 @@ export default function App() {
             theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
           }`}
         >
-          <div className="flex items-center gap-2.5 min-w-0">
+          {/* Branding block doubles as the Home entry point — clicking the
+              logo/name/tagline navigates Home, same action as the header
+              wordmark. min-w-0 lets the text column shrink instead of
+              overflowing; the tagline no longer truncates (see below), so
+              it wraps onto a second line instead of being clipped. */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("lookup");
+              setShowIntro(true);
+              if (isMobile) setIsMenuOpen(false);
+            }}
+            className="flex items-center gap-2.5 min-w-0 text-left bg-transparent border-0 p-0 m-0 cursor-pointer hover:opacity-85 transition-opacity focus:outline-none select-none"
+            title="Home (Go to Compliance & Policy Mapping Engine)"
+            aria-label="Go to home — Ditto Assist"
+          >
             {/* .png, not favicon.svg — the SVG just wraps one giant embedded
                 base64 PNG, which some browsers fail to rasterize inside an
                 <img> (shows the broken-image icon) even though the file
@@ -2607,9 +2642,12 @@ export default function App() {
                   theme. Sidebar bg is intentionally dark-navy in both themes
                   (see index.css's --sidebar-bg "LOCKED VALUE" note). */}
               <span className="text-xs font-bold uppercase tracking-wider text-white truncate">Ditto Assist</span>
-              <span className="text-[10px] font-medium text-[#C4CDD8] truncate">A Powerful Suite of Advisory Tools</span>
+              {/* No "truncate" here (was clipping mid-word) — the tagline is
+                  short enough to wrap onto two lines at this column width
+                  without needing a wider branding block. */}
+              <span className="text-[10px] font-medium text-[#C4CDD8] leading-snug whitespace-normal break-words">A Powerful Suite of Advisory Tools</span>
             </div>
-          </div>
+          </button>
           <button
             onClick={() => setIsMenuOpen(false)}
             className="p-1.5 rounded-lg transition-all cursor-pointer hover:bg-white/5 text-[#C4CDD8] hover:text-[#F5F7FA]"
@@ -2621,186 +2659,232 @@ export default function App() {
 
         {/* Categories / Navigation items */}
         <div role="navigation" aria-label="Workspace navigation" className="flex-grow p-4 space-y-1.5 overflow-y-auto">
-          <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
-            Advisor Zone
-          </span>
+          {/* Sidebar information architecture — six functional groups (see
+              openSections / SIDEBAR_SECTION_TABS above) instead of the old
+              flat Advisor Zone / Admin Zone split. Each header is a
+              collapse/expand toggle; a section auto-opens the moment the
+              advisor is on one of its pages (see the activeTab effect
+              above), so direct navigation into a collapsed section never
+              hides the active page. Home was removed as a standalone item —
+              it's reached via the branding block above and the header
+              wordmark instead. */}
 
-          {hasAccess("lookup", "Viewer") && (
+          {/* ADVISOR WORKSPACE — daily operational tools. Expanded by
+              default: "I have a requirement and need a tool to solve it." */}
+          {(hasAccess("lookup", "Viewer") || hasAccess("coverage_projection", "Viewer") || hasAccess("specific_illness_check", "Viewer") || hasAccess("query_assist", "Editor")) && (
             <>
               <button
-                onClick={() => {
-                  setActiveTab("lookup");
-                  setShowIntro(true);
-                  if (isMobile) setIsMenuOpen(false);
-                }}
-                className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                  activeTab === "lookup" && showIntro
-                    ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                    : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                } rounded-r-lg border-y-transparent border-r-transparent`}
+                type="button"
+                onClick={() => toggleSidebarSection("advisorWorkspace")}
+                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                aria-expanded={openSections.advisorWorkspace}
               >
-                <Home className="w-4 h-4 shrink-0 text-blue-300" />
-                <span>Home</span>
+                <span>Advisor Workspace</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.advisorWorkspace ? "" : "-rotate-90"}`} />
               </button>
 
-              <button
-                onClick={() => {
-                  setActiveTab("lookup");
-                  setShowIntro(false);
-                  if (isMobile) setIsMenuOpen(false);
-                }}
-                className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                  activeTab === "lookup" && !showIntro
-                    ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                    : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                } rounded-r-lg border-y-transparent border-r-transparent`}
-              >
-                <Sparkles className="w-4 h-4 shrink-0 text-blue-300" />
-                <span>Declaration Assistant</span>
-              </button>
+              {openSections.advisorWorkspace && (
+                <div className="space-y-1.5 mb-1 pl-1">
+                  {hasAccess("lookup", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("lookup");
+                        setShowIntro(false);
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "lookup" && !showIntro
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Sparkles className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Declaration Assistant</span>
+                    </button>
+                  )}
+
+                  {hasAccess("coverage_projection", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("coverage_projection");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "coverage_projection"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <FileSpreadsheet className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Cover projection</span>
+                    </button>
+                  )}
+
+                  {hasAccess("specific_illness_check", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("specific_illness_check");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "specific_illness_check"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <ClipboardCheck className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Specific Illness Check</span>
+                    </button>
+                  )}
+
+                  {hasAccess("query_assist", "Editor") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("query_assist");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "query_assist"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <MessageCircle className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Query Assist</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
 
+          {/* QUALITY — separate from the operational tools above: "How am I
+              performing?" rather than "what tool do I need?" */}
           {hasAccess("qa_dashboard", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("qa_dashboard");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "qa_dashboard"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <QaDashboardIcon className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>QA Dashboard</span>
-            </button>
+            <>
+              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
+
+              <button
+                type="button"
+                onClick={() => toggleSidebarSection("quality")}
+                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                aria-expanded={openSections.quality}
+              >
+                <span>Quality</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.quality ? "" : "-rotate-90"}`} />
+              </button>
+
+              {openSections.quality && (
+                <div className="space-y-1.5 mb-1 pl-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab("qa_dashboard");
+                      if (isMobile) setIsMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                      activeTab === "qa_dashboard"
+                        ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                        : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                    } rounded-r-lg border-y-transparent border-r-transparent`}
+                  >
+                    <QaDashboardIcon className="w-4 h-4 shrink-0 text-blue-300" />
+                    <span>QA Dashboard</span>
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
-          {hasAccess("coverage_projection", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("coverage_projection");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "coverage_projection"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <FileSpreadsheet className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>Cover projection</span>
-            </button>
+          {/* REFERENCE — look-up / verification resources: "I need to check
+              or verify something," not an operational tool in itself. */}
+          {(hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer") || hasAccess("resources", "Viewer")) && (
+            <>
+              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
+
+              <button
+                type="button"
+                onClick={() => toggleSidebarSection("reference")}
+                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                aria-expanded={openSections.reference}
+              >
+                <span>Reference</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.reference ? "" : "-rotate-90"}`} />
+              </button>
+
+              {openSections.reference && (
+                <div className="space-y-1.5 mb-1 pl-1">
+                  {hasAccess("advisory_zone", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("advisory_zone");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "advisory_zone"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Plan Reference</span>
+                    </button>
+                  )}
+
+                  {hasAccess("announcement_archive", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("announcement_archive");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "announcement_archive"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Newspaper className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Announcements</span>
+                    </button>
+                  )}
+
+                  {hasAccess("resources", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("resources");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "resources"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      {/* Faux-bold drop-shadow — this filled-path SVG's thin
+                          route lines read lighter than the other
+                          stroke-based icons at 16px; the drop-shadow
+                          thickens the rendered shape itself without
+                          changing the box size. */}
+                      <DeclarationMapIcon
+                        width={16}
+                        height={16}
+                        color="currentColor"
+                        className="shrink-0 text-blue-300"
+                        style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }}
+                      />
+                      <span>Declaration Map</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
-          {/* Specific Illness Check — sits directly below Cover Projection,
-              same Advisory Zone (all-tiers) visibility. General-user-facing
-              read-only surface over the Admin Zone's Specific Illness Ledger
-              sandbox logic (see SpecificIllnessCheckPage.tsx). */}
-          {hasAccess("specific_illness_check", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("specific_illness_check");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "specific_illness_check"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <ClipboardCheck className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>Specific Illness Check</span>
-            </button>
-          )}
-
-          {/* Query Assist — advisor chat over the Knowledge Base's documents
-              and announcements, all-tiers like the items above (see
-              QueryAssistPage.tsx / src/server/knowledgeBase/queryAssist.ts). */}
-          {hasAccess("query_assist", "Editor") && (
-            <button
-              onClick={() => {
-                setActiveTab("query_assist");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "query_assist"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <MessageCircle className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>Query Assist</span>
-            </button>
-          )}
-
-          {/* Advisory Zone — sits ABOVE the Admin Zone divider because it is
-              advisor-facing and visible to every tier. */}
-          {hasAccess("advisory_zone", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("advisory_zone");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "advisory_zone"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>Plan Reference</span>
-            </button>
-          )}
-
-          {/* Announcements archive — sits directly below Plan Reference,
-              same Advisory Zone (all-tiers) visibility. */}
-          {hasAccess("announcement_archive", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("announcement_archive");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "announcement_archive"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              <Newspaper className="w-4 h-4 shrink-0 text-blue-300" />
-              <span>Announcements</span>
-            </button>
-          )}
-
-          {hasAccess("resources", "Viewer") && (
-            <button
-              onClick={() => {
-                setActiveTab("resources");
-                if (isMobile) setIsMenuOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                activeTab === "resources"
-                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-              } rounded-r-lg border-y-transparent border-r-transparent`}
-            >
-              {/* Faux-bold drop-shadow — this filled-path SVG's thin route
-                  lines read lighter than the other stroke-based icons at
-                  16px; the drop-shadow thickens the rendered shape itself
-                  without changing the box size. */}
-              <DeclarationMapIcon
-                width={16}
-                height={16}
-                color="currentColor"
-                className="shrink-0 text-blue-300"
-                style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }}
-              />
-              <span>Declaration Map</span>
-            </button>
-          )}
-
+          {/* My Activity — deliberately left ungrouped (no section header)
+              per standing instruction: its home is being redesigned
+              separately as part of Declaration Assistant search history, so
+              it isn't assigned to any of the new functional groups here.
+              Kept visible only so existing bookmarks/links to it keep
+              working. */}
           {hasAccess("my_activity", "Viewer") && (
             <button
               onClick={() => {
@@ -2818,203 +2902,239 @@ export default function App() {
             </button>
           )}
 
-          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer") || hasAccess("knowledge_base", "Viewer")) && (
+          {/* APP OPS CONTROLS — admin controls that directly shape what
+              advisors see/use (content, product info, resources). Kept
+              separate from general Administration below. */}
+          {(hasAccess("qa_announcement_log", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("knowledge_base", "Viewer") || hasAccess("plan_scope", "Viewer")) && (
             <>
-              {/* Clear separation between Advisor Zone and Admin Zone — a
-                  visibly distinct rule (not just a faint hairline) so the two
-                  sections of the workspace read as separate groups. */}
-              <div
-                style={{ borderColor: "rgba(255,255,255,0.12)" }}
-                className="border-t-2 my-4 opacity-70"
-              />
+              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
 
-              <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
-                Admin Zone
-              </span>
+              <button
+                type="button"
+                onClick={() => toggleSidebarSection("appOpsControls")}
+                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                aria-expanded={openSections.appOpsControls}
+              >
+                <span>App Ops Controls</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.appOpsControls ? "" : "-rotate-90"}`} />
+              </button>
 
-              {hasAccess("qa_announcement_log", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("qa_announcement_log");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "qa_announcement_log"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <Megaphone className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>Announcement Manager</span>
-                </button>
+              {openSections.appOpsControls && (
+                <div className="space-y-1.5 mb-1 pl-1">
+                  {hasAccess("qa_announcement_log", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("qa_announcement_log");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "qa_announcement_log"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Megaphone className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Announcement Manager</span>
+                    </button>
+                  )}
+
+                  {hasAccess("ped_suggestions", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("ped_suggestions");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "ped_suggestions"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Stethoscope className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>PED Repository</span>
+                    </button>
+                  )}
+
+                  {hasAccess("knowledge_base", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("knowledge_base");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "knowledge_base"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Database className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Knowledge Base</span>
+                    </button>
+                  )}
+
+                  {hasAccess("plan_scope", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("plan_scope");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "plan_scope"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <FileText className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Plan Management</span>
+                    </button>
+                  )}
+                </div>
               )}
-
-              {hasAccess("ped_suggestions", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("ped_suggestions");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "ped_suggestions"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <Stethoscope className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>PED Repository</span>
-                </button>
-              )}
-
-              {hasAccess("knowledge_base", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("knowledge_base");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "knowledge_base"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <Database className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>Knowledge Base</span>
-                </button>
-              )}
-
-              {hasAccess("plan_scope", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("plan_scope");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "plan_scope"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <FileText className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>Plan Management</span>
-                </button>
-              )}
-
-              {hasAccess("profile_access", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("profile_access");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "profile_access"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <User className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>User Management</span>
-                </button>
-              )}
-
-              {hasAccess("audit", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("audit");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "audit"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <Clock className="w-4 h-4 shrink-0 text-blue-300" />
-                  <span>Activity Log</span>
-                </button>
-              )}
-
-              {hasAccess("flagged_responses", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("flagged_responses");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`relative w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "flagged_responses"
-                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <span className="relative shrink-0 flex items-center justify-center">
-                    <Flag className="w-4 h-4 text-blue-300" />
-                    {/* Moved here from the header's standalone Bell icon —
-                        the unresolved-mismatch alert now lives on the nav
-                        item that actually opens that list. */}
-                    {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
-                      <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                      </span>
-                    )}
-                  </span>
-                  <span>Flagged Responses</span>
-                </button>
-              )}
-
-              {hasAccess("smoke_test", "Viewer") && (
-                <button
-                  onClick={() => {
-                    setActiveTab("smoke_test");
-                    if (isMobile) setIsMenuOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                    activeTab === "smoke_test"
-                      ? "border-l-[#E08D4B] bg-[rgba(224,141,75,0.10)] text-white font-bold"
-                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                  } rounded-r-lg border-y-transparent border-r-transparent`}
-                >
-                  <Flame className={`w-4 h-4 shrink-0 ${activeTab === "smoke_test" ? "text-[#E08D4B]" : "text-blue-300"}`} />
-                  <span>Smoke Test</span>
-                </button>
-              )}
-
             </>
           )}
 
-          {/* OWNER ZONE — its own group below Admin Zone. Only ever renders
-              for the Developer (hasAccess short-circuits on tier), so no other
-              user sees this divider or heading at all. */}
-          {hasAccess("owner_controls", "Viewer") && (
+          {/* ADMINISTRATION — general app administration/monitoring, kept
+              separate from App Ops Controls above. */}
+          {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
             <>
-              <div
-                style={{ borderColor: "rgba(255,255,255,0.12)" }}
-                className="border-t-2 my-4 opacity-70"
-              />
-
-              <span className="block text-[10px] font-bold tracking-wider px-2 mb-2 text-[#C4CDD8]">
-                Developer Zone
-              </span>
+              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
 
               <button
-                onClick={() => {
-                  setActiveTab("owner_controls");
-                  if (isMobile) setIsMenuOpen(false);
-                }}
-                className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                  activeTab === "owner_controls"
-                    ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                    : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                } rounded-r-lg border-y-transparent border-r-transparent`}
+                type="button"
+                onClick={() => toggleSidebarSection("administration")}
+                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                aria-expanded={openSections.administration}
               >
-                <ShieldAlert className="w-4 h-4 shrink-0 text-blue-300" />
-                <span>Developer Controls</span>
-                {hiddenPages.length > 0 && (
-                  <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    {hiddenPages.length}
-                  </span>
-                )}
+                <span>Administration</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.administration ? "" : "-rotate-90"}`} />
               </button>
+
+              {openSections.administration && (
+                <div className="space-y-1.5 mb-1 pl-1">
+                  {hasAccess("profile_access", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("profile_access");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "profile_access"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <User className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>User Management</span>
+                    </button>
+                  )}
+
+                  {hasAccess("audit", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("audit");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "audit"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Clock className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span>Activity Log</span>
+                    </button>
+                  )}
+
+                  {hasAccess("flagged_responses", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("flagged_responses");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`relative w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "flagged_responses"
+                          ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <span className="relative shrink-0 flex items-center justify-center">
+                        <Flag className="w-4 h-4 text-blue-300" />
+                        {/* Moved here from the header's standalone Bell icon —
+                            the unresolved-mismatch alert now lives on the nav
+                            item that actually opens that list. */}
+                        {reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                          </span>
+                        )}
+                      </span>
+                      <span>Flagged Responses</span>
+                    </button>
+                  )}
+
+                  {hasAccess("smoke_test", "Viewer") && (
+                    <button
+                      onClick={() => {
+                        setActiveTab("smoke_test");
+                        if (isMobile) setIsMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                        activeTab === "smoke_test"
+                          ? "border-l-[#E08D4B] bg-[rgba(224,141,75,0.10)] text-white font-bold"
+                          : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                      } rounded-r-lg border-y-transparent border-r-transparent`}
+                    >
+                      <Flame className={`w-4 h-4 shrink-0 ${activeTab === "smoke_test" ? "text-[#E08D4B]" : "text-blue-300"}`} />
+                      <span>Smoke Test</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* DEVELOPER — its own group below Administration, kept separate
+              per spec. Only ever renders for the Developer tier
+              (hasAccess short-circuits on tier), so no other user sees
+              this divider or heading at all. */}
+          {hasAccess("owner_controls", "Viewer") && (
+            <>
+              <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
+
+              <button
+                type="button"
+                onClick={() => toggleSidebarSection("developer")}
+                className="w-full flex items-center justify-between px-2 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                aria-expanded={openSections.developer}
+              >
+                <span>Developer</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${openSections.developer ? "" : "-rotate-90"}`} />
+              </button>
+
+              {openSections.developer && (
+                <div className="space-y-1.5 mb-1 pl-1">
+                  <button
+                    onClick={() => {
+                      setActiveTab("owner_controls");
+                      if (isMobile) setIsMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                      activeTab === "owner_controls"
+                        ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                        : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                    } rounded-r-lg border-y-transparent border-r-transparent`}
+                  >
+                    <ShieldAlert className="w-4 h-4 shrink-0 text-blue-300" />
+                    <span>Developer Controls</span>
+                    {hiddenPages.length > 0 && (
+                      <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        {hiddenPages.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -3119,63 +3239,31 @@ export default function App() {
               }}
               className="flex flex-col gap-2.5 w-full flex-grow min-h-0 overflow-y-auto py-2 items-center no-scrollbar"
             >
+              {/* Collapsed rail mirrors the same six functional groups as
+                  the expanded sidebar (renderSidebarContent) — no text
+                  labels here (icon-only), so grouping is conveyed with the
+                  same two-tier divider language the rail already used: a
+                  thin rule between clusters, one thick rule marking the
+                  advisor-side / admin-side boundary. No standalone Home
+                  icon — Home is reached via the branding block / header
+                  wordmark, same as the expanded sidebar. */}
+
+              {/* Advisor Workspace cluster */}
               {hasAccess("lookup", "Viewer") && (
-                <>
-                  <button 
-                    onClick={() => {
-                      setActiveTab("lookup");
-                      setShowIntro(true);
-                    }}
-                    className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                      activeTab === "lookup" && showIntro
-                        ? "bg-white/[0.08] border border-white/[0.14]"
-                        : "hover:bg-white/5"
-                    }`}
-                    style={{ color: activeTab === "lookup" && showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                    title="Home"
-                  >
-                    <Home style={{ width: "18px", height: "18px" }} />
-                  </button>
-
-                  <button 
-                    onClick={() => {
-                      setActiveTab("lookup");
-                      setShowIntro(false);
-                    }}
-                    className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                      activeTab === "lookup" && !showIntro
-                        ? "bg-white/[0.08] border border-white/[0.14]"
-                        : "hover:bg-white/5"
-                    }`}
-                    style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                    title="Declaration Assistant"
-                  >
-                    <Sparkles style={{ width: "18px", height: "18px" }} />
-                  </button>
-                </>
-              )}
-
-              {/* Advisor Zone cluster — read-only reference/analysis tools
-                  (QA scorecard, cover projection, specific illness check,
-                  Query Assist, plan reference, announcements). Grouped with
-                  a subtle divider so the collapsed rail reads as clusters
-                  instead of one unbroken column of icons. */}
-              {(hasAccess("qa_dashboard", "Viewer") || hasAccess("coverage_projection", "Viewer") || hasAccess("specific_illness_check", "Viewer") || hasAccess("query_assist", "Editor") || hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
-              {hasAccess("qa_dashboard", "Viewer") && (
                 <button
-                  onClick={() => setActiveTab("qa_dashboard")}
+                  onClick={() => {
+                    setActiveTab("lookup");
+                    setShowIntro(false);
+                  }}
                   className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "qa_dashboard"
+                    activeTab === "lookup" && !showIntro
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
                   }`}
-                  style={{ color: activeTab === "qa_dashboard" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="QA Dashboard"
+                  style={{ color: activeTab === "lookup" && !showIntro ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Declaration Assistant"
                 >
-                  <QaDashboardIcon style={{ width: "18px", height: "18px" }} />
+                  <Sparkles style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -3224,6 +3312,31 @@ export default function App() {
                 </button>
               )}
 
+              {/* Quality cluster */}
+              {hasAccess("qa_dashboard", "Viewer") && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
+              )}
+
+              {hasAccess("qa_dashboard", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("qa_dashboard")}
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "qa_dashboard"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "qa_dashboard" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="QA Dashboard"
+                >
+                  <QaDashboardIcon style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {/* Reference cluster */}
+              {(hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer") || hasAccess("resources", "Viewer")) && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
+              )}
+
               {hasAccess("advisory_zone", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("advisory_zone")}
@@ -3254,11 +3367,6 @@ export default function App() {
                 </button>
               )}
 
-              {/* Resources cluster — declaration map + personal activity log. */}
-              {(hasAccess("resources", "Viewer") || hasAccess("my_activity", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
               {hasAccess("resources", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("resources")}
@@ -3272,6 +3380,14 @@ export default function App() {
                 >
                   <DeclarationMapIcon width={18} height={18} color="currentColor" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} />
                 </button>
+              )}
+
+              {/* My Activity — ungrouped (see the expanded sidebar's note on
+                  why this has no section of its own); its own thin divider
+                  just sets it apart as a standalone icon rather than
+                  implying membership in the Reference cluster above it. */}
+              {hasAccess("my_activity", "Viewer") && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
 
               {hasAccess("my_activity", "Viewer") && (
@@ -3289,16 +3405,16 @@ export default function App() {
                 </button>
               )}
 
-              {/* Advisor Zone / Admin Zone separator — mirrors the divider
-                  shown between the two groups in the expanded sidebar
-                  (renderSidebarContent), so the same grouping boundary is
-                  visible whether the rail is collapsed or expanded. Same
-                  guard as the expanded version: only render it if there's
-                  at least one Admin Zone item this user can see. */}
-              {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer") || hasAccess("knowledge_base", "Viewer")) && (
+              {/* Advisor-side / admin-side boundary — mirrors the divider
+                  shown between the advisor-facing groups and App Ops
+                  Controls in the expanded sidebar (renderSidebarContent),
+                  so the same boundary is visible whether the rail is
+                  collapsed or expanded. */}
+              {(hasAccess("qa_announcement_log", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("knowledge_base", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
                 <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70 shrink-0" />
               )}
 
+              {/* App Ops Controls cluster */}
               {hasAccess("qa_announcement_log", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("qa_announcement_log")}
@@ -3359,9 +3475,8 @@ export default function App() {
                 </button>
               )}
 
-              {/* Access & Oversight cluster — user directory, activity log,
-                  flagged responses. */}
-              {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
+              {/* Administration cluster */}
+              {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
                 <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
 
@@ -3416,11 +3531,6 @@ export default function App() {
                 </button>
               )}
 
-              {/* Dev/Test cluster — smoke test sandbox + page-visibility kill switch. */}
-              {(hasAccess("smoke_test", "Viewer") || hasAccess("owner_controls", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
               {hasAccess("smoke_test", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("smoke_test")}
@@ -3436,7 +3546,11 @@ export default function App() {
                 </button>
               )}
 
-              {/* Developer Controls — collapsed rail. Developer-only. */}
+              {/* Developer cluster */}
+              {hasAccess("owner_controls", "Viewer") && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
+              )}
+
               {hasAccess("owner_controls", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("owner_controls")}
@@ -3673,19 +3787,23 @@ export default function App() {
               had removed this as functionally redundant with the wordmark
               button below (both just go Home), but its absence read as a
               missing navigation affordance rather than an intentional
-              simplification, so it's back. Same action as the wordmark. */}
+              simplification, so it's back. Same action as the wordmark.
+              Hidden specifically on the Home page itself (lookup+showIntro)
+              since there it has nowhere meaningful left to go back to. */}
           <div className="flex items-center gap-3.5 shrink-0 z-10">
-            <button
-              onClick={() => {
-                setActiveTab("lookup");
-                setShowIntro(true);
-              }}
-              className="p-1.5 -mr-1 rounded transition-all cursor-pointer hover:bg-white/10"
-              title="Back to Home"
-              aria-label="Go back to home"
-            >
-              <ArrowLeft className="w-4 h-4 text-white/70" aria-hidden="true" style={{ width: "18px", height: "18px" }} />
-            </button>
+            {!(activeTab === "lookup" && showIntro) && (
+              <button
+                onClick={() => {
+                  setActiveTab("lookup");
+                  setShowIntro(true);
+                }}
+                className="p-1.5 -mr-1 rounded transition-all cursor-pointer hover:bg-white/10"
+                title="Back to Home"
+                aria-label="Go back to home"
+              >
+                <ArrowLeft className="w-4 h-4 text-white/70" aria-hidden="true" style={{ width: "18px", height: "18px" }} />
+              </button>
+            )}
             <button
               onClick={() => {
                 setActiveTab("lookup");
@@ -3873,22 +3991,6 @@ export default function App() {
           </div>
         </header>
     </div>
-
-      {/* Persistent simulation banner */}
-      {simulatedRole && (
-        <div className="bg-amber-500 text-stone-950 px-4 py-2 text-xs font-black flex items-center justify-between gap-4 shadow-md sticky top-[61px] z-30 select-none animate-slide-down shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="bg-stone-950 text-amber-400 px-1.5 py-0.5 rounded text-[9.5px] uppercase font-mono tracking-widest leading-none">Simulation mode</span>
-            <span>Viewing as: <b className="uppercase">{simulatedRole === "General" ? "Advisor" : simulatedRole}</b> — your <b className="uppercase">{currentUser?.tier === "General" ? "Advisor" : currentUser?.tier}</b> permissions are still active.</span>
-          </div>
-          <button
-            onClick={() => setSimulatedRole(null)}
-            className="px-3 py-1 bg-stone-950 text-white rounded-lg text-[10px] uppercase font-black tracking-wider hover:bg-stone-900 leading-none transition-all duration-150 cursor-pointer"
-          >
-            Exit view
-          </button>
-        </div>
-      )}
 
       {/* RIGHT CONTROLS DRAWER PANEL */}
       <AnimatePresence>
@@ -4147,38 +4249,6 @@ export default function App() {
 
               </div>
 
-              {/* Drawer Footer — minimal View As (Developer/Admin only) plus the
-                  standing helper note. Developer can preview Admin or Advisor;
-                  Admin can preview Advisor only (no reason to "preview" their
-                  own tier, and letting them preview upward would be a
-                  confusing no-op since Developer-only actions stay
-                  server-enforced regardless of this client UI toggle). */}
-              <div className="p-4 border-t border-white/[0.08] space-y-2">
-                {(currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
-                  <div className="flex items-center justify-between gap-2 px-2">
-                    <span className="text-[10px] font-bold tracking-wider text-[#C4CDD8] shrink-0">
-                      Preview As
-                    </span>
-                    <div className="max-w-[130px]">
-                      <CustomSelect
-                        theme="dark"
-                        value={simulatedRole || ""}
-                        onChange={(val) => setSimulatedRole((val as "General" | "Admin" | "Developer" | "") || null)}
-                        placeholder="Default Profile"
-                        triggerClassName="w-full flex items-center justify-between gap-1 text-xs font-medium pl-2 pr-6 py-1 rounded border outline-none cursor-pointer bg-transparent border-white/[0.08] text-[#C4CDD8] hover:text-[#F5F7FA] focus:border-white/20 relative"
-                        options={[
-                          { value: "", label: "Default Profile" },
-                          ...(currentUser?.tier === "Developer" ? [{ value: "Admin", label: "Admin View" }] : []),
-                          { value: "General", label: "Advisor View" },
-                        ]}
-                      />
-                    </div>
-                  </div>
-                )}
-                <p className="text-[10px] text-[#C4CDD8] font-medium px-2">
-                  Adjust rules, security scopes and test setups dynamically.
-                </p>
-              </div>
             </motion.div>
           </>
         )}
@@ -4789,8 +4859,9 @@ export default function App() {
                 : "font-extrabold text-stone-600"
             }`}
           >
-            <div className="flex items-center select-none">
+            <div className="flex items-center gap-1.5 select-none">
               <span>ADVISOR PRODUCTIVITY PLATFORM</span>
+              <ShieldCheck className="w-3.5 h-3.5" />
             </div>
             <span style={{ color: !isDark && activeTab !== "smoke_test" ? "#57534d" : "#90a1b9", fontWeight: !isDark && activeTab !== "smoke_test" ? "bold" : "normal", fontSize: "10px" }} className="font-normal">©BLISS GUIDES.DITTO</span>
           </div>
