@@ -50,7 +50,7 @@ import {
   ToolCase,
   Award,
   Library,
-  Settings,
+  Workflow,
   ShieldUser,
   Terminal
 } from "lucide-react";
@@ -669,7 +669,7 @@ export default function App() {
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
     advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "query_assist"],
     quality: ["qa_dashboard"],
-    reference: ["advisory_zone", "announcement_archive", "resources"],
+    reference: ["advisory_zone", "announcement_archive", "resources", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
     administration: ["profile_access", "audit", "flagged_responses", "smoke_test"],
     developer: ["owner_controls", "connections"],
@@ -695,18 +695,26 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // Collapsed-rail group flyout — the collapsed sidebar shows one icon per
-  // functional group (not per page); clicking a group icon opens a small
-  // floating panel listing that group's pages, anchored to the icon that
-  // was clicked (same positioning approach as the profile card's dropdown
-  // below). Closed automatically on navigation and whenever the sidebar
-  // state changes out from under it (expands, or the window becomes
-  // mobile-width) so it never lingers pointing at an unmounted icon.
-  const [openGroupFlyout, setOpenGroupFlyout] = useState<SidebarSectionKey | null>(null);
-  const [groupFlyoutPos, setGroupFlyoutPos] = useState<{ top: number; left: number } | null>(null);
+  // Collapsed-rail group expansion — the collapsed sidebar shows one icon
+  // per functional group (not per page); clicking a group icon expands it
+  // INLINE, downward, within the same collapsed-width rail — revealing that
+  // group's child pages as their own icon-only buttons directly beneath it
+  // (CRM-style disclosure, not a floating flyout/popup). Only one group is
+  // expanded at a time. Auto-follows the active tab (same convention as
+  // openSections above for the expanded sidebar) so the rail always shows
+  // the group you're actually in; a manual click can still expand a
+  // different group to browse it without navigating away yet.
+  const [expandedRailGroup, setExpandedRailGroup] = useState<SidebarSectionKey | null>(null);
+  const toggleRailGroup = (key: SidebarSectionKey) => {
+    setExpandedRailGroup(prev => (prev === key ? null : key));
+  };
   useEffect(() => {
-    setOpenGroupFlyout(null);
-  }, [activeTab, isMenuOpen, isMobileWindow]);
+    const owningSection = (Object.keys(SIDEBAR_SECTION_TABS) as SidebarSectionKey[]).find(key =>
+      SIDEBAR_SECTION_TABS[key].includes(activeTab)
+    );
+    if (owningSection) setExpandedRailGroup(owningSection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -1134,7 +1142,7 @@ export default function App() {
   // rendering, because the route blocks below key off activeTab alone.
   //
   // Cannot strand a real Developer: hasAccess() always grants them
-  // "owner_controls", so the Developer Controls page stays reachable even if the
+  // "owner_controls", so the Feature Visibility page stays reachable even if the
   // guard bounces them out of a page they hid while previewing via "View As".
   useEffect(() => {
     if (activeTab === "lookup") return;
@@ -2348,11 +2356,15 @@ export default function App() {
             </div>
           </div>
 
-          {/* Footer of left side */}
+          {/* Footer of left side — login page only. The shield keeps its
+              accent color and the copyright mark keeps its emoji-style glyph
+              here (unlike the plain grey post-login footer) per explicit
+              instruction: this page's branding footer is the one place that
+              stays colored. */}
           <div className={`z-10 flex items-center justify-between font-bold font-mono uppercase tracking-wider ${isDark ? "text-slate-500" : "text-stone-550"}`} style={{ fontSize: "10px" }}>
             <span className="flex items-center gap-1.5">
               ADVISOR PRODUCTIVITY PLATFORM
-              <ShieldCheck className="w-3.5 h-3.5" />
+              <ShieldCheck className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
             </span>
           </div>
         </div>
@@ -2462,7 +2474,7 @@ export default function App() {
 
                     <div className="space-y-2">
                       <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        TACT ID (Workforce Registration)
+                        TACT ID
                       </label>
                       <TactIdInput
                         theme={theme}
@@ -2608,9 +2620,13 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          {/* Footer of right side */}
-          <div className={`z-10 flex justify-end text-[11px] font-bold font-mono uppercase tracking-wider ${isDark ? "text-slate-500" : "text-stone-550"} mt-4 md:mt-0`}>
-            <span>©BLISS GUIDES . DITTO</span>
+          {/* Footer of right side — same size/color/weight as the left
+              side's footer above (text-[10px], not [11px] — they were
+              mismatched) so the two halves read as one footer, not two. The
+              emoji-presentation ©️ (not plain ©) is deliberate here, same
+              reasoning as the shield above. */}
+          <div className={`z-10 flex justify-end text-[10px] font-bold font-mono uppercase tracking-wider ${isDark ? "text-slate-500" : "text-stone-550"} mt-4 md:mt-0`}>
+            <span>©️BLISS GUIDES . DITTO</span>
           </div>
         </div>
 
@@ -2624,9 +2640,10 @@ export default function App() {
   // hierarchy, below) and the collapsed rail (group icons + flyout child
   // access, further down) render from, so the two states can never drift
   // into separate/inconsistent navigation systems — only the presentation
-  // differs between the two render paths. My Activity is deliberately NOT
-  // part of this model (see its own ungrouped rendering below); Home isn't
-  // either (it's reached via the branding block / header wordmark).
+  // differs between the two render paths. My Activity lives under the
+  // Reference group, same as every other page here; Home is the one
+  // deliberate exception (it's reached via the branding block / header
+  // wordmark instead).
   interface NavPage {
     tab: typeof activeTab;
     label: string;
@@ -2643,7 +2660,7 @@ export default function App() {
     isActive: boolean;
     onSelect: () => void;
     /** Small badge rendered next to the label (expanded list only) — e.g.
-     * Developer Controls' hidden-pages count. */
+     * Feature Visibility's hidden-pages count. */
     badge?: React.ReactNode;
     /** Small pinging dot on the icon itself — currently just Flagged
      * Responses' pending-issue indicator. */
@@ -2655,9 +2672,11 @@ export default function App() {
     GroupIcon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
     pages: NavPage[];
     /** True only for a "group" that's really just one direct page with no
-     * real sub-navigation (Developer Controls) — the collapsed rail
-     * navigates straight to that page on click instead of opening a
-     * flyout, since a one-item flyout would be pure friction. The
+     * real sub-navigation — the collapsed rail navigates straight to that
+     * page on click instead of expanding it, since a one-item disclosure
+     * would be pure friction. Not currently set on any group (Developer
+     * Controls gained a second page — Connections — so it no longer
+     * qualifies), but kept for the next single-page group. The
      * expanded sidebar is unaffected (still shows its own
      * collapsible header, unchanged). */
     isDirectPage?: boolean;
@@ -2708,9 +2727,9 @@ export default function App() {
               isActive: activeTab === "lookup" && !showIntro,
               onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
             }),
+            navPage("query_assist", "Product Assist", ProductAssistIcon, "Editor"),
             navPage("coverage_projection", "Cover projection", FileSpreadsheet, "Viewer"),
             navPage("specific_illness_check", "Specific Illness Check", ClipboardCheck, "Viewer"),
-            navPage("query_assist", "Product Assist", ProductAssistIcon, "Editor"),
           ],
         },
         {
@@ -2729,6 +2748,7 @@ export default function App() {
             navPage("resources", "Declaration Map", DeclarationMapIcon, "Viewer", {
               iconStyle: { filter: "drop-shadow(0 0 0.4px currentColor)" },
             }),
+            navPage("my_activity", "My Activity", History, "Viewer"),
           ],
         },
       ],
@@ -2739,8 +2759,8 @@ export default function App() {
       groups: [
         {
           key: "appOpsControls",
-          label: "App Ops Controls",
-          GroupIcon: Settings,
+          label: "Operations Control",
+          GroupIcon: Workflow,
           pages: [
             navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
             navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
@@ -2771,10 +2791,10 @@ export default function App() {
       groups: [
         {
           key: "developer",
-          label: "Developer",
+          label: "Developer Controls",
           GroupIcon: Terminal,
           pages: [
-            navPage("owner_controls", "Access Controls", ShieldAlert, "Viewer", {
+            navPage("owner_controls", "Feature Visibility", ShieldAlert, "Viewer", {
               badge:
                 hiddenPages.length > 0 ? (
                   <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
@@ -2932,31 +2952,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* My Activity — deliberately left ungrouped (no section of
-                  its own) per standing instruction: it's being redesigned
-                  separately as part of Declaration Assistant search
-                  history, so it isn't assigned to any functional group
-                  here. Kept in its original relative position (end of the
-                  Advisor Zone block) purely so existing bookmarks/links to
-                  it keep working. */}
-              {zone.key === "advisor" && hasAccess("my_activity", "Viewer") && (
-                <div className="mt-4">
-                  <button
-                    onClick={() => {
-                      setActiveTab("my_activity");
-                      if (isMobile) setIsMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
-                      activeTab === "my_activity"
-                        ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
-                        : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
-                    } rounded-r-lg border-y-transparent border-r-transparent`}
-                  >
-                    <History className="w-4 h-4 shrink-0 text-blue-300" />
-                    <span>My Activity</span>
-                  </button>
-                </div>
-              )}
             </React.Fragment>
           ))}
         </div>
@@ -3067,10 +3062,13 @@ export default function App() {
                   thin rule still separates groups within a zone; a thick
                   rule still marks each zone boundary, same divider
                   language the rail already used. Clicking a group icon
-                  opens a floating flyout (portal, below) listing that
-                  group's pages — it never auto-navigates to one child. No
-                  standalone Home icon — Home is reached via the branding
-                  block / header wordmark, same as the expanded sidebar. */}
+                  expands it INLINE, downward, within the collapsed rail —
+                  revealing that group's pages as their own icon buttons
+                  directly beneath it (CRM-style disclosure; see
+                  expandedRailGroup above) — it never auto-navigates to one
+                  child. No standalone Home icon — Home is reached via the
+                  branding block / header wordmark, same as the expanded
+                  sidebar. */}
               {navZones.map((zone, zoneIdx) => (
                 <React.Fragment key={zone.key}>
                   {zoneIdx > 0 && (
@@ -3079,75 +3077,93 @@ export default function App() {
                   {zone.groups.map((group, groupIdx) => {
                     const isGroupActive = group.pages.some(page => page.isActive);
                     const hasAlert = group.pages.some(page => page.hasAlertDot) || (group.key === "developer" && hiddenPages.length > 0);
+                    const isExpanded = expandedRailGroup === group.key;
                     return (
                       <React.Fragment key={group.key}>
                         {groupIdx > 0 && (
                           <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
                         )}
                         <button
-                          onClick={e => {
-                            // A direct-page group (Developer Controls) has no
-                            // real sub-navigation — skip the flyout
-                            // entirely and go straight to its one page.
+                          onClick={() => {
+                            // A direct-page group has no real sub-navigation
+                            // — skip the disclosure entirely and go straight
+                            // to its one page. (No group currently sets
+                            // isDirectPage — see NavGroup above.)
                             if (group.isDirectPage) {
-                              setOpenGroupFlyout(null);
                               group.pages[0]?.onSelect();
                               return;
                             }
-                            if (openGroupFlyout === group.key) {
-                              setOpenGroupFlyout(null);
-                              return;
-                            }
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setGroupFlyoutPos({ top: rect.top, left: rect.right + 8 });
-                            setOpenGroupFlyout(group.key);
+                            toggleRailGroup(group.key);
                           }}
                           className={`relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                            isGroupActive || openGroupFlyout === group.key
+                            isGroupActive || isExpanded
                               ? "bg-white/[0.08] border border-white/[0.14]"
                               : "hover:bg-white/5"
                           }`}
                           style={{ color: isGroupActive ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                           title={group.label}
                           aria-haspopup={!group.isDirectPage}
-                          aria-expanded={openGroupFlyout === group.key}
+                          aria-expanded={isExpanded}
                         >
                           <group.GroupIcon style={{ width: "18px", height: "18px" }} />
                           {hasAlert && (
-                            <span className="absolute top-1 right-1 flex h-2 w-2">
+                            <span className="absolute top-1 left-1 flex h-2 w-2">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
                             </span>
                           )}
+                          {/* Small disclosure arrow — the only visual cue
+                              distinguishing a browsable group from a plain
+                              icon button. No background, just the glyph.
+                              Flips to point up once expanded. */}
+                          {!group.isDirectPage && (
+                            <ChevronDown
+                              className={`absolute top-0.5 right-0.5 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
+                              style={{ width: "9px", height: "9px", color: isDark ? "var(--text-muted)" : "#90A6C4" }}
+                            />
+                          )}
                         </button>
+
+                        {/* Inline downward expansion — this group's pages
+                            rendered as their own icon-only buttons, indented
+                            no further than the group icon itself so the
+                            whole rail stays a fixed width. */}
+                        <AnimatePresence initial={false}>
+                          {isExpanded && !group.isDirectPage && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.18, ease: "easeInOut" }}
+                              className="w-full flex flex-col items-center gap-2 overflow-hidden"
+                            >
+                              {group.pages.map(page => (
+                                <button
+                                  key={page.tab}
+                                  onClick={() => { page.onSelect(); }}
+                                  className={`relative w-9 h-9 mt-1.5 rounded-lg shrink-0 flex items-center justify-center cursor-pointer transition-all ${
+                                    page.isActive ? "bg-white/[0.08] border border-white/[0.14]" : "hover:bg-white/5"
+                                  }`}
+                                  title={page.label}
+                                >
+                                  <page.Icon className={`w-[15px] h-[15px] shrink-0 ${page.iconColorClass(page.isActive)}`} style={page.iconStyle} />
+                                  {page.hasAlertDot && (
+                                    <span className="absolute top-0.5 right-0.5 flex h-1.5 w-1.5">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-orange-500"></span>
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </React.Fragment>
                     );
                   })}
                 </React.Fragment>
               ))}
 
-              {/* My Activity — ungrouped (see the expanded sidebar's note on
-                  why this has no section of its own); its own thin divider
-                  just sets it apart as a standalone icon rather than
-                  implying membership in the Reference group above it. */}
-              {hasAccess("my_activity", "Viewer") && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
-              )}
-
-              {hasAccess("my_activity", "Viewer") && (
-                <button
-                  onClick={() => setActiveTab("my_activity")}
-                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                    activeTab === "my_activity"
-                      ? "bg-white/[0.08] border border-white/[0.14]"
-                      : "hover:bg-white/5"
-                  }`}
-                  style={{ color: activeTab === "my_activity" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
-                  title="My Activity"
-                >
-                  <History style={{ width: "18px", height: "18px" }} />
-                </button>
-              )}
             </div>
 
             {/* Bottom Profile Action */}
@@ -3271,58 +3287,6 @@ export default function App() {
               </motion.div>
             </>
           )}
-        </AnimatePresence>,
-        document.body
-      )}
-
-      {/* Collapsed-rail group flyout — a portal, so it floats above
-          everything regardless of the sidebar's scroll position. Lists the
-          clicked group's child pages via the same renderNavPageRow used by
-          the expanded sidebar, so a group icon never auto-navigates to one
-          arbitrary child — the advisor always picks from the full list.
-          Positioned off the clicked button's own rect (see the collapsed
-          rail's onClick above), same anchoring approach as the profile
-          card portal above. */}
-      {createPortal(
-        <AnimatePresence>
-          {openGroupFlyout && groupFlyoutPos && (() => {
-            const activeGroup = navZones.flatMap(z => z.groups).find(g => g.key === openGroupFlyout);
-            if (!activeGroup) return null;
-            return (
-              <>
-                <div
-                  className="fixed inset-0 z-[9998] cursor-default"
-                  onClick={() => setOpenGroupFlyout(null)}
-                />
-                <motion.div
-                  initial={{ opacity: 0, x: 10, scale: 0.95 }}
-                  animate={{ opacity: 1, x: 0, scale: 1 }}
-                  exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  style={{
-                    top: groupFlyoutPos.top,
-                    left: groupFlyoutPos.left,
-                    maxHeight: "calc(100vh - 24px)",
-                    overflowY: "auto",
-                  }}
-                  className={`fixed w-56 rounded-lg border shadow-xl z-[9999] p-2 font-sans text-left ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
-                      : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
-                  }`}
-                >
-                  <div className={`px-2 pt-1 pb-2 mb-1 border-b border-dashed ${theme === "dark" ? "border-white/10" : "border-stone-200"}`}>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${theme === "dark" ? "text-white/50" : "text-stone-400"}`}>
-                      {activeGroup.label}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    {activeGroup.pages.map(page => renderNavPageRow(page, () => setOpenGroupFlyout(null)))}
-                  </div>
-                </motion.div>
-              </>
-            );
-          })()}
         </AnimatePresence>,
         document.body
       )}
@@ -3493,7 +3457,7 @@ export default function App() {
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                owner_controls: { label: "Access Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                owner_controls: { label: "Feature Visibility", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 connections: { label: "Connections", icon: <Link2 className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
               };
               const meta = tabMeta[activeTab] || tabMeta.lookup;
@@ -4274,7 +4238,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="Access Controls">
+              <ErrorBoundary theme={theme} label="Feature Visibility">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <OwnerControlsPage
                 theme={theme}
@@ -4287,7 +4251,7 @@ export default function App() {
           )}
 
           {/* CONNECTIONS — Google Sheets integrations (QA Dashboard, Product
-              Playbook). Developer-only, same as Access Controls above. */}
+              Playbook). Developer-only, same as Feature Visibility above. */}
           {activeTab === "connections" && (
             <motion.div
               key="connections"

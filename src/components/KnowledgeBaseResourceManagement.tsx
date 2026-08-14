@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Plus, Trash2, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, AlertTriangle, CheckCircle2, X, Tag } from "lucide-react";
+import { Plus, Trash2, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, AlertTriangle, CheckCircle2, X, Tag, Link2 } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
@@ -54,12 +54,14 @@ function statusBadge(status: KbResource["status"], dark: boolean) {
 }
 
 /**
- * "Ask the Playbook" Knowledge Base — category + resource (PDF) admin UI.
+ * "Ask the Playbook" Knowledge Base — category + resource admin UI.
  * Categories are per-insurer or "general" (the user's requested category-
- * wise resource organization); resources today are PDFs only (each upload
- * is extracted, chunked, and embedded server-side via
- * src/server/knowledgeBase/pdfIngest.ts). Web-page and live Google Sheet
- * ingestion are a later phase — see the KB task list.
+ * wise resource organization). Resources can be added two ways: uploading a
+ * PDF (extracted, chunked, and embedded server-side via
+ * src/server/knowledgeBase/pdfIngest.ts), or pasting a URL — a hosted PDF or
+ * an ordinary web article — which webIngest.ts auto-detects and routes
+ * through the matching pipeline. Live Google Sheet ingestion is a separate,
+ * already-built flow (the Product Playbook — see ConnectionsPage.tsx).
  */
 export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseResourceManagementProps) {
   const dark = theme === "dark";
@@ -262,6 +264,53 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     }
   };
 
+  // ── Add by URL (a hosted policy-wording PDF, or an ordinary web article
+  //    like an insurer's "how to claim" guide — see webIngest.ts, which
+  //    auto-detects which of the two a URL actually is) ────────────────────
+  const [addUrlCategoryId, setAddUrlCategoryId] = useState<number | null>(null);
+  const [addUrlTitle, setAddUrlTitle] = useState("");
+  const [addUrlValue, setAddUrlValue] = useState("");
+  const [addingUrl, setAddingUrl] = useState(false);
+  const [addUrlError, setAddUrlError] = useState<string | null>(null);
+  const [addUrlSuccess, setAddUrlSuccess] = useState<string | null>(null);
+
+  const toggleAddUrl = (categoryId: number) => {
+    setAddUrlError(null);
+    setAddUrlSuccess(null);
+    setAddUrlCategoryId(prev => (prev === categoryId ? null : categoryId));
+    setAddUrlTitle("");
+    setAddUrlValue("");
+  };
+
+  const submitAddUrl = async () => {
+    if (addUrlCategoryId === null) return;
+    const url = addUrlValue.trim();
+    if (!url) { setAddUrlError("Paste a URL before adding it."); return; }
+    setAddingUrl(true);
+    setAddUrlError(null);
+    setAddUrlSuccess(null);
+    try {
+      const res = await fetch("/api/kb/resources/add-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, categoryId: addUrlCategoryId, title: addUrlTitle.trim() || undefined }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to process the URL (HTTP ${res.status}).`);
+      const category = categories.find(c => c.id === addUrlCategoryId);
+      const kindLabel = body.detectedType === "pdf" ? "PDF" : "web page";
+      logAction("Knowledge Base Document Added", `Added ${kindLabel} "${body.resource.title}" (${url}) to "${category?.name || "a category"}" — ${body.chunkCount} chunk(s) embedded.`);
+      setAddUrlSuccess(`Added — ${body.chunkCount} chunk(s) embedded from the ${kindLabel}.`);
+      setAddUrlTitle("");
+      setAddUrlValue("");
+      await load();
+    } catch (err: any) {
+      setAddUrlError(err.message || "Failed to add this URL.");
+    } finally {
+      setAddingUrl(false);
+    }
+  };
+
   const [movingResourceId, setMovingResourceId] = useState<number | null>(null);
 
   const moveResource = async (resource: KbResource, newCategoryId: number) => {
@@ -446,6 +495,9 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                     <ClippedButton size="sm" title="Upload a PDF to this category" onClick={() => triggerUpload(category.id)} className={dark ? "bg-sky-500/15 text-sky-300 px-2.5 py-1.5" : "bg-sky-50 text-sky-700 px-2.5 py-1.5"}>
                       <Upload className="w-3.5 h-3.5" />
                     </ClippedButton>
+                    <ClippedButton size="sm" title="Add by URL (a hosted PDF or a web article)" onClick={() => toggleAddUrl(category.id)} className={dark ? "bg-violet-500/15 text-violet-300 px-2.5 py-1.5" : "bg-violet-50 text-violet-700 px-2.5 py-1.5"}>
+                      <Link2 className="w-3.5 h-3.5" />
+                    </ClippedButton>
                     <ClippedButton size="sm" title="Delete category" onClick={() => deleteCategory(category)} className={dark ? "bg-red-500/15 text-red-300 px-2.5 py-1.5" : "bg-red-50 text-red-700 px-2.5 py-1.5"}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </ClippedButton>
@@ -454,6 +506,34 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
               </button>
               {expanded && (
                 <div className={`px-4 pb-4 pt-1 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                  {addUrlCategoryId === category.id && (
+                    <div className={`mt-3 mb-1 p-3 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-100"}`}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Link2 className="w-3 h-3 shrink-0 text-content-muted" />
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-content-muted">Add by URL</span>
+                        <span className="text-[10px] font-semibold text-content-muted">— a hosted PDF or a web article; the type is detected automatically</span>
+                      </div>
+                      {addUrlError && (
+                        <div className={`text-[10.5px] font-semibold px-2.5 py-1.5 rounded mb-2 ${dark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>{addUrlError}</div>
+                      )}
+                      {addUrlSuccess && (
+                        <div className={`text-[10.5px] font-semibold px-2.5 py-1.5 rounded mb-2 ${dark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>{addUrlSuccess}</div>
+                      )}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+                        <div className="flex-1 min-w-[200px]">
+                          <label className="block text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">URL</label>
+                          <input value={addUrlValue} onChange={e => setAddUrlValue(e.target.value)} placeholder="https://…" disabled={addingUrl} className={inputClass} />
+                        </div>
+                        <div className="flex-1 min-w-[160px]">
+                          <label className="block text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">Title (optional)</label>
+                          <input value={addUrlTitle} onChange={e => setAddUrlTitle(e.target.value)} placeholder="Defaults to the page's own title" disabled={addingUrl} className={inputClass} />
+                        </div>
+                        <ClippedButton size="md" onClick={submitAddUrl} disabled={addingUrl} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
+                          {addingUrl ? "Adding…" : "Add"}
+                        </ClippedButton>
+                      </div>
+                    </div>
+                  )}
                   {category.type === "insurer" && (
                     <div className={`mt-3 mb-1 p-3 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-100"}`}>
                       <div className="flex items-center gap-1.5 mb-1.5">

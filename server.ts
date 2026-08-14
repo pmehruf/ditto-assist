@@ -58,6 +58,7 @@ import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
+import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
 import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
@@ -3584,6 +3585,54 @@ app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
   } catch (err: any) {
     console.error("Failed to upload/ingest KB PDF:", err);
     return res.status(500).json({ error: `Failed to upload document: ${err.message}` });
+  }
+});
+
+// Add a resource by pasting a link instead of uploading a file — for a
+// hosted policy-wording PDF or an ordinary web article (insurer "how to
+// claim" guides, glossaries, etc.). See webIngest.ts: the URL's real
+// Content-Type decides which pipeline it goes through, not the button the
+// admin clicked. Same idempotency guarantee as upload — re-adding the same
+// URL re-uses that resource and skips re-embedding if the content hasn't
+// changed.
+app.post("/api/kb/resources/add-url", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a Knowledge Base document"))) return;
+    const { url, categoryId: rawCategoryId, title: rawTitle } = req.body;
+    if (typeof url !== "string" || !url.trim()) return res.status(400).json({ error: "url is required." });
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url.trim());
+    } catch {
+      return res.status(400).json({ error: "That doesn't look like a valid URL." });
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ error: "Only http(s) URLs are supported." });
+    }
+
+    const categoryId = Number(rawCategoryId);
+    if (!Number.isInteger(categoryId)) return res.status(400).json({ error: "categoryId is required." });
+    const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : parsedUrl.hostname + parsedUrl.pathname;
+
+    const { kbCategories } = createRepositories(getDb());
+    const category = await kbCategories.get(categoryId);
+    if (!category) return res.status(400).json({ error: "Category not found." });
+
+    const repos = createRepositories(getDb());
+    const result = await ingestUrlResource(repos, {
+      categoryId,
+      title,
+      url: parsedUrl.toString(),
+      addedBy: `${req.user!.name} (${req.user!.email})`,
+    });
+
+    if (result.resource.status === "error") {
+      return res.status(422).json({ error: result.resource.errorMessage || "Failed to process the URL.", resource: result.resource });
+    }
+    return res.json({ resource: result.resource, chunkCount: result.chunkCount, detectedType: result.detectedType });
+  } catch (err: any) {
+    console.error("Failed to add/ingest KB URL:", err);
+    return res.status(500).json({ error: `Failed to add the document: ${err.message}` });
   }
 });
 

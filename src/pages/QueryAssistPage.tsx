@@ -513,8 +513,8 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <div
               className={`flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
                 dark
-                  ? "bg-white/[0.04] border-white/[0.1] focus-within:border-sky-500/50"
-                  : "bg-white border-stone-300 focus-within:border-sky-500"
+                  ? "bg-white/[0.04] border-white/[0.1]"
+                  : "bg-white border-stone-300"
               }`}
             >
               <textarea
@@ -523,7 +523,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 onKeyDown={e => {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
                 }}
-                placeholder="Ask a question about this insurer's plan(s)…"
+                placeholder="Write your query"
                 disabled={sending}
                 rows={1}
                 // The blue box + suggestion strip some users see while typing

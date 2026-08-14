@@ -26,11 +26,11 @@ interface OwnerControlsPageProps {
 }
 
 /**
- * Access Controls — page visibility kill switch (renamed from "Developer
- * Controls" now that the QA Dashboard/Product Playbook connection settings
- * that used to also live on this page have moved to their own Connections
- * page — see ConnectionsPage.tsx — leaving this page dedicated purely to
- * page visibility).
+ * Feature Visibility — page visibility kill switch (renamed from "Developer
+ * Controls", then "Access Controls" — now that the QA Dashboard/Product
+ * Playbook connection settings that used to also live on this page have
+ * moved to their own Connections page — see ConnectionsPage.tsx — leaving
+ * this page dedicated purely to page visibility).
  *
  * Purpose: let the Developer hide a page from everyone else while work on it
  * is in progress, without touching tiers or the permissions registry.
@@ -134,7 +134,7 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Access Controls</span>
+            <span>Feature Visibility</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Hide pages from everyone else while work is in progress. Hidden pages remain fully visible to you.

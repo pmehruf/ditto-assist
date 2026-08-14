@@ -29,7 +29,11 @@ export const DeclarationMapIcon: React.FC<DeclarationMapIconProps> = ({
   width = 24,
   height = 24,
   className = "",
-  color = "#000000",
+  // "currentColor" (not a hardcoded hex) so this follows a `text-*`
+  // className exactly like every sibling lucide icon does — it was
+  // defaulting to black, which is why this icon looked washed-out/off
+  // next to the blue nav icons around it regardless of className.
+  color = "currentColor",
   ...rest
 }) => {
   return (

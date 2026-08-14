@@ -169,16 +169,17 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Editor"
   },
   {
-    // ACCESS CONTROLS — page visibility kill switch. Developer-only in every
-    // sense: hasAccess() returns true for Developer before any other check,
-    // and both General and Admin are "None" here, so no other tier can reach it.
-    // (Internal feature id "owner_controls" kept as-is — it's a stored DB key,
-    // not a UI label; renaming it would require migrating page_visibility rows.
-    // Display name renamed from "Developer Controls" to "Access Controls" now
-    // that the QA Dashboard/Playbook connection settings that used to also
-    // live on this page have moved to their own Connections page below.)
+    // FEATURE VISIBILITY — page visibility kill switch. Developer-only in
+    // every sense: hasAccess() returns true for Developer before any other
+    // check, and both General and Admin are "None" here, so no other tier
+    // can reach it. (Internal feature id "owner_controls" kept as-is — it's
+    // a stored DB key, not a UI label; renaming it would require migrating
+    // page_visibility rows. Display name renamed Developer Controls ->
+    // Access Controls -> Feature Visibility as this page's scope narrowed —
+    // the QA Dashboard/Playbook connection settings that used to also live
+    // here moved to their own Connections page below.)
     id: "owner_controls",
-    name: "Access Controls",
+    name: "Feature Visibility",
     description: "Show or hide individual pages from everyone except the Developer",
     defaultTier: "Developer",
     generalAccess: "None",
@@ -186,8 +187,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   },
   {
     // CONNECTIONS — Google Sheets integrations (QA Dashboard workbook,
-    // Product Playbook workbook). Developer-only, same reasoning as Access
-    // Controls above; split out into its own page rather than living inside
+    // Product Playbook workbook). Developer-only, same reasoning as Feature
+    // Visibility above; split out into its own page rather than living inside
     // either connected feature's own management page since both are
     // "backend plumbing, not a permission" settings.
     id: "connections",
