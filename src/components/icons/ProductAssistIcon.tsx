@@ -5,64 +5,52 @@
 
 import React from "react";
 
-interface ProductAssistIconProps extends Omit<React.SVGProps<SVGSVGElement>, "color"> {
+interface ProductAssistIconProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src" | "alt" | "color"> {
   /** Width of the icon */
   width?: number | string;
   /** Height of the icon */
   height?: number | string;
   /** CSS class name for styling */
   className?: string;
-  /** Stroke color of the icon */
+  /** Accepted for API compatibility with the lucide-style icon components
+   * this replaced (className/style/width/height are the ones that matter
+   * for a raster image) — unused, since a PNG's own colors can't be
+   * recolored via a stroke/fill prop the way an inline SVG's can. */
   color?: string;
 }
 
 /**
- * Product Assist icon — a headset (advisor support) paired with a small
- * speech bubble (conversation), drawn as one lucide-style stroke icon so it
- * drops in anywhere a lucide-react icon is used today (same
- * width/height/className/color props, 24x24 viewBox matching lucide's own
- * coordinate space — see QaDashboardIcon.tsx / DeclarationMapIcon.tsx for
- * the same convention).
- *
- * Deliberately NOT a chat-bubble-only or robot/bot glyph — the combined
- * silhouette reads as "an assistant you can ask for help" rather than a
- * generic AI chatbot, per the product's intent for this tool.
+ * Product Assist icon — the actual approved artwork
+ * (assets/.aistudio/Product Assist.png: a speech bubble with sparkle
+ * accents), used verbatim per explicit product decision rather than a
+ * redrawn/substituted icon. The source PNG is a black stroke on a
+ * transparent background; every place this component is used today sits on
+ * dark sidebar/header chrome, so it's rendered inverted to white via CSS
+ * filter — this only changes how the existing pixels are displayed, not
+ * the artwork itself.
  *
  * @example
  * ```tsx
- * <ProductAssistIcon className="w-4 h-4 shrink-0 text-blue-300" />
+ * <ProductAssistIcon className="w-4 h-4 shrink-0" />
  * ```
  */
 export const ProductAssistIcon: React.FC<ProductAssistIconProps> = ({
   width = 24,
   height = 24,
   className = "",
-  color = "currentColor",
+  style,
   ...rest
 }) => {
   return (
-    <svg
+    <img
+      src="/assets/.aistudio/Product%20Assist.png"
+      alt="Product Assist"
       width={width}
       height={height}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={color}
-      strokeWidth={1.8}
-      strokeLinecap="round"
-      strokeLinejoin="round"
       className={className}
-      aria-label="Product Assist"
-      role="img"
+      style={{ filter: "invert(1)", objectFit: "contain", ...style }}
       {...rest}
-    >
-      {/* Headset — band + two ear cups */}
-      <path d="M3 12a6 6 0 0 1 12 0" />
-      <rect x="2" y="11" width="3.4" height="6.5" rx="1.6" />
-      <rect x="11.6" y="11" width="3.4" height="6.5" rx="1.6" />
-      {/* Speech bubble — the conversation the headset represents */}
-      <rect x="13.5" y="2" width="9" height="7" rx="2.2" />
-      <path d="M16 9 L14.3 11.8 L18 9.6 Z" fill={color} stroke="none" />
-    </svg>
+    />
   );
 };
 

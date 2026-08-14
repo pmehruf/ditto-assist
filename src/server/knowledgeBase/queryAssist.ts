@@ -82,10 +82,11 @@ CONTINUING A CONVERSATION
 If CONVERSATION SO FAR is present below, the advisor's current message may be a continuation, not a new isolated question — this is especially true when it is short (just a plan name, a yes/no, a number, "the second one", etc.). If your own last turn in CONVERSATION SO FAR asked the advisor a clarifying question, treat their current message as the answer to THAT clarifying question and go back and actually answer the ORIGINAL question it was raised for — do not treat the clarification by itself as a brand-new, unrelated question to research from scratch.
 
 SOURCE PRECEDENCE (highest wins on conflict)
-1. ANNOUNCEMENTS — dated product-team updates. These ALWAYS override older PDF/web content if they conflict on the same fact. If an announcement contradicts a document below it, the announcement is the source of truth.
-2. Plan-tagged documents, when the advisor selected a specific plan.
-3. General insurer-wide documents (no plan tag — apply broadly across that insurer).
-4. General/Others documents, only when no specific insurer was selected.
+1. ANNOUNCEMENTS — dated product-team updates. These ALWAYS override older PDF/web/Playbook content if they conflict on the same fact. If an announcement contradicts anything below it, the announcement is the source of truth.
+2. PRODUCT PLAYBOOK PLAN FACTS — the internal team's own authoritative statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. When a PRODUCT PLAYBOOK section is present below for the selected plan, it overrides any conflicting or broader description in the DOCUMENT EXCERPTS below it. Concretely: if the Playbook names ONE specific sub-feature/variant as applying to this plan (e.g. one named bonus type, one named restoration type), answer with only that one — do not also describe other sub-feature/variant options that a generic document mentions for the insurer's range, unless the Playbook itself lists more than one as applying. Only fall back to DOCUMENT EXCERPTS for a fact the Playbook doesn't cover at all.
+3. Plan-tagged documents, when the advisor selected a specific plan.
+4. General insurer-wide documents (no plan tag — apply broadly across that insurer).
+5. General/Others documents, only when no specific insurer was selected.
 
 VERIFICATION CHAIN — apply this before answering, silently (do not show it to the user):
 CLAIM -> EVIDENCE -> DOCUMENT -> PRODUCT/VARIANT
@@ -119,7 +120,7 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 3. Every factual claim in the ANSWER has a corresponding entry in the References list, citing an actual section/clause identifier (a number, letter, or heading title) — never a quoted sentence standing in for one.
 4. Product/variant specificity was checked, not assumed.
 5. Unresolved ambiguity was flagged with a single clarifying question.
-6. Announcements were checked for overrides against older documents.
+6. Announcements and Product Playbook plan facts were checked for overrides against older/generic documents.
 7. Conflicting sources were flagged explicitly, not silently resolved.
 8. Conditional coverage is labeled "Conditional" — never upgraded to "Yes".
 9. Missing information is labeled "Not specified in available sources" — never downgraded to "No".
@@ -133,12 +134,24 @@ Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STR
 
 Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). This is what the advisor may copy-paste to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified. If Part 1 couldn't answer the question, this part should tell the advisor to confirm with the product team rather than answer the customer. Do not include a References list here — references belong only in Part 1.`;
 
-function buildSourceBlock(chunks: { resourceTitle: string; content: string }[], announcements: { title: string; body: string; effectiveDate: string }[]): string {
+function buildSourceBlock(
+  chunks: { resourceTitle: string; content: string }[],
+  announcements: { title: string; body: string; effectiveDate: string }[],
+  playbookFacts: { planName: string; content: string }[]
+): string {
   const parts: string[] = [];
   if (announcements.length > 0) {
-    parts.push("=== ANNOUNCEMENTS (always override older documents on conflict) ===");
+    parts.push("=== ANNOUNCEMENTS (always override everything else on conflict) ===");
     for (const a of announcements) {
       parts.push(`[Announcement: ${a.title} — effective ${a.effectiveDate}]\n${a.body}`);
+    }
+  }
+  if (playbookFacts.length > 0) {
+    parts.push(
+      "=== PRODUCT PLAYBOOK (authoritative for the selected plan — see SOURCE PRECEDENCE; overrides DOCUMENT EXCERPTS below on conflict) ==="
+    );
+    for (const f of playbookFacts) {
+      parts.push(`[Product Playbook: ${f.planName}]\n${f.content}`);
     }
   }
   if (chunks.length > 0) {
@@ -243,17 +256,27 @@ export async function answerQuery(
   const announcementCategoryIds = scope.categoryId === null ? [] : [scope.categoryId];
   const announcements = await repos.kbAnnouncements.listActiveFor(announcementCategoryIds);
 
+  // Product Playbook plan facts — only meaningful once the advisor has
+  // picked at least one specific plan (there's no "insurer-wide" playbook
+  // fact, unlike a generic PDF; see kb_playbook_plan_facts's schema
+  // comment). Matched on the selected category's own name as the insurer.
+  const playbookFacts =
+    scope.categoryId !== null && scope.planTags.length > 0
+      ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", scope.planTags)
+      : [];
+
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, content: s.chunk.content }));
   const announcementInputs = announcements.map(a => ({
     title: a.title,
     body: a.body,
     effectiveDate: typeof a.effectiveDate === "string" ? a.effectiveDate : String(a.effectiveDate),
   }));
+  const playbookInputs = playbookFacts.map(f => ({ planName: f.planName, content: f.content }));
 
-  const hadNoMatches = similar.length === 0 && announcements.length === 0;
+  const hadNoMatches = similar.length === 0 && announcements.length === 0 && playbookFacts.length === 0;
   const sourceBlock = hadNoMatches
-    ? "(No matching announcements or document excerpts were found for this question within the selected scope.)"
-    : buildSourceBlock(chunkInputs, announcementInputs);
+    ? "(No matching announcements, Playbook facts, or document excerpts were found for this question within the selected scope.)"
+    : buildSourceBlock(chunkInputs, announcementInputs, playbookInputs);
 
   const historyBlock = buildHistoryBlock(history);
   const scopeLine = buildScopeLine(scope, scopeCategoryName);

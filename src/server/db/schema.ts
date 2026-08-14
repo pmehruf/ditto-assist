@@ -709,6 +709,25 @@ export const qaDashboardGoogleConnection = pgTable("qa_dashboard_google_connecti
 export type QaDashboardGoogleConnectionRow = typeof qaDashboardGoogleConnection.$inferSelect;
 export type NewQaDashboardGoogleConnectionRow = typeof qaDashboardGoogleConnection.$inferInsert;
 
+// ─────────────────────────────────────────────────────────────────────────
+// kb_playbook_connection — the Product Playbook Google Sheet's stored OAuth
+// grant, same shape/purpose as qaDashboardGoogleConnection above but kept
+// as its own table since the Playbook Sheet has a different owner/account
+// than the QA workbook (see "Connect Google Sheets" in Knowledge Base
+// Management, not Developer Controls). Encrypted at rest — see
+// src/server/knowledgeBase/playbookTokenCrypto.ts.
+// ─────────────────────────────────────────────────────────────────────────
+export const kbPlaybookConnection = pgTable("kb_playbook_connection", {
+  id: text("id").primaryKey().default("default"),
+  connectedEmail: text("connected_email").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedBy: text("connected_by").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type KbPlaybookConnectionRow = typeof kbPlaybookConnection.$inferSelect;
+export type NewKbPlaybookConnectionRow = typeof kbPlaybookConnection.$inferInsert;
+
 // qa_dashboard_roles — who holds Admin/Guide/Mentor access on the QA
 // Dashboard (src/server/qaDashboard/qaRoles.ts), managed from the "QA
 // Dashboard Access" tab in User Directory & Management. Replaces the former
@@ -802,16 +821,25 @@ export type NewFlaggedIssueRow = typeof flaggedIssues.$inferInsert;
 //   web   — parsed/chunked/embedded at add time, re-crawled periodically
 //           with change-detection (contentHash) so only actually-changed
 //           pages get re-embedded.
-//   sheet — the Product Playbook Google Sheet. NOT embedded into kbChunks
-//           at all — read live per query (reusing the QA Dashboard's
-//           read-only Sheets OAuth pattern, src/server/qaDashboard/
-//           sheetsClient.ts) since it's actively maintained by the product
-//           team and structured/small enough to just inject fresh.
+//   sheet — the Product Playbook Google Sheet, currently a single resource
+//           row (see src/server/knowledgeBase/playbookIngest.ts). Its own
+//           OAuth grant lives in kbPlaybookConnection below (separate
+//           account/owner from the QA Dashboard's), re-parsed on-demand via
+//           a Resync button plus a lazy periodic refresh (checked
+//           opportunistically at query time, not a live Sheets call on
+//           every message — the sheet is too large for that). Split two
+//           ways at ingestion: its narrative tabs (Recommendation
+//           specifics / FAQs & Narratives / Feature Description) are
+//           chunked/embedded into kbChunks like a normal document; its
+//           feature x plan comparison tabs are reshaped into
+//           kbPlaybookPlanFacts instead — see that table's comment for why.
 // kbAnnouncements are a separate, always-injected, always-authoritative
 // channel — not retrieved via vector similarity like kbChunks. Per the
 // explicit governance rule this table exists to satisfy: when a resource
 // (PDF/web/Playbook) conflicts with a dated product-team announcement, the
-// announcement wins. The query-time prompt is built to say so explicitly.
+// announcement wins. kbPlaybookPlanFacts sits one rung below announcements
+// and above generic PDF/web content in that same precedence — see
+// queryAssist.ts's SYSTEM_INSTRUCTION SOURCE PRECEDENCE list.
 // ─────────────────────────────────────────────────────────────────────────
 export const kbCategoryTypeEnum = pgEnum("kb_category_type", ["insurer", "general"]);
 
@@ -880,6 +908,13 @@ export const kbResources = pgTable(
 // its native 3072) — one of Google's officially-recommended reduced sizes,
 // chosen over the full 3072 so the HNSW index below stays cheap to build
 // and query at this app's scale.
+//
+// The Product Playbook Sheet's own resource row feeds this table too, but
+// only from its narrative-shaped tabs (Recommendation specifics / FAQs &
+// Narratives / Feature Description) — those work fine as similarity-
+// retrieved excerpts. Its per-insurer feature-comparison tabs do NOT come
+// through here; see kbPlaybookPlanFacts below for why those are always
+// injected in full instead.
 export const kbChunks = pgTable(
   "kb_chunks",
   {
@@ -892,6 +927,46 @@ export const kbChunks = pgTable(
   },
   (table) => [index("kb_chunks_resource_id_idx").on(table.resourceId)]
 );
+
+// kb_playbook_plan_facts — one row per (insurer, plan) reshaped fact-sheet,
+// parsed from the Playbook's feature x plan comparison tabs (see
+// src/server/knowledgeBase/playbookIngest.ts's parseMatrixTab). Unlike
+// kbChunks, this is never similarity-retrieved — it's always injected into
+// the Product Assist prompt in full the moment the advisor's selected
+// plan(s) match, the same "always inject" treatment kbAnnouncements gets,
+// because partial/similarity retrieval could silently drop the one line
+// that actually answers the question (e.g. which single bonus type is
+// inbuilt on a plan, out of several the insurer offers across its range).
+export const kbPlaybookPlanFacts = pgTable(
+  "kb_playbook_plan_facts",
+  {
+    id: serial("id").primaryKey(),
+    resourceId: integer("resource_id").notNull().references(() => kbResources.id, { onDelete: "cascade" }),
+    // Free text, matched case-insensitively against kb_categories.name at
+    // query time (see queryAssist.ts) — not a foreign key, since one
+    // Playbook tab's plans can span category names that don't exist yet as
+    // kb_categories rows.
+    insurerName: text("insurer_name").notNull(),
+    // The plan's exact column header from the sheet, e.g. "HDFC Ergo Optima
+    // Secure+" — matched case-insensitively against kb_resources.planTags /
+    // the advisor's selected scope.planTags, same convention as the rest of
+    // the Knowledge Base.
+    planName: text("plan_name").notNull(),
+    // Which sheet tab this plan's facts came from (e.g. "Dittos Recommended
+    // Policies", "ICICI Lombard") — admin-facing only, for the Resync
+    // status panel.
+    sourceTab: text("source_tab").notNull(),
+    content: text("content").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("kb_playbook_plan_facts_resource_id_idx").on(table.resourceId),
+    index("kb_playbook_plan_facts_insurer_plan_idx").on(table.insurerName, table.planName),
+  ]
+);
+
+export type KbPlaybookPlanFactRow = typeof kbPlaybookPlanFacts.$inferSelect;
+export type NewKbPlaybookPlanFactRow = typeof kbPlaybookPlanFacts.$inferInsert;
 
 // Dated product-team announcements — always injected into the query-time
 // prompt (not retrieved via similarity search), explicitly marked as

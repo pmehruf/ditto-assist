@@ -143,6 +143,9 @@ const AnnouncementArchivePage = lazy(() =>
 const OwnerControlsPage = lazy(() =>
   import("./pages/OwnerControlsPage").then((m) => ({ default: m.OwnerControlsPage }))
 );
+const ConnectionsPage = lazy(() =>
+  import("./pages/ConnectionsPage").then((m) => ({ default: m.ConnectionsPage }))
+);
 const AnnouncementLogPage = lazy(() =>
   import("./pages/AnnouncementLogPage").then((m) => ({ default: m.AnnouncementLogPage }))
 );
@@ -216,7 +219,7 @@ const RESOURCE_ICON_MAP: Record<string, typeof Link2> = Object.fromEntries(
  * Nothing an Admin can edit — and no stale localStorage permission list —
  * can grant access to anything in this set.
  */
-const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls"]);
+const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections"]);
 
 function resolveResourceIcon(resource: { title: string; icon?: string }) {
   if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
@@ -224,7 +227,7 @@ function resolveResourceIcon(resource: { title: string; icon?: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "query_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "query_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -669,7 +672,7 @@ export default function App() {
     reference: ["advisory_zone", "announcement_archive", "resources"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
     administration: ["profile_access", "audit", "flagged_responses", "smoke_test"],
-    developer: ["owner_controls"],
+    developer: ["owner_controls", "connections"],
   };
   const [openSections, setOpenSections] = useState<Record<SidebarSectionKey, boolean>>({
     advisorWorkspace: true,
@@ -2651,6 +2654,13 @@ export default function App() {
     label: string;
     GroupIcon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
     pages: NavPage[];
+    /** True only for a "group" that's really just one direct page with no
+     * real sub-navigation (Developer Controls) — the collapsed rail
+     * navigates straight to that page on click instead of opening a
+     * flyout, since a one-item flyout would be pure friction. The
+     * expanded sidebar is unaffected (still shows its own
+     * collapsible header, unchanged). */
+    isDirectPage?: boolean;
   }
   interface NavZone {
     key: "advisor" | "admin" | "developer";
@@ -2764,7 +2774,7 @@ export default function App() {
           label: "Developer",
           GroupIcon: Terminal,
           pages: [
-            navPage("owner_controls", "Developer Controls", ShieldAlert, "Viewer", {
+            navPage("owner_controls", "Access Controls", ShieldAlert, "Viewer", {
               badge:
                 hiddenPages.length > 0 ? (
                   <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
@@ -2772,6 +2782,7 @@ export default function App() {
                   </span>
                 ) : undefined,
             }),
+            navPage("connections", "Connections", Link2, "Viewer"),
           ],
         },
       ],
@@ -2892,7 +2903,11 @@ export default function App() {
                 <div style={{ borderColor: "rgba(255,255,255,0.12)" }} className="border-t-2 my-4 opacity-70" />
               )}
               <div>
-                <span className="block text-[10px] font-black uppercase tracking-widest px-2 mb-2 text-white/80">
+                {/* Zone label — deliberately muted (low-opacity white) so it
+                    reads as a subtle section divider rather than competing
+                    with the functional group titles below it, which are the
+                    actual navigational headings. */}
+                <span className="block text-[10px] font-black uppercase tracking-widest px-2 mb-2 text-white/30">
                   {zone.label}
                 </span>
                 <div className="space-y-4">
@@ -2901,7 +2916,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => toggleSidebarSection(group.key)}
-                        className="w-full flex items-center justify-between px-3 mb-2 text-[10px] font-bold tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
+                        className="w-full flex items-center justify-between px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-[#C4CDD8] hover:text-[#F5F7FA] transition-colors cursor-pointer"
                         aria-expanded={openSections[group.key]}
                       >
                         <span>{group.label}</span>
@@ -3071,6 +3086,14 @@ export default function App() {
                         )}
                         <button
                           onClick={e => {
+                            // A direct-page group (Developer Controls) has no
+                            // real sub-navigation — skip the flyout
+                            // entirely and go straight to its one page.
+                            if (group.isDirectPage) {
+                              setOpenGroupFlyout(null);
+                              group.pages[0]?.onSelect();
+                              return;
+                            }
                             if (openGroupFlyout === group.key) {
                               setOpenGroupFlyout(null);
                               return;
@@ -3086,7 +3109,7 @@ export default function App() {
                           }`}
                           style={{ color: isGroupActive ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                           title={group.label}
-                          aria-haspopup="true"
+                          aria-haspopup={!group.isDirectPage}
                           aria-expanded={openGroupFlyout === group.key}
                         >
                           <group.GroupIcon style={{ width: "18px", height: "18px" }} />
@@ -3470,7 +3493,8 @@ export default function App() {
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                owner_controls: { label: "Developer Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
+                owner_controls: { label: "Access Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                connections: { label: "Connections", icon: <Link2 className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
               };
               const meta = tabMeta[activeTab] || tabMeta.lookup;
               return (
@@ -4239,7 +4263,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* OWNER CONTROLS — page visibility switch. Reachable only by the
+          {/* ACCESS CONTROLS — page visibility switch. Reachable only by the
               Developer (featurePermissions marks General/Admin as "None"). */}
           {activeTab === "owner_controls" && (
             <motion.div
@@ -4250,13 +4274,32 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="Developer Controls">
+              <ErrorBoundary theme={theme} label="Access Controls">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <OwnerControlsPage
                 theme={theme}
                 hiddenPages={hiddenPages}
                 setHiddenPages={setHiddenPages}
               />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* CONNECTIONS — Google Sheets integrations (QA Dashboard, Product
+              Playbook). Developer-only, same as Access Controls above. */}
+          {activeTab === "connections" && (
+            <motion.div
+              key="connections"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="Connections">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <ConnectionsPage theme={theme} effectiveTier={effectiveTier} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

@@ -35,6 +35,8 @@ import {
   exchangeCodeForIdentity,
   getQaDashboardSheetsAuthUrl,
   exchangeCodeForQaDashboardSheetsGrant,
+  getKbPlaybookSheetsAuthUrl,
+  exchangeCodeForKbPlaybookSheetsGrant,
 } from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
@@ -57,6 +59,9 @@ import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClie
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
+import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
+import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
+import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
 
 dotenv.config();
 
@@ -883,6 +888,10 @@ const OAUTH_STATE_COOKIE = "ditto_oauth_state";
 // URI (/api/auth/google/callback), so the callback route below tells them
 // apart by which of these two cookies is present, not by the URI itself.
 const QA_SHEETS_OAUTH_STATE_COOKIE = "ditto_qa_sheets_oauth_state";
+// Same idea, for the Product Playbook Sheet's own independent "Connect
+// Google Sheets" grant (Knowledge Base Management, not Developer
+// Controls) — see src/server/auth/googleOAuth.ts's Playbook section.
+const KB_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_kb_playbook_oauth_state";
 const isProdEnv = () => process.env.NODE_ENV === "production";
 
 app.get("/api/auth/google/login", (req, res) => {
@@ -932,6 +941,31 @@ app.get("/api/auth/google/callback", async (req, res) => {
     } catch (err: any) {
       console.error("QA Dashboard Google Sheets connection failed:", err);
       res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Developer Controls.`);
+    }
+    return;
+  }
+
+  const playbookExpectedState = req.cookies?.[KB_PLAYBOOK_OAUTH_STATE_COOKIE];
+  if (playbookExpectedState) {
+    res.clearCookie(KB_PLAYBOOK_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== playbookExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Knowledge Base Management.");
+        return;
+      }
+      const grant = await exchangeCodeForKbPlaybookSheetsGrant(code);
+      const { kbPlaybookConnection } = createRepositories(getDb());
+      await kbPlaybookConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptPlaybookRefreshToken(grant.refreshToken),
+        connectedBy: req.user?.email || grant.email,
+      });
+      invalidatePlaybookSheetsAuthCache();
+      res.redirect("/?kb_playbook_connected=1");
+    } catch (err: any) {
+      console.error("Product Playbook Google Sheets connection failed:", err);
+      res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Knowledge Base Management.`);
     }
     return;
   }
@@ -3335,6 +3369,89 @@ const kbPdfUpload = multer({
   },
 });
 
+// --- Product Playbook: "Connect Google Sheets" + Resync (see
+// src/server/knowledgeBase/playbookIngest.ts / playbookSheetsClient.ts) ---
+// Admin/Developer only to initiate, disconnect, or resync; connection
+// status is readable by anyone signed in, same convention as the QA
+// Dashboard's equivalent routes above.
+
+app.get("/api/kb/playbook/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(KB_PLAYBOOK_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getKbPlaybookSheetsAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start Product Playbook Google Sheets connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+app.get("/api/kb/playbook/connection-status", requireAuth, async (req, res) => {
+  try {
+    const { kbPlaybookConnection, kbResources, kbPlaybookPlanFacts } = createRepositories(getDb());
+    const row = await kbPlaybookConnection.get();
+    const resource = (await kbResources.list({})).find(r => r.type === "sheet");
+    const planFactCount = resource ? (await kbPlaybookPlanFacts.listByResource(resource.id)).length : 0;
+    return res.json({
+      connected: !!row,
+      connectedEmail: row?.connectedEmail ?? null,
+      connectedAt: row?.connectedAt ?? null,
+      resource: resource
+        ? {
+            status: resource.status,
+            lastFetchedAt: resource.lastFetchedAt,
+            errorMessage: resource.errorMessage,
+            planFactCount,
+            narrativeChunkCount: resource.chunkCount,
+          }
+        : null,
+    });
+  } catch (err: any) {
+    console.error("Product Playbook: failed to load connection status:", err);
+    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/playbook/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    const { kbPlaybookConnection } = createRepositories(getDb());
+    await kbPlaybookConnection.clear();
+    invalidatePlaybookSheetsAuthCache();
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Product Playbook: failed to disconnect Google Sheets:", err);
+    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/playbook/resync", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Resyncing the Product Playbook"))) return;
+    const repos = createRepositories(getDb());
+    const result = await syncPlaybook(repos, req.user!.email);
+    if (result.resource.status === "error") {
+      return res.status(500).json({ error: result.resource.errorMessage || "Sync failed.", resource: result.resource });
+    }
+    return res.json({
+      ok: true,
+      skipped: result.skipped,
+      planFactCount: result.planFactCount,
+      narrativeChunkCount: result.narrativeChunkCount,
+      resource: result.resource,
+    });
+  } catch (err: any) {
+    console.error("Product Playbook: resync failed:", err);
+    return res.status(500).json({ error: `Resync failed: ${err.message}` });
+  }
+});
+
 // --- Categories ---
 
 app.get("/api/kb/categories", requireAuth, async (req, res) => {
@@ -3635,6 +3752,10 @@ app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (re
     }
 
     const repos = createRepositories(getDb());
+    // Fire-and-forget: refreshes the Product Playbook in the background if
+    // the last sync is stale (see maybeRefreshPlaybookIfStale) — never
+    // awaited, so a slow or failed refresh can never delay this answer.
+    void maybeRefreshPlaybookIfStale(repos);
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
     const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
 

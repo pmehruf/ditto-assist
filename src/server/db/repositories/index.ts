@@ -32,6 +32,8 @@ import { KbChunksRepository } from "./kbChunksRepository.js";
 import { KbAnnouncementsRepository } from "./kbAnnouncementsRepository.js";
 import { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
 import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
+import { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
+import { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -138,6 +140,11 @@ export type { CreateKbChatSessionEntry } from "./kbChatSessionsRepository.js";
 export { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 export type { CreateKbChatMessageEntry } from "./kbChatMessagesRepository.js";
 
+export { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
+
+export { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
+export type { CreateKbPlaybookPlanFactEntry } from "./kbPlaybookPlanFactsRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -173,6 +180,8 @@ export interface Repositories {
   kbAnnouncements: KbAnnouncementsRepository;
   kbChatSessions: KbChatSessionsRepository;
   kbChatMessages: KbChatMessagesRepository;
+  kbPlaybookConnection: KbPlaybookConnectionRepository;
+  kbPlaybookPlanFacts: KbPlaybookPlanFactsRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -205,5 +214,7 @@ export function createRepositories(db: AnyDb): Repositories {
     kbAnnouncements: new KbAnnouncementsRepository(db),
     kbChatSessions: new KbChatSessionsRepository(db),
     kbChatMessages: new KbChatMessagesRepository(db),
+    kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
+    kbPlaybookPlanFacts: new KbPlaybookPlanFactsRepository(db),
   };
 }

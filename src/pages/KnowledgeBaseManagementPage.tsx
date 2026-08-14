@@ -22,13 +22,14 @@ interface KnowledgeBaseManagementPageProps {
  * PedSuggestionsPage.tsx. Admin Zone only (gated in App.tsx's sidebar/
  * hasAccess via the "knowledge_base" feature id).
  *
- * Base structure for "Ask the Playbook": category-wise resource
- * organization (per-insurer + a General/Others bucket, extensible) with
- * PDF upload/embedding, plus a dated Announcements channel that always
- * overrides older resource content per the user's stated precedence rule.
- * Web-page crawling, the live Product Playbook Sheet, and the advisor-
- * facing chat query endpoint are later phases — this page only manages
- * what's already ingestible (PDFs) and the announcement override channel.
+ * "Ask the Playbook": category-wise resource organization (per-insurer + a
+ * General/Others bucket, extensible) with PDF upload/embedding, plus a
+ * dated Announcements channel that always overrides older resource
+ * content. The Product Playbook Sheet's own connection/resync controls
+ * live on the Connections page (Developer Zone — see ConnectionsPage.tsx)
+ * alongside the QA Dashboard's, since both are "backend plumbing, not a
+ * permission" settings; this page only manages document/announcement
+ * content. Web-page crawling is still a later phase.
  */
 export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseManagementPageProps) {
   const dark = theme === "dark";
@@ -69,9 +70,10 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
         </button>
       </div>
 
-      {activeSubTab === "resources" ? (
+      {activeSubTab === "resources" && (
         <KnowledgeBaseResourceManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
-      ) : (
+      )}
+      {activeSubTab === "announcements" && (
         <KnowledgeBaseAnnouncements theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
       )}
     </div>
