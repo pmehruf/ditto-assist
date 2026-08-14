@@ -7,6 +7,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Knowledge Base source PDFs (seedKnowledgeBasePdfs.ts input) — large binary
+# files that live on this machine only, ingested into Postgres via
+# `npm run db:seed:kb-pdfs -- --commit`, never committed to the repo.
+Product Assist/
 # Dependencies
 node_modules
 node_modules_*

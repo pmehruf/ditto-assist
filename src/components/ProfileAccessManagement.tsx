@@ -343,17 +343,18 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
       : "bg-stone-500/15 text-stone-400 border-stone-500/30";
 
-  // Same cyan/purple split used for the Health/Term audience pill on
-  // AnnouncementLogPage — kept consistent so the same tag always reads the
-  // same color everywhere in the app.
+  // Deliberately avoids blue/sky (Admin tier) and green/emerald (Active
+  // status) since those hues are already spoken for elsewhere in this same
+  // table — Health gets rose, Term gets violet, so the two tags stay clearly
+  // distinct from each other AND from the Tier/Status columns next to them.
   const tagBadgeClass = (tag: string) =>
     tag === "Term"
       ? dark
-        ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
-        : "bg-purple-50 text-purple-700 border-purple-200"
+        ? "bg-violet-500/15 text-violet-400 border-violet-500/30"
+        : "bg-violet-50 text-violet-700 border-violet-200"
       : dark
-        ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
-        : "bg-cyan-50 text-cyan-700 border-cyan-200";
+        ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+        : "bg-rose-50 text-rose-700 border-rose-200";
 
   return (
     <div className={`rounded-2xl border p-5 transition-all ${

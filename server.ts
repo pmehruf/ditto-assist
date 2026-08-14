@@ -10,6 +10,7 @@ import crypto from "crypto";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import multer from "multer";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -54,6 +55,7 @@ import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDa
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
+import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 
 dotenv.config();
 
@@ -3309,6 +3311,274 @@ app.get("/api/qa-dashboard/company-summary", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("QA Dashboard: failed to load company-wide aggregate:", err);
     return res.status(500).json({ error: `Failed to load company-wide aggregate: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Knowledge Base ("Ask the Playbook") — admin-only CRUD for categories,
+// resources (PDFs today; web/sheet ingestion is a later phase), and
+// announcements. Admin Zone (Admin/Developer only), same gate as PED
+// Repository/Plan Management. The advisor-facing chat/query endpoint that
+// actually reads this data is a separate, later phase.
+// ─────────────────────────────────────────────────────────────────────────
+
+const kbPdfUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB — generous for a policy wording PDF
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "application/pdf" || file.originalname.toLowerCase().endsWith(".pdf")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are supported."));
+    }
+  },
+});
+
+// --- Categories ---
+
+app.get("/api/kb/categories", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Knowledge Base"))) return;
+    const { kbCategories } = createRepositories(getDb());
+    const entries = await kbCategories.list();
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list KB categories:", err);
+    return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/categories", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a Knowledge Base category"))) return;
+    const { name, type, sortOrder } = req.body;
+    if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "name is required." });
+    if (type !== "insurer" && type !== "general") return res.status(400).json({ error: 'type must be "insurer" or "general".' });
+    const { kbCategories } = createRepositories(getDb());
+    const category = await kbCategories.create({ name: name.trim(), type, sortOrder: typeof sortOrder === "number" ? sortOrder : 0 });
+    return res.json({ category });
+  } catch (err: any) {
+    console.error("Failed to create KB category:", err);
+    return res.status(500).json({ error: `Failed to add category: ${err.message}` });
+  }
+});
+
+app.patch("/api/kb/categories/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base category"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
+    const { name, type, sortOrder, planNames } = req.body;
+    if (type !== undefined && type !== "insurer" && type !== "general") {
+      return res.status(400).json({ error: 'type must be "insurer" or "general".' });
+    }
+    if (planNames !== undefined) {
+      if (!Array.isArray(planNames) || !planNames.every((t: unknown) => typeof t === "string")) {
+        return res.status(400).json({ error: "planNames must be an array of strings." });
+      }
+    }
+    const { kbCategories } = createRepositories(getDb());
+    const category = await kbCategories.update(id, {
+      ...(name !== undefined ? { name: String(name).trim() } : {}),
+      ...(type !== undefined ? { type } : {}),
+      ...(sortOrder !== undefined ? { sortOrder: Number(sortOrder) } : {}),
+      ...(planNames !== undefined ? { planNames: (planNames as string[]).map(t => t.trim()).filter(Boolean) } : {}),
+    });
+    if (!category) return res.status(404).json({ error: "Category not found." });
+    return res.json({ category });
+  } catch (err: any) {
+    console.error("Failed to update KB category:", err);
+    return res.status(500).json({ error: `Failed to update category: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/categories/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Knowledge Base category"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
+    const { kbCategories, kbResources } = createRepositories(getDb());
+    const resourcesInCategory = await kbResources.list({ categoryId: id });
+    if (resourcesInCategory.length > 0) {
+      return res.status(409).json({
+        error: `This category has ${resourcesInCategory.length} resource(s) in it. Delete or move those first.`,
+      });
+    }
+    await kbCategories.delete(id);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete KB category:", err);
+    return res.status(500).json({ error: `Failed to delete category: ${err.message}` });
+  }
+});
+
+// --- Resources ---
+
+app.get("/api/kb/resources", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Knowledge Base"))) return;
+    const categoryId = req.query.categoryId !== undefined ? Number(req.query.categoryId) : undefined;
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const { kbResources } = createRepositories(getDb());
+    const entries = await kbResources.list({
+      ...(categoryId !== undefined && Number.isInteger(categoryId) ? { categoryId } : {}),
+      ...(status ? { status: status as any } : {}),
+    });
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list KB resources:", err);
+    return res.status(500).json({ error: `Failed to load resources: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
+  kbPdfUpload.single("file")(req, res, (err: any) => {
+    if (err) return res.status(400).json({ error: err.message || "Upload failed." });
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Uploading a Knowledge Base document"))) return;
+    const file = (req as any).file;
+    if (!file) return res.status(400).json({ error: "No file uploaded (expected multipart field \"file\")." });
+
+    const categoryId = Number(req.body.categoryId);
+    if (!Number.isInteger(categoryId)) return res.status(400).json({ error: "categoryId is required." });
+    const title = typeof req.body.title === "string" && req.body.title.trim() ? req.body.title.trim() : file.originalname;
+
+    const { kbCategories } = createRepositories(getDb());
+    const category = await kbCategories.get(categoryId);
+    if (!category) return res.status(400).json({ error: "Category not found." });
+
+    const repos = createRepositories(getDb());
+    const result = await ingestPdfResource(repos, {
+      categoryId,
+      title,
+      sourceLabel: file.originalname,
+      buffer: file.buffer,
+      addedBy: `${req.user!.name} (${req.user!.email})`,
+    });
+
+    if (result.resource.status === "error") {
+      return res.status(422).json({ error: result.resource.errorMessage || "Failed to process PDF.", resource: result.resource });
+    }
+    return res.json({ resource: result.resource, chunkCount: result.chunkCount });
+  } catch (err: any) {
+    console.error("Failed to upload/ingest KB PDF:", err);
+    return res.status(500).json({ error: `Failed to upload document: ${err.message}` });
+  }
+});
+
+app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base resource"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
+    const { title, categoryId, status, planTags } = req.body;
+    if (planTags !== undefined) {
+      if (!Array.isArray(planTags) || !planTags.every((t: unknown) => typeof t === "string")) {
+        return res.status(400).json({ error: "planTags must be an array of strings." });
+      }
+    }
+    const { kbResources } = createRepositories(getDb());
+    const resource = await kbResources.update(id, {
+      ...(title !== undefined ? { title: String(title).trim() } : {}),
+      ...(categoryId !== undefined ? { categoryId: Number(categoryId) } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(planTags !== undefined ? { planTags: (planTags as string[]).map(t => t.trim()).filter(Boolean) } : {}),
+    });
+    if (!resource) return res.status(404).json({ error: "Resource not found." });
+    return res.json({ resource });
+  } catch (err: any) {
+    console.error("Failed to update KB resource:", err);
+    return res.status(500).json({ error: `Failed to update resource: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/resources/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Knowledge Base resource"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
+    const { kbResources } = createRepositories(getDb());
+    await kbResources.delete(id);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete KB resource:", err);
+    return res.status(500).json({ error: `Failed to delete resource: ${err.message}` });
+  }
+});
+
+// --- Announcements (product-team updates that override older resources — see kbAnnouncementsRepository.ts) ---
+
+app.get("/api/kb/announcements", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Knowledge Base"))) return;
+    const { kbAnnouncements } = createRepositories(getDb());
+    const entries = await kbAnnouncements.list();
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list KB announcements:", err);
+    return res.status(500).json({ error: `Failed to load announcements: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/announcements", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a Knowledge Base announcement"))) return;
+    const { title, body, effectiveDate, categoryId, isActive } = req.body;
+    if (typeof title !== "string" || !title.trim()) return res.status(400).json({ error: "title is required." });
+    if (typeof body !== "string" || !body.trim()) return res.status(400).json({ error: "body is required." });
+    if (!effectiveDate) return res.status(400).json({ error: "effectiveDate is required." });
+    const { kbAnnouncements } = createRepositories(getDb());
+    const announcement = await kbAnnouncements.create({
+      title: title.trim(),
+      body: body.trim(),
+      effectiveDate: String(effectiveDate),
+      categoryId: categoryId !== undefined && categoryId !== null ? Number(categoryId) : null,
+      isActive: isActive !== undefined ? !!isActive : true,
+      createdBy: `${req.user!.name} (${req.user!.email})`,
+    });
+    return res.json({ announcement });
+  } catch (err: any) {
+    console.error("Failed to create KB announcement:", err);
+    return res.status(500).json({ error: `Failed to add announcement: ${err.message}` });
+  }
+});
+
+app.patch("/api/kb/announcements/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base announcement"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
+    const { title, body, effectiveDate, categoryId, isActive } = req.body;
+    const { kbAnnouncements } = createRepositories(getDb());
+    const announcement = await kbAnnouncements.update(id, {
+      ...(title !== undefined ? { title: String(title).trim() } : {}),
+      ...(body !== undefined ? { body: String(body).trim() } : {}),
+      ...(effectiveDate !== undefined ? { effectiveDate: String(effectiveDate) } : {}),
+      ...(categoryId !== undefined ? { categoryId: categoryId === null ? null : Number(categoryId) } : {}),
+      ...(isActive !== undefined ? { isActive: !!isActive } : {}),
+    });
+    if (!announcement) return res.status(404).json({ error: "Announcement not found." });
+    return res.json({ announcement });
+  } catch (err: any) {
+    console.error("Failed to update KB announcement:", err);
+    return res.status(500).json({ error: `Failed to update announcement: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/announcements/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Knowledge Base announcement"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
+    const { kbAnnouncements } = createRepositories(getDb());
+    await kbAnnouncements.delete(id);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete KB announcement:", err);
+    return res.status(500).json({ error: `Failed to delete announcement: ${err.message}` });
   }
 });
 

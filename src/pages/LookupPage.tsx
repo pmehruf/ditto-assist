@@ -26,6 +26,7 @@ import { MatchOutput, PlanConfig } from "../types.js";
 import { QAAnnouncement } from "../types/announcements";
 import { ReportingItem } from "../types/lookup";
 import { getPlanInsurerColor, hexToRgba, getContrastTextForPlanColor } from "../utils/planInsurerColors";
+import { getPlanDisplayLabel } from "../utils/planDisplayLabel";
 import { buildGroupedSuggestions } from "../constants/pedSynonymGroups";
 import { CustomSelect } from "../components/CustomSelect";
 
@@ -343,7 +344,7 @@ export function LookupPage({
                     id="insurance-plan-dropdown"
                     options={productionPlans.map((plan) => ({
                       value: plan,
-                      label: plan,
+                      label: getPlanDisplayLabel(plan),
                     }))}
                     triggerClassName={`w-full flex items-center justify-between gap-2 pl-3 pr-8 h-[42px] rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
                       theme === "dark"

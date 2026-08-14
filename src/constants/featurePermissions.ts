@@ -150,6 +150,14 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Editor"
   },
   {
+    id: "knowledge_base",
+    name: "Knowledge Base",
+    description: "Manage the documents and announcements that power \"Ask the Playbook\" — per-insurer PDF resources plus a dated announcement override channel",
+    defaultTier: "Admin",
+    generalAccess: "None",
+    adminAccess: "Editor"
+  },
+  {
     // OWNER CONTROLS — page visibility kill switch. Developer-only in every
     // sense: hasAccess() returns true for Developer before any other check,
     // and both General and Admin are "None" here, so no other tier can reach it.

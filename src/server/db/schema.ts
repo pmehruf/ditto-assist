@@ -37,6 +37,7 @@ import {
   pgEnum,
   uniqueIndex,
   index,
+  vector,
 } from "drizzle-orm/pg-core";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -789,3 +790,174 @@ export type NewAnnouncementAckRow = typeof announcementAcks.$inferInsert;
 
 export type FlaggedIssueRow = typeof flaggedIssues.$inferSelect;
 export type NewFlaggedIssueRow = typeof flaggedIssues.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Knowledge Base — "Ask the Playbook" advisor Q&A assistant. Grounds Gemini
+// answers in this app's own curated resources instead of depending on
+// NotebookLM (which has no self-serve API and can't be embedded natively —
+// see conversation history). Three source types feed kbChunks/live lookups
+// differently:
+//   pdf   — parsed/chunked/embedded once at upload time (re-embedded only if
+//           replaced).
+//   web   — parsed/chunked/embedded at add time, re-crawled periodically
+//           with change-detection (contentHash) so only actually-changed
+//           pages get re-embedded.
+//   sheet — the Product Playbook Google Sheet. NOT embedded into kbChunks
+//           at all — read live per query (reusing the QA Dashboard's
+//           read-only Sheets OAuth pattern, src/server/qaDashboard/
+//           sheetsClient.ts) since it's actively maintained by the product
+//           team and structured/small enough to just inject fresh.
+// kbAnnouncements are a separate, always-injected, always-authoritative
+// channel — not retrieved via vector similarity like kbChunks. Per the
+// explicit governance rule this table exists to satisfy: when a resource
+// (PDF/web/Playbook) conflicts with a dated product-team announcement, the
+// announcement wins. The query-time prompt is built to say so explicitly.
+// ─────────────────────────────────────────────────────────────────────────
+export const kbCategoryTypeEnum = pgEnum("kb_category_type", ["insurer", "general"]);
+
+// A category is either one insurer's resource bucket (HDFC Ergo, Care
+// Health, ...) or the catch-all "general" bucket (IRDAI, cross-insurer
+// FAQs, etc.). Deliberately just a plain table (not a hardcoded enum of
+// insurer names) so new categories can be added from the admin UI at any
+// time without a migration — the one open requirement from the original
+// ask ("possibility of adding new categories in future").
+export const kbCategories = pgTable("kb_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  type: kbCategoryTypeEnum("type").notNull().default("insurer"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // Admin-curated list of this insurer's plan names — the suggestion source
+  // for tagging a resource (kb_resources.planTags, 0029) so an admin picks
+  // from real options instead of free-typing every time. Only meaningful
+  // for type="insurer" categories. See 0030_kb_category_plan_names.sql.
+  planNames: text("plan_names").array().notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const kbResourceTypeEnum = pgEnum("kb_resource_type", ["pdf", "web", "sheet"]);
+// processing: upload accepted, parsing/embedding not finished yet.
+// active: ready and included in retrieval. error: ingestion failed
+// (errorMessage carries why) — excluded from retrieval until fixed/retried.
+// archived: soft-deleted, kept for history, excluded from retrieval.
+export const kbResourceStatusEnum = pgEnum("kb_resource_status", ["processing", "active", "error", "archived"]);
+
+export const kbResources = pgTable(
+  "kb_resources",
+  {
+    id: serial("id").primaryKey(),
+    categoryId: integer("category_id").notNull().references(() => kbCategories.id, { onDelete: "cascade" }),
+    type: kbResourceTypeEnum("type").notNull(),
+    title: text("title").notNull(),
+    // Web: the source URL. PDF: original filename (the parsed text lives in
+    // kbChunks — the raw file itself isn't persisted, see pdfIngest.ts).
+    // Sheet: the Google Sheet URL (informational; the live read path doesn't
+    // use this column at query time).
+    sourceUrl: text("source_url"),
+    status: kbResourceStatusEnum("status").notNull().default("processing"),
+    // Web only — hash of the last-fetched page content, so the periodic
+    // re-crawl can skip re-embedding a page that hasn't actually changed.
+    contentHash: text("content_hash"),
+    lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
+    chunkCount: integer("chunk_count").notNull().default(0),
+    errorMessage: text("error_message"),
+    // Multi-plan tagging within this resource's insurer category — e.g.
+    // "HDFC Ergo Add-ons.pdf" tagged ["Optima Secure", "my:health Medisure"]
+    // so it's surfaced for questions about either plan, not locked to one
+    // via a dropdown. Free-form text[] (same pattern as users.tags,
+    // 0026_advisor_tags.sql) rather than an enum, since insurers sell plans
+    // beyond this app's 6 deterministic-engine plans. Empty array = not
+    // plan-specific — applies broadly within its category; see
+    // 0029_kb_resource_plan_tags.sql.
+    planTags: text("plan_tags").array().notNull().default([]),
+    addedBy: text("added_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("kb_resources_category_id_idx").on(table.categoryId)]
+);
+
+// gemini-embedding-001 at 768 output dimensions (Matryoshka-truncated from
+// its native 3072) — one of Google's officially-recommended reduced sizes,
+// chosen over the full 3072 so the HNSW index below stays cheap to build
+// and query at this app's scale.
+export const kbChunks = pgTable(
+  "kb_chunks",
+  {
+    id: serial("id").primaryKey(),
+    resourceId: integer("resource_id").notNull().references(() => kbResources.id, { onDelete: "cascade" }),
+    chunkIndex: integer("chunk_index").notNull(),
+    content: text("content").notNull(),
+    embedding: vector("embedding", { dimensions: 768 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("kb_chunks_resource_id_idx").on(table.resourceId)]
+);
+
+// Dated product-team announcements — always injected into the query-time
+// prompt (not retrieved via similarity search), explicitly marked as
+// overriding any conflicting PDF/web/Playbook content. categoryId is
+// nullable: a null-category announcement applies generally (e.g. "Moratorium
+// period reduced from 8 years to 5 years" isn't insurer-specific).
+export const kbAnnouncements = pgTable(
+  "kb_announcements",
+  {
+    id: serial("id").primaryKey(),
+    categoryId: integer("category_id").references(() => kbCategories.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    effectiveDate: date("effective_date").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("kb_announcements_category_id_idx").on(table.categoryId)]
+);
+
+export const kbChatSessions = pgTable(
+  "kb_chat_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    // First question's snippet — lets a future session-history list show
+    // something meaningful without joining to the first message every time.
+    title: text("title"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("kb_chat_sessions_user_email_idx").on(table.userEmail)]
+);
+
+export const kbChatRoleEnum = pgEnum("kb_chat_role", ["user", "assistant"]);
+
+export const kbChatMessages = pgTable(
+  "kb_chat_messages",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id").notNull().references(() => kbChatSessions.id, { onDelete: "cascade" }),
+    role: kbChatRoleEnum("role").notNull(),
+    content: text("content").notNull(),
+    // Array of { title, primaryReference } the answer was grounded in —
+    // only populated on "assistant" rows, powers a citations list in the UI.
+    sources: jsonb("sources"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("kb_chat_messages_session_id_idx").on(table.sessionId)]
+);
+
+export type KbCategoryRow = typeof kbCategories.$inferSelect;
+export type NewKbCategoryRow = typeof kbCategories.$inferInsert;
+
+export type KbResourceRow = typeof kbResources.$inferSelect;
+export type NewKbResourceRow = typeof kbResources.$inferInsert;
+
+export type KbChunkRow = typeof kbChunks.$inferSelect;
+export type NewKbChunkRow = typeof kbChunks.$inferInsert;
+
+export type KbAnnouncementRow = typeof kbAnnouncements.$inferSelect;
+export type NewKbAnnouncementRow = typeof kbAnnouncements.$inferInsert;
+
+export type KbChatSessionRow = typeof kbChatSessions.$inferSelect;
+export type NewKbChatSessionRow = typeof kbChatSessions.$inferInsert;
+
+export type KbChatMessageRow = typeof kbChatMessages.$inferSelect;
+export type NewKbChatMessageRow = typeof kbChatMessages.$inferInsert;

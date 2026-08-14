@@ -42,9 +42,11 @@ import {
   Flame,
   ShieldAlert,
   ShieldCheck,
+  ClipboardCheck,
   Newspaper,
   Search,
-  TrendingUp
+  TrendingUp,
+  Database
 } from "lucide-react";
 
 import {
@@ -150,6 +152,9 @@ const PedSuggestionsPage = lazy(() =>
 const SmokeTestPage = lazy(() =>
   import("./pages/SmokeTestPage").then((m) => ({ default: m.SmokeTestPage }))
 );
+const KnowledgeBaseManagementPage = lazy(() =>
+  import("./pages/KnowledgeBaseManagementPage").then((m) => ({ default: m.KnowledgeBaseManagementPage }))
+);
 
 /** Picks a suitable icon for a Quick Access resource based on keywords in its
  * title (dashboard, checklist, FAQ, Bliss CC medical-condition alert, DWT
@@ -210,7 +215,7 @@ function resolveResourceIcon(resource: { title: string; icon?: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "qa_dashboard" | "owner_controls">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "qa_dashboard" | "owner_controls" | "knowledge_base">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -2702,7 +2707,7 @@ export default function App() {
                   : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
               } rounded-r-lg border-y-transparent border-r-transparent`}
             >
-              <ShieldCheck className="w-4 h-4 shrink-0 text-blue-300" />
+              <ClipboardCheck className="w-4 h-4 shrink-0 text-blue-300" />
               <span>Specific Illness Check</span>
             </button>
           )}
@@ -2789,7 +2794,7 @@ export default function App() {
             </button>
           )}
 
-          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
+          {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer") || hasAccess("knowledge_base", "Viewer")) && (
             <>
               {/* Clear separation between Advisor Zone and Admin Zone — a
                   visibly distinct rule (not just a faint hairline) so the two
@@ -2834,6 +2839,23 @@ export default function App() {
                 >
                   <Stethoscope className="w-4 h-4 shrink-0 text-blue-300" />
                   <span>PED Repository</span>
+                </button>
+              )}
+
+              {hasAccess("knowledge_base", "Viewer") && (
+                <button
+                  onClick={() => {
+                    setActiveTab("knowledge_base");
+                    if (isMobile) setIsMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                    activeTab === "knowledge_base"
+                      ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                      : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+                  } rounded-r-lg border-y-transparent border-r-transparent`}
+                >
+                  <Database className="w-4 h-4 shrink-0 text-blue-300" />
+                  <span>Knowledge Base</span>
                 </button>
               )}
 
@@ -3150,7 +3172,7 @@ export default function App() {
                   style={{ color: activeTab === "specific_illness_check" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                   title="Specific Illness Check"
                 >
-                  <ShieldCheck style={{ width: "18px", height: "18px" }} />
+                  <ClipboardCheck style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -3220,7 +3242,7 @@ export default function App() {
                   visible whether the rail is collapsed or expanded. Same
                   guard as the expanded version: only render it if there's
                   at least one Admin Zone item this user can see. */}
-              {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer")) && (
+              {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer") || hasAccess("knowledge_base", "Viewer")) && (
                 <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70" />
               )}
 
@@ -3251,6 +3273,21 @@ export default function App() {
                   title="PED Repository"
                 >
                   <Stethoscope style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("knowledge_base", "Viewer") && (
+                <button
+                  onClick={() => setActiveTab("knowledge_base")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                    activeTab === "knowledge_base"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "knowledge_base" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Knowledge Base"
+                >
+                  <Database style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -3636,9 +3673,10 @@ export default function App() {
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                specific_illness_check: { label: "Specific Illness Check", icon: <ShieldCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                specific_illness_check: { label: "Specific Illness Check", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 owner_controls: { label: "Developer Controls", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
               };
@@ -4579,6 +4617,32 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* TAB 9b: KNOWLEDGE BASE — admin management UI for "Ask the
+              Playbook": per-insurer/general PDF document categories plus a
+              dated announcement override channel. See
+              KnowledgeBaseManagementPage.tsx for the full explanation. */}
+          {activeTab === "knowledge_base" && (
+            <motion.div
+              key="knowledge_base"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="Knowledge Base">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <KnowledgeBaseManagementPage
+                theme={theme}
+                effectiveTier={effectiveTier}
+                currentUser={currentUser}
+                setChangeLogs={setChangeLogs}
+              />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
           {/* TAB 10: SMOKE TEST — runs the deterministic mapping engine
               against a curated baseline of common PEDs (plus any
               Admin/Developer-added custom entries) for one plan at a time, to
@@ -4640,7 +4704,7 @@ export default function App() {
             }`}
           >
             <div className="flex items-center select-none">
-              <span>YOUR PAYMENT ASSISTANT</span>
+              <span>ADVISOR PRODUCTIVITY PLATFORM</span>
             </div>
             <span style={{ color: !isDark && activeTab !== "smoke_test" ? "#57534d" : "#90a1b9", fontWeight: !isDark && activeTab !== "smoke_test" ? "bold" : "normal", fontSize: "10px" }} className="font-normal">©BLISS GUIDES.DITTO</span>
           </div>

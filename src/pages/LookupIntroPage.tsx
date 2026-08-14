@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   Zap,
   ShieldCheck,
+  ClipboardCheck,
 } from "lucide-react";
 import { QaDashboardIcon, DeclarationMapIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
@@ -239,7 +240,7 @@ export function LookupIntroPage({
       featureId: "specific_illness_check",
       title: "Specific Illness Check",
       tag: "2-year waiting period lookup",
-      icon: <ShieldCheck className="w-[18px] h-[18px]" />,
+      icon: <ClipboardCheck className="w-[18px] h-[18px]" />,
       hex: "#14B8A6",
       instructions:
         "Check whether a declared medical condition carries a 2-year specific illness waiting period, and see exactly how it's mapped under each plan.",

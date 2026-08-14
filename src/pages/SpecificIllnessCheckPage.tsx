@@ -4,7 +4,7 @@
  */
 
 import { useMemo, useRef, useState } from "react";
-import { ShieldCheck, CheckCircle2, Search, Stethoscope, X, AlertTriangle, Circle, Tag, BookOpen } from "lucide-react";
+import { ClipboardCheck, CheckCircle2, Search, Stethoscope, X, AlertTriangle, Circle, Tag, BookOpen } from "lucide-react";
 import { MASTER_ILLNESSES, matchSpecificIllness, type SpecificIllnessMatchResult } from "../specificIllnessEngine";
 import { buildGroupedSuggestions } from "../constants/pedSynonymGroups";
 
@@ -293,7 +293,7 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions }: Specific
                 <div key={idx} className={`${cardClass} p-5 space-y-4`}>
                   <div className="flex items-start justify-between gap-2 pb-3 border-b border-stone-200 dark:border-stone-850">
                     <div className="flex items-center gap-2">
-                      <ShieldCheck className={`w-4 h-4 ${dark ? "text-violet-400" : "text-violet-600"}`} />
+                      <ClipboardCheck className={`w-4 h-4 ${dark ? "text-violet-400" : "text-violet-600"}`} />
                       <p className={`text-sm font-bold ${dark ? "text-white" : "text-stone-900"}`}>
                         "{result.declared_condition}"
                         {result.matched_listed_illness && (
@@ -351,7 +351,7 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions }: Specific
 
                                   <div className="space-y-1">
                                     <div className="flex items-start gap-1.5">
-                                      <ShieldCheck className={`w-3 h-3 mt-0.5 shrink-0 ${dark ? "text-stone-400" : "text-stone-500"}`} />
+                                      <ClipboardCheck className={`w-3 h-3 mt-0.5 shrink-0 ${dark ? "text-stone-400" : "text-stone-500"}`} />
                                       <p className={`text-[11px] leading-relaxed ${dark ? "text-stone-300" : "text-stone-700"}`}>
                                         <span className="font-bold">Mapped as:</span> {result.matched_listed_illness}
                                       </p>

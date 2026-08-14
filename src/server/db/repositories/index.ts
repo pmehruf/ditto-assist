@@ -26,6 +26,10 @@ import { CollisionsRepository } from "./collisionsRepository.js";
 import { QaDashboardConnectionRepository } from "./qaDashboardConnectionRepository.js";
 import { QaDashboardRoleRepository } from "./qaDashboardRoleRepository.js";
 import { QaEvaluationHistoryRepository } from "./qaEvaluationHistoryRepository.js";
+import { KbCategoriesRepository } from "./kbCategoriesRepository.js";
+import { KbResourcesRepository } from "./kbResourcesRepository.js";
+import { KbChunksRepository } from "./kbChunksRepository.js";
+import { KbAnnouncementsRepository } from "./kbAnnouncementsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -107,6 +111,25 @@ export type { QaDashboardRoleType, UpsertQaDashboardRoleEntry } from "./qaDashbo
 export { QaEvaluationHistoryRepository } from "./qaEvaluationHistoryRepository.js";
 export type { NewQaEvaluationHistoryEntry } from "./qaEvaluationHistoryRepository.js";
 
+export { KbCategoriesRepository } from "./kbCategoriesRepository.js";
+export type { CreateKbCategoryEntry, UpdateKbCategoryEntry } from "./kbCategoriesRepository.js";
+
+export { KbResourcesRepository } from "./kbResourcesRepository.js";
+export type {
+  CreateKbResourceEntry,
+  UpdateKbResourceEntry,
+  KbResourceFilter,
+} from "./kbResourcesRepository.js";
+
+export { KbChunksRepository } from "./kbChunksRepository.js";
+export type { CreateKbChunkEntry, SimilarKbChunk } from "./kbChunksRepository.js";
+
+export { KbAnnouncementsRepository } from "./kbAnnouncementsRepository.js";
+export type {
+  CreateKbAnnouncementEntry,
+  UpdateKbAnnouncementEntry,
+} from "./kbAnnouncementsRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -136,6 +159,10 @@ export interface Repositories {
   qaDashboardConnection: QaDashboardConnectionRepository;
   qaDashboardRoles: QaDashboardRoleRepository;
   qaEvaluationHistory: QaEvaluationHistoryRepository;
+  kbCategories: KbCategoriesRepository;
+  kbResources: KbResourcesRepository;
+  kbChunks: KbChunksRepository;
+  kbAnnouncements: KbAnnouncementsRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -162,5 +189,9 @@ export function createRepositories(db: AnyDb): Repositories {
     qaDashboardConnection: new QaDashboardConnectionRepository(db),
     qaDashboardRoles: new QaDashboardRoleRepository(db),
     qaEvaluationHistory: new QaEvaluationHistoryRepository(db),
+    kbCategories: new KbCategoriesRepository(db),
+    kbResources: new KbResourcesRepository(db),
+    kbChunks: new KbChunksRepository(db),
+    kbAnnouncements: new KbAnnouncementsRepository(db),
   };
 }
