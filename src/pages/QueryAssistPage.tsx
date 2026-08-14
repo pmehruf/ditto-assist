@@ -476,6 +476,20 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 placeholder="Ask a question about this insurer's plan(s)…"
                 disabled={sending}
                 rows={1}
+                // The blue box + suggestion strip some users see while typing
+                // ("and / for / in") is the OS/browser's own spellcheck or
+                // predictive-text overlay, not app styling — these
+                // attributes opt the field out of every browser/extension
+                // hook that can draw one (spellcheck, autocomplete,
+                // autocorrect/autocapitalize on iOS/Safari, and Grammarly's
+                // injected overlay specifically via the data- attributes).
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                data-gramm="false"
+                data-gramm_editor="false"
+                data-enable-grammarly="false"
                 className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 ${
                   dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
                 }`}
