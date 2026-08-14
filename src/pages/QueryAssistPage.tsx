@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, Sparkles } from "lucide-react";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
+import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkdown";
 
 interface QueryAssistPageProps {
   theme: "light" | "dark";
@@ -19,41 +20,65 @@ interface KbCategoryLite {
   planNames: string[];
 }
 
-interface ChatSessionLite {
-  id: number;
-  title: string | null;
-  categoryId: number | null;
-  planTags: string[];
-  updatedAt: string;
-}
-
 interface ChatSource {
   title: string;
   categoryName: string;
 }
 
-interface ChatMessageLite {
-  id: number;
+interface LocalChatMessage {
+  id: string;
   role: "user" | "assistant";
   content: string;
   sources: ChatSource[] | null;
   createdAt: string;
 }
 
-const GENERAL_VALUE = "general";
+/**
+ * A conversation, held ENTIRELY client-side (see the storage helpers below)
+ * — Query Assist deliberately keeps no server-side record of advisor
+ * conversations (see server.ts's POST /api/query-assist/ask, which is
+ * stateless and never touches the database). Each browser's own history is
+ * its own; nothing here syncs across devices or is visible to an admin.
+ */
+interface LocalChatSession {
+  id: string;
+  title: string;
+  categoryId: number | null;
+  planTags: string[];
+  messages: LocalChatMessage[];
+  updatedAt: string;
+}
 
-/** Splits Query Assist's dual-section model output ("1. ANSWER" / "2.
- * MESSAGE FOR SHARING" — see queryAssist.ts's system instruction) into two
- * pieces for separate rendering, so the advisor can copy just the
- * customer-safe MESSAGE FOR SHARING block on its own. */
-function splitAnswer(content: string): { answer: string; share: string | null } {
-  const marker = /\n?\s*2\.\s*MESSAGE FOR SHARING\s*\n?/i;
-  const match = marker.exec(content);
-  const stripAnswerHeader = (s: string) => s.replace(/^\s*1\.\s*ANSWER\s*\n?/i, "").trim();
-  if (!match) return { answer: stripAnswerHeader(content), share: null };
-  const answerPart = stripAnswerHeader(content.slice(0, match.index));
-  const sharePart = content.slice(match.index + match[0].length).trim();
-  return { answer: answerPart, share: sharePart || null };
+const GENERAL_VALUE = "general";
+const SESSIONS_STORAGE_KEY = "queryAssist.sessions.v1";
+// How many prior turns to resend as context on each follow-up — mirrors
+// queryAssist.ts's own MAX_HISTORY_TURNS cap, sent generously here since the
+// server does its own trimming.
+const HISTORY_TURNS_TO_SEND = 8;
+
+function genId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function loadLocalSessions(): LocalChatSession[] {
+  try {
+    const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistLocalSessions(sessions: LocalChatSession[]): void {
+  try {
+    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+  } catch {
+    // Storage full/unavailable (private browsing, quota) — the current
+    // conversation still works, it just won't survive a refresh.
+  }
 }
 
 function CopyButton({ text, dark }: { text: string; dark: boolean }) {
@@ -76,6 +101,20 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
   );
 }
 
+/** Splits Query Assist's dual-section model output ("1. ANSWER" / "2.
+ * MESSAGE FOR SHARING" — see queryAssist.ts's system instruction) into two
+ * pieces for separate rendering, so the advisor can copy just the
+ * customer-safe MESSAGE FOR SHARING block on its own. */
+function splitAnswer(content: string): { answer: string; share: string | null } {
+  const marker = /\n?\s*2\.\s*MESSAGE FOR SHARING\s*\n?/i;
+  const match = marker.exec(content);
+  const stripAnswerHeader = (s: string) => s.replace(/^\s*1\.\s*ANSWER\s*\n?/i, "").trim();
+  if (!match) return { answer: stripAnswerHeader(content), share: null };
+  const answerPart = stripAnswerHeader(content.slice(0, match.index));
+  const sharePart = content.slice(match.index + match[0].length).trim();
+  return { answer: answerPart, share: sharePart || null };
+}
+
 /**
  * "Query Assist" — advisor-facing chat over the Knowledge Base (see
  * src/server/knowledgeBase/queryAssist.ts). Open to every tier: choose an
@@ -83,18 +122,22 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
  * more of that insurer's plans, then ask — answers are grounded only in
  * the matching documents/announcements, with inline Primary Reference
  * citations and a separate customer-safe "message for sharing" block.
+ *
+ * Conversation history is local-memory only — held in this browser's
+ * localStorage, never sent anywhere but back to the /ask endpoint as
+ * short-lived context for the CURRENT request. Nothing is persisted server
+ * side (see server.ts's POST /api/query-assist/ask).
  */
 export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   const dark = theme === "dark";
 
   const [categories, setCategories] = useState<KbCategoryLite[]>([]);
-  const [sessions, setSessions] = useState<ChatSessionLite[]>([]);
+  const [sessions, setSessions] = useState<LocalChatSession[]>(() => loadLocalSessions());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<ChatMessageLite[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<LocalChatMessage[]>([]);
 
   const [selectedCategoryValue, setSelectedCategoryValue] = useState<string>("");
   const [selectedPlanTags, setSelectedPlanTags] = useState<string[]>([]);
@@ -105,22 +148,12 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
   const threadEndRef = useRef<HTMLDivElement>(null);
 
-  const loadSessions = async () => {
-    try {
-      const res = await fetch("/api/query-assist/sessions");
-      const body = await res.json().catch(() => ({}));
-      if (res.ok) setSessions(body.entries || []);
-    } catch {
-      // Session history is a nice-to-have — a failed refresh shouldn't block asking questions.
-    }
-  };
-
   useEffect(() => {
     (async () => {
       setLoading(true);
       setLoadError(null);
       try {
-        const [catRes] = await Promise.all([fetch("/api/query-assist/categories"), loadSessions()]);
+        const catRes = await fetch("/api/query-assist/categories");
         const catBody = await catRes.json().catch(() => ({}));
         if (!catRes.ok) throw new Error(catBody.error || `Failed to load insurers (HTTP ${catRes.status}).`);
         setCategories(catBody.entries || []);
@@ -138,6 +171,12 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
   const scopeLocked = currentSessionId !== null || messages.length > 0;
   const selectedCategory = categories.find(c => String(c.id) === selectedCategoryValue);
+  const sortedSessions = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  const saveSessions = (next: LocalChatSession[]) => {
+    setSessions(next);
+    persistLocalSessions(next);
+  };
 
   const startNewChat = () => {
     setCurrentSessionId(null);
@@ -145,34 +184,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
     setSendError(null);
   };
 
-  const openSession = async (session: ChatSessionLite) => {
-    setLoadingMessages(true);
+  const openSession = (session: LocalChatSession) => {
+    setCurrentSessionId(session.id);
+    setMessages(session.messages);
+    setSelectedCategoryValue(session.categoryId === null ? GENERAL_VALUE : String(session.categoryId));
+    setSelectedPlanTags(session.planTags);
     setSendError(null);
-    try {
-      const res = await fetch(`/api/query-assist/sessions/${session.id}/messages`);
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Failed to load conversation (HTTP ${res.status}).`);
-      setCurrentSessionId(session.id);
-      setMessages(body.entries || []);
-      setSelectedCategoryValue(session.categoryId === null ? GENERAL_VALUE : String(session.categoryId));
-      setSelectedPlanTags(session.planTags || []);
-    } catch (err: any) {
-      setSendError(err.message || "Failed to load this conversation.");
-    } finally {
-      setLoadingMessages(false);
-    }
   };
 
-  const deleteSession = async (session: ChatSessionLite, e: MouseEvent) => {
+  const deleteSession = (session: LocalChatSession, e: MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this conversation?")) return;
-    try {
-      await fetch(`/api/query-assist/sessions/${session.id}`, { method: "DELETE" });
-      if (currentSessionId === session.id) startNewChat();
-      await loadSessions();
-    } catch {
-      setSendError("Failed to delete this conversation.");
-    }
+    if (!window.confirm("Delete this conversation? This only removes it from this browser.")) return;
+    saveSessions(sessions.filter(s => s.id !== session.id));
+    if (currentSessionId === session.id) startNewChat();
   };
 
   const togglePlanTag = (plan: string) => {
@@ -189,31 +213,50 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
     setSending(true);
     setSendError(null);
-    const optimisticUser: ChatMessageLite = { id: -Date.now(), role: "user", content: question, sources: null, createdAt: new Date().toISOString() };
-    setMessages(prev => [...prev, optimisticUser]);
+
+    const priorMessages = messages;
+    const categoryId = selectedCategoryValue === GENERAL_VALUE ? null : Number(selectedCategoryValue);
+    const planTags = selectedPlanTags;
+
+    const userMsg: LocalChatMessage = { id: genId(), role: "user", content: question, sources: null, createdAt: new Date().toISOString() };
+    setMessages(prev => [...prev, userMsg]);
     setQuestionInput("");
 
     try {
-      const payload: Record<string, unknown> = { question };
-      if (currentSessionId !== null) {
-        payload.sessionId = currentSessionId;
-      } else {
-        payload.categoryId = selectedCategoryValue === GENERAL_VALUE ? null : Number(selectedCategoryValue);
-        payload.planTags = selectedPlanTags;
-      }
+      const history = priorMessages.slice(-HISTORY_TURNS_TO_SEND).map(m => ({ role: m.role, content: m.content }));
       const res = await fetch("/api/query-assist/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ categoryId, planTags, question, history }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to get an answer (HTTP ${res.status}).`);
-      setCurrentSessionId(body.sessionId);
-      setMessages(prev => [
-        ...prev,
-        { id: -Date.now() - 1, role: "assistant", content: body.answer, sources: body.sources || null, createdAt: new Date().toISOString() },
-      ]);
-      loadSessions();
+
+      const assistantMsg: LocalChatMessage = {
+        id: genId(),
+        role: "assistant",
+        content: body.answer,
+        sources: body.sources || null,
+        createdAt: new Date().toISOString(),
+      };
+      const finalMessages = [...priorMessages, userMsg, assistantMsg];
+      setMessages(finalMessages);
+
+      const now = new Date().toISOString();
+      if (currentSessionId === null) {
+        const newSession: LocalChatSession = {
+          id: genId(),
+          title: question.slice(0, 120),
+          categoryId,
+          planTags,
+          messages: finalMessages,
+          updatedAt: now,
+        };
+        setCurrentSessionId(newSession.id);
+        saveSessions([newSession, ...sessions]);
+      } else {
+        saveSessions(sessions.map(s => (s.id === currentSessionId ? { ...s, messages: finalMessages, updatedAt: now } : s)));
+      }
     } catch (err: any) {
       setSendError(err.message || "Failed to get an answer. Please try again.");
     } finally {
@@ -225,6 +268,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
     dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
   }`;
   const cardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-stone-200";
+  const proseClass = `text-xs leading-relaxed space-y-2 [&_ol]:mt-1 [&_ul]:mt-1 [&_li]:pl-0.5 ${dark ? "text-stone-200" : "text-stone-800"}`;
 
   const categoryOptions = [
     { value: GENERAL_VALUE, label: "General (not tied to one insurer)" },
@@ -244,7 +288,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <span>Query Assist</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
-            Ask a question about an insurer's plan(s) and get an answer grounded only in the Knowledge Base's documents and announcements.
+            Ask a question about an insurer's plan(s) and get an answer grounded only in the Knowledge Base's documents and announcements. Conversations are kept on this device only — nothing is stored on the server.
           </p>
         </div>
         <ClippedButton size="md" onClick={startNewChat} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
@@ -259,11 +303,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4">
-        {/* Session history sidebar */}
+        {/* Session history sidebar — local to this browser only */}
         <div className={`rounded-xl border p-3 space-y-1.5 lg:max-h-[560px] overflow-y-auto ${cardClass}`}>
-          <span className="block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1">Recent conversations</span>
-          {sessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
-          {sessions.map(s => (
+          <span className="block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1">Recent conversations (this device)</span>
+          {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
+          {sortedSessions.map(s => (
             <button
               key={s.id}
               type="button"
@@ -329,8 +373,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
           {/* Thread */}
           <div className="flex-1 min-h-[320px] max-h-[480px] overflow-y-auto space-y-3 pr-1">
-            {loadingMessages && <div className="text-xs font-semibold text-content-muted text-center py-6">Loading conversation…</div>}
-            {!loadingMessages && messages.length === 0 && (
+            {messages.length === 0 && (
               <div className="text-xs font-semibold text-content-muted text-center py-10 flex flex-col items-center gap-2">
                 <Sparkles className="w-5 h-5 opacity-50" />
                 Choose an insurer above and ask your first question.
@@ -352,15 +395,15 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   <div className={`max-w-[92%] w-full px-3.5 py-3 rounded-xl space-y-2.5 ${dark ? "bg-white/[0.04] border border-white/[0.08]" : "bg-stone-50 border border-stone-200"}`}>
                     <div>
                       <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted mb-1">Answer</span>
-                      <p className={`text-xs whitespace-pre-wrap leading-relaxed ${dark ? "text-stone-200" : "text-stone-800"}`}>{answer}</p>
+                      <div className={proseClass}>{renderSimpleMarkdown(answer)}</div>
                     </div>
                     {share && (
                       <div className={`p-2.5 rounded-lg border ${dark ? "bg-emerald-500/10 border-emerald-500/25" : "bg-emerald-50 border-emerald-200"}`}>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-500">Message for sharing</span>
-                          <CopyButton text={share} dark={dark} />
+                          <CopyButton text={stripMarkdownForCopy(share)} dark={dark} />
                         </div>
-                        <p className={`text-xs whitespace-pre-wrap leading-relaxed ${dark ? "text-emerald-200" : "text-emerald-900"}`}>{share}</p>
+                        <div className={`${proseClass} ${dark ? "text-emerald-200" : "text-emerald-900"}`}>{renderSimpleMarkdown(share)}</div>
                       </div>
                     )}
                     {m.sources && m.sources.length > 0 && (

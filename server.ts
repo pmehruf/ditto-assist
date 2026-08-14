@@ -3607,89 +3607,38 @@ app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
   }
 });
 
-app.get("/api/query-assist/sessions", requireAuth, async (req, res) => {
-  try {
-    const { kbChatSessions } = createRepositories(getDb());
-    const entries = await kbChatSessions.listForUser(req.user!.email);
-    return res.json({ entries });
-  } catch (err: any) {
-    console.error("Query Assist: failed to list sessions:", err);
-    return res.status(500).json({ error: `Failed to load your conversations: ${err.message}` });
-  }
-});
-
-app.get("/api/query-assist/sessions/:id/messages", requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid session id." });
-    const { kbChatSessions, kbChatMessages } = createRepositories(getDb());
-    const session = await kbChatSessions.getForUser(id, req.user!.email);
-    if (!session) return res.status(404).json({ error: "Conversation not found." });
-    const entries = await kbChatMessages.listBySession(id);
-    return res.json({ session, entries });
-  } catch (err: any) {
-    console.error("Query Assist: failed to load messages:", err);
-    return res.status(500).json({ error: `Failed to load this conversation: ${err.message}` });
-  }
-});
-
-app.delete("/api/query-assist/sessions/:id", requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid session id." });
-    const { kbChatSessions } = createRepositories(getDb());
-    await kbChatSessions.deleteForUser(id, req.user!.email);
-    return res.json({ ok: true });
-  } catch (err: any) {
-    console.error("Query Assist: failed to delete session:", err);
-    return res.status(500).json({ error: `Failed to delete this conversation: ${err.message}` });
-  }
-});
-
+// Query Assist keeps NO server-side record of advisor conversations — per
+// explicit product decision, chat history is local-memory only, held in the
+// advisor's own browser (see QueryAssistPage.tsx's localStorage-backed
+// session list) and never written to the database. This route is therefore
+// fully stateless: each call re-sends the scope (categoryId/planTags) and
+// whatever prior turns the client already has locally as `history`, and
+// nothing here reads from or writes to kb_chat_sessions/kb_chat_messages.
 app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    const { sessionId, categoryId, planTags, question } = req.body;
+    const { categoryId, planTags, question, history } = req.body;
     if (typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "question is required." });
     }
-    if (sessionId === undefined && categoryId !== null && typeof categoryId !== "number") {
-      return res.status(400).json({ error: "categoryId is required (or null for a General question) when starting a new conversation." });
+    if (categoryId !== null && typeof categoryId !== "number") {
+      return res.status(400).json({ error: "categoryId is required (or null for a General question)." });
     }
     if (planTags !== undefined && (!Array.isArray(planTags) || !planTags.every((t: unknown) => typeof t === "string"))) {
       return res.status(400).json({ error: "planTags must be an array of strings." });
     }
+    if (
+      history !== undefined &&
+      (!Array.isArray(history) ||
+        !history.every((m: unknown) => m && typeof m === "object" && ((m as any).role === "user" || (m as any).role === "assistant") && typeof (m as any).content === "string"))
+    ) {
+      return res.status(400).json({ error: "history must be an array of {role, content} messages." });
+    }
 
     const repos = createRepositories(getDb());
-    const { kbChatSessions, kbChatMessages } = repos;
+    const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
+    const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
 
-    let session = sessionId !== undefined ? await kbChatSessions.getForUser(Number(sessionId), req.user!.email) : undefined;
-    if (sessionId !== undefined && !session) {
-      return res.status(404).json({ error: "Conversation not found." });
-    }
-    if (!session) {
-      session = await kbChatSessions.create({
-        userEmail: req.user!.email,
-        title: question.trim().slice(0, 120),
-        categoryId: categoryId ?? null,
-        planTags: Array.isArray(planTags) ? planTags : [],
-      });
-    }
-
-    const scope = { categoryId: session.categoryId, planTags: session.planTags };
-
-    await kbChatMessages.create({ sessionId: session.id, role: "user", content: question.trim(), sources: null });
-
-    const result = await answerQuery(repos, scope, question.trim());
-
-    await kbChatMessages.create({
-      sessionId: session.id,
-      role: "assistant",
-      content: result.text,
-      sources: result.sources,
-    });
-    await kbChatSessions.touch(session.id);
-
-    return res.json({ sessionId: session.id, answer: result.text, sources: result.sources, hadNoMatches: result.hadNoMatches });
+    return res.json({ answer: result.text, sources: result.sources, hadNoMatches: result.hadNoMatches });
   } catch (err: any) {
     console.error("Query Assist: failed to answer question:", err);
     return res.status(500).json({ error: `Failed to get an answer: ${err.message}` });
