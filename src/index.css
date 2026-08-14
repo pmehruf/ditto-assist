@@ -475,6 +475,15 @@ html {
 .text-body { font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--weight-body); }
 .text-label { font-size: var(--text-label); line-height: var(--leading-label); font-weight: 600; }
 .text-input-value { font-size: var(--text-input-value); line-height: var(--leading-input-value); font-weight: 500; }
+
+/* Hides a scrollable container's scrollbar while keeping it fully
+   scrollable (wheel/touch/keyboard) — used by the collapsed sidebar icon
+   rail, where a visible scrollbar track next to a 40px-wide icon column
+   would dominate the available space. This class was referenced in
+   App.tsx but never actually defined here, so the rail fell back to the
+   browser's default (permanently visible once its content overflowed). */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .text-button { font-size: var(--text-button); line-height: var(--leading-button); font-weight: 700; }
 .text-table-header { font-size: var(--text-table-header); line-height: var(--leading-table-header); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .text-table-cell { font-size: var(--text-table-cell); line-height: var(--leading-table-cell); font-weight: 500; }

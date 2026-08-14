@@ -3099,7 +3099,7 @@ export default function App() {
             {/* Click to expand button */}
             <button 
               onClick={() => setIsMenuOpen(true)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+              className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                 "hover:bg-white/5"
               }`}
               title="Expand Navigation Menu"
@@ -3107,7 +3107,7 @@ export default function App() {
               <PanelLeftOpen className="w-5 h-5" style={{ color: "#9a9c9e" }} />
             </button>
 
-            <div className="w-10 border-b border-white/[0.08] my-1" />
+            <div className="w-10 border-b border-white/[0.08] my-1 shrink-0" />
 
             {/* Collapsed Menu Items of Active Tools */}
             <div
@@ -3117,7 +3117,7 @@ export default function App() {
                 borderRadius: "0px",
                 backgroundColor: activeTab === "smoke_test" ? "#060606" : !isDark ? "var(--sidebar-bg)" : undefined,
               }}
-              className="flex flex-col gap-2.5 w-full flex-grow overflow-y-auto py-2 items-center no-scrollbar"
+              className="flex flex-col gap-2.5 w-full flex-grow min-h-0 overflow-y-auto py-2 items-center no-scrollbar"
             >
               {hasAccess("lookup", "Viewer") && (
                 <>
@@ -3126,7 +3126,7 @@ export default function App() {
                       setActiveTab("lookup");
                       setShowIntro(true);
                     }}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && showIntro
                         ? "bg-white/[0.08] border border-white/[0.14]"
                         : "hover:bg-white/5"
@@ -3142,7 +3142,7 @@ export default function App() {
                       setActiveTab("lookup");
                       setShowIntro(false);
                     }}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                       activeTab === "lookup" && !showIntro
                         ? "bg-white/[0.08] border border-white/[0.14]"
                         : "hover:bg-white/5"
@@ -3161,13 +3161,13 @@ export default function App() {
                   a subtle divider so the collapsed rail reads as clusters
                   instead of one unbroken column of icons. */}
               {(hasAccess("qa_dashboard", "Viewer") || hasAccess("coverage_projection", "Viewer") || hasAccess("specific_illness_check", "Viewer") || hasAccess("query_assist", "Editor") || hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
 
               {hasAccess("qa_dashboard", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("qa_dashboard")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "qa_dashboard"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3182,7 +3182,7 @@ export default function App() {
               {hasAccess("coverage_projection", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("coverage_projection")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "coverage_projection"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3197,7 +3197,7 @@ export default function App() {
               {hasAccess("specific_illness_check", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("specific_illness_check")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "specific_illness_check"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3212,7 +3212,7 @@ export default function App() {
               {hasAccess("query_assist", "Editor") && (
                 <button
                   onClick={() => setActiveTab("query_assist")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "query_assist"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3227,7 +3227,7 @@ export default function App() {
               {hasAccess("advisory_zone", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("advisory_zone")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "advisory_zone"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3242,7 +3242,7 @@ export default function App() {
               {hasAccess("announcement_archive", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("announcement_archive")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "announcement_archive"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3256,13 +3256,13 @@ export default function App() {
 
               {/* Resources cluster — declaration map + personal activity log. */}
               {(hasAccess("resources", "Viewer") || hasAccess("my_activity", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
 
               {hasAccess("resources", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("resources")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "resources"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3277,7 +3277,7 @@ export default function App() {
               {hasAccess("my_activity", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("my_activity")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "my_activity"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3296,13 +3296,13 @@ export default function App() {
                   guard as the expanded version: only render it if there's
                   at least one Admin Zone item this user can see. */}
               {(hasAccess("audit", "Viewer") || hasAccess("profile_access", "Viewer") || hasAccess("qa_announcement_log", "Viewer") || hasAccess("flagged_responses", "Viewer") || hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer") || hasAccess("smoke_test", "Viewer") || hasAccess("knowledge_base", "Viewer")) && (
-                <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70" />
+                <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70 shrink-0" />
               )}
 
               {hasAccess("qa_announcement_log", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("qa_announcement_log")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "qa_announcement_log"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3317,7 +3317,7 @@ export default function App() {
               {hasAccess("ped_suggestions", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("ped_suggestions")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "ped_suggestions"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3332,7 +3332,7 @@ export default function App() {
               {hasAccess("knowledge_base", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("knowledge_base")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "knowledge_base"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3347,7 +3347,7 @@ export default function App() {
               {hasAccess("plan_scope", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("plan_scope")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "plan_scope"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3362,13 +3362,13 @@ export default function App() {
               {/* Access & Oversight cluster — user directory, activity log,
                   flagged responses. */}
               {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
 
               {hasAccess("profile_access", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("profile_access")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "profile_access"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3383,7 +3383,7 @@ export default function App() {
               {hasAccess("audit", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("audit")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "audit"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3398,7 +3398,7 @@ export default function App() {
               {hasAccess("flagged_responses", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("flagged_responses")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "flagged_responses"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3418,13 +3418,13 @@ export default function App() {
 
               {/* Dev/Test cluster — smoke test sandbox + page-visibility kill switch. */}
               {(hasAccess("smoke_test", "Viewer") || hasAccess("owner_controls", "Viewer")) && (
-                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50 shrink-0" />
               )}
 
               {hasAccess("smoke_test", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("smoke_test")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
                     activeTab === "smoke_test"
                       ? "bg-[rgba(224,141,75,0.10)] border border-[#E08D4B]"
                       : "hover:bg-white/5"
@@ -3440,7 +3440,7 @@ export default function App() {
               {hasAccess("owner_controls", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("owner_controls")}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all relative ${
+                  className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all relative ${
                     activeTab === "owner_controls"
                       ? "bg-white/[0.08] border border-white/[0.14]"
                       : "hover:bg-white/5"
@@ -3459,7 +3459,7 @@ export default function App() {
             {/* Bottom Profile Action */}
             <div 
               style={{ borderWidth: "0px", paddingTop: "0px" }}
-              className="relative mt-auto pt-4 border-t border-white/[0.05] w-full flex justify-center"
+              className="relative mt-auto pt-4 border-t border-white/[0.05] w-full flex justify-center shrink-0"
             >
               <button
                 ref={profileButtonRef}
@@ -4190,7 +4190,7 @@ export default function App() {
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
           activeTab === "lookup" && showIntro
             ? "overflow-hidden min-h-0"
-            : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log"
+            : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "query_assist"
             ? "lg:overflow-hidden overflow-y-auto"
             : "overflow-y-auto"
         }`}
@@ -4203,7 +4203,7 @@ export default function App() {
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
               ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-start min-h-0"
-              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log"
+              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "query_assist"
               ? "lg:p-5 pt-1.5 sm:pt-2 lg:flex lg:flex-col lg:min-h-0"
               : "lg:p-5 pt-1.5 sm:pt-2"
           }`}
@@ -4212,7 +4212,7 @@ export default function App() {
           <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto ${
             showIntro && activeTab === "lookup"
               ? "flex-grow flex flex-col min-h-0"
-              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log"
+              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "query_assist"
               ? "lg:flex-grow lg:flex lg:flex-col lg:min-h-0"
               : ""
           }`}>
@@ -4528,7 +4528,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.2 }}
-              className="space-y-6"
+              className="space-y-6 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0"
             >
               <ErrorBoundary theme={theme} label="Query Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>

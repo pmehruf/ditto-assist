@@ -272,9 +272,6 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
     }
   };
 
-  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
-    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
-  }`;
   const cardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-stone-200";
   const proseClass = `text-xs leading-relaxed space-y-2 [&_ol]:mt-1 [&_ul]:mt-1 [&_li]:pl-0.5 ${dark ? "text-stone-200" : "text-stone-800"}`;
 
@@ -288,8 +285,8 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   }
 
   return (
-    <div className="space-y-5 text-left">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
+    <div className="space-y-5 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0">
+      <div className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
         <div>
           <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
@@ -305,15 +302,24 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       </div>
 
       {loadError && (
-        <div className={`text-xs font-semibold px-3 py-2 rounded-lg border flex items-center gap-2 ${dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
+        <div className={`shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border flex items-center gap-2 ${dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {loadError}
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-4">
+      {/* Sidebar + main card share one grid row so they always end up the
+          same height — at lg+ this row fills whatever vertical space is
+          left between the header above and the app's footer below (see
+          App.tsx's query_assist branch of the flush-fit layout used by a
+          couple of other data-dense pages), so only the lists/thread
+          inside each card scroll, never the page itself. Below lg the
+          cards stack and the page scrolls normally, which reads better on
+          a narrow/short viewport than a forced fixed-height layout. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-4 lg:flex-1 lg:min-h-0">
         {/* Session history sidebar — local to this browser only */}
-        <div className={`rounded-xl border p-3 space-y-1.5 lg:h-[clamp(380px,58vh,680px)] overflow-y-auto ${cardClass}`}>
-          <span className="block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1">Recent conversations</span>
+        <div className={`rounded-xl border p-3 flex flex-col min-h-0 lg:h-full overflow-hidden ${cardClass}`}>
+          <span className="shrink-0 block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1.5">Recent conversations</span>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 no-scrollbar">
           {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
           {sortedSessions.map(s => (
             <button
@@ -335,12 +341,13 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               </span>
             </button>
           ))}
+          </div>
         </div>
 
         {/* Main chat panel */}
-        <div className={`rounded-xl border p-4 flex flex-col space-y-3 ${cardClass}`}>
+        <div className={`rounded-xl border p-4 flex flex-col min-h-0 lg:h-full overflow-hidden space-y-3 ${cardClass}`}>
           {/* Scope selector */}
-          <div className="flex flex-wrap items-end gap-3 pb-3 border-b border-dashed border-stone-300/30">
+          <div className="shrink-0 flex flex-wrap items-end gap-3 pb-3 border-b border-dashed border-stone-300/30">
             <div className="w-full sm:w-64">
               <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Insurer</label>
               <CustomSelect
@@ -379,10 +386,14 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             )}
           </div>
 
-          {/* Thread — height scales with viewport (more room on a large
-              monitor, still compact on a laptop) instead of a flat pixel
-              range, matching this app's usual clamp()-based sizing. */}
-          <div className="flex-1 h-[clamp(320px,52vh,640px)] overflow-y-auto space-y-3 pr-1">
+          {/* Thread — fills whatever space is left in the card (see the
+              card's own lg:h-full above) rather than a fixed pixel/vh
+              range, so it always reaches exactly to the card's bottom
+              edge instead of leaving dead space on a tall viewport or
+              overflowing the card on a short one. Below lg the card has
+              no fixed height, so this falls back to a sensible minimum
+              and the page scrolls normally. */}
+          <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-3 pr-1">
             {messages.length === 0 && (
               <div className="text-xs font-semibold text-content-muted text-center py-10 flex flex-col items-center gap-2">
                 <Sparkles className="w-5 h-5 opacity-50" />
@@ -440,27 +451,45 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           </div>
 
           {sendError && (
-            <div className={`text-xs font-semibold px-3 py-2 rounded-lg border flex items-center gap-2 ${dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <div className={`shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border flex items-center gap-2 ${dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {sendError}
             </div>
           )}
 
-          {/* Input */}
-          <div className="flex items-end gap-2 pt-2 border-t border-dashed border-stone-300/30">
-            <textarea
-              value={questionInput}
-              onChange={e => setQuestionInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
-              }}
-              placeholder="Ask a question about this insurer's plan(s)…"
-              disabled={sending}
-              rows={2}
-              className={`${inputClass} resize-none`}
-            />
-            <ClippedButton size="md" onClick={sendQuestion} disabled={sending || !questionInput.trim()} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2.5 shrink-0">
-              <Send className="w-4 h-4" />
-            </ClippedButton>
+          {/* Composer — textarea and send action share one bordered
+              container so they read as a single input, not a field with a
+              button bolted on next to it. */}
+          <div className="shrink-0 pt-2 border-t border-dashed border-stone-300/30">
+            <div
+              className={`flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
+                dark
+                  ? "bg-white/[0.04] border-white/[0.1] focus-within:border-sky-500/50"
+                  : "bg-white border-stone-300 focus-within:border-sky-500"
+              }`}
+            >
+              <textarea
+                value={questionInput}
+                onChange={e => setQuestionInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+                }}
+                placeholder="Ask a question about this insurer's plan(s)…"
+                disabled={sending}
+                rows={1}
+                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 ${
+                  dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
+                }`}
+              />
+              <button
+                type="button"
+                onClick={sendQuestion}
+                disabled={sending || !questionInput.trim()}
+                title="Send"
+                className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
