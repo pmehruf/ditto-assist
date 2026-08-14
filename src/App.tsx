@@ -3117,7 +3117,7 @@ export default function App() {
                 borderRadius: "0px",
                 backgroundColor: activeTab === "smoke_test" ? "#060606" : !isDark ? "var(--sidebar-bg)" : undefined,
               }}
-              className="flex flex-col gap-2 w-full flex-grow overflow-y-auto py-2 items-center no-scrollbar"
+              className="flex flex-col gap-2.5 w-full flex-grow overflow-y-auto py-2 items-center no-scrollbar"
             >
               {hasAccess("lookup", "Viewer") && (
                 <>
@@ -3153,6 +3153,15 @@ export default function App() {
                     <Sparkles style={{ width: "18px", height: "18px" }} />
                   </button>
                 </>
+              )}
+
+              {/* Advisor Zone cluster — read-only reference/analysis tools
+                  (QA scorecard, cover projection, specific illness check,
+                  Query Assist, plan reference, announcements). Grouped with
+                  a subtle divider so the collapsed rail reads as clusters
+                  instead of one unbroken column of icons. */}
+              {(hasAccess("qa_dashboard", "Viewer") || hasAccess("coverage_projection", "Viewer") || hasAccess("specific_illness_check", "Viewer") || hasAccess("query_assist", "Editor") || hasAccess("advisory_zone", "Viewer") || hasAccess("announcement_archive", "Viewer")) && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
               )}
 
               {hasAccess("qa_dashboard", "Viewer") && (
@@ -3243,6 +3252,11 @@ export default function App() {
                 >
                   <Newspaper style={{ width: "18px", height: "18px" }} />
                 </button>
+              )}
+
+              {/* Resources cluster — declaration map + personal activity log. */}
+              {(hasAccess("resources", "Viewer") || hasAccess("my_activity", "Viewer")) && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
               )}
 
               {hasAccess("resources", "Viewer") && (
@@ -3345,6 +3359,12 @@ export default function App() {
                 </button>
               )}
 
+              {/* Access & Oversight cluster — user directory, activity log,
+                  flagged responses. */}
+              {(hasAccess("profile_access", "Viewer") || hasAccess("audit", "Viewer") || hasAccess("flagged_responses", "Viewer")) && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
+              )}
+
               {hasAccess("profile_access", "Viewer") && (
                 <button
                   onClick={() => setActiveTab("profile_access")}
@@ -3394,6 +3414,11 @@ export default function App() {
                     </span>
                   )}
                 </button>
+              )}
+
+              {/* Dev/Test cluster — smoke test sandbox + page-visibility kill switch. */}
+              {(hasAccess("smoke_test", "Viewer") || hasAccess("owner_controls", "Viewer")) && (
+                <div className="w-6 border-t border-white/[0.08] my-1 opacity-50" />
               )}
 
               {hasAccess("smoke_test", "Viewer") && (
