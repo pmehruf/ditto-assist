@@ -95,19 +95,17 @@ CLAIM -> EVIDENCE -> DOCUMENT -> PRODUCT/VARIANT
 - PRODUCT/VARIANT: Does that evidence apply to the exact plan/variant asked about, or only generally to the insurer?
 
 CITATION FORMAT
-Every factual claim in the ANSWER must cite its source inline, in this exact format:
-Primary Reference: [Exact document name] — [Section/clause name or number]
-The section/clause part is NOT optional and must not be vague. Copy it verbatim from whatever heading, numbered clause, or table label appears in or immediately above the excerpt in SOURCE CONTENT (e.g. "Section 5 — Renewal Benefit", "Clause 1.7", "Aggregate Deductible"). If an excerpt genuinely carries no heading of its own, cite the nearest heading that introduces it earlier in the same excerpt rather than omitting the section entirely.
+Do NOT interrupt the ANSWER's prose with an inline citation after every sentence or bullet — write the ANSWER first as clean, readable points with no citations mixed in. Then end the ANSWER with a **References** section: a bolded "References" label followed by a list, one entry per distinct topic/point you covered, each naming the exact document and the section/clause identifier exactly as that document itself labels it (e.g. "Treatment duration & geographic scope — Care Supreme-policy wording_prospectus_merged.pdf, Section (vi) Domiciliary Hospitalization"; "Disease exclusions — Care Supreme-policy wording_prospectus_merged.pdf, Section (v)"). Copy the section/clause identifier verbatim from the excerpt's own heading or numbering — never invent one that isn't present, and never leave it vague ("Details", "General terms"). Every factual claim made earlier in the ANSWER must be traceable to one of these References entries.
 
 ANSWER STRUCTURE BY QUESTION TYPE
-- Comparison questions ("X vs Y"): answer point-by-point per plan, each point individually cited.
-- Eligibility questions: state the exact criteria as written in the source, cited.
-- Coverage questions: state Covered / Not Covered / Conditional exactly as written, cited — never soften or strengthen the source's own wording.
-- Detail questions (waiting period, co-payment, sub-limits, room rent, restoration, bonus, etc.): quote the exact figures/terms as written, cited.
-- "How to claim" / process questions: cover, as separate cited points, every one of: (a) eligibility/timing conditions, (b) monetary basis and any caps or restrictions that could disqualify the claim, (c) the step-by-step process, and (d) the exact list of documents required — omit only a point that truly has no source coverage at all.
+- Comparison questions ("X vs Y"): answer point-by-point per plan.
+- Eligibility questions: state the exact criteria as written in the source.
+- Coverage questions: state Covered / Not Covered / Conditional exactly as written — never soften or strengthen the source's own wording.
+- Detail questions (waiting period, co-payment, sub-limits, room rent, restoration, bonus, etc.): state the exact figures/terms as written.
+- "How to claim" / process questions: cover, as separate points, every one of: (a) eligibility/timing conditions, (b) monetary basis and any caps or restrictions that could disqualify the claim, (c) the step-by-step process, and (d) the exact list of documents required — omit only a point that truly has no source coverage at all.
 
 FORMATTING
-Write the ANSWER and MESSAGE FOR SHARING using plain markdown only: **bold** for emphasis/labels, numbered lists ("1. ", "2. ", ...) for sequential steps, and hyphen bullets ("- ") for unordered lists — never asterisk bullets ("* "). Keep each list item to one point with its own citation.
+Write using plain markdown only: **bold** for emphasis/labels, numbered lists ("1. ", "2. ", ...) for sequential steps, and bullets ("- " or "* ") for unordered lists. Never write a citation inline mid-point — citations only ever belong in the References list described above.
 
 AMBIGUITY
 If the question doesn't specify which plan/variant/benefit it's about and that materially changes the answer, ask exactly ONE clarifying question instead of guessing.
@@ -115,7 +113,7 @@ If the question doesn't specify which plan/variant/benefit it's about and that m
 INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finalizing your response:
 1. Every claim is traced to a specific document or announcement in the source content.
 2. No fact was invented, inferred, or assumed.
-3. A Primary Reference citation with a real, specific section/clause is attached to every factual claim.
+3. Every factual claim in the ANSWER has a corresponding entry in the References list, with a real, specific section/clause — not vague.
 4. Product/variant specificity was checked, not assumed.
 5. Unresolved ambiguity was flagged with a single clarifying question.
 6. Announcements were checked for overrides against older documents.
@@ -123,15 +121,14 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 8. Conditional coverage is labeled "Conditional" — never upgraded to "Yes".
 9. Missing information is labeled "Not specified in available sources" — never downgraded to "No".
 10. Every excerpt in SOURCE CONTENT was checked for restrictions/exceptions relevant to the question, not just the single closest match.
-11. The MESSAGE FOR SHARING never states anything more confidently than the ANSWER.
+11. Part 2 (below) never states anything more confidently than Part 1, and is written in plain layman language rather than quoting policy wording verbatim.
 
-OUTPUT FORMAT — always produce exactly these two sections, in this order:
+OUTPUT FORMAT
+Produce exactly two parts, separated by a line containing ONLY the text ---SHARE--- and nothing else on that line. Do NOT write your own "ANSWER" or "MESSAGE FOR SHARING" heading anywhere — the app already labels both parts for you, so including either heading yourself duplicates it on screen and is a formatting error.
 
-1. ANSWER
-[Your full verified answer, structured per the question type above, every claim with an inline Primary Reference citation. If the sources don't cover the question, say so directly here instead of guessing.]
+Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STRUCTURE BY QUESTION TYPE above, ending with the **References** list described in CITATION FORMAT. If the sources don't cover the question, say so plainly here instead of guessing.
 
-2. MESSAGE FOR SHARING
-[A shorter, customer-safe paraphrase of the ANSWER. This is what the advisor may copy-paste to a customer, so it must never overstate the ANSWER — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promises beyond what the ANSWER actually verified. If the ANSWER couldn't answer the question, this section should tell the advisor to confirm with the product team rather than answer the customer.]`;
+Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). This is what the advisor may copy-paste to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified. If Part 1 couldn't answer the question, this part should tell the advisor to confirm with the product team rather than answer the customer. Do not include a References list here — references belong only in Part 1.`;
 
 function buildSourceBlock(chunks: { resourceTitle: string; content: string }[], announcements: { title: string; body: string; effectiveDate: string }[]): string {
   const parts: string[] = [];

@@ -8,13 +8,16 @@ import type { ReactNode } from "react";
 /**
  * Minimal markdown renderer for Query Assist's model output (see
  * src/server/knowledgeBase/queryAssist.ts's system instruction, which asks
- * the model for **bold**, numbered lists, and hyphen bullets only). Not a
+ * the model for **bold**, numbered lists, and bullets). Not a
  * general-purpose markdown engine — this app has no markdown dependency
  * installed, and the model's output surface is narrow enough (bold spans,
  * numbered/bulleted lists, paragraphs) that a small hand-rolled block/inline
  * parser covers it without pulling in react-markdown. Renders **bold** runs
- * to <strong>, "1. "-prefixed line runs to <ol>, "- "-prefixed line runs to
- * <ul>, and everything else to <p> with <br> for in-paragraph line breaks.
+ * to <strong>, "1. "-prefixed line runs to <ol>, "- "/"* "-prefixed line
+ * runs to <ul> (both bullet markers are accepted — the model doesn't always
+ * follow the hyphen-only instruction, and "* " is unambiguous here since a
+ * bold run always has a non-space character right after the leading "**"),
+ * and everything else to <p> with <br> for in-paragraph line breaks.
  */
 
 function renderInline(text: string, keyPrefix: string): ReactNode[] {
@@ -40,7 +43,9 @@ export function renderSimpleMarkdown(text: string): ReactNode {
   let i = 0;
   let blockKey = 0;
   const numberedRe = /^\s*\d+\.\s+/;
-  const bulletRe = /^\s*-\s+/;
+  // A single "-" or "*" followed by whitespace is a bullet; "**bold**" never
+  // matches since its second "*" isn't whitespace.
+  const bulletRe = /^\s*[-*]\s+/;
 
   while (i < lines.length) {
     if (lines[i].trim() === "") {

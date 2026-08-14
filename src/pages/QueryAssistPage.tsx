@@ -101,17 +101,25 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
   );
 }
 
-/** Splits Query Assist's dual-section model output ("1. ANSWER" / "2.
- * MESSAGE FOR SHARING" — see queryAssist.ts's system instruction) into two
- * pieces for separate rendering, so the advisor can copy just the
- * customer-safe MESSAGE FOR SHARING block on its own. */
+/** Splits Query Assist's dual-part model output into an ANSWER and a
+ * MESSAGE FOR SHARING piece — the app supplies both labels itself (see
+ * queryAssist.ts's system instruction, which asks the model NOT to write
+ * its own "ANSWER"/"MESSAGE FOR SHARING" headings), separated by a literal
+ * "---SHARE---" line. Falls back to the older "2. MESSAGE FOR SHARING"
+ * marker for any conversation still holding pre-migration text in
+ * localStorage, and defensively strips a stray heading line either way in
+ * case the model ever echoes one out of habit. */
 function splitAnswer(content: string): { answer: string; share: string | null } {
-  const marker = /\n?\s*2\.\s*MESSAGE FOR SHARING\s*\n?/i;
-  const match = marker.exec(content);
-  const stripAnswerHeader = (s: string) => s.replace(/^\s*1\.\s*ANSWER\s*\n?/i, "").trim();
-  if (!match) return { answer: stripAnswerHeader(content), share: null };
-  const answerPart = stripAnswerHeader(content.slice(0, match.index));
-  const sharePart = content.slice(match.index + match[0].length).trim();
+  const sentinel = /\n?\s*-{2,}\s*SHARE\s*-{2,}\s*\n?/i;
+  const legacyMarker = /\n?\s*2\.\s*MESSAGE FOR SHARING\s*\n?/i;
+  const match = sentinel.exec(content) ?? legacyMarker.exec(content);
+
+  const stripHeading = (s: string) =>
+    s.replace(/^\s*(?:\d+\.\s*)?\**\s*(ANSWER|MESSAGE FOR SHARING)\s*\**\s*\n+/i, "").trim();
+
+  if (!match) return { answer: stripHeading(content), share: null };
+  const answerPart = stripHeading(content.slice(0, match.index));
+  const sharePart = stripHeading(content.slice(match.index + match[0].length));
   return { answer: answerPart, share: sharePart || null };
 }
 
@@ -305,7 +313,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4">
         {/* Session history sidebar — local to this browser only */}
         <div className={`rounded-xl border p-3 space-y-1.5 lg:max-h-[560px] overflow-y-auto ${cardClass}`}>
-          <span className="block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1">Recent conversations (this device)</span>
+          <span className="block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1">Recent conversations</span>
           {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
           {sortedSessions.map(s => (
             <button
