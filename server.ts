@@ -56,6 +56,7 @@ import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
+import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
 
 dotenv.config();
 
@@ -3579,6 +3580,119 @@ app.delete("/api/kb/announcements/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete KB announcement:", err);
     return res.status(500).json({ error: `Failed to delete announcement: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Query Assist — the advisor-facing chat over the Knowledge Base built
+// above. Open to every tier (General included), unlike the Admin Zone KB
+// management routes: an advisor picks an insurer (or "General") and
+// optionally specific plan(s), asks a question, and gets a verified answer
+// grounded only in the matching documents/announcements — see
+// src/server/knowledgeBase/queryAssist.ts for the retrieval + prompt logic.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Read-only category list (id/name/type/planNames) for the query selector —
+// deliberately NOT behind requireAdminOrDeveloper like /api/kb/categories,
+// since every tier needs this to ask a question at all. No document
+// content or chunk data is exposed here, only category metadata.
+app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
+  try {
+    const { kbCategories } = createRepositories(getDb());
+    const entries = await kbCategories.list();
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Query Assist: failed to list categories:", err);
+    return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
+  }
+});
+
+app.get("/api/query-assist/sessions", requireAuth, async (req, res) => {
+  try {
+    const { kbChatSessions } = createRepositories(getDb());
+    const entries = await kbChatSessions.listForUser(req.user!.email);
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Query Assist: failed to list sessions:", err);
+    return res.status(500).json({ error: `Failed to load your conversations: ${err.message}` });
+  }
+});
+
+app.get("/api/query-assist/sessions/:id/messages", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid session id." });
+    const { kbChatSessions, kbChatMessages } = createRepositories(getDb());
+    const session = await kbChatSessions.getForUser(id, req.user!.email);
+    if (!session) return res.status(404).json({ error: "Conversation not found." });
+    const entries = await kbChatMessages.listBySession(id);
+    return res.json({ session, entries });
+  } catch (err: any) {
+    console.error("Query Assist: failed to load messages:", err);
+    return res.status(500).json({ error: `Failed to load this conversation: ${err.message}` });
+  }
+});
+
+app.delete("/api/query-assist/sessions/:id", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid session id." });
+    const { kbChatSessions } = createRepositories(getDb());
+    await kbChatSessions.deleteForUser(id, req.user!.email);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Query Assist: failed to delete session:", err);
+    return res.status(500).json({ error: `Failed to delete this conversation: ${err.message}` });
+  }
+});
+
+app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    const { sessionId, categoryId, planTags, question } = req.body;
+    if (typeof question !== "string" || !question.trim()) {
+      return res.status(400).json({ error: "question is required." });
+    }
+    if (sessionId === undefined && categoryId !== null && typeof categoryId !== "number") {
+      return res.status(400).json({ error: "categoryId is required (or null for a General question) when starting a new conversation." });
+    }
+    if (planTags !== undefined && (!Array.isArray(planTags) || !planTags.every((t: unknown) => typeof t === "string"))) {
+      return res.status(400).json({ error: "planTags must be an array of strings." });
+    }
+
+    const repos = createRepositories(getDb());
+    const { kbChatSessions, kbChatMessages } = repos;
+
+    let session = sessionId !== undefined ? await kbChatSessions.getForUser(Number(sessionId), req.user!.email) : undefined;
+    if (sessionId !== undefined && !session) {
+      return res.status(404).json({ error: "Conversation not found." });
+    }
+    if (!session) {
+      session = await kbChatSessions.create({
+        userEmail: req.user!.email,
+        title: question.trim().slice(0, 120),
+        categoryId: categoryId ?? null,
+        planTags: Array.isArray(planTags) ? planTags : [],
+      });
+    }
+
+    const scope = { categoryId: session.categoryId, planTags: session.planTags };
+
+    await kbChatMessages.create({ sessionId: session.id, role: "user", content: question.trim(), sources: null });
+
+    const result = await answerQuery(repos, scope, question.trim());
+
+    await kbChatMessages.create({
+      sessionId: session.id,
+      role: "assistant",
+      content: result.text,
+      sources: result.sources,
+    });
+    await kbChatSessions.touch(session.id);
+
+    return res.json({ sessionId: session.id, answer: result.text, sources: result.sources, hadNoMatches: result.hadNoMatches });
+  } catch (err: any) {
+    console.error("Query Assist: failed to answer question:", err);
+    return res.status(500).json({ error: `Failed to get an answer: ${err.message}` });
   }
 });
 

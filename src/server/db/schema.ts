@@ -921,6 +921,12 @@ export const kbChatSessions = pgTable(
     // First question's snippet — lets a future session-history list show
     // something meaningful without joining to the first message every time.
     title: text("title"),
+    // Scope chosen when the session starts (insurer + optional plan tags,
+    // or both null/empty for a "General" session) — every follow-up turn
+    // in the same multi-turn conversation reuses this scope automatically.
+    // See 0031_kb_chat_session_scope.sql.
+    categoryId: integer("category_id").references(() => kbCategories.id, { onDelete: "set null" }),
+    planTags: text("plan_tags").array().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

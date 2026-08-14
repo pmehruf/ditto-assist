@@ -49,12 +49,26 @@ export class KbChunksRepository {
    * Joins kb_resources so a resource archived/erroring after its chunks
    * were embedded doesn't keep surfacing in answers.
    */
-  async findSimilar(queryEmbedding: number[], options: { limit?: number; categoryIds?: number[] } = {}): Promise<SimilarKbChunk[]> {
+  async findSimilar(
+    queryEmbedding: number[],
+    options: { limit?: number; categoryIds?: number[]; resourceIds?: number[] } = {}
+  ): Promise<SimilarKbChunk[]> {
     const limit = options.limit ?? 12;
     const distanceExpr = sql<number>`${cosineDistance(kbChunks.embedding, queryEmbedding)}`;
     const conditions = [eq(kbResources.status, "active")];
     if (options.categoryIds && options.categoryIds.length > 0) {
       conditions.push(inArray(kbResources.categoryId, options.categoryIds));
+    }
+    // Narrows to a pre-filtered eligible resource set — e.g. Query Assist's
+    // plan-tag scoping (a resource with plan_tags applies only when its
+    // tags overlap the advisor's selected plan(s); the caller resolves
+    // that eligibility set in JS since it's a small in-memory filter over
+    // one category's resources, not worth a raw array-overlap SQL op here).
+    if (options.resourceIds) {
+      if (options.resourceIds.length === 0) {
+        return [];
+      }
+      conditions.push(inArray(kbResources.id, options.resourceIds));
     }
     const rows = await this.db
       .select({

@@ -218,6 +218,13 @@
       "when": 1786300000000,
       "tag": "0030_kb_category_plan_names",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0031_kb_chat_session_scope",
+      "breakpoints": true
     }
   ]
 }

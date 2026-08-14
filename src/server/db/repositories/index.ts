@@ -30,6 +30,8 @@ import { KbCategoriesRepository } from "./kbCategoriesRepository.js";
 import { KbResourcesRepository } from "./kbResourcesRepository.js";
 import { KbChunksRepository } from "./kbChunksRepository.js";
 import { KbAnnouncementsRepository } from "./kbAnnouncementsRepository.js";
+import { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
+import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -130,6 +132,12 @@ export type {
   UpdateKbAnnouncementEntry,
 } from "./kbAnnouncementsRepository.js";
 
+export { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
+export type { CreateKbChatSessionEntry } from "./kbChatSessionsRepository.js";
+
+export { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
+export type { CreateKbChatMessageEntry } from "./kbChatMessagesRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -163,6 +171,8 @@ export interface Repositories {
   kbResources: KbResourcesRepository;
   kbChunks: KbChunksRepository;
   kbAnnouncements: KbAnnouncementsRepository;
+  kbChatSessions: KbChatSessionsRepository;
+  kbChatMessages: KbChatMessagesRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -193,5 +203,7 @@ export function createRepositories(db: AnyDb): Repositories {
     kbResources: new KbResourcesRepository(db),
     kbChunks: new KbChunksRepository(db),
     kbAnnouncements: new KbAnnouncementsRepository(db),
+    kbChatSessions: new KbChatSessionsRepository(db),
+    kbChatMessages: new KbChatMessagesRepository(db),
   };
 }

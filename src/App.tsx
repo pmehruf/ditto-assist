@@ -46,7 +46,8 @@ import {
   Newspaper,
   Search,
   TrendingUp,
-  Database
+  Database,
+  MessageCircle
 } from "lucide-react";
 
 import {
@@ -155,6 +156,9 @@ const SmokeTestPage = lazy(() =>
 const KnowledgeBaseManagementPage = lazy(() =>
   import("./pages/KnowledgeBaseManagementPage").then((m) => ({ default: m.KnowledgeBaseManagementPage }))
 );
+const QueryAssistPage = lazy(() =>
+  import("./pages/QueryAssistPage").then((m) => ({ default: m.QueryAssistPage }))
+);
 
 /** Picks a suitable icon for a Quick Access resource based on keywords in its
  * title (dashboard, checklist, FAQ, Bliss CC medical-condition alert, DWT
@@ -215,7 +219,7 @@ function resolveResourceIcon(resource: { title: string; icon?: string }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "qa_dashboard" | "owner_controls" | "knowledge_base">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "query_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -2712,6 +2716,26 @@ export default function App() {
             </button>
           )}
 
+          {/* Query Assist — advisor chat over the Knowledge Base's documents
+              and announcements, all-tiers like the items above (see
+              QueryAssistPage.tsx / src/server/knowledgeBase/queryAssist.ts). */}
+          {hasAccess("query_assist", "Editor") && (
+            <button
+              onClick={() => {
+                setActiveTab("query_assist");
+                if (isMobile) setIsMenuOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 ${
+                activeTab === "query_assist"
+                  ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                  : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+              } rounded-r-lg border-y-transparent border-r-transparent`}
+            >
+              <MessageCircle className="w-4 h-4 shrink-0 text-blue-300" />
+              <span>Query Assist</span>
+            </button>
+          )}
+
           {/* Advisory Zone — sits ABOVE the Admin Zone divider because it is
               advisor-facing and visible to every tier. */}
           {hasAccess("advisory_zone", "Viewer") && (
@@ -3173,6 +3197,21 @@ export default function App() {
                   title="Specific Illness Check"
                 >
                   <ClipboardCheck style={{ width: "18px", height: "18px" }} />
+                </button>
+              )}
+
+              {hasAccess("query_assist", "Editor") && (
+                <button
+                  onClick={() => setActiveTab("query_assist")}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all ${
+                    activeTab === "query_assist"
+                      ? "bg-white/[0.08] border border-white/[0.14]"
+                      : "hover:bg-white/5"
+                  }`}
+                  style={{ color: activeTab === "query_assist" ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                  title="Query Assist"
+                >
+                  <MessageCircle style={{ width: "18px", height: "18px" }} />
                 </button>
               )}
 
@@ -3674,6 +3713,7 @@ export default function App() {
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 specific_illness_check: { label: "Specific Illness Check", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                query_assist: { label: "Query Assist", icon: <MessageCircle className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4447,6 +4487,27 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Specific Illness Check">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <SpecificIllnessCheckPage theme={theme} dynamicSuggestions={dynamicSuggestions} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* QUERY ASSIST — advisor chat over the Knowledge Base's per-insurer
+              documents and announcements, grounded answers only (see
+              QueryAssistPage.tsx / src/server/knowledgeBase/queryAssist.ts).
+              Visible to every tier, same as lookup/resources above. */}
+          {activeTab === "query_assist" && (
+            <motion.div
+              key="query_assist"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Query Assist">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <QueryAssistPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

@@ -77,6 +77,17 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Viewer"
   },
   {
+    // Interactive (asks questions, creates conversation history), so
+    // Editor like lookup/resources above rather than the Viewer-only
+    // read-only tools — every tier including General can use it.
+    id: "query_assist",
+    name: "Query Assist",
+    description: "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements",
+    defaultTier: "General",
+    generalAccess: "Editor",
+    adminAccess: "Editor"
+  },
+  {
     // QA DASHBOARD — read-only advisor QA scorecard, ported from the
     // standalone Apps Script tool. Visible to every tier (Viewer for both,
     // like coverage_projection above), matching that tool's "Anyone within
