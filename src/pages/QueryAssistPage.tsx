@@ -296,7 +296,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <span>Query Assist</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
-            Ask a question about an insurer's plan(s) and get an answer grounded only in the Knowledge Base's documents and announcements. Conversations are kept on this device only — nothing is stored on the server.
+            Ask. Verify. Understand. Get answers to your product queries, backed by references you can verify.
           </p>
         </div>
         <ClippedButton size="md" onClick={startNewChat} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
@@ -310,9 +310,9 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-4">
         {/* Session history sidebar — local to this browser only */}
-        <div className={`rounded-xl border p-3 space-y-1.5 lg:max-h-[560px] overflow-y-auto ${cardClass}`}>
+        <div className={`rounded-xl border p-3 space-y-1.5 lg:h-[clamp(380px,58vh,680px)] overflow-y-auto ${cardClass}`}>
           <span className="block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1">Recent conversations</span>
           {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
           {sortedSessions.map(s => (
@@ -379,8 +379,10 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             )}
           </div>
 
-          {/* Thread */}
-          <div className="flex-1 min-h-[320px] max-h-[480px] overflow-y-auto space-y-3 pr-1">
+          {/* Thread — height scales with viewport (more room on a large
+              monitor, still compact on a laptop) instead of a flat pixel
+              range, matching this app's usual clamp()-based sizing. */}
+          <div className="flex-1 h-[clamp(320px,52vh,640px)] overflow-y-auto space-y-3 pr-1">
             {messages.length === 0 && (
               <div className="text-xs font-semibold text-content-muted text-center py-10 flex flex-col items-center gap-2">
                 <Sparkles className="w-5 h-5 opacity-50" />

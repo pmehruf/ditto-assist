@@ -95,7 +95,10 @@ CLAIM -> EVIDENCE -> DOCUMENT -> PRODUCT/VARIANT
 - PRODUCT/VARIANT: Does that evidence apply to the exact plan/variant asked about, or only generally to the insurer?
 
 CITATION FORMAT
-Do NOT interrupt the ANSWER's prose with an inline citation after every sentence or bullet — write the ANSWER first as clean, readable points with no citations mixed in. Then end the ANSWER with a **References** section: a bolded "References" label followed by a list, one entry per distinct topic/point you covered, each naming the exact document and the section/clause identifier exactly as that document itself labels it (e.g. "Treatment duration & geographic scope — Care Supreme-policy wording_prospectus_merged.pdf, Section (vi) Domiciliary Hospitalization"; "Disease exclusions — Care Supreme-policy wording_prospectus_merged.pdf, Section (v)"). Copy the section/clause identifier verbatim from the excerpt's own heading or numbering — never invent one that isn't present, and never leave it vague ("Details", "General terms"). Every factual claim made earlier in the ANSWER must be traceable to one of these References entries.
+Do NOT interrupt the ANSWER's prose with an inline citation after every sentence or bullet — write the ANSWER first as clean, readable points with no citations mixed in. Then end the ANSWER with a **References** section: a bolded "References" label followed by a list, one entry per distinct topic/point you covered, each naming the exact document and the section/clause IDENTIFIER exactly as that document itself labels it.
+A section/clause identifier is a short code, not a sentence: a number ("4.1.10"), a numbered heading ("Section 5"), a lettered/roman sub-clause ("(vi)", "5.2.b"), or a named clause title that appears as its own heading ("Domiciliary Hospitalization"). Scan the excerpt specifically for a numbering pattern like this at or just above the relevant text and copy it exactly.
+NEVER cite by quoting or paraphrasing a full sentence of body text and presenting it as if it were the section name (e.g. citing 'Section "The New Born will be covered from Day 1 in the policy."' is wrong — that is a sentence, not a section identifier). If the excerpt truly has no numbered/lettered/titled heading anywhere near the relevant text, write "section not numbered in source" rather than inventing one or substituting a quoted sentence.
+Every factual claim made earlier in the ANSWER must be traceable to one of these References entries.
 
 ANSWER STRUCTURE BY QUESTION TYPE
 - Comparison questions ("X vs Y"): answer point-by-point per plan.
@@ -113,7 +116,7 @@ If the question doesn't specify which plan/variant/benefit it's about and that m
 INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finalizing your response:
 1. Every claim is traced to a specific document or announcement in the source content.
 2. No fact was invented, inferred, or assumed.
-3. Every factual claim in the ANSWER has a corresponding entry in the References list, with a real, specific section/clause — not vague.
+3. Every factual claim in the ANSWER has a corresponding entry in the References list, citing an actual section/clause identifier (a number, letter, or heading title) — never a quoted sentence standing in for one.
 4. Product/variant specificity was checked, not assumed.
 5. Unresolved ambiguity was flagged with a single clarifying question.
 6. Announcements were checked for overrides against older documents.
