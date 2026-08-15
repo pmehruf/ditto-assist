@@ -13,12 +13,12 @@ import { fetchPlaybookSheetValues, PLAYBOOK_SPREADSHEET_ID } from "./playbookShe
 
 /**
  * Per-tab column layout for the Playbook's feature x plan comparison tabs
- * (0-indexed columns: A=0, B=1, ...). Deliberately limited to "Dittos
+ * (0-indexed columns: A=0, B=1, ...). Deliberately limited to "Ditto's
  * Recommended Policies" only — the per-insurer tabs (ICICI Lombard, Bajaj
  * General, IndusInd General, Manipal Cigna, Star) are skipped entirely per
  * explicit product decision: questions about those insurers are rare
  * enough that the sync-time/processing cost of also parsing their (each
- * slightly differently laid out) tabs isn't worth it. "Dittos Recommended
+ * slightly differently laid out) tabs isn't worth it. "Ditto's Recommended
  * Policies" is the multi-insurer master tab (a leading QA-rubric column to
  * discard, feature label, sub-feature label, then one column per plan
  * spanning several insurers — insurerName is left undefined so
@@ -31,7 +31,7 @@ const MATRIX_TABS: Record<
   string,
   { rubricCol?: number; featureCol: number; subFeatureCol: number; extraLabelCol?: number; planStartCol: number; insurerName?: string }
 > = {
-  "Dittos Recommended Policies": { rubricCol: 0, featureCol: 1, subFeatureCol: 2, planStartCol: 3 },
+  "Ditto's Recommended Policies": { rubricCol: 0, featureCol: 1, subFeatureCol: 2, planStartCol: 3 },
 };
 
 /** Narrative-shaped tabs — reshaped into readable text and embedded into
@@ -42,7 +42,7 @@ const NARRATIVE_TABS = ["Recommendation specifics", "Feature Description", "FAQs
 export const ALL_PLAYBOOK_TABS = [...Object.keys(MATRIX_TABS), ...NARRATIVE_TABS];
 
 // Known insurer brand prefixes a plan column header might start with, used
-// only for "Dittos Recommended Policies" (the tab whose columns span
+// only for "Ditto's Recommended Policies" (the tab whose columns span
 // several insurers) — longest-first so e.g. "IndusInd General" is tried
 // before the shorter "IndusInd".
 const KNOWN_INSURER_PREFIXES = [
