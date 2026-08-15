@@ -8,4 +8,5 @@
 -- no announcements yet, so there is nothing to backfill as "Term").
 
 CREATE TYPE "announcement_team" AS ENUM ('Health', 'Term');
+--> statement-breakpoint
 ALTER TABLE "announcements" ADD COLUMN "team" "announcement_team" NOT NULL DEFAULT 'Health';

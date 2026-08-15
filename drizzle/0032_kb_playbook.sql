@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS "kb_playbook_connection" (
   "connected_by" text NOT NULL,
   "connected_at" timestamp with time zone DEFAULT now() NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "kb_playbook_plan_facts" (
   "id" serial PRIMARY KEY NOT NULL,
   "resource_id" integer NOT NULL REFERENCES "kb_resources"("id") ON DELETE CASCADE,
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS "kb_playbook_plan_facts" (
   "content" text NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
-
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "kb_playbook_plan_facts_resource_id_idx" ON "kb_playbook_plan_facts" ("resource_id");
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "kb_playbook_plan_facts_insurer_plan_idx" ON "kb_playbook_plan_facts" ("insurer_name", "plan_name");

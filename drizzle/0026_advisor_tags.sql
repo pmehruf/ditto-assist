@@ -22,12 +22,12 @@
 --                                 same effective behavior as before)
 
 ALTER TABLE "users" ADD COLUMN "tags" text[] NOT NULL DEFAULT '{}';
-
+--> statement-breakpoint
 UPDATE "users" SET "tags" = CASE
   WHEN "advisor_role" = 'Health advisor' THEN ARRAY['Health']
   WHEN "advisor_role" = 'Term advisor' THEN ARRAY['Term']
   WHEN "advisor_role" IN ('Both advisor', 'Manager') THEN ARRAY['Health', 'Term']
   ELSE '{}'::text[]
 END;
-
+--> statement-breakpoint
 ALTER TABLE "users" DROP COLUMN "advisor_role";

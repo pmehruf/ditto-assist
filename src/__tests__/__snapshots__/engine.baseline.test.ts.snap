@@ -30137,7 +30137,7 @@ exports[`engine.ts deterministic classification (regression baseline) > produces
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "cholecystectomy",
     "question_number": undefined,
     "resolved": true,
@@ -30458,7 +30458,7 @@ exports[`engine.ts deterministic classification (regression baseline) > produces
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "cholecystitis",
     "question_number": undefined,
     "resolved": true,
@@ -30797,14 +30797,14 @@ exports[`engine.ts deterministic classification (regression baseline) > produces
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "gall bladder removal",
     "question_number": undefined,
     "resolved": true,
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "gall bladder stone",
     "question_number": undefined,
     "resolved": true,
@@ -32747,14 +32747,14 @@ exports[`engine.ts deterministic classification (regression baseline) > produces
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "gallbladder stone",
     "question_number": undefined,
     "resolved": true,
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "gallbladder disease",
     "question_number": undefined,
     "resolved": true,
@@ -35264,7 +35264,7 @@ exports[`engine.ts deterministic classification (regression baseline) > produces
   },
   {
     "match_type": "P1",
-    "matched_question": "Ulcer (Stomach / Duodenal), or any ailment of Digestive System?",
+    "matched_question": "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?",
     "ped": "cholelithiasis surgery",
     "question_number": undefined,
     "resolved": true,

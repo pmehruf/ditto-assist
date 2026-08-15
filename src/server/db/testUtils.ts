@@ -4,6 +4,7 @@
  */
 
 import { PGlite } from "@electric-sql/pglite";
+import { vector } from "@electric-sql/pglite-pgvector";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import path from "path";
@@ -26,7 +27,11 @@ export type TestDb = ReturnType<typeof drizzle<typeof schema>>;
  * state between instances.
  */
 export async function createTestDb(): Promise<TestDb> {
-  const client = new PGlite();
+  // Registers the pgvector extension so migration 0028's `CREATE EXTENSION
+  // IF NOT EXISTS vector;` (kb_chunks' embedding column) succeeds here too —
+  // PGlite doesn't bundle pgvector by default, only through this separate
+  // extension package (see @electric-sql/pglite-pgvector's own README).
+  const client = new PGlite({ extensions: { vector } });
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: path.join(__dirname, "../../../drizzle") });
   return db;

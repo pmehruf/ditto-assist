@@ -5,4 +5,5 @@
 -- category_id = a "General" session (not tied to any one insurer).
 
 ALTER TABLE "kb_chat_sessions" ADD COLUMN "category_id" integer REFERENCES "kb_categories"("id") ON DELETE SET NULL;
+--> statement-breakpoint
 ALTER TABLE "kb_chat_sessions" ADD COLUMN "plan_tags" text[] NOT NULL DEFAULT '{}';

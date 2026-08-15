@@ -134,7 +134,13 @@ export class AiMemoryRepository {
 
     const base = this.db.select().from(aiMemory);
     const query = filters.length ? base.where(and(...filters)) : base;
-    return query.orderBy(desc(aiMemory.createdAt));
+    // Secondary `id DESC` tiebreak — two rows inserted within the same
+    // millisecond (routine under fast/batched inserts, e.g. seeded test
+    // data or a burst of cache-misses) otherwise sort in an unspecified
+    // order once createdAt ties, since Postgres doesn't guarantee stable
+    // ordering for equal sort keys. `id` is a serial PK, so it reflects
+    // true insertion order and makes "newest first" deterministic.
+    return query.orderBy(desc(aiMemory.createdAt), desc(aiMemory.id));
   }
 
   private buildListConditions(options: AiMemoryListOptions) {
@@ -188,7 +194,10 @@ export class AiMemoryRepository {
       .select()
       .from(aiMemory)
       .where(where)
-      .orderBy(orderFn(sortColumn as any))
+      // Secondary `id` tiebreak (same direction as the primary sort) — see
+      // the comment on list() above; matters most for the default
+      // createdAt sort, where same-millisecond inserts are routine.
+      .orderBy(orderFn(sortColumn as any), orderFn(aiMemory.id))
       .limit(pageSize)
       .offset((clampedPage - 1) * pageSize);
 
@@ -203,7 +212,8 @@ export class AiMemoryRepository {
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = this.sortExpression(options.sortBy);
     const orderFn = options.sortDir === "asc" ? asc : desc;
-    return this.db.select().from(aiMemory).where(where).orderBy(orderFn(sortColumn as any));
+    // Secondary `id` tiebreak — see the comment on list() above.
+    return this.db.select().from(aiMemory).where(where).orderBy(orderFn(sortColumn as any), orderFn(aiMemory.id));
   }
 
   async get(id: number): Promise<AiMemoryRow | undefined> {
