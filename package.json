@@ -22,7 +22,8 @@
     "db:import:qa-history": "tsx scripts/importQaEvaluationHistory.ts",
     "db:fix:gallbladder-category": "tsx scripts/fixGallbladderCategory.ts",
     "db:seed:kb-pdfs": "tsx scripts/seedKnowledgeBasePdfs.ts",
-    "db:seed:kb-urls": "tsx scripts/seedKnowledgeBaseUrls.ts"
+    "db:seed:kb-urls": "tsx scripts/seedKnowledgeBaseUrls.ts",
+    "db:seed:kb-plan-names": "tsx scripts/seedKbCategoryPlanNamesFromPlaybook.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
