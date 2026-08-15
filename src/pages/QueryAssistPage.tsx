@@ -183,14 +183,21 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-grow the composer as the advisor types — compact for a short
-  // question, expanding up to the CSS max-height set on the textarea
-  // (see the composer JSX below), after which its own overflow-y:auto
-  // takes over for internal scrolling instead of growing further.
+  // question, expanding up to the CSS max-height set on the textarea (see
+  // the composer JSX below). Overflow is toggled explicitly rather than
+  // left as a permanent `overflow-y-auto` — Windows/Chromium draws a
+  // visible scrollbar (with up/down arrow buttons) on an overflow-y:auto
+  // textarea even when its content doesn't actually overflow, which showed
+  // up next to the send button on an empty/short, single-line question.
+  // Scrolling only turns on once content genuinely exceeds the cap.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    const maxHeight = parseFloat(getComputedStyle(el).maxHeight);
+    const capped = Number.isFinite(maxHeight) ? maxHeight : Infinity;
+    el.style.height = `${Math.min(el.scrollHeight, capped)}px`;
+    el.style.overflowY = el.scrollHeight > capped ? "auto" : "hidden";
   }, [questionInput]);
 
   useEffect(() => {
@@ -607,7 +614,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // up to this max-height (a bit shorter on small viewports so
                 // it can't dominate a short screen) — beyond that it scrolls
                 // internally instead of growing the composer further.
-                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-auto ${
+                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden ${
                   dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
                 }`}
               />
