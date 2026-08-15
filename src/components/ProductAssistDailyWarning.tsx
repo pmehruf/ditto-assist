@@ -112,8 +112,8 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
         contentWidth: "min(80vw, 1680px)",
         rowGap: "min(4.2vw, 5vh, 64px)",
         mascotWidth: "min(26vw, 44vh, 400px)",
-        ringSize: "min(19vw, 32vh, 250px)",
-        digitFont: "min(8vw, 14vh, 120px)",
+        ringSize: "min(14vw, 24vh, 182px)",
+        digitFont: "min(5.6vw, 9.6vh, 78px)",
         eyebrowFont: "min(1.3vw, 2.2vh, 16px)",
         headlineFont: "min(3.2vw, 5.6vh, 46px)",
         bodyFont: "min(1.25vw, 2.2vh, 17px)",
@@ -179,14 +179,33 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
   );
 
   const mascot = (
-    <img
-      src="/assets/.aistudio/product-assist-mascot.png"
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      className="h-auto flex-shrink-0 select-none"
-      style={{ width: s.mascotWidth }}
-    />
+    <div className="flex flex-shrink-0 flex-col items-center" style={{ width: s.mascotWidth }}>
+      <img
+        src="/assets/.aistudio/product-assist-mascot.png"
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="relative z-10 h-auto w-full select-none"
+        style={{
+          filter: isDark ? "drop-shadow(0 10px 14px rgba(0,0,0,0.45))" : "drop-shadow(0 10px 14px rgba(15,23,42,0.18))",
+        }}
+      />
+      {/* Grounding contact shadow — sells the mascot's sitting pose against
+          the app background instead of floating on top of it. */}
+      <span
+        aria-hidden="true"
+        className="block rounded-full"
+        style={{
+          width: "62%",
+          height: "min(1.6vw, 2.6vh, 16px)",
+          marginTop: "min(-1.4vw, -2.4vh, -14px)",
+          background: isDark
+            ? "radial-gradient(ellipse at center, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 72%)"
+            : "radial-gradient(ellipse at center, rgba(15,23,42,0.25) 0%, rgba(15,23,42,0) 72%)",
+          filter: "blur(1.5px)",
+        }}
+      />
+    </div>
   );
 
   return (
@@ -196,27 +215,23 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
       }`}
       role="alert"
     >
-      {/* Decorative background flourishes — static, low-opacity; echoes the
-          app's own blob/dotted-grid motifs used on the login screen. */}
+      {/* No dedicated warning background — reuses the app's own ambient
+          pattern (same treatment as the login screen in App.tsx) so this
+          screen reads as part of the app, not a separate red-alert skin. */}
       <div
         aria-hidden="true"
-        className={`pointer-events-none absolute -bottom-24 -left-16 select-none font-black leading-none ${
-          isDark ? "text-white/[0.035]" : "text-slate-900/[0.045]"
-        }`}
-        style={{ fontSize: "clamp(180px, 30vw, 460px)" }}
-      >
-        {countdownStart}
-      </div>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute right-6 top-6 grid grid-cols-6 gap-2 opacity-40 sm:right-10 sm:top-10"
-      >
-        {Array.from({ length: 24 }).map((_, i) => (
-          <span key={i} className={`h-1 w-1 rounded-full ${isDark ? "bg-blue-400/40" : "bg-blue-900/20"}`} />
-        ))}
-      </div>
-      {/* Soft blurred glow behind the content cluster — lifts it off the
-          decorative watermark/dot-grid without a hard-edged card boundary. */}
+        className={`pointer-events-none absolute inset-0 select-none ${isDark ? "opacity-55" : "opacity-[0.35]"}`}
+        style={{
+          backgroundImage: isDark
+            ? `url("/assets/.aistudio/background-pattern-dark.svg")`
+            : `url("/assets/.aistudio/background-pattern-light.svg")`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+      {/* Soft blurred glow behind the content cluster — keeps copy legible
+          over the pattern without a hard-edged card boundary. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div
           className={`rounded-full blur-3xl ${isDark ? "bg-[#04162c]/70" : "bg-white/70"}`}
@@ -272,7 +287,7 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
                 AI CAN <span className={isDark ? "text-red-500" : "text-red-600"}>MAKE MISTAKES.</span>
               </h1>
               <p className={`max-w-xl ${isDark ? "text-slate-300" : "text-stone-600"}`} style={{ fontSize: s.bodyFont }}>
-                For the sake of our jobs, let's hope it never becomes perfect. ☠️
+                Thankfully, it's not perfect. Yet. ☠️
               </p>
 
               <div
@@ -282,7 +297,7 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
               >
                 <ShieldAlert className="h-4 w-4 flex-shrink-0" strokeWidth={2.25} />
                 <span className="font-extrabold uppercase tracking-[0.15em]" style={{ fontSize: s.eyebrowFont }}>
-                  GUIDE, NOT JUDGMENT
+                  TRUST BUT VERIFY
                 </span>
                 <span aria-hidden="true" className="pa-warning-hazard-strip absolute -bottom-1 -right-1 h-2.5 w-8 rounded-sm" />
               </div>
@@ -313,36 +328,40 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
               </p>
 
               {/* Acknowledgement — locked until the countdown reaches "00";
-                  real `disabled` attributes below, not a styling trick. */}
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={acknowledged}
-                disabled={!countdownDone}
-                onClick={() => countdownDone && setAcknowledged((a) => !a)}
-                className={`group mt-2 flex items-start gap-3 text-left ${countdownDone ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
-              >
-                <span
-                  className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                    acknowledged
-                      ? isDark
-                        ? "border-red-500 bg-red-500"
-                        : "border-red-600 bg-red-600"
-                      : isDark
-                        ? "border-white/30 group-hover:border-white/50"
-                        : "border-stone-400 group-hover:border-stone-500"
-                  }`}
+                  real `disabled` attributes below, not a styling trick. A
+                  top hairline + extra margin visually separates this
+                  actionable control from the decorative quote above it. */}
+              <div className={`mt-5 w-full max-w-xl border-t pt-4 ${isDark ? "border-white/10" : "border-slate-200"}`}>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={acknowledged}
+                  disabled={!countdownDone}
+                  onClick={() => countdownDone && setAcknowledged((a) => !a)}
+                  className={`group flex items-start gap-3 text-left ${countdownDone ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
                 >
-                  {acknowledged ? (
-                    <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
-                  ) : !countdownDone ? (
-                    <Lock className={`h-3 w-3 ${isDark ? "text-white/30" : "text-stone-400"}`} />
-                  ) : null}
-                </span>
-                <span className={isDark ? "text-slate-200" : "text-stone-700"} style={{ fontSize: s.bodyFont }}>
-                  I acknowledge that "because AI said so" is not a policy clause.💁‍♂️
-                </span>
-              </button>
+                  <span
+                    className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${
+                      acknowledged
+                        ? isDark
+                          ? "border-red-500 bg-red-500"
+                          : "border-red-600 bg-red-600"
+                        : isDark
+                          ? "border-white/30 group-hover:border-white/50"
+                          : "border-stone-400 group-hover:border-stone-500"
+                    }`}
+                  >
+                    {acknowledged ? (
+                      <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                    ) : !countdownDone ? (
+                      <Lock className={`h-3 w-3 ${isDark ? "text-white/30" : "text-stone-400"}`} />
+                    ) : null}
+                  </span>
+                  <span className={isDark ? "text-slate-200" : "text-stone-700"} style={{ fontSize: s.bodyFont }}>
+                    I acknowledge that "because AI said so" is not a policy clause.💁‍♂️
+                  </span>
+                </button>
+              </div>
 
               <PrimaryCtaButton theme={theme} variant="danger" disabled={!canProceed} onClick={handleProceed} className="mt-1">
                 PROCEED TO PRODUCT ASSIST →
