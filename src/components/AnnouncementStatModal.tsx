@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { Megaphone, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
-import { AnnouncementContent } from "../utils/announcementHtml";
+import { AnnouncementContent } from "./AnnouncementContent";
 import { isoDateToDMY } from "../utils/dateFormat";
 import { teamLabel } from "../utils/announcementDisplay";
 

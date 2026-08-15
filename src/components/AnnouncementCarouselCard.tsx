@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { MascotWithFallback } from "./mascots/MascotWithFallback";
 import { QAAnnouncement } from "../types/announcements";
-import { AnnouncementContent } from "../utils/announcementHtml";
+import { AnnouncementContent } from "./AnnouncementContent";
 
 interface AnnouncementCarouselCardProps {
   theme: "light" | "dark";

@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
-import { AnnouncementContent } from "../utils/announcementHtml";
+import { AnnouncementContent } from "./AnnouncementContent";
 import { isoDateToDMY } from "../utils/dateFormat";
 import { ratingColorClasses, teamLabel } from "../utils/announcementDisplay";
 import { ClippedButton } from "./ClippedButton";

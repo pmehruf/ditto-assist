@@ -8,7 +8,7 @@ import { COLOR_HEX } from "./announcementHtml";
 /**
  * LEGACY IMPORTER ONLY (v3 cleanup).
  *
- * Announcements are now stored as sanitized HTML (see announcementHtml.tsx —
+ * Announcements are now stored as sanitized HTML (see announcementHtml.ts —
  * the single unified pipeline for the editor, the manager gallery, the
  * lookup carousel, and the acknowledge modal). This module's one remaining
  * job is a ONE-WAY conversion of legacy rows — content saved before v3 in

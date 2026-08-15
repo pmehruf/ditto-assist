@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Megaphone, CheckCircle2 } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
-import { AnnouncementContent } from "../utils/announcementHtml";
+import { AnnouncementContent } from "./AnnouncementContent";
 import { isoDateToDMY } from "../utils/dateFormat";
 import { ClippedButton } from "./ClippedButton";
 

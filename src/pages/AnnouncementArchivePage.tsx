@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { Search, X, CalendarRange, Maximize2, Download } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
-import { AnnouncementContent } from "../utils/announcementHtml";
+import { AnnouncementContent } from "../components/AnnouncementContent";
 import { isoDateToDMY } from "../utils/dateFormat";
 import { ratingColorClasses, teamLabel } from "../utils/announcementDisplay";
 import { AnnouncementReadModal } from "../components/AnnouncementReadModal";

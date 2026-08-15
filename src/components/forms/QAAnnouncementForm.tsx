@@ -194,7 +194,7 @@ export function QAAnnouncementForm({
   // immediately, etc. That means the authoring surface is a real
   // `contentEditable` div, not a plain `<textarea>`.
   //
-  // v3 STORAGE (see announcementHtml.tsx's file header): what's stored IS
+  // v3 STORAGE (see announcementHtml.ts's file header): what's stored IS
   // this editor's own HTML, passed through the whitelist sanitizer and
   // prefixed with a format sentinel. The published views render that exact
   // same HTML with the exact same CSS — WYSIWYG by construction, replacing
@@ -246,7 +246,7 @@ export function QAAnnouncementForm({
   };
 
   // Text color palette — kept to hex values already used elsewhere in the
-  // app (see announcementHtml.tsx's COLOR_HEX for why each one
+  // app (see announcementHtml.ts's COLOR_HEX for why each one
   // was picked) so "red text" here is the same red as everywhere else.
   // Black/White sits first as an explicit, always-visible swatch (per
   // design feedback: the default text color should be a selectable option
@@ -261,7 +261,7 @@ export function QAAnnouncementForm({
     { key: "yellow", label: "Yellow", swatch: theme === "dark" ? "#fbbf24" : "#a16207" },
     { key: "gray", label: "Gray", swatch: theme === "dark" ? "#9ca3af" : "#57534e" },
   ] as const;
-  // Sourced from announcementHtml.tsx's DEFAULT_INK — the sanitizer now
+  // Sourced from announcementHtml.ts's DEFAULT_INK — the sanitizer now
   // recognizes exactly these two literals as "no real color choice" and
   // lets the text inherit the viewer's own theme color instead of freezing
   // it at whichever theme it was authored under (see isDefaultInkColor's
@@ -465,7 +465,7 @@ export function QAAnnouncementForm({
       // renders as a brownish color, not to actually clear formatting. Pass
       // the real default swatch hex instead (same as every other color
       // button below); the sanitizer specifically recognizes THIS theme's
-      // DEFAULT_INK value (see isDefaultInkColor in announcementHtml.tsx)
+      // DEFAULT_INK value (see isDefaultInkColor in announcementHtml.ts)
       // and treats it as "no color" — NOT "anything far from the 4 palette
       // colors", which was the previous, incorrect version of this comment
       // and the actual root cause of a readability regression: a value
@@ -1319,7 +1319,7 @@ export function QAAnnouncementForm({
               onKeyDown={handleContentKeyDown}
               onPaste={handleContentPaste}
               // announcementSurfaceClasses is the SAME class set the
-              // published views render with (see announcementHtml.tsx) —
+              // published views render with (see announcementHtml.ts) —
               // sharing it is what makes the editor a true WYSIWYG preview.
               // Only the chrome (border, padding, height, focus ring)
               // differs.

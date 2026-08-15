@@ -7,7 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2, Search, Maximize2, Download } from "lucide-react";
 import { QAAnnouncementForm } from "../components/forms/QAAnnouncementForm";
-import { AnnouncementContent } from "../utils/announcementHtml";
+import { AnnouncementContent } from "../components/AnnouncementContent";
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";

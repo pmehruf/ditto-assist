@@ -40,6 +40,13 @@
  * script tags, event handlers, javascript: URLs and arbitrary styles cannot
  * survive — a requirement now that stored HTML is re-injected via
  * dangerouslySetInnerHTML.
+ *
+ * NOTE: this file is logic-only (constants + functions), deliberately kept
+ * separate from AnnouncementContent (../components/AnnouncementContent.tsx),
+ * the one React component that renders this output — a file mixing
+ * component and non-component exports breaks Vite Fast Refresh
+ * (react-refresh/only-export-components), forcing a full reload on every
+ * edit to either half instead of a fast component-only refresh.
  */
 
 import { markupToEditableHtml } from "./announcementEditorHtml";
@@ -472,7 +479,7 @@ export function announcementContentToDisplayHtml(content: string, theme: "light"
 }
 
 // ---------------------------------------------------------------------------
-// Shared surface styling + the one true render component
+// Shared surface styling
 // ---------------------------------------------------------------------------
 
 /**
@@ -480,6 +487,10 @@ export function announcementContentToDisplayHtml(content: string, theme: "light"
  * announcement — same list indents, same blockquote treatment, same code
  * chips, same link styling. Blockquotes are deliberately NOT forced italic:
  * italics inside a quote are the author's choice via the toolbar.
+ *
+ * The one component that consumes this (AnnouncementContent) lives in
+ * ../components/AnnouncementContent.tsx, not here — see the file-header note
+ * above for why.
  */
 export function announcementSurfaceClasses(theme: "light" | "dark"): string {
   const structural =
@@ -491,34 +502,4 @@ export function announcementSurfaceClasses(theme: "light" | "dark"): string {
   return theme === "dark"
     ? `${structural} [&_blockquote]:border-white/20 [&_a]:text-[#00D3F3] [&_code]:bg-white/10`
     : `${structural} [&_blockquote]:border-black/15 [&_a]:text-[#0754B7] [&_code]:bg-black/[0.06]`;
-}
-
-/**
- * THE renderer for published announcement content — used by the manager
- * gallery, the lookup-page carousel, and the read-and-acknowledge modal.
- * `forceLightContrast` keeps supporting the QA card's fixed light-blue
- * background regardless of the ambient theme (same contract the old
- * renderer had).
- */
-export function AnnouncementContent({
-  content,
-  theme,
-  forceLightContrast,
-  className = "",
-}: {
-  content: string;
-  theme: "light" | "dark";
-  forceLightContrast?: boolean;
-  className?: string;
-}) {
-  const effectiveTheme: "light" | "dark" = forceLightContrast ? "light" : theme;
-  return (
-    <div
-      className={`${announcementSurfaceClasses(effectiveTheme)} ${className}`}
-      // Safe by construction: announcementContentToDisplayHtml output is
-      // fully rebuilt against the whitelist sanitizer above — no input
-      // markup ever reaches this string unvalidated.
-      dangerouslySetInnerHTML={{ __html: announcementContentToDisplayHtml(content, effectiveTheme) }}
-    />
-  );
 }
