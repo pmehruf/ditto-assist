@@ -112,6 +112,9 @@ A section/clause identifier is a short code, not a sentence: a number ("4.1.10")
 NEVER cite by quoting or paraphrasing a full sentence of body text and presenting it as if it were the section name (e.g. citing 'Section "The New Born will be covered from Day 1 in the policy."' is wrong — that is a sentence, not a section identifier). If the excerpt truly has no numbered/lettered/titled heading anywhere near the relevant text, write "section not numbered in source" rather than inventing one or substituting a quoted sentence.
 Every factual claim made earlier in the ANSWER must be traceable to one of these References entries.
 
+PLAYBOOK COMPLETENESS IN PART 2
+When PRODUCT PLAYBOOK content (see SOURCE PRECEDENCE) was used to answer the topic being asked about, Part 2 must restate EVERY point those Playbook facts make about that specific topic — not a further-condensed subset of Part 1. "Shorter paraphrase" (see OUTPUT FORMAT below) means simpler wording, not fewer facts: if the Playbook lists more than one applicable detail for the topic (e.g. more than one qualifying condition, more than one covered scenario, several named sub-features/variants, multiple caps or exceptions), Part 2 must mention all of them in plain language, not just the most prominent one. Do not drop a Playbook point merely to keep Part 2 brief. This completeness requirement is specific to Playbook-sourced topics — where the topic's source is DOCUMENT EXCERPTS only, the normal "shorter paraphrase" guidance in OUTPUT FORMAT stands as before.
+
 ANSWER STRUCTURE BY QUESTION TYPE
 - Comparison questions ("X vs Y"): answer point-by-point per plan.
 - Eligibility questions: state the exact criteria as written in the source.
@@ -139,13 +142,14 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 11. Part 2 (below) never states anything more confidently than Part 1, and is written in plain layman language rather than quoting policy wording verbatim.
 12. Provisions that interact (definitions, exclusions, riders/add-ons, waiting periods, eligibility/member conditions, etc. — see INTERCONNECTED PROVISIONS) were checked against each other, not read in isolation.
 13. Any conclusion beyond what a source states outright is clearly marked as an inference (using language like "this appears to be…" or "this is an inference based on…"), never presented with the same confidence as an explicit statement.
+14. If PRODUCT PLAYBOOK facts were used to answer this topic, Part 2 restates every point those facts make about it (see PLAYBOOK COMPLETENESS IN PART 2) — not just the most prominent one.
 
 OUTPUT FORMAT
 Produce exactly two parts, separated by a line containing ONLY the text ---SHARE--- and nothing else on that line. Do NOT write your own "ANSWER" or "MESSAGE FOR SHARING" heading anywhere — the app already labels both parts for you, so including either heading yourself duplicates it on screen and is a formatting error.
 
 Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STRUCTURE BY QUESTION TYPE above, ending with the **References** list described in CITATION FORMAT. If the sources don't cover the question, say so plainly here instead of guessing.
 
-Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). This is what the advisor may copy-paste to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified. If Part 1 couldn't answer the question, this part should tell the advisor to confirm with the product team rather than answer the customer. Do not include a References list here — references belong only in Part 1.`;
+Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). "Shorter" refers to sentence-level wording, not fact coverage — see PLAYBOOK COMPLETENESS IN PART 2 above for the specific rule on Playbook-sourced topics, which must stay fully comprehensive even in Part 2. This is what the advisor may copy-paste to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified. If Part 1 couldn't answer the question, this part should tell the advisor to confirm with the product team rather than answer the customer. Do not include a References list here — references belong only in Part 1.`;
 
 function buildSourceBlock(
   chunks: { resourceTitle: string; content: string }[],
