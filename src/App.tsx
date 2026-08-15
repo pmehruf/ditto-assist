@@ -699,20 +699,29 @@ export default function App() {
   // per functional group (not per page); clicking a group icon expands it
   // INLINE, downward, within the same collapsed-width rail — revealing that
   // group's child pages as their own icon-only buttons directly beneath it
-  // (CRM-style disclosure, not a floating flyout/popup). Only one group is
-  // expanded at a time. Auto-follows the active tab (same convention as
+  // (CRM-style disclosure, not a floating flyout/popup). Any number of
+  // groups can be expanded at once — expanding one does not collapse
+  // others already open. Auto-follows the active tab (same convention as
   // openSections above for the expanded sidebar) so the rail always shows
-  // the group you're actually in; a manual click can still expand a
-  // different group to browse it without navigating away yet.
-  const [expandedRailGroup, setExpandedRailGroup] = useState<SidebarSectionKey | null>(null);
+  // the group you're actually in, in addition to whatever else is already
+  // open; a manual click can still expand a different group to browse it
+  // without navigating away yet.
+  const [expandedRailGroups, setExpandedRailGroups] = useState<Set<SidebarSectionKey>>(new Set());
   const toggleRailGroup = (key: SidebarSectionKey) => {
-    setExpandedRailGroup(prev => (prev === key ? null : key));
+    setExpandedRailGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
   useEffect(() => {
     const owningSection = (Object.keys(SIDEBAR_SECTION_TABS) as SidebarSectionKey[]).find(key =>
       SIDEBAR_SECTION_TABS[key].includes(activeTab)
     );
-    if (owningSection) setExpandedRailGroup(owningSection);
+    if (owningSection) {
+      setExpandedRailGroups(prev => (prev.has(owningSection) ? prev : new Set(prev).add(owningSection)));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -3065,7 +3074,7 @@ export default function App() {
                   expands it INLINE, downward, within the collapsed rail —
                   revealing that group's pages as their own icon buttons
                   directly beneath it (CRM-style disclosure; see
-                  expandedRailGroup above) — it never auto-navigates to one
+                  expandedRailGroups above) — it never auto-navigates to one
                   child. No standalone Home icon — Home is reached via the
                   branding block / header wordmark, same as the expanded
                   sidebar. */}
@@ -3077,7 +3086,7 @@ export default function App() {
                   {zone.groups.map((group, groupIdx) => {
                     const isGroupActive = group.pages.some(page => page.isActive);
                     const hasAlert = group.pages.some(page => page.hasAlertDot) || (group.key === "developer" && hiddenPages.length > 0);
-                    const isExpanded = expandedRailGroup === group.key;
+                    const isExpanded = expandedRailGroups.has(group.key);
                     return (
                       <React.Fragment key={group.key}>
                         {groupIdx > 0 && (
