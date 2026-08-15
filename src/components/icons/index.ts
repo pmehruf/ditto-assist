@@ -24,3 +24,5 @@ export type { } from './DeclarationMapIcon';
 export { QaDashboardIcon } from './QaDashboardIcon';
 export type { } from './QaDashboardIcon';
 
+export { OperationsControlIcon } from './OperationsControlIcon';
+

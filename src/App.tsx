@@ -50,7 +50,6 @@ import {
   ToolCase,
   Award,
   Library,
-  Workflow,
   ShieldUser,
   Terminal,
   MessageCircleQuestion
@@ -85,7 +84,7 @@ import { LoggedUser, UserProfile } from "./types/user";
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon, QaDashboardIcon } from "./components/icons";
+import { DeclarationMapIcon, QaDashboardIcon, OperationsControlIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
@@ -95,6 +94,7 @@ import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
 import { SkillDomainPromptModal } from "./components/SkillDomainPromptModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
+import { ProductAssistDailyWarning } from "./components/ProductAssistDailyWarning";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { downloadCSV } from "./utils/csvExport";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
@@ -225,6 +225,15 @@ const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections"]);
 function resolveResourceIcon(resource: { title: string; icon?: string }) {
   if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
   return getResourceIcon(resource.title);
+}
+
+/** LOCAL calendar date (not UTC — toISOString() would shift near midnight
+ * depending on the advisor's timezone) as YYYY-MM-DD, e.g. for the Product
+ * Assist daily warning's "next calendar day" reset. Same pattern already
+ * used by LookupIntroPage/QaDashboardPage/QaScoreWidget. */
+function toLocalDateKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export default function App() {
@@ -2157,6 +2166,68 @@ export default function App() {
   // import it directly; kept as a bound local name here since it's still
   // threaded down as a prop to a couple of pages (e.g. AuditPage).
 
+  // Product Assist daily AI-awareness warning — full-screen takeover shown
+  // before Product Assist opens. State is server-persisted per advisor
+  // (ProductAssistAcksRepository, not just localStorage) so it survives a
+  // cleared cache or a new device:
+  //  - "checking" (initial) — full-screen holding state while the server
+  //    state loads, so the shell/sidebar never flashes underneath.
+  //  - "first" — this advisor has never completed the full warning; shown
+  //    exactly once ever (10s countdown + acknowledgement + Proceed).
+  //  - "reminder" — already acknowledged, but hasn't seen today's local
+  //    calendar day's lightweight 5s reminder yet.
+  //  - "clear" — nothing to show; render Product Assist normally.
+  // Declared here (unconditionally, before either early return below) to
+  // satisfy the Rules of Hooks; the actual full-screen render gate lives
+  // further down, right after the login early-return, where `currentUser`
+  // is guaranteed non-null.
+  const [productAssistGateState, setProductAssistGateState] = useState<"checking" | "first" | "reminder" | "clear">("checking");
+  useEffect(() => {
+    if (activeTab !== "query_assist" || !currentUser) return;
+    if (productAssistGateState !== "checking") return; // already resolved this session
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/query-assist/warning-state");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        if (cancelled) return;
+        if (!body.ackedAt) {
+          setProductAssistGateState("first");
+        } else if (body.lastReminderDate !== toLocalDateKey(new Date())) {
+          setProductAssistGateState("reminder");
+        } else {
+          setProductAssistGateState("clear");
+        }
+      } catch (_) {
+        // Fail open — a flaky network must never lock an advisor out of
+        // Product Assist entirely (same philosophy as the mandatory
+        // announcement read-and-acknowledge gate elsewhere in this file).
+        if (!cancelled) setProductAssistGateState("clear");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, currentUser, productAssistGateState]);
+
+  const handleProductAssistGateComplete = () => {
+    const wasFirst = productAssistGateState === "first";
+    setProductAssistGateState("clear");
+    // Fire-and-forget, same optimistic pattern as handleAcknowledgeAnnouncement
+    // above — advance the UI immediately; if the POST fails, the next open
+    // simply shows the same gate again, which is safe (re-doing an
+    // acknowledgement/reminder is harmless; a lockout on a failed request
+    // wouldn't be).
+    fetch(wasFirst ? "/api/query-assist/warning-ack" : "/api/query-assist/warning-reminder-shown", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ localDate: toLocalDateKey(new Date()) }),
+    }).catch((err) => {
+      console.error("Failed to record Product Assist warning state:", err);
+    });
+  };
+
   // Verifying the real Google session with the server — avoid flashing the
   // login screen (or the app) before we know the answer.
   if (authChecking) {
@@ -2644,6 +2715,31 @@ export default function App() {
     );
   }
 
+  // Product Assist daily AI-awareness warning — dedicated full-viewport
+  // takeover, same "bypass the whole shell" pattern as the login screen
+  // above (no sidebar/header/content behind it), while we're either still
+  // checking server state or actively showing the warning.
+  if (productAssistGateState === "checking" && activeTab === "query_assist") {
+    return (
+      <div
+        className={`h-screen w-full flex items-center justify-center ${
+          isDark ? "bg-[#001322] text-[#F5F7FA]" : "bg-[#F1F6FB] text-stone-900"
+        }`}
+      >
+        <RefreshCw className={`w-6 h-6 animate-spin ${isDark ? "text-cyan-400" : "text-blue-600"}`} />
+      </div>
+    );
+  }
+  if (productAssistGateState === "first" || productAssistGateState === "reminder") {
+    return (
+      <ProductAssistDailyWarning
+        theme={theme}
+        variant={productAssistGateState}
+        onComplete={handleProductAssistGateComplete}
+      />
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────
   // Shared sidebar navigation model — Zone -> Functional Group -> Page.
   // This is the single source of truth both the expanded sidebar (full
@@ -2770,7 +2866,7 @@ export default function App() {
         {
           key: "appOpsControls",
           label: "Operations Control",
-          GroupIcon: Workflow,
+          GroupIcon: OperationsControlIcon,
           pages: [
             navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
             navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
@@ -3086,7 +3182,13 @@ export default function App() {
                   )}
                   {zone.groups.map((group, groupIdx) => {
                     const isGroupActive = group.pages.some(page => page.isActive);
-                    const hasAlert = group.pages.some(page => page.hasAlertDot) || (group.key === "developer" && hiddenPages.length > 0);
+                    // Developer Controls intentionally excluded from the
+                    // hidden-pages pulse below — Feature Visibility already
+                    // surfaces its hidden-page count as a plain badge (see
+                    // the expanded sidebar), so a second pulsing alert on
+                    // the group icon itself was redundant/noisy for a
+                    // routine, expected state rather than something urgent.
+                    const hasAlert = group.pages.some(page => page.hasAlertDot);
                     const isExpanded = expandedRailGroups.has(group.key);
                     return (
                       <React.Fragment key={group.key}>

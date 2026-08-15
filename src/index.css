@@ -686,6 +686,59 @@ html:not(.dark) select:not(#insurance-plan-dropdown) {
 }
 .animate-notification-glow { animation: custom-notification-glow 1.8s infinite ease-in-out; }
 
+/* Product Assist daily AI-awareness warning — each countdown digit gets a
+   single restrained pulse/glow as it appears (remounted via `key`, so this
+   plays once per number rather than looping); the reduced-motion rule above
+   collapses this to a near-instant swap while the countdown's own 5-second
+   JS timing is unaffected. Deliberately just ONE gentle pulse, not a loop —
+   spec calls for "restrained and professional, not flashy or distracting". */
+@keyframes product-assist-warning-pulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+    text-shadow: 0 0 0 rgba(220, 38, 38, 0);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1.05);
+    text-shadow: 0 0 30px rgba(220, 38, 38, 0.55);
+  }
+  55% {
+    transform: scale(1);
+    text-shadow: 0 0 14px rgba(220, 38, 38, 0.35);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    text-shadow: 0 0 10px rgba(220, 38, 38, 0.22);
+  }
+}
+.pa-warning-countdown { animation: product-assist-warning-pulse 0.9s ease-out; }
+
+/* Static (non-animated, non-scrolling) hazard accent strip — a subtle
+   diagonal stripe, not a strobing/moving one, per "no continuous
+   screen-wide animation". */
+.pa-warning-hazard-strip {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(220, 38, 38, 0.5) 0px,
+    rgba(220, 38, 38, 0.5) 10px,
+    rgba(0, 0, 0, 0) 10px,
+    rgba(0, 0, 0, 0) 20px
+  );
+  opacity: 0.7;
+}
+
+/* Status dot next to "Opening Product Assist..." — a slow, gentle breathing
+   pulse (distinct keyframe from the countdown's one-shot pulse above, and
+   much subtler) so the screen reads as active without competing with the
+   countdown as the primary animated element. */
+@keyframes product-assist-status-dot {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.pa-warning-status-dot { animation: product-assist-status-dot 2s ease-in-out infinite; }
+
 /* Header alert dot (only survivor of the old design-* set) */
 .design-notif-dot {
   position: absolute;

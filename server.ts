@@ -3700,6 +3700,76 @@ app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
   }
 });
 
+// Daily AI-awareness warning gate (see ProductAssistDailyWarning.tsx) —
+// server-persisted per user (product_assist_acks) so the state survives a
+// cleared browser cache or a new device, not just localStorage. GET returns
+// both facts in one call so the client can decide, before rendering
+// anything, which of first-ever-warning / daily-reminder / neither to show.
+app.get("/api/query-assist/warning-state", requireAuth, async (req, res) => {
+  try {
+    const { productAssistAcks } = createRepositories(getDb());
+    const row = await productAssistAcks.get(req.user!.email);
+    return res.json({
+      ackedAt: row?.ackedAt ? row.ackedAt.toISOString() : null,
+      lastReminderDate: row?.lastReminderDate ?? null,
+    });
+  } catch (err: any) {
+    console.error("Failed to load Product Assist warning state:", err);
+    return res.status(500).json({ error: `Failed to load warning state: ${err.message}` });
+  }
+});
+
+// Records the one-time first-ever acknowledgement (10s countdown + checkbox
+// + Proceed). `localDate` is the advisor's own LOCAL calendar date
+// (YYYY-MM-DD — see toLocalDateKey in App.tsx), not the server's, and also
+// covers today's daily reminder so it doesn't fire again later the same day.
+app.post("/api/query-assist/warning-ack", requireAuth, async (req, res) => {
+  try {
+    const { localDate } = req.body;
+    if (typeof localDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+      return res.status(400).json({ error: "localDate must be a YYYY-MM-DD string." });
+    }
+    const { productAssistAcks } = createRepositories(getDb());
+    await productAssistAcks.acknowledge(req.user!.email, localDate);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to record Product Assist acknowledgement:", err);
+    return res.status(500).json({ error: `Failed to record acknowledgement: ${err.message}` });
+  }
+});
+
+// Records that today's lightweight daily reminder was shown (see comment
+// on warning-ack above re: why localDate is client-supplied).
+app.post("/api/query-assist/warning-reminder-shown", requireAuth, async (req, res) => {
+  try {
+    const { localDate } = req.body;
+    if (typeof localDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
+      return res.status(400).json({ error: "localDate must be a YYYY-MM-DD string." });
+    }
+    const { productAssistAcks } = createRepositories(getDb());
+    await productAssistAcks.recordReminderShown(req.user!.email, localDate);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to record Product Assist reminder shown:", err);
+    return res.status(500).json({ error: `Failed to record reminder shown: ${err.message}` });
+  }
+});
+
+// Self-service reset for QA/demo purposes — deletes the caller's own row so
+// their next Query Assist visit replays the first-ever 10s warning as a
+// brand-new user would see it. Scoped to req.user!.email only (no target
+// email in the request), so it can only ever reset the caller's own state.
+app.post("/api/query-assist/warning-reset", requireAuth, async (req, res) => {
+  try {
+    const { productAssistAcks } = createRepositories(getDb());
+    await productAssistAcks.reset(req.user!.email);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to reset Product Assist warning state:", err);
+    return res.status(500).json({ error: `Failed to reset warning state: ${err.message}` });
+  }
+});
+
 // Query Assist keeps NO server-side record of advisor conversations — per
 // explicit product decision, chat history is local-memory only, held in the
 // advisor's own browser (see QueryAssistPage.tsx's localStorage-backed

@@ -24,9 +24,19 @@ function starPoints(cx: number, cy: number, outerR: number, innerR: number): str
 
 // Five star centers arranged in a ring (one star pointing straight up), mirroring
 // the reference artwork — a "5 stars in a circle" QA-rating motif.
-const RING_RADIUS = 26;
-const STAR_OUTER = 13;
-const STAR_INNER = 5.2;
+//
+// RING_RADIUS/STAR_OUTER were previously 26/13 with strokeWidth 7: at that
+// ratio, adjacent stars' bounding circles nearly touch (gap of only ~4.5
+// units against a stroke that extends ~3.5 units past each path), so the
+// thick outlines bridged the gaps and fused into one closed flower/gear
+// shape instead of 5 legible individual stars — defeating the "5-star
+// rating" motif entirely. Pushing the ring out and slimming both the stars
+// and the stroke (verified at the actual sidebar render size, ~22px, via a
+// live side-by-side in Chrome) keeps a clear gap between every star while
+// each one stays large enough to still read as a star, not a dot.
+const RING_RADIUS = 32;
+const STAR_OUTER = 12;
+const STAR_INNER = 4.8;
 const STAR_CENTERS = Array.from({ length: 5 }, (_, i) => {
   const angle = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
   return { x: 50 + RING_RADIUS * Math.cos(angle), y: 50 + RING_RADIUS * Math.sin(angle) };
@@ -58,7 +68,7 @@ export const QaDashboardIcon: React.FC<QaDashboardIconProps> = ({
       viewBox="0 0 100 100"
       fill="none"
       stroke={color}
-      strokeWidth={7}
+      strokeWidth={5}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}

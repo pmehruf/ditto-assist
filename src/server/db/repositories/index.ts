@@ -33,6 +33,7 @@ import { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
 import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 import { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
 import { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
+import { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -138,6 +139,8 @@ export { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository
 export { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
 export type { CreateKbPlaybookPlanFactEntry } from "./kbPlaybookPlanFactsRepository.js";
 
+export { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -174,6 +177,7 @@ export interface Repositories {
   kbChatMessages: KbChatMessagesRepository;
   kbPlaybookConnection: KbPlaybookConnectionRepository;
   kbPlaybookPlanFacts: KbPlaybookPlanFactsRepository;
+  productAssistAcks: ProductAssistAcksRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -207,5 +211,6 @@ export function createRepositories(db: AnyDb): Repositories {
     kbChatMessages: new KbChatMessagesRepository(db),
     kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
     kbPlaybookPlanFacts: new KbPlaybookPlanFactsRepository(db),
+    productAssistAcks: new ProductAssistAcksRepository(db),
   };
 }

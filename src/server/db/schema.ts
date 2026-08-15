@@ -209,6 +209,28 @@ export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// product_assist_acks — one row per user recording the Product Assist daily
+// AI-awareness warning's state SERVER-SIDE (not just browser localStorage),
+// so it survives a cleared cache or a new device:
+//  - ackedAt — set exactly once, the first time this advisor completes the
+//    full first-ever warning's 10-second countdown + checkbox + Proceed
+//    flow. Never cleared afterward.
+//  - lastReminderDate — the advisor's own LOCAL calendar date (YYYY-MM-DD,
+//    not the server's) the lightweight daily reminder was last shown (or
+//    was subsumed by completing the first-ever flow that same day — see
+//    ProductAssistAcksRepository.acknowledge).
+// No row yet = this user has never seen either. Purely additive.
+// ─────────────────────────────────────────────────────────────────────────
+export const productAssistAcks = pgTable("product_assist_acks", {
+  userEmail: varchar("user_email", { length: 320 }).primaryKey(),
+  ackedAt: timestamp("acked_at", { withTimezone: true }),
+  lastReminderDate: text("last_reminder_date"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ProductAssistAckRow = typeof productAssistAcks.$inferSelect;
+
+// ─────────────────────────────────────────────────────────────────────────
 // external_resources — admin/developer-curated list of external links (SOPs,
 // QA Dashboard, etc.) surfaced in the Workspace Controls drawer for every
 // user. Read by everyone; writable by Admin/Developer only (enforced in the
