@@ -3137,7 +3137,24 @@ export default function App() {
                         {/* Inline downward expansion — this group's pages
                             rendered as their own icon-only buttons, indented
                             no further than the group icon itself so the
-                            whole rail stays a fixed width. */}
+                            whole rail stays a fixed width.
+
+                            shrink-0 is load-bearing here: this is a flex
+                            child of the rail's scrollable column (see
+                            flex-grow min-h-0 overflow-y-auto above), same as
+                            every other item in that column. Without it, once
+                            enough groups are expanded to exceed the rail's
+                            available height, the flex algorithm squeezes
+                            THIS item down to make everything fit instead of
+                            leaving it full height and letting the column
+                            scroll — and because this element's own overflow
+                            is hidden (needed for the height:0->auto open/
+                            close animation), the squeeze silently clips its
+                            page icons rather than resizing them, which is
+                            what read as icons "disappearing"/"compressing".
+                            shrink-0 forces every group's full page list to
+                            stay full size, pushing the overflow onto the
+                            column's own scrollbar instead. */}
                         <AnimatePresence initial={false}>
                           {isExpanded && !group.isDirectPage && (
                             <motion.div
@@ -3145,7 +3162,7 @@ export default function App() {
                               animate={{ height: "auto", opacity: 1 }}
                               exit={{ height: 0, opacity: 0 }}
                               transition={{ duration: 0.18, ease: "easeInOut" }}
-                              className="w-full flex flex-col items-center gap-2 overflow-hidden"
+                              className="w-full flex flex-col items-center gap-2 overflow-hidden shrink-0"
                             >
                               {group.pages.map(page => (
                                 <button
