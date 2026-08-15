@@ -317,20 +317,13 @@ export function ProductAssistDailyWarning({ theme, variant, onComplete }: Produc
                 </div>
               </div>
 
-              <p className={`max-w-xl italic ${isDark ? "text-slate-500" : "text-stone-500"}`} style={{ fontSize: s.bodyFont }}>
-                <span aria-hidden="true" className={`mr-1 not-italic ${isDark ? "text-blue-400/70" : "text-blue-500/70"}`}>
-                  "
-                </span>
-                Because 'the AI said so' isn't a policy clause.
-                <span aria-hidden="true" className={`ml-1 not-italic ${isDark ? "text-blue-400/70" : "text-blue-500/70"}`}>
-                  "
-                </span>
-              </p>
-
               {/* Acknowledgement — locked until the countdown reaches "00";
                   real `disabled` attributes below, not a styling trick. A
                   top hairline + extra margin visually separates this
-                  actionable control from the decorative quote above it. */}
+                  actionable control from the guide bullets above it. The
+                  "because AI said so" line only needs to appear once, in
+                  the acknowledgement itself — no separate quote repeating
+                  it above. */}
               <div className={`mt-5 w-full max-w-xl border-t pt-4 ${isDark ? "border-white/10" : "border-slate-200"}`}>
                 <button
                   type="button"
