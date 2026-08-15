@@ -3908,7 +3908,7 @@ async function startServer() {
       console.log(`[PED Repository] DB-backed runtime cache initialized: ${aliasCount} aliases loaded and ready.`);
       if (aliasCount === 0) {
         console.warn(
-          "[PED Repository] WARNING: DB-backed cache loaded with 0 aliases — classifyDeterministic will resolve nothing deterministically and every lookup will fall through to AI Memory/Gemini. Check DATABASE_URL and confirm scripts/seedPedRepository.ts --apply has been run against this database."
+          "[PED Repository] WARNING: DB-backed cache loaded with 0 aliases — classifyDeterministic will resolve nothing deterministically and every lookup will fall through to AI Memory/Gemini. Check DATABASE_URL and confirm the PED Repository has been populated (via the PED Repository admin page, which now writes ped_repository/ped_aliases directly) against this database."
         );
       }
     } catch (err) {

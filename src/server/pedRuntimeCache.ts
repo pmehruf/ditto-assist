@@ -42,6 +42,11 @@ import type { Repositories } from "./db/repositories/index.js";
  * this DB-backed cache does NOT consult. [...] wiring PED Library / AI
  * Mapping Review to also write into the new tables is a separate decision,
  * out of scope for 'wire the runtime engine so it can read' (this phase)."
+ *
+ * SUPERSEDED (2026-07-29): the PED Repository admin page now writes
+ * ped_repository/ped_aliases directly — the gap above is closed and
+ * scripts/seedPedRepository.ts (the one-time seed script referenced in the
+ * historical note) has been removed as no longer needed.
  * — "PED Library" (the term the original note used) is what's now wired;
  * AI Mapping Review is not, and `updateDbPlanOverrideCache`/
  * `removeDbPlanOverrideCache` are still unused (no `plan_overrides` admin UI
