@@ -56,6 +56,16 @@ const SESSIONS_STORAGE_KEY = "queryAssist.sessions.v1";
 // server does its own trimming.
 const HISTORY_TURNS_TO_SEND = 8;
 
+// Shown as one-tap starter chips on the empty state, once an insurer is
+// chosen — generic enough to apply across insurers/plans rather than
+// hardcoding any one product's terms. Purely a composer shortcut (fills the
+// input, doesn't auto-send) so the advisor can still edit before asking.
+const EXAMPLE_QUESTIONS = [
+  "What are the waiting periods for pre-existing conditions?",
+  "What's excluded from this plan's coverage?",
+  "How does the claims process work for this plan?",
+];
+
 function genId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -170,6 +180,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   const [sendError, setSendError] = useState<string | null>(null);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow the composer as the advisor types — compact for a short
+  // question, expanding up to the CSS max-height set on the textarea
+  // (see the composer JSX below), after which its own overflow-y:auto
+  // takes over for internal scrolling instead of growing further.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [questionInput]);
 
   useEffect(() => {
     (async () => {
@@ -333,7 +355,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-4 lg:flex-1 lg:min-h-0">
         {/* Session history sidebar — local to this browser only */}
         <div className={`rounded-xl border p-3 flex flex-col min-h-0 lg:h-full overflow-hidden ${cardClass}`}>
-          <span className="shrink-0 block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 mb-1.5">Recent conversations</span>
+          <span className="shrink-0 block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 pb-2 mb-1.5 border-b border-dashed border-stone-300/30">Recent conversations</span>
           <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 no-scrollbar">
           {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
           {sortedSessions.map(s => (
@@ -372,8 +394,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
         {/* Main chat panel */}
         <div className={`rounded-xl border p-4 flex flex-col min-h-0 lg:h-full overflow-hidden space-y-3 ${cardClass}`}>
-          {/* Scope selector */}
-          <div className="shrink-0 flex flex-wrap items-end gap-3 pb-3 border-b border-dashed border-stone-300/30">
+          {/* Scope selector — insurer + plan chips grouped into one bordered
+              "conversation scope" block so they read as a single context
+              layer sitting above the conversation thread, rather than a bare
+              row of controls blending into the card. */}
+          <div className={`shrink-0 rounded-lg border p-3 flex flex-wrap items-end gap-3 ${
+            dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-200"
+          }`}>
+            <div className="w-full flex items-center justify-between gap-2 -mb-1">
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-content-muted">Conversation scope</span>
+              {scopeLocked && (
+                <span className="text-[10px] font-medium text-content-muted opacity-80">🔒 Locked · Start a new chat to change insurer or plans.</span>
+              )}
+            </div>
             <div className="w-full sm:w-64">
               {/* Insurer is the primary context — plans below it are a
                   refinement of that context, not a peer choice, so it gets
@@ -387,11 +420,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 placeholder="Choose an insurer or General"
                 options={categoryOptions}
                 disabled={scopeLocked}
+                // Matches the compact trigger sizing used for every other
+                // filter/select across the app (Audit, My Activity, Plan
+                // Management, …) instead of CustomSelect's larger default
+                // trigger, which read as oversized next to those.
+                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-3 pr-8 py-2 rounded-lg border outline-none transition-colors relative ${
+                  scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                } ${dark ? "bg-white/[0.04] border-white/[0.1] text-white" : "bg-white border-stone-300 text-stone-900"}`}
               />
             </div>
             {selectedCategory && selectedCategory.planNames.length > 0 && (
               <div className="flex-1 min-w-[200px]">
-                <label className="block text-[9.5px] font-semibold uppercase tracking-wide text-content-muted opacity-80 mb-1 flex items-center gap-1"><Tag className="w-3 h-3" /> Plans — optional</label>
+                <label className="block text-[9.5px] font-semibold uppercase tracking-wide text-content-muted opacity-80 mb-1 flex items-center gap-1"><Tag className="w-3 h-3" /> Plans · optional</label>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedCategory.planNames.map(plan => (
                     <button
@@ -411,9 +451,6 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 </div>
               </div>
             )}
-            {scopeLocked && (
-              <span className="text-[10px] font-medium text-content-muted opacity-80">🔒 Scope locked · Start a new chat to change insurer or plans.</span>
-            )}
           </div>
 
           {/* Thread — fills whatever space is left in the card (see the
@@ -425,9 +462,34 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               and the page scrolls normally. */}
           <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-3 pr-1">
             {messages.length === 0 && (
-              <div className="text-xs font-semibold text-content-muted text-center py-10 flex flex-col items-center gap-2">
-                <Sparkles className="w-5 h-5 opacity-50" />
-                Choose an insurer above and ask your first question.
+              <div className="flex flex-col items-center justify-center gap-3 text-center py-10">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center ${dark ? "bg-white/[0.06]" : "bg-stone-100"}`}>
+                  <Sparkles className="w-4 h-4 opacity-60" />
+                </div>
+                <div className="space-y-1 max-w-sm">
+                  <p className={`text-xs font-bold ${dark ? "text-white" : "text-stone-800"}`}>
+                    {selectedCategoryValue ? "Ask your first question." : "Choose an insurer above and ask your first question."}
+                  </p>
+                  <p className="text-[11px] font-medium text-content-muted">
+                    Ask about coverage, exclusions, waiting periods, add-ons, claims or plan benefits.
+                  </p>
+                </div>
+                {selectedCategoryValue && (
+                  <div className="flex flex-wrap justify-center gap-1.5 max-w-md">
+                    {EXAMPLE_QUESTIONS.map(q => (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setQuestionInput(q)}
+                        className={`text-[10.5px] font-semibold px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
+                          dark ? "bg-white/[0.04] border-white/[0.1] text-stone-300 hover:bg-white/[0.08]" : "bg-white border-stone-300 text-stone-600 hover:bg-stone-50"
+                        }`}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {messages.map(m => {
@@ -511,13 +573,14 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               button bolted on next to it. */}
           <div className="shrink-0 pt-2 border-t border-dashed border-stone-300/30">
             <div
-              className={`flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
+              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
                 dark
                   ? "bg-white/[0.04] border-white/[0.1]"
                   : "bg-white border-stone-300"
               }`}
             >
               <textarea
+                ref={textareaRef}
                 value={questionInput}
                 onChange={e => setQuestionInput(e.target.value)}
                 onKeyDown={e => {
@@ -540,7 +603,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 data-gramm="false"
                 data-gramm_editor="false"
                 data-enable-grammarly="false"
-                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 ${
+                // Auto-grows with the JS height calc in the effect above,
+                // up to this max-height (a bit shorter on small viewports so
+                // it can't dominate a short screen) — beyond that it scrolls
+                // internally instead of growing the composer further.
+                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-auto ${
                   dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
                 }`}
               />

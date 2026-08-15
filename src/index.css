@@ -576,6 +576,20 @@ html {
   outline: none;
 }
 
+/* Product Assist composer — scoped, subtle on-brand focus indicator.
+   The global rule above removes the browser default everywhere per that
+   same product decision, but a message composer benefits from SOME visible
+   affordance while typing rather than zero indication — this is a
+   per-component opt-in, not a reversal of the global removal. Deliberately
+   NOT the old app-wide themed ring (rejected earlier for being a bright,
+   square, browser-default-looking box): a soft 1px accent border plus a
+   faint diffuse glow, sized to the pill's own rounded-xl corners, only
+   active while a child of .qa-composer has focus. */
+.qa-composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
