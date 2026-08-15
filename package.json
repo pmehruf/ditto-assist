@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "ditto-assist",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -42,8 +42,7 @@
     "postgres": "^3.4.9",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "recharts": "^3.8.1",
-    "vite": "^6.2.3"
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.3",
