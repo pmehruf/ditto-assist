@@ -564,27 +564,16 @@ html {
 .announcement-scroll { scrollbar-width: thin; scrollbar-color: #64748B transparent; }
 .announcement-scroll.on-dark { scrollbar-color: #5A6E8C transparent; }
 
-/* Keyboard focus visibility — one ring, themed */
-:focus-visible {
-  outline: 2px solid var(--focus-ring) !important; /* beats scattered focus:outline-none utilities */
-  outline-offset: 2px;
-}
-:focus:not(:focus-visible) { outline: none; }
-
-/* Query Assist composer (QueryAssistPage.tsx): the textarea itself has no
-   border-radius (its parent pill does), so the global :focus-visible ring
-   above draws as a sharp rectangle poking out of the rounded pill instead
-   of hugging it — reads as a stray browser-default box, not a themed
-   focus state. Fix: redirect the indicator to the pill container, which
-   IS rounded, via :focus-within, and suppress only the inner textarea's
-   own outline — the pill's ring is the equivalent replacement, not a
-   silent removal, so keyboard-focus visibility is preserved. */
-.query-assist-composer:focus-within {
-  border-color: var(--focus-ring);
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-.query-assist-composer textarea:focus-visible {
-  outline: none !important;
+/* Keyboard focus visibility — explicitly disabled app-wide per product
+   decision (2026-08-15): no themed ring, no browser-default outline, on
+   any element, anywhere. This also suppresses the native default outline
+   browsers draw on their own (which would otherwise reappear once the
+   custom ring below is gone) — `outline: none` on both :focus and
+   :focus-visible, not just a deleted rule. Per-field focus border-color
+   accents defined elsewhere (individual page/component classes) are
+   untouched — this only removes the glow/outline layer. */
+:focus, :focus-visible {
+  outline: none;
 }
 
 /* Reduced motion */

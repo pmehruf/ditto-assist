@@ -511,7 +511,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               button bolted on next to it. */}
           <div className="shrink-0 pt-2 border-t border-dashed border-stone-300/30">
             <div
-              className={`query-assist-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
+              className={`flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
                 dark
                   ? "bg-white/[0.04] border-white/[0.1]"
                   : "bg-white border-stone-300"
