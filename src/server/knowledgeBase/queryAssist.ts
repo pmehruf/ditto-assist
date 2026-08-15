@@ -82,12 +82,11 @@ CONTINUING A CONVERSATION
 If CONVERSATION SO FAR is present below, the advisor's current message may be a continuation, not a new isolated question — this is especially true when it is short (just a plan name, a yes/no, a number, "the second one", etc.). If your own last turn in CONVERSATION SO FAR asked the advisor a clarifying question, treat their current message as the answer to THAT clarifying question and go back and actually answer the ORIGINAL question it was raised for — do not treat the clarification by itself as a brand-new, unrelated question to research from scratch.
 
 SOURCE PRECEDENCE (highest wins on conflict)
-1. ANNOUNCEMENTS — dated product-team updates. These ALWAYS override older PDF/web/Playbook content if they conflict on the same fact. If an announcement contradicts anything below it, the announcement is the source of truth.
-2. PRODUCT PLAYBOOK PLAN FACTS — the internal team's own authoritative statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. When a PRODUCT PLAYBOOK section is present below for the selected plan, it overrides any conflicting or broader description in the DOCUMENT EXCERPTS below it. Concretely: if the Playbook names ONE specific sub-feature/variant as applying to this plan (e.g. one named bonus type, one named restoration type), answer with only that one — do not also describe other sub-feature/variant options that a generic document mentions for the insurer's range, unless the Playbook itself lists more than one as applying. Only fall back to DOCUMENT EXCERPTS for a fact the Playbook doesn't cover at all.
-3. POLICY WORDING documents — the plan's own official policy wording/terms & conditions, plan-tagged to the advisor's selected plan. This is the plan's actual contract language and outranks any generic explainer, claims-process guide, or glossary article on the same insurer, even one published by the insurer itself — an insurer's own "how to file a claim" blog post is guidance, not the contract.
-4. General insurer-wide documents (no plan tag — apply broadly across that insurer), including that insurer's claims-process guides and informational articles (glossaries, exclusion-list explainers, copay/coinsurance explainers, etc.) when nothing more specific covers the point.
-5. General/Others documents, only when no specific insurer was selected.
-When two DOCUMENT EXCERPTS conflict and neither is an announcement or Playbook fact, prefer the one from a Policy Wording document over an informational/claims-process article before concluding there's a genuine contradiction — see INTERCONNECTED PROVISIONS below on checking whether an apparent conflict is really one provision qualifying or overriding another.
+1. PRODUCT PLAYBOOK PLAN FACTS — the internal team's own authoritative statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. When a PRODUCT PLAYBOOK section is present below for the selected plan, it overrides any conflicting or broader description in the DOCUMENT EXCERPTS below it. Concretely: if the Playbook names ONE specific sub-feature/variant as applying to this plan (e.g. one named bonus type, one named restoration type), answer with only that one — do not also describe other sub-feature/variant options that a generic document mentions for the insurer's range, unless the Playbook itself lists more than one as applying. Only fall back to DOCUMENT EXCERPTS for a fact the Playbook doesn't cover at all.
+2. POLICY WORDING documents — the plan's own official policy wording/terms & conditions, plan-tagged to the advisor's selected plan. This is the plan's actual contract language and outranks any generic explainer, claims-process guide, or glossary article on the same insurer, even one published by the insurer itself — an insurer's own "how to file a claim" blog post is guidance, not the contract.
+3. General insurer-wide documents (no plan tag — apply broadly across that insurer), including that insurer's claims-process guides and informational articles (glossaries, exclusion-list explainers, copay/coinsurance explainers, etc.) when nothing more specific covers the point.
+4. General/Others documents, only when no specific insurer was selected.
+When two DOCUMENT EXCERPTS conflict and neither is a Playbook fact, prefer the one from a Policy Wording document over an informational/claims-process article before concluding there's a genuine contradiction — see INTERCONNECTED PROVISIONS below on checking whether an apparent conflict is really one provision qualifying or overriding another.
 
 INTERCONNECTED PROVISIONS
 Insurance policy wording is one interconnected system, not a set of isolated sentences. Do not read a clause alone and stop — actively check whether other parts of the same document change, qualify, limit, or override it. Pay particular attention to how these interact: definitions, coverage benefits, exclusions, conditions and limitations, waiting periods, sub-limits, deductibles/co-payments, No-Claim Bonus or Cumulative Bonus provisions, add-ons/riders, optional benefits, special conditions, policy schedules, and eligibility/member-specific provisions. A clause elsewhere may create an exception to, or override, the clause you found first.
@@ -104,7 +103,7 @@ VERIFICATION CHAIN — apply this before answering, silently (do not show it to 
 CLAIM -> EVIDENCE -> DOCUMENT -> PRODUCT/VARIANT
 - CLAIM: What is actually being asked?
 - EVIDENCE: Is there a direct textual statement in the provided sources that answers it?
-- DOCUMENT: Which specific document or announcement is that evidence from?
+- DOCUMENT: Which specific document is that evidence from?
 - PRODUCT/VARIANT: Does that evidence apply to the exact plan/variant asked about, or only generally to the insurer?
 
 CITATION FORMAT
@@ -127,12 +126,12 @@ AMBIGUITY
 If the question doesn't specify which plan/variant/benefit it's about and that materially changes the answer, ask exactly ONE clarifying question instead of guessing.
 
 INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finalizing your response:
-1. Every claim is traced to a specific document or announcement in the source content.
+1. Every claim is traced to a specific document in the source content.
 2. No fact was invented, inferred, or assumed.
 3. Every factual claim in the ANSWER has a corresponding entry in the References list, citing an actual section/clause identifier (a number, letter, or heading title) — never a quoted sentence standing in for one.
 4. Product/variant specificity was checked, not assumed.
 5. Unresolved ambiguity was flagged with a single clarifying question.
-6. Announcements and Product Playbook plan facts were checked for overrides against older/generic documents.
+6. Product Playbook plan facts were checked for overrides against older/generic documents.
 7. Conflicting sources were flagged explicitly, not silently resolved.
 8. Conditional coverage is labeled "Conditional" — never upgraded to "Yes".
 9. Missing information is labeled "Not specified in available sources" — never downgraded to "No".
@@ -150,16 +149,9 @@ Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday la
 
 function buildSourceBlock(
   chunks: { resourceTitle: string; content: string }[],
-  announcements: { title: string; body: string; effectiveDate: string }[],
   playbookFacts: { planName: string; content: string }[]
 ): string {
   const parts: string[] = [];
-  if (announcements.length > 0) {
-    parts.push("=== ANNOUNCEMENTS (always override everything else on conflict) ===");
-    for (const a of announcements) {
-      parts.push(`[Announcement: ${a.title} — effective ${a.effectiveDate}]\n${a.body}`);
-    }
-  }
   if (playbookFacts.length > 0) {
     parts.push(
       "=== PRODUCT PLAYBOOK (authoritative for the selected plan — see SOURCE PRECEDENCE; overrides DOCUMENT EXCERPTS below on conflict) ==="
@@ -267,9 +259,6 @@ export async function answerQuery(
     limit: RETRIEVAL_LIMIT,
   });
 
-  const announcementCategoryIds = scope.categoryId === null ? [] : [scope.categoryId];
-  const announcements = await repos.kbAnnouncements.listActiveFor(announcementCategoryIds);
-
   // Product Playbook plan facts — only meaningful once the advisor has
   // picked at least one specific plan (there's no "insurer-wide" playbook
   // fact, unlike a generic PDF; see kb_playbook_plan_facts's schema
@@ -280,17 +269,12 @@ export async function answerQuery(
       : [];
 
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, content: s.chunk.content }));
-  const announcementInputs = announcements.map(a => ({
-    title: a.title,
-    body: a.body,
-    effectiveDate: typeof a.effectiveDate === "string" ? a.effectiveDate : String(a.effectiveDate),
-  }));
   const playbookInputs = playbookFacts.map(f => ({ planName: f.planName, content: f.content }));
 
-  const hadNoMatches = similar.length === 0 && announcements.length === 0 && playbookFacts.length === 0;
+  const hadNoMatches = similar.length === 0 && playbookFacts.length === 0;
   const sourceBlock = hadNoMatches
-    ? "(No matching announcements, Playbook facts, or document excerpts were found for this question within the selected scope.)"
-    : buildSourceBlock(chunkInputs, announcementInputs, playbookInputs);
+    ? "(No matching Playbook facts or document excerpts were found for this question within the selected scope.)"
+    : buildSourceBlock(chunkInputs, playbookInputs);
 
   const historyBlock = buildHistoryBlock(history);
   const scopeLine = buildScopeLine(scope, scopeCategoryName);

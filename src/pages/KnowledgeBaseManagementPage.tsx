@@ -3,12 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, type Dispatch, type SetStateAction } from "react";
-import { FolderOpen, Megaphone } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { KnowledgeBaseResourceManagement } from "../components/KnowledgeBaseResourceManagement";
-import { KnowledgeBaseAnnouncements } from "../components/KnowledgeBaseAnnouncements";
 
 interface KnowledgeBaseManagementPageProps {
   theme: "light" | "dark";
@@ -23,26 +21,23 @@ interface KnowledgeBaseManagementPageProps {
  * hasAccess via the "knowledge_base" feature id).
  *
  * "Ask the Playbook": category-wise resource organization (per-insurer + a
- * General/Others bucket, extensible) with PDF upload/embedding, plus a
- * dated Announcements channel that always overrides older resource
- * content. The Product Playbook Sheet's own connection/resync controls
- * live on the Connections page (Developer Zone — see ConnectionsPage.tsx)
- * alongside the QA Dashboard's, since both are "backend plumbing, not a
- * permission" settings; this page only manages document/announcement
- * content. Web-page crawling is still a later phase.
+ * General/Others bucket, extensible) with PDF upload/embedding. The Product
+ * Playbook Sheet's own connection/resync controls live on the Connections
+ * page (Developer Zone — see ConnectionsPage.tsx) alongside the QA
+ * Dashboard's, since both are "backend plumbing, not a permission" settings;
+ * this page only manages document content. Web-page crawling is still a
+ * later phase.
+ *
+ * Previously also had a separate "Announcements" sub-tab (kb_announcements
+ * — a manually-curated, always-injected override channel). Removed per
+ * product decision: it duplicated the main Announcements feature without
+ * ever pulling from it, and nothing had been entered into it yet. The
+ * kb_announcements table/repository were left in place (unused, empty) in
+ * case this is revisited later — see queryAssist.ts's SOURCE PRECEDENCE
+ * comment for the current (announcement-free) precedence order.
  */
 export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseManagementPageProps) {
   const dark = theme === "dark";
-  const [activeSubTab, setActiveSubTab] = useState<"resources" | "announcements">("resources");
-
-  const tabClass = (isActive: boolean) =>
-    `px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer border flex items-center gap-2 ${
-      isActive
-        ? "bg-[var(--tab-active-bg)] border-transparent text-[var(--tab-active-text)] shadow-md"
-        : dark
-        ? "bg-white/[0.03] border-white/[0.08] text-stone-400 hover:bg-white/[0.06]"
-        : "bg-black/[0.02] border-black/[0.08] text-stone-500 hover:bg-black/[0.04]"
-    }`;
 
   return (
     <div className="space-y-5 text-left">
@@ -53,29 +48,13 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
             <span>Knowledge Base</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
-            Manage the documents and announcements "Ask the Playbook" answers advisor questions from, organized per-insurer plus a General/Others bucket.
+            Manage the documents "Ask the Playbook" answers advisor questions from, organized per-insurer plus a General/Others bucket.
             {effectiveTier === "Admin" || effectiveTier === "Developer" ? "" : " Read-only — Admin clearance is required to make changes."}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={() => setActiveSubTab("resources")} className={tabClass(activeSubTab === "resources")}>
-          <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-          Categories & Documents
-        </button>
-        <button type="button" onClick={() => setActiveSubTab("announcements")} className={tabClass(activeSubTab === "announcements")}>
-          <Megaphone className="w-3.5 h-3.5 shrink-0" />
-          Announcements
-        </button>
-      </div>
-
-      {activeSubTab === "resources" && (
-        <KnowledgeBaseResourceManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
-      )}
-      {activeSubTab === "announcements" && (
-        <KnowledgeBaseAnnouncements theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
-      )}
+      <KnowledgeBaseResourceManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
     </div>
   );
 }

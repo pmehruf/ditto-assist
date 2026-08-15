@@ -29,7 +29,6 @@ import { QaEvaluationHistoryRepository } from "./qaEvaluationHistoryRepository.j
 import { KbCategoriesRepository } from "./kbCategoriesRepository.js";
 import { KbResourcesRepository } from "./kbResourcesRepository.js";
 import { KbChunksRepository } from "./kbChunksRepository.js";
-import { KbAnnouncementsRepository } from "./kbAnnouncementsRepository.js";
 import { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
 import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 import { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
@@ -128,12 +127,6 @@ export type {
 export { KbChunksRepository } from "./kbChunksRepository.js";
 export type { CreateKbChunkEntry, SimilarKbChunk } from "./kbChunksRepository.js";
 
-export { KbAnnouncementsRepository } from "./kbAnnouncementsRepository.js";
-export type {
-  CreateKbAnnouncementEntry,
-  UpdateKbAnnouncementEntry,
-} from "./kbAnnouncementsRepository.js";
-
 export { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
 export type { CreateKbChatSessionEntry } from "./kbChatSessionsRepository.js";
 
@@ -177,7 +170,6 @@ export interface Repositories {
   kbCategories: KbCategoriesRepository;
   kbResources: KbResourcesRepository;
   kbChunks: KbChunksRepository;
-  kbAnnouncements: KbAnnouncementsRepository;
   kbChatSessions: KbChatSessionsRepository;
   kbChatMessages: KbChatMessagesRepository;
   kbPlaybookConnection: KbPlaybookConnectionRepository;
@@ -211,7 +203,6 @@ export function createRepositories(db: AnyDb): Repositories {
     kbCategories: new KbCategoriesRepository(db),
     kbResources: new KbResourcesRepository(db),
     kbChunks: new KbChunksRepository(db),
-    kbAnnouncements: new KbAnnouncementsRepository(db),
     kbChatSessions: new KbChatSessionsRepository(db),
     kbChatMessages: new KbChatMessagesRepository(db),
     kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
