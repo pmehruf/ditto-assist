@@ -118,12 +118,144 @@ function statusBadge(status: KbResourceStatus, dark: boolean) {
   );
 }
 
-/** A resource applies to a given plan if it's tagged with that plan name, OR
- * has no plan tags at all — an untagged resource applies broadly to every
- * plan under its insurer (existing retrieval semantics, unchanged; see
- * queryAssist.ts). */
-function resourceAppliesToPlan(resource: KbResource, planName: string): boolean {
-  return resource.planTags.length === 0 || resource.planTags.includes(planName);
+/** Normalizes a plan name for case/whitespace-insensitive comparison — used
+ * both to collapse roster entries that differ only by casing (e.g. an
+ * admin-typed "Activ One Max" alongside an older resource tagged "Activ One
+ * MAX") and to match a resource's planTags against a plan/variant purely by
+ * content, not by exact string identity. This never changes what's stored —
+ * only how the Plans tab groups it for display. */
+function normalizePlanKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Collapses case/whitespace duplicates in a plan-name list down to one
+ * canonical entry each (first-seen casing wins), preserving order. Purely a
+ * display-layer merge — the underlying roster/tags on disk are untouched. */
+function dedupeCaseInsensitive(names: string[]): string[] {
+  const seen = new Map<string, string>();
+  for (const n of names) {
+    const key = normalizePlanKey(n);
+    if (!seen.has(key)) seen.set(key, n);
+  }
+  return [...seen.values()];
+}
+
+/** A resource counts toward a plan/variant if it's tagged with that name
+ * (case/whitespace-insensitively) or has no plan tags at all — an untagged
+ * resource applies broadly to every plan under its insurer, same retrieval
+ * semantics queryAssist.ts already uses, unchanged. Add-on documentType
+ * resources never count here regardless of tags — per the KB's design an
+ * add-on can genuinely apply to several unrelated plans, so tying it to
+ * whichever plan it happens to be tagged with would be misleading; add-ons
+ * get their own section instead (see the Add-ons block in the Plans tab). */
+function resourcesForPlanKey(resources: KbResource[], key: string): KbResource[] {
+  return resources.filter(
+    r => r.documentType !== "addon" && (r.planTags.length === 0 || r.planTags.some(t => normalizePlanKey(t) === key))
+  );
+}
+
+// A shorter roster entry only anchors a plan "family" (base -> variants) if
+// it's substantial enough that sharing its prefix is actually meaningful —
+// otherwise a short generic word that happens to start several unrelated
+// plan names (e.g. Care Health's "Care" prefixing "Care Supreme", "Care
+// Heart", "Care Plus" — three unrelated products, not variants of a plan
+// literally called "Care") would wrongly swallow them into one umbrella.
+const FAMILY_ROOT_MIN_LEN = 8;
+// The character right after the shared prefix has to be a real word/variant
+// boundary, not a continuation of the same word — so "ReAssure30" is never
+// folded into "ReAssure" (no space before "30"), but "Optima Secure+" is
+// folded into "Optima Secure" (a "+" boundary).
+const FAMILY_VARIANT_BOUNDARY = /^[\s+\-(]/;
+
+function qualifiesAsFamilyRoot(name: string): boolean {
+  return name.includes(" ") || name.length >= FAMILY_ROOT_MIN_LEN;
+}
+
+function isVariantOf(candidate: string, base: string): boolean {
+  if (candidate.length <= base.length) return false;
+  if (candidate.slice(0, base.length).toLowerCase() !== base.toLowerCase()) return false;
+  return FAMILY_VARIANT_BOUNDARY.test(candidate.slice(base.length));
+}
+
+interface PlanVariant {
+  name: string;
+  resources: KbResource[];
+}
+interface PlanFamily {
+  rootName: string;
+  baseResources: KbResource[];
+  variants: PlanVariant[];
+}
+
+/** Groups a category's deduplicated plan-name roster into families purely
+ * from the existing name strings — never invents a relationship the roster
+ * data doesn't already spell out. A name only becomes another name's
+ * variant when it's literally that name plus a real word boundary (see
+ * isVariantOf) AND that shorter name is itself both a real roster entry and
+ * substantial enough to anchor a family (see qualifiesAsFamilyRoot). Chains
+ * more than one level deep (e.g. "ReAssure 2.0 Bronze Plus" ->
+ * "ReAssure 2.0" -> "ReAssure") flatten to their top root, so the UI stays a
+ * clean two-level Base -> Variants rather than a deeper tree. Resources are
+ * matched into each bucket via resourcesForPlanKey (case-insensitive,
+ * add-ons excluded); the root's own bucket is the "base plan" — resources
+ * tagged to the un-varianted name itself, if any. */
+function buildPlanFamilies(planNames: string[], catResources: KbResource[]): PlanFamily[] {
+  const dedupedNames = dedupeCaseInsensitive(planNames);
+  const parentOf = new Map<string, string>();
+  for (const name of dedupedNames) {
+    let bestParent: string | null = null;
+    for (const other of dedupedNames) {
+      if (other === name || !qualifiesAsFamilyRoot(other)) continue;
+      if (isVariantOf(name, other) && (!bestParent || other.length > bestParent.length)) bestParent = other;
+    }
+    if (bestParent) parentOf.set(name, bestParent);
+  }
+  const rootOf = new Map<string, string>();
+  for (const name of dedupedNames) {
+    let cur = name;
+    const visited = new Set<string>();
+    while (parentOf.has(cur) && !visited.has(cur)) {
+      visited.add(cur);
+      cur = parentOf.get(cur)!;
+    }
+    rootOf.set(name, cur);
+  }
+
+  const order: string[] = [];
+  const familyMap = new Map<string, PlanFamily>();
+  for (const name of dedupedNames) {
+    const rootName = rootOf.get(name)!;
+    if (!familyMap.has(rootName)) {
+      familyMap.set(rootName, { rootName, baseResources: [], variants: [] });
+      order.push(rootName);
+    }
+    const family = familyMap.get(rootName)!;
+    const matched = resourcesForPlanKey(catResources, normalizePlanKey(name));
+    if (normalizePlanKey(name) === normalizePlanKey(rootName)) family.baseResources = matched;
+    else family.variants.push({ name, resources: matched });
+  }
+  return order.map(r => familyMap.get(r)!);
+}
+
+/** De-duplicated (by resource id) resource count for a family — a shared
+ * untagged resource matches every variant's bucket, so a naive sum would
+ * over-count it once per variant it appears under. */
+function familyResourceCount(family: PlanFamily): number {
+  const ids = new Set<number>();
+  for (const r of family.baseResources) ids.add(r.id);
+  for (const v of family.variants) for (const r of v.resources) ids.add(r.id);
+  return ids.size;
+}
+
+function familyDocTypeCounts(family: PlanFamily): Record<KbDocumentType, number> {
+  const seen = new Set<number>();
+  const all: KbResource[] = [];
+  const add = (r: KbResource) => {
+    if (!seen.has(r.id)) { seen.add(r.id); all.push(r); }
+  };
+  for (const r of family.baseResources) add(r);
+  for (const v of family.variants) for (const r of v.resources) add(r);
+  return countByDocType(all);
 }
 
 /** The Plans tab's plan list — the admin-curated roster (category.planNames)
@@ -581,6 +713,14 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
   }`;
   const cardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-stone-200";
+  // The per-insurer outer wrapper reads as the "most raised" tier in the
+  // light theme's actual elevation ladder (see index.css's --surface/
+  // -elevated/-inset/-tint comment) plus a soft card shadow, instead of the
+  // flat bg-white every other bordered box here also used — that flatness
+  // (insurer card, plan row, and resource row all effectively white-on-white)
+  // was the light theme's specific "looks too flat" problem. Dark theme is
+  // left exactly as it was; it already reads fine.
+  const insurerCardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-surface border-[var(--border-strong)] shadow-card";
 
   if (loading) {
     return <div className="text-xs font-semibold text-content-muted py-8 text-center">Loading Knowledge Base…</div>;
@@ -675,7 +815,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           </ClippedButton>
         </div>
         {filterPanelOpen && (
-          <div className={`flex flex-wrap items-center gap-2 pt-2.5 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+          <div className={`flex flex-wrap items-center gap-2 pt-2.5 border-t ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>
             <span className="text-[10px] font-bold uppercase tracking-wide text-content-muted">Status</span>
             {STATUS_VALUES.map(s => {
               const active = statusFilter.has(s);
@@ -713,6 +853,8 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           const accent = category.type === "insurer" ? INSURER_ACCENT_COLOR[category.name] : undefined;
           const accentColor = accent ? (dark ? accent.dark : accent.light) : undefined;
           const planNames = category.type === "insurer" ? planNamesForCategory(category, catResources) : [];
+          const families = category.type === "insurer" ? buildPlanFamilies(planNames, catResources) : [];
+          const addonResources = catResources.filter(r => r.documentType === "addon");
           const docTypeCounts = countByDocType(catResources);
           const activeTab: TabKey = activeTabByCategory[category.id] ?? (category.type === "insurer" ? "plans" : "all");
           const setActiveTab = (tab: TabKey) => setActiveTabByCategory(prev => ({ ...prev, [category.id]: tab }));
@@ -726,28 +868,33 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           return (
             <div
               key={category.id}
-              className={`rounded-xl border overflow-hidden transition-colors ${cardClass}`}
+              className={`rounded-2xl border overflow-hidden transition-colors ${insurerCardClass}`}
               style={expanded && accentColor ? { borderColor: accentColor, boxShadow: `inset 3px 0 0 0 ${accentColor}` } : undefined}
             >
               <button
                 type="button"
                 onClick={() => setExpandedCategoryId(expanded ? null : category.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors ${dark ? "hover:bg-white/[0.03]" : "hover:bg-stone-50"}`}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer transition-colors ${dark ? "hover:bg-white/[0.03]" : "hover:bg-stone-900/[0.025]"}`}
                 style={expanded && accentColor ? { backgroundColor: hexToRgba(accentColor, dark ? 0.08 : 0.06) } : undefined}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   {expanded ? <ChevronDown className="w-4 h-4 shrink-0 text-content-muted" /> : <ChevronRight className="w-4 h-4 shrink-0 text-content-muted" />}
-                  {logoSrc ? (
-                    <img src={logoSrc} alt={category.name} className="h-5 w-auto shrink-0" />
-                  ) : (
-                    <Folder className="w-4 h-4 shrink-0 text-content-muted" />
-                  )}
-                  <span className={`text-sm font-bold ${dark ? "text-white" : "text-stone-900"}`}>{category.name}</span>
-                  <span className={`text-[9.5px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${dark ? "bg-white/[0.06] text-stone-400 border-white/[0.1]" : "bg-stone-100 text-stone-600 border-stone-200"}`}>
-                    {category.type === "insurer" ? "Insurer" : "General"}
-                  </span>
+                  {/* Fixed-width/height box so every insurer's name starts at
+                      the exact same x position regardless of that insurer's
+                      own logo aspect ratio (they range from ~1.3:1 to
+                      ~3.2:1 natively — see insurerLogos.ts). */}
+                  <div className="w-9 h-6 shrink-0 flex items-center justify-center">
+                    {logoSrc ? (
+                      <img src={logoSrc} alt={category.name} className="max-w-full max-h-full object-contain" />
+                    ) : (
+                      <Folder className="w-4 h-4 text-content-muted" />
+                    )}
+                  </div>
+                  <span className={`text-sm font-bold truncate ${dark ? "text-white" : "text-stone-900"}`}>{category.name}</span>
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0">
                   {category.type === "insurer" && (
-                    <span className="text-[10.5px] font-semibold text-content-muted whitespace-nowrap">{planNames.length} plan{planNames.length === 1 ? "" : "s"}</span>
+                    <span className="text-[10.5px] font-semibold text-content-muted whitespace-nowrap">{families.length} plan{families.length === 1 ? "" : "s"}</span>
                   )}
                   {category.type === "insurer" && docTypeCounts.addon > 0 && (
                     <span className="text-[10.5px] font-semibold text-content-muted whitespace-nowrap">{docTypeCounts.addon} add-on{docTypeCounts.addon === 1 ? "" : "s"}</span>
@@ -757,12 +904,12 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
               </button>
 
               {expanded && (
-                <div className={`px-4 pb-4 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                <div className={`px-4 pb-4 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>
                   {/* Stats row — read-only counts plus the category's two
                       real actions (refresh, add document); delete is a
                       separate, visually distinct destructive action. */}
                   <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                    {category.type === "insurer" && <StatPill label={`Plan${planNames.length === 1 ? "" : "s"}`} value={planNames.length} dark={dark} />}
+                    {category.type === "insurer" && <StatPill label={`Plan${families.length === 1 ? "" : "s"}`} value={families.length} dark={dark} />}
                     <StatPill label={`Resource${catResourcesAll.length === 1 ? "" : "s"}`} value={catResourcesAll.length} dark={dark} />
                     {DOC_TYPE_TABS.map(t => (
                       <div key={t.value} className="contents">
@@ -786,7 +933,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                   </div>
 
                   {/* Tab row */}
-                  <div className={`flex items-center gap-1 border-b mb-3 overflow-x-auto ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+                  <div className={`flex items-center gap-1 border-b mb-3 overflow-x-auto ${dark ? "border-white/[0.08]" : "border-[var(--border-strong)]"}`}>
                     {tabs.map(t => (
                       <button
                         key={t.key}
@@ -805,36 +952,63 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
 
                   {/* Tab content */}
                   {activeTab === "plans" && category.type === "insurer" ? (
-                    <div className="flex flex-col gap-1.5">
-                      {planNames.length === 0 && (
-                        <div className="text-[11px] font-semibold text-content-muted py-4 text-center">No plans yet — add one below.</div>
-                      )}
-                      {planNames.map(planName => {
-                        const planResourcesAll = catResources.filter(r => resourceAppliesToPlan(r, planName) && resourceMatchesSearch(r));
-                        const planCounts = countByDocType(planResourcesAll);
-                        const planExpanded = expandedPlan === planName;
-                        return (
-                          <div key={planName} className="contents">
-                            <PlanRow
-                              planName={planName}
-                              resources={planResourcesAll}
-                              counts={planCounts}
+                    <div className="flex flex-col gap-4">
+                      <div>
+                        <SectionLabel dark={dark}>Plans</SectionLabel>
+                        <div className="flex flex-col gap-1.5 mt-2">
+                          {families.length === 0 && (
+                            <div className="text-[11px] font-semibold text-content-muted py-4 text-center">No plans yet — add one below.</div>
+                          )}
+                          {families.map(family => {
+                            const familyResourcesSearched: PlanFamily = {
+                              rootName: family.rootName,
+                              baseResources: family.baseResources.filter(resourceMatchesSearch),
+                              variants: family.variants.map(v => ({ name: v.name, resources: v.resources.filter(resourceMatchesSearch) })),
+                            };
+                            const familyExpanded = expandedPlan === family.rootName;
+                            return (
+                              <div key={family.rootName} className="contents">
+                                <PlanFamilyRow
+                                  family={familyResourcesSearched}
+                                  dark={dark}
+                                  expanded={familyExpanded}
+                                  onToggle={() => setExpandedPlanByCategory(prev => ({ ...prev, [category.id]: familyExpanded ? null : family.rootName }))}
+                                  canManage={canManage}
+                                  onEditResource={r => setEditingResourceId(r.id)}
+                                  onRemovePlanName={canManage ? (name: string) => {
+                                    if (window.confirm(`Remove "${name}" from ${category.name}'s plan list? Documents already tagged with it keep the tag.`)) {
+                                      removeCategoryPlanName(category, name);
+                                    }
+                                  } : undefined}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {addonResources.length > 0 && (
+                        <div>
+                          <SectionLabel dark={dark} tone="addon">Add-ons</SectionLabel>
+                          <p className="text-[10px] font-semibold text-content-muted mt-1 mb-2">
+                            Rider documents shown independently of any one plan — an add-on can apply to several plans, so it isn't nested under one.
+                          </p>
+                          <div className={`rounded-lg border p-2.5 ${dark ? "bg-orange-500/[0.05] border-orange-500/[0.15]" : "bg-orange-50/70 border-orange-200"}`}>
+                            <ResourceListTab
+                              resources={addonResources.filter(resourceMatchesSearch)}
                               dark={dark}
-                              expanded={planExpanded}
-                              onToggle={() => setExpandedPlanByCategory(prev => ({ ...prev, [category.id]: planExpanded ? null : planName }))}
                               canManage={canManage}
-                              onEditResource={r => setEditingResourceId(r.id)}
-                              onRemovePlan={canManage ? () => {
-                                if (window.confirm(`Remove "${planName}" from ${category.name}'s plan list? Documents already tagged with it keep the tag.`)) {
-                                  removeCategoryPlanName(category, planName);
-                                }
-                              } : undefined}
+                              showDocTypeBadge={false}
+                              showPlanCount={false}
+                              onEdit={r => setEditingResourceId(r.id)}
+                              compact
                             />
                           </div>
-                        );
-                      })}
+                        </div>
+                      )}
+
                       {canManage && (
-                        <div className={`flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                        <div className={`flex flex-wrap items-center gap-1.5 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>
                           <Tag className="w-3 h-3 shrink-0 text-content-muted" />
                           <input
                             value={categoryPlanInputById[category.id] || ""}
@@ -959,48 +1133,64 @@ function StatPill({ label, value, dark }: { label: string; value: number; dark: 
   );
 }
 
-/** One plan's summary row inside the Plans tab — compact by default (name +
- * per-document-type counts), expands into its resources grouped by document
- * type. Replaces the old approach of rendering every plan as an inline tag
- * chip with nothing behind it. */
-function PlanRow({
-  planName, resources, counts, dark, expanded, onToggle, canManage, onEditResource, onRemovePlan,
+/** Small uppercase section divider ("Plans" / "Add-ons") — typography-only
+ * differentiation, no extra background tier needed for something this
+ * lightweight. The "addon" tone reuses the same orange this file already
+ * uses for the Add-on document-type badge, so the label and the section it
+ * introduces read as the same zone. */
+function SectionLabel({ dark, tone, children }: { dark: boolean; tone?: "addon"; children: ReactNode }) {
+  const color = tone === "addon" ? (dark ? "text-orange-300" : "text-orange-700") : dark ? "text-stone-400" : "text-content-muted";
+  return <div className={`text-[10px] font-black uppercase tracking-wider ${color}`}>{children}</div>;
+}
+
+/** One plan family's summary row inside the Plans tab — a "base" plan name
+ * (e.g. "Activ One") plus however many of its variants (e.g. "Activ One
+ * Max", "Activ One NXT") the roster actually contains, per
+ * buildPlanFamilies. A family with no variants renders identically to the
+ * old flat per-plan row; one with variants nests them as their own
+ * VariantGroup blocks instead of listing every variant as if it were an
+ * unrelated plan. */
+function PlanFamilyRow({
+  family, dark, expanded, onToggle, canManage, onEditResource, onRemovePlanName,
 }: {
-  planName: string;
-  resources: KbResource[];
-  counts: Record<KbDocumentType, number>;
+  family: PlanFamily;
   dark: boolean;
   expanded: boolean;
   onToggle: () => void;
   canManage: boolean;
   onEditResource: (r: KbResource) => void;
-  onRemovePlan?: () => void;
+  onRemovePlanName?: (name: string) => void;
 }) {
-  const grouped: { docType: KbDocumentType; label: string; items: KbResource[] }[] = [
-    ...DOC_TYPE_TABS.map(t => ({ docType: t.value, label: t.tabLabel, items: resources.filter(r => r.documentType === t.value) })),
-    { docType: "other" as KbDocumentType, label: "Other", items: resources.filter(r => r.documentType === "other") },
-  ].filter(g => g.items.length > 0);
+  const hasVariants = family.variants.length > 0;
+  const totalCount = familyResourceCount(family);
+  const counts = familyDocTypeCounts(family);
+  const nothingHere = family.baseResources.length === 0 && family.variants.every(v => v.resources.length === 0);
 
   return (
-    <div className={`rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-100"}`}>
+    <div className={`rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-surface-elevated border-[var(--border)]"}`}>
       <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left cursor-pointer">
         <div className="flex items-center gap-2 min-w-0">
           {expanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-content-muted" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-content-muted" />}
           <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
-          <span className={`text-[12.5px] font-bold truncate ${dark ? "text-stone-100" : "text-stone-900"}`}>{planName}</span>
-          <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{resources.length} resource{resources.length === 1 ? "" : "s"}</span>
+          <span className={`text-[12.5px] font-bold truncate ${dark ? "text-stone-100" : "text-stone-900"}`}>{family.rootName}</span>
+          {hasVariants && (
+            <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded whitespace-nowrap ${dark ? "bg-white/[0.06] text-stone-400" : "bg-stone-900/[0.05] text-content-muted"}`}>
+              {family.variants.length} variant{family.variants.length === 1 ? "" : "s"}
+            </span>
+          )}
+          <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{totalCount} resource{totalCount === 1 ? "" : "s"}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {DOC_TYPE_TABS.map(t => (
-            <span key={t.value} className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${dark ? "bg-white/[0.05] text-stone-400" : "bg-stone-100 text-stone-500"}`}>
+          {DOC_TYPE_TABS.filter(t => t.value !== "addon").map(t => (
+            <span key={t.value} className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${dark ? "bg-white/[0.05] text-stone-400" : "bg-stone-900/[0.05] text-stone-500"}`}>
               {t.shortLabel} {counts[t.value]}
             </span>
           ))}
-          {canManage && onRemovePlan && (
+          {canManage && onRemovePlanName && (
             <button
               type="button"
-              onClick={e => { e.stopPropagation(); onRemovePlan(); }}
-              title={`Remove "${planName}" from the plan list`}
+              onClick={e => { e.stopPropagation(); onRemovePlanName(family.rootName); }}
+              title={`Remove "${family.rootName}" from the plan list`}
               className={`ml-1 p-1 rounded cursor-pointer ${dark ? "text-stone-500 hover:text-red-400 hover:bg-red-500/10" : "text-stone-400 hover:text-red-600 hover:bg-red-50"}`}
             >
               <X className="w-3 h-3" />
@@ -1009,26 +1199,90 @@ function PlanRow({
         </div>
       </button>
       {expanded && (
-        <div className={`px-3 pb-3 pt-1 border-t space-y-2.5 ${dark ? "border-white/[0.06]" : "border-stone-200"}`}>
-          {grouped.length === 0 ? (
+        <div className={`px-3 pb-3 pt-1 border-t space-y-2 ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>
+          {nothingHere ? (
             <div className="text-[10.5px] font-semibold text-content-muted italic py-2">No resources apply to this plan yet.</div>
           ) : (
-            grouped.map(g => (
-              <div key={g.docType}>
-                <div className="text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">{g.label}</div>
-                <ResourceListTab
-                  resources={g.items}
-                  dark={dark}
-                  canManage={canManage}
-                  showDocTypeBadge={false}
-                  showPlanCount={false}
-                  onEdit={onEditResource}
-                  compact
-                />
-              </div>
-            ))
+            <>
+              {family.baseResources.length > 0 && (
+                <div>
+                  {hasVariants && <div className="text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">Base plan</div>}
+                  <ResourceListTab
+                    resources={family.baseResources}
+                    dark={dark}
+                    canManage={canManage}
+                    showDocTypeBadge
+                    showPlanCount={false}
+                    onEdit={onEditResource}
+                    compact
+                  />
+                </div>
+              )}
+              {family.variants.map(variant => (
+                <div key={variant.name} className="contents">
+                  <VariantGroup
+                    variant={variant}
+                    dark={dark}
+                    canManage={canManage}
+                    onEditResource={onEditResource}
+                    onRemove={onRemovePlanName ? () => onRemovePlanName(variant.name) : undefined}
+                  />
+                </div>
+              ))}
+            </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** A single variant nested inside its family's expanded row — a visibly
+ * "sunken" tier (surface-inset) with a left accent rail, one step deeper
+ * than the family container it lives in (surface-elevated). */
+function VariantGroup({
+  variant, dark, canManage, onEditResource, onRemove,
+}: {
+  variant: PlanVariant;
+  dark: boolean;
+  canManage: boolean;
+  onEditResource: (r: KbResource) => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <div
+      className={`rounded-md border border-l-2 px-2.5 py-2 ${
+        dark ? "bg-white/[0.015] border-white/[0.05] border-l-white/[0.15]" : "bg-surface-inset border-[var(--border)] border-l-[var(--border-strong)]"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <span className={`text-[11px] font-bold truncate ${dark ? "text-stone-200" : "text-stone-800"}`}>{variant.name}</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[9.5px] font-semibold text-content-muted whitespace-nowrap">{variant.resources.length} resource{variant.resources.length === 1 ? "" : "s"}</span>
+          {canManage && onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              title={`Remove "${variant.name}" from the plan list`}
+              className={`p-0.5 rounded cursor-pointer ${dark ? "text-stone-500 hover:text-red-400 hover:bg-red-500/10" : "text-stone-400 hover:text-red-600 hover:bg-red-50"}`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+      {variant.resources.length === 0 ? (
+        <div className="text-[10px] font-semibold text-content-muted italic py-1">No resources tagged to this variant yet.</div>
+      ) : (
+        <ResourceListTab
+          resources={variant.resources}
+          dark={dark}
+          canManage={canManage}
+          showDocTypeBadge
+          showPlanCount={false}
+          onEdit={onEditResource}
+          compact
+        />
       )}
     </div>
   );
@@ -1056,7 +1310,7 @@ function ResourceListTab({
   return (
     <div className={compact ? "space-y-1" : "space-y-1.5"}>
       {resources.map(resource => (
-        <div key={resource.id} className={`px-3 py-2 rounded-lg flex items-center justify-between gap-3 ${dark ? "bg-white/[0.02]" : "bg-stone-50"}`}>
+        <div key={resource.id} className={`px-3 py-2 rounded-lg border flex items-center justify-between gap-3 ${dark ? "bg-white/[0.02] border-transparent" : "bg-surface border-[var(--border)]"}`}>
           <div className="flex items-center gap-2.5 min-w-0">
             <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
             <span className={`text-xs font-semibold truncate ${dark ? "text-stone-200" : "text-stone-800"}`} title={resource.title}>{resource.title}</span>
