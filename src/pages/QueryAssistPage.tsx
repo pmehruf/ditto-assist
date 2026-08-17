@@ -379,19 +379,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           inside each card scroll, never the page itself. Below lg the
           cards stack and the page scrolls normally, which reads better on
           a narrow/short viewport than a forced fixed-height layout. */}
-      <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-4 lg:flex-1 lg:min-h-0">
-        {/* Session history sidebar — deliberately the LEAST visually heavy
-            surface in this layout (smaller radius, no shadow, more recessed
-            tone than the main chat panel below) so it reads as a navigation
-            rail the advisor scans and clicks through, not a peer content
-            card competing with the conversation itself. */}
-        <div
-          className={`rounded-lg border p-2.5 flex flex-col min-h-0 lg:h-full overflow-hidden ${
-            dark ? "bg-white/[0.015] border-white/[0.06]" : "bg-black/[0.015] border-stone-200/70"
-          }`}
-        >
-          <span className="shrink-0 block text-[9.5px] font-bold uppercase tracking-wide text-content-muted opacity-80 px-1 pb-2 mb-1.5 border-b border-dashed border-stone-300/25">Recent conversations</span>
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 no-scrollbar">
+      <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-5 lg:flex-1 lg:min-h-0">
+        {/* Session history sidebar — deliberately carries NO card treatment
+            at all (no border, no background fill, no radius, no shadow) so
+            it can never be mistaken for a peer of the Chat Workspace below —
+            it just sits directly on the page, the way a nav rail does, with
+            only a plain typographic heading + hairline rule marking it as
+            its own zone. The workspace is the one real container in this
+            layout; everything else is comparatively "un-carded." */}
+        <div className="flex flex-col min-h-0 lg:h-full overflow-hidden">
+          <span className={`shrink-0 block text-[9.5px] font-bold uppercase tracking-[0.12em] text-content-muted opacity-70 pb-2 mb-2 border-b ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+            Recent conversations
+          </span>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-0.5 no-scrollbar">
           {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
           {sortedSessions.map(s => (
             <button
@@ -401,7 +401,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               className={`group w-full text-left px-2.5 py-2 rounded-md text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
                 currentSessionId === s.id
                   ? dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-700"
-                  : dark ? "text-stone-400 hover:bg-white/[0.05] hover:text-stone-200" : "text-stone-600 hover:bg-white hover:text-stone-800"
+                  : dark ? "text-stone-400 hover:bg-white/[0.05] hover:text-stone-200" : "text-stone-600 hover:bg-stone-900/[0.04] hover:text-stone-800"
               }`}
             >
               <span className="flex items-center gap-1.5 min-w-0">
@@ -432,16 +432,23 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             above the sidebar's flat nav-rail treatment and the scope strip
             nested inside it below. */}
         <div
-          className={`rounded-2xl border p-4 flex flex-col min-h-0 lg:h-full overflow-hidden space-y-3 shadow-card ${
-            dark ? "bg-white/[0.035] border-white/[0.09]" : "bg-white border-stone-200"
+          className={`rounded-2xl border shadow-card flex flex-col min-h-0 lg:h-full overflow-hidden ${
+            dark ? "bg-white/[0.035] border-white/[0.09]" : "bg-surface border-[var(--border-strong)]"
           }`}
         >
-          {/* Scope selector — deliberately a flat, borderless toolbar strip
-              (bottom divider only) rather than another bordered box, so it
-              reads as a secondary control rail subordinate to the chat panel
-              it sits inside, not a peer "card" competing with the thread
-              below it. */}
-          <div className="shrink-0 flex flex-wrap items-end gap-3 pb-3 border-b border-dashed border-stone-300/25">
+          {/* Scope band — a full-bleed header strip (flush to the card's own
+              edges, not padded-in like the rest of the panel) with a
+              deliberately RECESSED tone relative to the workspace card
+              behind it, so it reads unmistakably as a toolbar embedded in
+              the workspace rather than a peer section of the conversation.
+              This is the same "sunken chrome band" treatment as the footer
+              composer band below — top and bottom chrome share a tone,
+              the conversation in between reads as the actual content. */}
+          <div
+            className={`shrink-0 flex flex-wrap items-end gap-3 px-4 py-3 border-b ${
+              dark ? "bg-black/[0.16] border-white/[0.07]" : "bg-surface-inset border-[var(--border)]"
+            }`}
+          >
             <div className="w-full flex items-center justify-between gap-2 -mb-1">
               <span className="text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-70">Conversation scope</span>
               {scopeLocked && (
@@ -467,7 +474,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // trigger, which read as oversized next to those.
                 triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-3 pr-8 py-1.5 rounded-lg border outline-none transition-colors relative ${
                   scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                } ${dark ? "bg-white/[0.03] border-white/[0.08] text-white" : "bg-stone-50 border-stone-200 text-stone-900"}`}
+                } ${dark ? "bg-white/[0.05] border-white/[0.1] text-white" : "bg-surface border-[var(--border)] text-stone-900"}`}
               />
             </div>
             {selectedCategory && selectablePlanNames.length > 0 && (
@@ -483,7 +490,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       className={`px-2 py-1 rounded text-[10.5px] font-bold border transition-colors ${
                         selectedPlanTags.includes(plan)
                           ? dark ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-sky-100 border-sky-300 text-sky-700"
-                          : dark ? "bg-white/[0.03] border-white/[0.08] text-stone-500 hover:bg-white/[0.07]" : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100"
+                          : dark ? "bg-white/[0.04] border-white/[0.09] text-stone-500 hover:bg-white/[0.08]" : "bg-surface border-[var(--border)] text-stone-500 hover:bg-white"
                       } ${scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
                     >
                       {plan}
@@ -501,7 +508,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               overflowing the card on a short one. Below lg the card has
               no fixed height, so this falls back to a sensible minimum
               and the page scrolls normally. */}
-          <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-5 px-4 py-5">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-3 text-center py-10">
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center ${dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
@@ -554,29 +561,32 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
                     <Sparkles className="w-3 h-3" />
                   </div>
-                  {/* Message surface — a soft shadow (not a visible border)
-                      separates this from the page behind it, so it reads as
-                      a chat bubble rather than another bordered card like
-                      the scope strip or sidebar. */}
-                  <div className={`min-w-0 flex-1 px-3.5 py-3.5 rounded-2xl rounded-tl-md space-y-3.5 shadow-soft ${dark ? "bg-white/[0.045]" : "bg-stone-50"}`}>
+                  {/* Message surface — a real, distinct surface tone (the
+                      same "elevated" tier used for content-bearing panels
+                      elsewhere in the app) plus a soft shadow, so it reads
+                      as its own object floating in the conversation rather
+                      than blending into the workspace card behind it. Extra
+                      padding vs. the old tighter bubble gives the answer
+                      genuine breathing room instead of feeling crammed. */}
+                  <div className={`min-w-0 flex-1 px-4 py-4 rounded-2xl rounded-tl-md space-y-4 shadow-soft ${dark ? "bg-white/[0.06]" : "bg-surface-elevated border border-[var(--border)]"}`}>
                     {/* Answer — the verified response to the advisor's question. */}
                     <div>
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between mb-1.5">
                         <span className="text-[9.5px] font-bold uppercase tracking-wider text-content-muted">Answer</span>
                         <CopyButton text={stripMarkdownForCopy(body)} dark={dark} />
                       </div>
                       <div className={proseClass}>{renderSimpleMarkdown(body)}</div>
                     </div>
 
-                    {/* References — the advisor's verification path. Kept
-                        visually distinct from the answer prose above (its
-                        own label + top border + tighter list) so it reads
-                        as a separate, scannable block rather than trailing
-                        off the end of the answer. Content is untouched —
-                        this only changes how it's presented. */}
+                    {/* References — the advisor's verification path,
+                        rendered as its own recessed "well" (same treatment
+                        as Sources below, not just a top border) so both
+                        read unambiguously as nested-inside-the-answer
+                        content rather than trailing prose. Content is
+                        untouched — this only changes how it's presented. */}
                     {references && (
-                      <div className={`pt-2.5 border-t ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
-                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted mb-1">References</span>
+                      <div className={`px-2.5 py-2 rounded-lg ${dark ? "bg-black/[0.18]" : "bg-stone-900/[0.05]"}`}>
+                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted opacity-80 mb-1">References</span>
                         <div className={`text-[11px] leading-relaxed [&_ul]:space-y-1 [&_li]:pl-0.5 ${dark ? "text-stone-400" : "text-stone-600"}`}>
                           {renderSimpleMarkdown(references)}
                         </div>
@@ -596,11 +606,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                     )}
                     {m.sources && m.sources.length > 0 && (
                       // Sources nested one level deeper than the answer body
-                      // — a faintly recessed "well" with its own label, so
+                      // — a clearly recessed "well" with its own label, so
                       // it reads as attached-to/inside the AI message rather
                       // than a loose row of pills trailing off the bottom.
-                      <div className={`p-2 rounded-lg ${dark ? "bg-black/[0.15]" : "bg-black/[0.03]"}`}>
-                        <span className="block text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-70 mb-1.5">Sources</span>
+                      <div className={`px-2.5 py-2 rounded-lg ${dark ? "bg-black/[0.18]" : "bg-stone-900/[0.05]"}`}>
+                        <span className="block text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-80 mb-1.5">Sources</span>
                         <div className="flex flex-wrap gap-1.5">
                           {m.sources.map(s => {
                             const typeLabel = SOURCE_DOCUMENT_TYPE_LABEL[s.documentType];
@@ -640,7 +650,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
                   <Sparkles className="w-3 h-3" />
                 </div>
-                <div className={`px-3.5 py-2.5 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-soft ${dark ? "bg-white/[0.045] text-stone-400" : "bg-stone-50 text-stone-500"}`}>
+                <div className={`px-4 py-3 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-soft ${dark ? "bg-white/[0.06] text-stone-400" : "bg-surface-elevated text-stone-500 border border-[var(--border)]"}`}>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Checking the Knowledge Base…
                 </div>
               </div>
@@ -649,22 +659,25 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           </div>
 
           {sendError && (
-            <div className={`shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border flex items-center gap-2 ${dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <div className={`shrink-0 mx-4 mb-3 text-xs font-semibold px-3 py-2 rounded-lg border flex items-center gap-2 ${dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"}`}>
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {sendError}
             </div>
           )}
 
-          {/* Composer — the most visually prominent surface in the whole
-              panel (solid divider above it, stronger border + shadow than
-              every other control here) so it reads unmistakably as THE
-              place to type, not one more muted strip like the scope
-              toolbar above the thread. */}
-          <div className={`shrink-0 pt-3 border-t ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+          {/* Composer band — the second full-bleed chrome strip (mirrors the
+              Scope band's tone at the top of the card), giving the input
+              its own clearly separated zone rather than one more row inside
+              the conversation's own padding. Within that band, the input
+              pill itself steps back UP to the workspace card's own bright
+              "surface" tone plus a real border + shadow — the most raised,
+              most prominent surface anywhere in this panel — so it reads
+              unmistakably as the primary interaction point. */}
+          <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "bg-black/[0.16] border-white/[0.07]" : "bg-surface-inset border-[var(--border)]"}`}>
             <div
-              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-soft transition-colors focus-within:shadow-card ${
+              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:shadow-overlay ${
                 dark
-                  ? "bg-white/[0.06] border-white/[0.14] focus-within:border-sky-500/40"
-                  : "bg-white border-stone-300 focus-within:border-sky-400"
+                  ? "bg-white/[0.09] border-white/[0.16] focus-within:border-sky-500/40"
+                  : "bg-surface border-[var(--border-strong)] focus-within:border-sky-400"
               }`}
             >
               <textarea
