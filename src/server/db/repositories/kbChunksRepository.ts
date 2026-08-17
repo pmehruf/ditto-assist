@@ -5,15 +5,30 @@
 
 import { and, asc, cosineDistance, eq, inArray, sql } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
-import { kbChunks, kbResources, type KbChunkRow, type NewKbChunkRow } from "../schema.js";
+import { kbChunks, kbResources, type KbChunkRow, type KbResourceRow, type NewKbChunkRow } from "../schema.js";
 
 export type CreateKbChunkEntry = Omit<NewKbChunkRow, "id" | "createdAt">;
 
 export interface SimilarKbChunk {
-  chunk: KbChunkRow;
+  /** Everything except `embedding` — the 768-dim vector is only needed for
+   * the similarity ORDER BY itself (computed in SQL via distanceExpr below,
+   * never read back into JS), so it's deliberately excluded from the
+   * SELECT. Confirmed via queryAssist.ts, the only caller: it reads
+   * `chunk.content` and nothing else off this object. Dropping it cuts each
+   * retrieved row's payload by roughly 74% (embedding averages ~3076 bytes
+   * vs. content's ~1078 bytes per row, measured via pg_column_size). */
+  chunk: Omit<KbChunkRow, "embedding">;
   resourceId: number;
   resourceTitle: string;
   categoryId: number;
+  /** brochure/policy_wording/prospectus/addon/other — see 0034's schema
+   * comment. Lets queryAssist.ts label each excerpt by document type for
+   * the model's SOURCE PRECEDENCE reasoning and order/weight retrieval. */
+  documentType: KbResourceRow["documentType"];
+  /** Web resource's URL, or a PDF's original filename — surfaced so the UI
+   * can render a clickable/openable citation instead of plain text. Null
+   * for a PDF ingested with no sourceLabel. */
+  sourceUrl: string | null;
   /** Cosine distance to the query embedding — lower is more similar (0 =
    * identical direction). Not a percentage; useful for relative ranking
    * and for filtering out weak matches with a distance ceiling. */
@@ -72,10 +87,22 @@ export class KbChunksRepository {
     }
     const rows = await this.db
       .select({
-        chunk: kbChunks,
+        // Explicit column list instead of the bare `kbChunks` table object —
+        // omits `embedding` (see SimilarKbChunk's comment above). The
+        // ORDER BY/LIMIT still operate on the full vector via distanceExpr;
+        // only the returned row payload is narrowed.
+        chunk: {
+          id: kbChunks.id,
+          resourceId: kbChunks.resourceId,
+          chunkIndex: kbChunks.chunkIndex,
+          content: kbChunks.content,
+          createdAt: kbChunks.createdAt,
+        },
         resourceId: kbResources.id,
         resourceTitle: kbResources.title,
         categoryId: kbResources.categoryId,
+        documentType: kbResources.documentType,
+        sourceUrl: kbResources.sourceUrl,
         distance: distanceExpr,
       })
       .from(kbChunks)

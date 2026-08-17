@@ -1,0 +1,15 @@
+-- Records the kb_chunks_embedding_idx HNSW index that already exists in
+-- production — confirmed live via `pg_indexes` and via `EXPLAIN (ANALYZE,
+-- BUFFERS)` showing it's actively used ("Index Scan using
+-- kb_chunks_embedding_idx") by findSimilar()'s cosine-distance ORDER BY /
+-- LIMIT query (verified 2026-08-17):
+--   CREATE INDEX kb_chunks_embedding_idx ON public.kb_chunks
+--     USING hnsw (embedding vector_cosine_ops)
+--
+-- 0028_knowledge_base.sql already contains this identical statement, so any
+-- environment that has run every migration from 0028 onward already has
+-- this index — this migration is a defensive, idempotent no-op there
+-- (IF NOT EXISTS). It does not recreate or alter the live production index
+-- in any way; it only guarantees the index is reproducible from a documented
+-- migration going forward, independent of how the original was created.
+CREATE INDEX IF NOT EXISTS "kb_chunks_embedding_idx" ON "kb_chunks" USING hnsw ("embedding" vector_cosine_ops);

@@ -3,13 +3,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Plus, Trash2, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, AlertTriangle, CheckCircle2, X, Tag, Link2 } from "lucide-react";
+import {
+  Plus, Trash2, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, AlertTriangle, CheckCircle2, X, Tag, Link2,
+  Search, Filter, Pencil, Folder, ArrowLeftRight,
+} from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { INSURER_LOGOS } from "../constants/insurerLogos";
+import { getPlanInsurerColor, hexToRgba } from "../utils/planInsurerColors";
+import { realPlanNames } from "../utils/kbPlanNames";
+
+// Insurer-level accent color, reusing the exact same muted brand colors
+// Coverage Projection Studio and the PED result cards already use (see
+// planInsurerColors.ts) — that file is keyed by PLAN name, so one
+// representative plan per insurer is picked here to resolve the insurer's
+// own color; every plan under an insurer maps to the same pair there
+// already (e.g. "Aspire" and "Reassure 2.0" both resolve to Niva Bupa's
+// teal), so any representative plan gives the correct insurer color.
+const INSURER_ACCENT_COLOR: Record<string, { light: string; dark: string }> = {
+  "HDFC ERGO": getPlanInsurerColor("Optima Secure"),
+  "Care Health": getPlanInsurerColor("Care Supreme"),
+  "Aditya Birla": getPlanInsurerColor("Activ One Max"),
+  "Niva Bupa": getPlanInsurerColor("Aspire"),
+};
 
 interface KbCategory {
   id: number;
@@ -19,28 +39,73 @@ interface KbCategory {
   planNames: string[];
 }
 
+type KbDocumentType = "brochure" | "policy_wording" | "prospectus" | "addon" | "other";
+type KbResourceStatus = "processing" | "active" | "error" | "archived";
+
 interface KbResource {
   id: number;
   categoryId: number;
   type: "pdf" | "web" | "sheet";
   title: string;
+  documentType: KbDocumentType;
   sourceUrl: string | null;
-  status: "processing" | "active" | "error" | "archived";
+  status: KbResourceStatus;
   chunkCount: number;
   errorMessage: string | null;
   planTags: string[];
   updatedAt: string;
 }
 
-interface KnowledgeBaseResourceManagementProps {
-  theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
-  currentUser: LoggedUser | null;
-  setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+// What KIND of document a resource is — Brochure/Policy Wording/Prospectus/
+// Add-on, independent of its insurer category and plan tags — see 0034's
+// schema comment and queryAssist.ts's SOURCE PRECEDENCE. Kept as ordered
+// entries (not an object) so select options match the authority order
+// Policy Wording > Prospectus > Brochure the model uses.
+const DOCUMENT_TYPE_OPTIONS: { value: KbDocumentType; label: string }[] = [
+  { value: "policy_wording", label: "Policy Wording" },
+  { value: "prospectus", label: "Prospectus" },
+  { value: "brochure", label: "Brochure" },
+  { value: "addon", label: "Add-on" },
+  { value: "other", label: "Other" },
+];
+const DOCUMENT_TYPE_LABEL: Record<KbDocumentType, string> = Object.fromEntries(
+  DOCUMENT_TYPE_OPTIONS.map(o => [o.value, o.label])
+) as Record<KbDocumentType, string>;
+
+// The four document-type tabs shown per insurer (Plans | All Resources |
+// <these four>) — matches the authority-order groups queryAssist.ts
+// actually reasons about. "Other" isn't a real doc-type tab (it's the
+// catch-all default for pre-"clean start" resources — see 0034's schema
+// comment) but still shows up inside All Resources and, when a plan has one,
+// as its own small "Other" group under that plan.
+const DOC_TYPE_TABS: { value: KbDocumentType; tabLabel: string; shortLabel: string }[] = [
+  { value: "policy_wording", tabLabel: "Policy Wordings", shortLabel: "PW" },
+  { value: "prospectus", tabLabel: "Prospectuses", shortLabel: "PR" },
+  { value: "brochure", tabLabel: "Brochures", shortLabel: "BR" },
+  { value: "addon", tabLabel: "Add-ons", shortLabel: "Add-on" },
+];
+
+type TabKey = "plans" | "all" | KbDocumentType;
+
+const STATUS_VALUES: KbResourceStatus[] = ["active", "processing", "error", "archived"];
+
+function documentTypeBadge(documentType: KbDocumentType, dark: boolean) {
+  if (documentType === "other") return null;
+  const map: Record<Exclude<KbDocumentType, "other">, string> = {
+    policy_wording: dark ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30" : "bg-indigo-50 text-indigo-700 border-indigo-200",
+    prospectus: dark ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/30" : "bg-cyan-50 text-cyan-700 border-cyan-200",
+    brochure: dark ? "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30" : "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
+    addon: dark ? "bg-orange-500/15 text-orange-300 border-orange-500/30" : "bg-orange-50 text-orange-700 border-orange-200",
+  };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wide border whitespace-nowrap ${map[documentType]}`}>
+      {DOCUMENT_TYPE_LABEL[documentType]}
+    </span>
+  );
 }
 
-function statusBadge(status: KbResource["status"], dark: boolean) {
-  const map: Record<KbResource["status"], string> = {
+function statusBadge(status: KbResourceStatus, dark: boolean) {
+  const map: Record<KbResourceStatus, string> = {
     active: dark ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : "bg-emerald-50 text-emerald-700 border-emerald-200",
     processing: dark ? "bg-amber-500/15 text-amber-300 border-amber-500/30" : "bg-amber-50 text-amber-700 border-amber-200",
     error: dark ? "bg-red-500/15 text-red-300 border-red-500/30" : "bg-red-50 text-red-700 border-red-200",
@@ -53,15 +118,67 @@ function statusBadge(status: KbResource["status"], dark: boolean) {
   );
 }
 
+/** A resource applies to a given plan if it's tagged with that plan name, OR
+ * has no plan tags at all — an untagged resource applies broadly to every
+ * plan under its insurer (existing retrieval semantics, unchanged; see
+ * queryAssist.ts). */
+function resourceAppliesToPlan(resource: KbResource, planName: string): boolean {
+  return resource.planTags.length === 0 || resource.planTags.includes(planName);
+}
+
+/** The Plans tab's plan list — the admin-curated roster (category.planNames)
+ * plus any plan name actually used as a tag on one of this category's
+ * resources but missing from that roster (e.g. a tag typed before the name
+ * was added to the roster, or after it was removed). Keeps every tagged
+ * resource discoverable under the Plans tab rather than silently orphaned.
+ *
+ * Excludes an "Add-on"/"Add-ons" pseudo-plan entry (see isAddOnPlanName) —
+ * that's a real, useful roster entry for tagging standalone rider documents,
+ * but it isn't a plan, so it shouldn't be counted or listed as one here. Its
+ * document count gets its own separate display instead (see the "Add-ons"
+ * stat next to "N plans"/"M resources"). */
+function planNamesForCategory(category: KbCategory, catResources: KbResource[]): string[] {
+  const names = [...category.planNames];
+  for (const r of catResources) {
+    for (const tag of r.planTags) {
+      if (!names.includes(tag)) names.push(tag);
+    }
+  }
+  return realPlanNames(names);
+}
+
+function countByDocType(list: KbResource[]): Record<KbDocumentType, number> {
+  const counts: Record<KbDocumentType, number> = { policy_wording: 0, prospectus: 0, brochure: 0, addon: 0, other: 0 };
+  for (const r of list) counts[r.documentType]++;
+  return counts;
+}
+
+interface KnowledgeBaseResourceManagementProps {
+  theme: "light" | "dark";
+  effectiveTier: "General" | "Admin" | "Developer";
+  currentUser: LoggedUser | null;
+  setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+}
+
 /**
  * "Ask the Playbook" Knowledge Base — category + resource admin UI.
- * Categories are per-insurer or "general" (the user's requested category-
- * wise resource organization). Resources can be added two ways: uploading a
- * PDF (extracted, chunked, and embedded server-side via
- * src/server/knowledgeBase/pdfIngest.ts), or pasting a URL — a hosted PDF or
- * an ordinary web article — which webIngest.ts auto-detects and routes
- * through the matching pipeline. Live Google Sheet ingestion is a separate,
- * already-built flow (the Product Playbook — see ConnectionsPage.tsx).
+ *
+ * Hierarchy is Insurer -> Plans -> Resources: each insurer category expands
+ * into a Plans view by default (compact rows with per-plan resource counts,
+ * expandable into that plan's resources grouped by document type), plus
+ * All Resources / Policy Wordings / Prospectuses / Brochures / Add-ons tabs
+ * for flat document management. "Plans" here are not a separate DB entity —
+ * they're derived from category.planNames (the admin-curated roster) and
+ * which resources are tagged with them (see planNamesForCategory/
+ * resourceAppliesToPlan above); an untagged resource applies to every plan.
+ *
+ * Resources can be added two ways: uploading a PDF (extracted, chunked, and
+ * embedded server-side via src/server/knowledgeBase/pdfIngest.ts), or
+ * pasting a URL — a hosted PDF or an ordinary web article — which
+ * webIngest.ts auto-detects and routes through the matching pipeline. Both
+ * flows are reached through one "Add Document" modal per insurer. Live
+ * Google Sheet ingestion is a separate, already-built flow (the Product
+ * Playbook — see ConnectionsPage.tsx).
  */
 export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseResourceManagementProps) {
   const dark = theme === "dark";
@@ -93,6 +210,21 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedCategoryId, setExpandedCategoryId] = useState<number | null>(null);
+  const [activeTabByCategory, setActiveTabByCategory] = useState<Record<number, TabKey>>({});
+  const [expandedPlanByCategory, setExpandedPlanByCategory] = useState<Record<number, string | null>>({});
+
+  // ── Toolbar: search, insurer filter, status filter ──────────────────────
+  const [search, setSearch] = useState("");
+  const [insurerFilter, setInsurerFilter] = useState("all");
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<Set<KbResourceStatus>>(new Set(STATUS_VALUES));
+  const toggleStatusFilter = (s: KbResourceStatus) => {
+    setStatusFilter(prev => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s); else next.add(s);
+      return next;
+    });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -127,8 +259,8 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
 
   useEffect(() => { load(); }, []);
 
-  // ── Add category ──────────────────────────────────────────────────────
-  const [addingCategory, setAddingCategory] = useState(false);
+  // ── Add insurer/category ────────────────────────────────────────────────
+  const [addInsurerOpen, setAddInsurerOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryType, setNewCategoryType] = useState<"insurer" | "general">("insurer");
   const [saving, setSaving] = useState(false);
@@ -148,7 +280,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to add category (HTTP ${res.status}).`);
       logAction("Knowledge Base Category Added", `Added "${body.category.name}" (${body.category.type}).`);
-      setAddingCategory(false);
+      setAddInsurerOpen(false);
       setNewCategoryName("");
       setNewCategoryType("insurer");
       await load();
@@ -160,6 +292,10 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   };
 
   const deleteCategory = async (category: KbCategory) => {
+    // Deliberately checked against the FULL, unfiltered resources list (not
+    // the status/search-filtered view) — the status filter is a display
+    // convenience only, and must never let a category with hidden-by-filter
+    // resources look empty and get deleted.
     const inCategory = resources.filter(r => r.categoryId === category.id);
     if (inCategory.length > 0) {
       window.alert(`"${category.name}" has ${inCategory.length} resource(s) in it. Delete or move those first.`);
@@ -173,6 +309,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to delete category (HTTP ${res.status}).`);
       logAction("Knowledge Base Category Deleted", `Deleted "${category.name}".`);
+      if (expandedCategoryId === category.id) setExpandedCategoryId(null);
       await load();
     } catch (err: any) {
       setSaveError(err.message || "Failed to delete category. Please try again.");
@@ -182,7 +319,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   };
 
   // ── Manage this category's plan-name roster (the suggestion source for
-  //    tagging its documents below) ───────────────────────────────────────
+  //    tagging its documents, and the Plans tab's row list) ────────────────
   const [categoryPlanInputById, setCategoryPlanInputById] = useState<Record<number, string>>({});
   const [categoryPlanSavingId, setCategoryPlanSavingId] = useState<number | null>(null);
 
@@ -224,17 +361,28 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     saveCategoryPlanNames(category, nextNames);
   };
 
-  // ── Upload PDF ─────────────────────────────────────────────────────────
+  // ── Add Document (upload PDF or add by URL — a hosted policy-wording PDF,
+  //    or an ordinary web article like an insurer's "how to claim" guide;
+  //    see webIngest.ts, which auto-detects which of the two a URL is) ─────
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [addDocModalCategoryId, setAddDocModalCategoryId] = useState<number | null>(null);
   const [uploadTargetCategoryId, setUploadTargetCategoryId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
+  // Which document type (Brochure/Policy Wording/Prospectus/Add-on/Other)
+  // the NEXT upload or "add by URL" for a given category should be tagged
+  // with — set inside the "Add Document" modal, defaulting to "other" per
+  // kb_resources.document_type's own column default.
+  const [pendingDocTypeByCategory, setPendingDocTypeByCategory] = useState<Record<number, KbDocumentType>>({});
+  const pendingDocType = (categoryId: number): KbDocumentType => pendingDocTypeByCategory[categoryId] || "other";
+
   const triggerUpload = (categoryId: number) => {
     setUploadTargetCategoryId(categoryId);
     setUploadError(null);
     setUploadSuccess(null);
+    setAddDocModalCategoryId(null);
     fileInputRef.current?.click();
   };
 
@@ -250,6 +398,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       formData.append("file", file);
       formData.append("categoryId", String(uploadTargetCategoryId));
       formData.append("title", file.name);
+      formData.append("documentType", pendingDocType(uploadTargetCategoryId));
       const res = await fetch("/api/kb/resources/upload", { method: "POST", body: formData });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to process "${file.name}" (HTTP ${res.status}).`);
@@ -264,26 +413,23 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     }
   };
 
-  // ── Add by URL (a hosted policy-wording PDF, or an ordinary web article
-  //    like an insurer's "how to claim" guide — see webIngest.ts, which
-  //    auto-detects which of the two a URL actually is) ────────────────────
-  const [addUrlCategoryId, setAddUrlCategoryId] = useState<number | null>(null);
   const [addUrlTitle, setAddUrlTitle] = useState("");
   const [addUrlValue, setAddUrlValue] = useState("");
   const [addingUrl, setAddingUrl] = useState(false);
   const [addUrlError, setAddUrlError] = useState<string | null>(null);
   const [addUrlSuccess, setAddUrlSuccess] = useState<string | null>(null);
 
-  const toggleAddUrl = (categoryId: number) => {
+  const openAddDocument = (categoryId: number) => {
+    setAddDocModalCategoryId(categoryId);
     setAddUrlError(null);
     setAddUrlSuccess(null);
-    setAddUrlCategoryId(prev => (prev === categoryId ? null : categoryId));
     setAddUrlTitle("");
     setAddUrlValue("");
   };
 
   const submitAddUrl = async () => {
-    if (addUrlCategoryId === null) return;
+    if (addDocModalCategoryId === null) return;
+    const categoryId = addDocModalCategoryId;
     const url = addUrlValue.trim();
     if (!url) { setAddUrlError("Paste a URL before adding it."); return; }
     setAddingUrl(true);
@@ -293,21 +439,50 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       const res = await fetch("/api/kb/resources/add-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, categoryId: addUrlCategoryId, title: addUrlTitle.trim() || undefined }),
+        body: JSON.stringify({
+          url,
+          categoryId,
+          title: addUrlTitle.trim() || undefined,
+          documentType: pendingDocType(categoryId),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to process the URL (HTTP ${res.status}).`);
-      const category = categories.find(c => c.id === addUrlCategoryId);
+      const category = categories.find(c => c.id === categoryId);
       const kindLabel = body.detectedType === "pdf" ? "PDF" : "web page";
       logAction("Knowledge Base Document Added", `Added ${kindLabel} "${body.resource.title}" (${url}) to "${category?.name || "a category"}" — ${body.chunkCount} chunk(s) embedded.`);
       setAddUrlSuccess(`Added — ${body.chunkCount} chunk(s) embedded from the ${kindLabel}.`);
       setAddUrlTitle("");
       setAddUrlValue("");
+      setAddDocModalCategoryId(null);
       await load();
     } catch (err: any) {
       setAddUrlError(err.message || "Failed to add this URL.");
     } finally {
       setAddingUrl(false);
+    }
+  };
+
+  const [changingDocTypeResourceId, setChangingDocTypeResourceId] = useState<number | null>(null);
+
+  const changeDocumentType = async (resource: KbResource, newType: KbDocumentType) => {
+    if (newType === resource.documentType) return;
+    setChangingDocTypeResourceId(resource.id);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/kb/resources/${resource.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentType: newType }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to update document type (HTTP ${res.status}).`);
+      logAction("Knowledge Base Document Type Changed", `Set "${resource.title}" to ${DOCUMENT_TYPE_LABEL[newType]}.`);
+      await load();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to update document type. Please try again.");
+    } finally {
+      setChangingDocTypeResourceId(null);
     }
   };
 
@@ -387,6 +562,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to delete resource (HTTP ${res.status}).`);
       logAction("Knowledge Base Document Deleted", `Deleted "${resource.title}".`);
+      if (editingResourceId === resource.id) setEditingResourceId(null);
       await load();
     } catch (err: any) {
       setSaveError(err.message || "Failed to delete resource. Please try again.");
@@ -394,6 +570,12 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       setSaving(false);
     }
   };
+
+  // ── Resource edit modal (doc type / plan tags / move / delete, all in
+  //    one place instead of scattered inline row controls) ────────────────
+  const [editingResourceId, setEditingResourceId] = useState<number | null>(null);
+  const editingResource = resources.find(r => r.id === editingResourceId) ?? null;
+  const editingCategory = editingResource ? categories.find(c => c.id === editingResource.categoryId) ?? null : null;
 
   const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
     dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
@@ -404,8 +586,26 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     return <div className="text-xs font-semibold text-content-muted py-8 text-center">Loading Knowledge Base…</div>;
   }
 
+  const searchLower = search.trim().toLowerCase();
+  const categoryMatchesSearch = (category: KbCategory, catResources: KbResource[]): boolean => {
+    if (!searchLower) return true;
+    if (category.name.toLowerCase().includes(searchLower)) return true;
+    if (category.planNames.some(p => p.toLowerCase().includes(searchLower))) return true;
+    if (catResources.some(r => r.title.toLowerCase().includes(searchLower))) return true;
+    return false;
+  };
+  const resourceMatchesSearch = (r: KbResource) => !searchLower || r.title.toLowerCase().includes(searchLower);
+
+  const visibleCategories = categories.filter(c => {
+    if (insurerFilter !== "all" && String(c.id) !== insurerFilter) return false;
+    const catResources = resources.filter(r => r.categoryId === c.id);
+    return categoryMatchesSearch(c, catResources);
+  });
+
+  const insurerFilterOptions = [{ value: "all", label: "All Insurers" }, ...categories.map(c => ({ value: String(c.id), label: c.name }))];
+
   return (
-    <div className="space-y-5 pb-6">
+    <div className="space-y-4 pb-6">
       <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleFileChosen} />
 
       {loadError && (
@@ -434,259 +634,257 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
         </div>
       )}
 
+      {/* Compact "Add Insurer" action, replacing the old always-open, mostly
+          empty "Add Category" card — right-aligned directly under the page
+          title so it reads as the page's one primary action. */}
       {canManage && (
-        <div className={`rounded-xl border p-4 ${cardClass}`}>
-          {!addingCategory ? (
-            <ClippedButton size="md" onClick={() => setAddingCategory(true)} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
-              <Plus className="w-3.5 h-3.5" /> Add Category
-            </ClippedButton>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
-              <div className="flex-1 min-w-[180px]">
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Category name</label>
-                <input className={inputClass} value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder='e.g. "Bajaj Allianz" or "General / Others"' autoFocus />
-              </div>
-              <div className="w-full sm:w-40">
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Type</label>
-                <CustomSelect
-                  theme={theme}
-                  value={newCategoryType}
-                  onChange={v => setNewCategoryType(v as "insurer" | "general")}
-                  options={[{ value: "insurer", label: "Insurer" }, { value: "general", label: "General / Others" }]}
-                />
-              </div>
-              <div className="flex gap-2">
-                <ClippedButton size="md" onClick={addCategory} disabled={saving} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider">
-                  {saving ? "Adding…" : "Add"}
-                </ClippedButton>
-                <ClippedButton size="md" onClick={() => { setAddingCategory(false); setNewCategoryName(""); setSaveError(null); }} className={dark ? "bg-white/[0.06] text-stone-300 px-4 py-2 text-[11px] font-black uppercase tracking-wider" : "bg-stone-100 text-stone-600 px-4 py-2 text-[11px] font-black uppercase tracking-wider"}>
-                  Cancel
-                </ClippedButton>
-              </div>
-            </div>
-          )}
+        <div className="flex justify-end">
+          <ClippedButton size="md" onClick={() => setAddInsurerOpen(true)} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
+            <Plus className="w-3.5 h-3.5" /> Add Insurer
+          </ClippedButton>
         </div>
       )}
 
+      {/* Toolbar — search + insurer filter + status filter, all real,
+          client-side filters over the already-loaded categories/resources. */}
+      <div className={`rounded-xl border p-3 flex flex-col gap-3 ${cardClass}`}>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-content-muted pointer-events-none" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search insurers, plans or documents…"
+              className={`${inputClass} pl-8`}
+            />
+          </div>
+          <div className="w-full sm:w-56">
+            <CustomSelect theme={theme} value={insurerFilter} onChange={setInsurerFilter} options={insurerFilterOptions} />
+          </div>
+          <ClippedButton
+            size="md"
+            title="Filter by document status"
+            onClick={() => setFilterPanelOpen(v => !v)}
+            className={`px-3 py-2 shrink-0 ${
+              filterPanelOpen || statusFilter.size < STATUS_VALUES.length
+                ? dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-700"
+                : dark ? "bg-white/[0.06] text-stone-300" : "bg-stone-100 text-stone-600"
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+          </ClippedButton>
+        </div>
+        {filterPanelOpen && (
+          <div className={`flex flex-wrap items-center gap-2 pt-2.5 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-content-muted">Status</span>
+            {STATUS_VALUES.map(s => {
+              const active = statusFilter.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleStatusFilter(s)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-colors cursor-pointer ${
+                    active
+                      ? dark ? "bg-sky-500/15 text-sky-300 border-sky-500/30" : "bg-sky-50 text-sky-700 border-sky-200"
+                      : dark ? "bg-transparent text-stone-500 border-white/[0.1]" : "bg-transparent text-stone-400 border-stone-200"
+                  }`}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="space-y-3">
         {categories.length === 0 && (
-          <div className="text-xs font-semibold text-content-muted py-8 text-center">No categories yet — add one above to start uploading documents.</div>
+          <div className="text-xs font-semibold text-content-muted py-8 text-center">No insurers yet — add one above to start uploading documents.</div>
         )}
-        {categories.map(category => {
-          const catResources = resources.filter(r => r.categoryId === category.id);
+        {categories.length > 0 && visibleCategories.length === 0 && (
+          <div className="text-xs font-semibold text-content-muted py-8 text-center">No insurers or documents match your search/filters.</div>
+        )}
+        {visibleCategories.map(category => {
+          const catResourcesAll = resources.filter(r => r.categoryId === category.id);
+          const catResources = catResourcesAll.filter(r => statusFilter.has(r.status));
           const expanded = expandedCategoryId === category.id;
+          const logoSrc = category.type === "insurer" ? INSURER_LOGOS[category.name] : undefined;
+          const accent = category.type === "insurer" ? INSURER_ACCENT_COLOR[category.name] : undefined;
+          const accentColor = accent ? (dark ? accent.dark : accent.light) : undefined;
+          const planNames = category.type === "insurer" ? planNamesForCategory(category, catResources) : [];
+          const docTypeCounts = countByDocType(catResources);
+          const activeTab: TabKey = activeTabByCategory[category.id] ?? (category.type === "insurer" ? "plans" : "all");
+          const setActiveTab = (tab: TabKey) => setActiveTabByCategory(prev => ({ ...prev, [category.id]: tab }));
+          const expandedPlan = expandedPlanByCategory[category.id] ?? null;
+          const tabs: { key: TabKey; label: string }[] = [
+            ...(category.type === "insurer" ? [{ key: "plans" as TabKey, label: "Plans" }] : []),
+            { key: "all", label: "All Resources" },
+            ...DOC_TYPE_TABS.map(t => ({ key: t.value as TabKey, label: t.tabLabel })),
+          ];
+
           return (
-            <div key={category.id} className={`rounded-xl border overflow-hidden ${cardClass}`}>
+            <div
+              key={category.id}
+              className={`rounded-xl border overflow-hidden transition-colors ${cardClass}`}
+              style={expanded && accentColor ? { borderColor: accentColor, boxShadow: `inset 3px 0 0 0 ${accentColor}` } : undefined}
+            >
               <button
                 type="button"
                 onClick={() => setExpandedCategoryId(expanded ? null : category.id)}
                 className={`w-full flex items-center justify-between px-4 py-3 text-left cursor-pointer transition-colors ${dark ? "hover:bg-white/[0.03]" : "hover:bg-stone-50"}`}
+                style={expanded && accentColor ? { backgroundColor: hexToRgba(accentColor, dark ? 0.08 : 0.06) } : undefined}
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
                   {expanded ? <ChevronDown className="w-4 h-4 shrink-0 text-content-muted" /> : <ChevronRight className="w-4 h-4 shrink-0 text-content-muted" />}
+                  {logoSrc ? (
+                    <img src={logoSrc} alt={category.name} className="h-5 w-auto shrink-0" />
+                  ) : (
+                    <Folder className="w-4 h-4 shrink-0 text-content-muted" />
+                  )}
                   <span className={`text-sm font-bold ${dark ? "text-white" : "text-stone-900"}`}>{category.name}</span>
                   <span className={`text-[9.5px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${dark ? "bg-white/[0.06] text-stone-400 border-white/[0.1]" : "bg-stone-100 text-stone-600 border-stone-200"}`}>
                     {category.type === "insurer" ? "Insurer" : "General"}
                   </span>
-                  <span className="text-[10.5px] font-semibold text-content-muted">{catResources.length} document{catResources.length === 1 ? "" : "s"}</span>
-                </div>
-                {canManage && (
-                  <span className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                    <ClippedButton size="sm" title="Upload a PDF to this category" onClick={() => triggerUpload(category.id)} className={dark ? "bg-sky-500/15 text-sky-300 px-2.5 py-1.5" : "bg-sky-50 text-sky-700 px-2.5 py-1.5"}>
-                      <Upload className="w-3.5 h-3.5" />
-                    </ClippedButton>
-                    <ClippedButton size="sm" title="Add by URL (a hosted PDF or a web article)" onClick={() => toggleAddUrl(category.id)} className={dark ? "bg-violet-500/15 text-violet-300 px-2.5 py-1.5" : "bg-violet-50 text-violet-700 px-2.5 py-1.5"}>
-                      <Link2 className="w-3.5 h-3.5" />
-                    </ClippedButton>
-                    <ClippedButton size="sm" title="Delete category" onClick={() => deleteCategory(category)} className={dark ? "bg-red-500/15 text-red-300 px-2.5 py-1.5" : "bg-red-50 text-red-700 px-2.5 py-1.5"}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </ClippedButton>
-                  </span>
-                )}
-              </button>
-              {expanded && (
-                <div className={`px-4 pb-4 pt-1 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
-                  {addUrlCategoryId === category.id && (
-                    <div className={`mt-3 mb-1 p-3 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-100"}`}>
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <Link2 className="w-3 h-3 shrink-0 text-content-muted" />
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-content-muted">Add by URL</span>
-                        <span className="text-[10px] font-semibold text-content-muted">— a hosted PDF or a web article; the type is detected automatically</span>
-                      </div>
-                      {addUrlError && (
-                        <div className={`text-[10.5px] font-semibold px-2.5 py-1.5 rounded mb-2 ${dark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>{addUrlError}</div>
-                      )}
-                      {addUrlSuccess && (
-                        <div className={`text-[10.5px] font-semibold px-2.5 py-1.5 rounded mb-2 ${dark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>{addUrlSuccess}</div>
-                      )}
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
-                        <div className="flex-1 min-w-[200px]">
-                          <label className="block text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">URL</label>
-                          <input value={addUrlValue} onChange={e => setAddUrlValue(e.target.value)} placeholder="https://…" disabled={addingUrl} className={inputClass} />
-                        </div>
-                        <div className="flex-1 min-w-[160px]">
-                          <label className="block text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">Title (optional)</label>
-                          <input value={addUrlTitle} onChange={e => setAddUrlTitle(e.target.value)} placeholder="Defaults to the page's own title" disabled={addingUrl} className={inputClass} />
-                        </div>
-                        <ClippedButton size="md" onClick={submitAddUrl} disabled={addingUrl} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
-                          {addingUrl ? "Adding…" : "Add"}
-                        </ClippedButton>
-                      </div>
-                    </div>
-                  )}
                   {category.type === "insurer" && (
-                    <div className={`mt-3 mb-1 p-3 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-100"}`}>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <Tag className="w-3 h-3 shrink-0 text-content-muted" />
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-content-muted">Plans under {category.name}</span>
-                        <span className="text-[10px] font-semibold text-content-muted">— the suggestions offered when tagging a document below</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {category.planNames.length === 0 && (
-                          <span className="text-[10.5px] font-semibold text-content-muted italic">No plans added yet.</span>
-                        )}
-                        {category.planNames.map(name => (
-                          <span key={name} className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded text-[10.5px] font-bold border ${dark ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
-                            {name}
-                            {canManage && (
-                              <button type="button" onClick={() => removeCategoryPlanName(category, name)} disabled={categoryPlanSavingId === category.id} className="hover:opacity-70 cursor-pointer" title={`Remove "${name}"`}>
-                                <X className="w-2.5 h-2.5" />
-                              </button>
-                            )}
-                          </span>
-                        ))}
-                        {canManage && (
-                          <>
-                            <input
-                              value={categoryPlanInputById[category.id] || ""}
-                              onChange={e => setCategoryPlanInputById(prev => ({ ...prev, [category.id]: e.target.value }))}
-                              onKeyDown={e => {
-                                if (e.key === "Enter") { e.preventDefault(); addCategoryPlanName(category, categoryPlanInputById[category.id] || ""); }
-                              }}
-                              placeholder="Add plan name…"
-                              disabled={categoryPlanSavingId === category.id}
-                              className={`w-32 px-1.5 py-0.5 rounded text-[10.5px] font-semibold border outline-none ${
-                                dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400"
-                              }`}
-                            />
-                            {(plansByInsurer[category.name.trim().toLowerCase()] || [])
-                              .filter(p => !category.planNames.some(n => n.toLowerCase() === p.toLowerCase()))
-                              .map(s => (
-                                <button
-                                  key={s}
-                                  type="button"
-                                  onClick={() => addCategoryPlanName(category, s)}
-                                  disabled={categoryPlanSavingId === category.id}
-                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold border border-dashed cursor-pointer transition-colors ${
-                                    dark ? "text-stone-400 border-white/[0.15] hover:bg-white/[0.06]" : "text-stone-500 border-stone-300 hover:bg-stone-100"
-                                  }`}
-                                  title={`Quick-add "${s}" (from Plan Management)`}
-                                >
-                                  <Plus className="w-2.5 h-2.5" /> {s}
-                                </button>
-                              ))}
-                          </>
-                        )}
-                      </div>
-                    </div>
+                    <span className="text-[10.5px] font-semibold text-content-muted whitespace-nowrap">{planNames.length} plan{planNames.length === 1 ? "" : "s"}</span>
                   )}
-                  {catResources.length === 0 ? (
-                    <div className="text-[11px] font-semibold text-content-muted py-4 text-center">No documents yet — click the upload icon above to add one.</div>
-                  ) : (
-                    <div className="space-y-1.5 mt-2">
-                      {catResources.map(resource => {
-                        const suggestions = category.planNames.filter(
-                          p => !resource.planTags.some(t => t.toLowerCase() === p.toLowerCase())
-                        );
-                        return (
-                        <div key={resource.id} className={`px-3 py-2 rounded-lg space-y-1.5 ${dark ? "bg-white/[0.02]" : "bg-stone-50"}`}>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
-                              <span className={`text-xs font-semibold truncate ${dark ? "text-stone-200" : "text-stone-800"}`} title={resource.title}>{resource.title}</span>
-                              {statusBadge(resource.status, dark)}
-                              {resource.status === "active" && <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{resource.chunkCount} chunks</span>}
-                              {resource.status === "error" && resource.errorMessage && (
-                                <span className="text-[10px] font-semibold text-red-400 truncate" title={resource.errorMessage}>{resource.errorMessage}</span>
-                              )}
-                            </div>
-                            {canManage && (
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <div className="w-40">
-                                  <CustomSelect
-                                    theme={theme}
-                                    value={String(resource.categoryId)}
-                                    onChange={v => moveResource(resource, Number(v))}
-                                    options={categories.map(c => ({ value: String(c.id), label: c.name }))}
-                                    disabled={movingResourceId === resource.id}
-                                    triggerClassName={`w-full px-2 py-1 rounded-lg text-[10.5px] font-semibold border flex items-center justify-between gap-1 cursor-pointer ${
-                                      dark ? "bg-white/[0.04] border-white/[0.1] text-stone-300" : "bg-white border-stone-300 text-stone-700"
-                                    }`}
-                                  />
-                                </div>
-                                <ClippedButton size="sm" title="Delete document" onClick={() => deleteResource(resource)} className={dark ? "bg-red-500/10 text-red-300 px-2 py-1 shrink-0" : "bg-red-50 text-red-600 px-2 py-1 shrink-0"}>
-                                  <Trash2 className="w-3 h-3" />
-                                </ClippedButton>
-                              </div>
-                            )}
-                          </div>
+                  {category.type === "insurer" && docTypeCounts.addon > 0 && (
+                    <span className="text-[10.5px] font-semibold text-content-muted whitespace-nowrap">{docTypeCounts.addon} add-on{docTypeCounts.addon === 1 ? "" : "s"}</span>
+                  )}
+                  <span className="text-[10.5px] font-semibold text-content-muted whitespace-nowrap">{catResourcesAll.length} resource{catResourcesAll.length === 1 ? "" : "s"}</span>
+                </div>
+              </button>
 
-                          {/* Plan tags — only meaningful within an insurer
-                              category; a document with no tags is treated
-                              (by the future query endpoint) as applying
-                              broadly to every plan under this insurer. */}
-                          {category.type === "insurer" && (
-                            <div className="flex flex-wrap items-center gap-1.5 pl-6">
-                              <Tag className="w-3 h-3 shrink-0 text-content-muted" />
-                              {resource.planTags.length === 0 && (
-                                <span className="text-[10px] font-semibold text-content-muted italic">No plan tags — applies to all {category.name} plans</span>
-                              )}
-                              {resource.planTags.map(tag => (
-                                <span key={tag} className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded text-[10px] font-bold border ${dark ? "bg-sky-500/15 text-sky-300 border-sky-500/30" : "bg-sky-50 text-sky-700 border-sky-200"}`}>
-                                  {tag}
-                                  {canManage && (
-                                    <button type="button" onClick={() => removePlanTag(resource, tag)} disabled={tagSavingResourceId === resource.id} className="hover:opacity-70 cursor-pointer" title={`Remove "${tag}"`}>
-                                      <X className="w-2.5 h-2.5" />
-                                    </button>
-                                  )}
-                                </span>
-                              ))}
-                              {canManage && (
-                                <>
-                                  <input
-                                    value={tagInputByResource[resource.id] || ""}
-                                    onChange={e => setTagInputByResource(prev => ({ ...prev, [resource.id]: e.target.value }))}
-                                    onKeyDown={e => {
-                                      if (e.key === "Enter") { e.preventDefault(); addPlanTag(resource, tagInputByResource[resource.id] || ""); }
-                                    }}
-                                    placeholder="Add plan tag…"
-                                    disabled={tagSavingResourceId === resource.id}
-                                    className={`w-28 px-1.5 py-0.5 rounded text-[10px] font-semibold border outline-none ${
-                                      dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400"
-                                    }`}
-                                  />
-                                  {suggestions.map(s => (
-                                    <button
-                                      key={s}
-                                      type="button"
-                                      onClick={() => addPlanTag(resource, s)}
-                                      disabled={tagSavingResourceId === resource.id}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border border-dashed cursor-pointer transition-colors ${
-                                        dark ? "text-stone-400 border-white/[0.15] hover:bg-white/[0.06]" : "text-stone-500 border-stone-300 hover:bg-stone-100"
-                                      }`}
-                                      title={`Quick-add "${s}"`}
-                                    >
-                                      <Plus className="w-2.5 h-2.5" /> {s}
-                                    </button>
-                                  ))}
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
+              {expanded && (
+                <div className={`px-4 pb-4 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                  {/* Stats row — read-only counts plus the category's two
+                      real actions (refresh, add document); delete is a
+                      separate, visually distinct destructive action. */}
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    {category.type === "insurer" && <StatPill label={`Plan${planNames.length === 1 ? "" : "s"}`} value={planNames.length} dark={dark} />}
+                    <StatPill label={`Resource${catResourcesAll.length === 1 ? "" : "s"}`} value={catResourcesAll.length} dark={dark} />
+                    {DOC_TYPE_TABS.map(t => (
+                      <div key={t.value} className="contents">
+                        <StatPill label={t.tabLabel} value={docTypeCounts[t.value]} dark={dark} />
+                      </div>
+                    ))}
+                    <div className="flex-1" />
+                    <ClippedButton size="sm" title="Refresh from the database" onClick={load} className={dark ? "bg-white/[0.06] text-stone-300 px-2.5 py-1.5" : "bg-stone-100 text-stone-600 px-2.5 py-1.5"}>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </ClippedButton>
+                    {canManage && (
+                      <>
+                        <ClippedButton size="sm" title="Add a document to this insurer" onClick={() => openAddDocument(category.id)} className={dark ? "bg-sky-500/15 text-sky-300 px-2.5 py-1.5" : "bg-sky-50 text-sky-700 px-2.5 py-1.5"}>
+                          <Plus className="w-3.5 h-3.5" />
+                        </ClippedButton>
+                        <ClippedButton size="sm" title="Delete category" onClick={() => deleteCategory(category)} className={dark ? "bg-red-500/15 text-red-300 px-2.5 py-1.5" : "bg-red-50 text-red-700 px-2.5 py-1.5"}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </ClippedButton>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Tab row */}
+                  <div className={`flex items-center gap-1 border-b mb-3 overflow-x-auto ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+                    {tabs.map(t => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setActiveTab(t.key)}
+                        className={`px-3 py-2 text-[11px] font-bold whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${
+                          activeTab === t.key
+                            ? dark ? "border-sky-400 text-white" : "border-sky-600 text-stone-900"
+                            : dark ? "border-transparent text-stone-500 hover:text-stone-300" : "border-transparent text-stone-400 hover:text-stone-600"
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Tab content */}
+                  {activeTab === "plans" && category.type === "insurer" ? (
+                    <div className="flex flex-col gap-1.5">
+                      {planNames.length === 0 && (
+                        <div className="text-[11px] font-semibold text-content-muted py-4 text-center">No plans yet — add one below.</div>
+                      )}
+                      {planNames.map(planName => {
+                        const planResourcesAll = catResources.filter(r => resourceAppliesToPlan(r, planName) && resourceMatchesSearch(r));
+                        const planCounts = countByDocType(planResourcesAll);
+                        const planExpanded = expandedPlan === planName;
+                        return (
+                          <div key={planName} className="contents">
+                            <PlanRow
+                              planName={planName}
+                              resources={planResourcesAll}
+                              counts={planCounts}
+                              dark={dark}
+                              expanded={planExpanded}
+                              onToggle={() => setExpandedPlanByCategory(prev => ({ ...prev, [category.id]: planExpanded ? null : planName }))}
+                              canManage={canManage}
+                              onEditResource={r => setEditingResourceId(r.id)}
+                              onRemovePlan={canManage ? () => {
+                                if (window.confirm(`Remove "${planName}" from ${category.name}'s plan list? Documents already tagged with it keep the tag.`)) {
+                                  removeCategoryPlanName(category, planName);
+                                }
+                              } : undefined}
+                            />
+                          </div>
                         );
                       })}
+                      {canManage && (
+                        <div className={`flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                          <Tag className="w-3 h-3 shrink-0 text-content-muted" />
+                          <input
+                            value={categoryPlanInputById[category.id] || ""}
+                            onChange={e => setCategoryPlanInputById(prev => ({ ...prev, [category.id]: e.target.value }))}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") { e.preventDefault(); addCategoryPlanName(category, categoryPlanInputById[category.id] || ""); }
+                            }}
+                            placeholder="Add plan name…"
+                            disabled={categoryPlanSavingId === category.id}
+                            className={`w-36 px-2 py-1 rounded text-[10.5px] font-semibold border outline-none ${
+                              dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400"
+                            }`}
+                          />
+                          <ClippedButton
+                            size="sm"
+                            onClick={() => addCategoryPlanName(category, categoryPlanInputById[category.id] || "")}
+                            disabled={categoryPlanSavingId === category.id}
+                            className={dark ? "bg-white/[0.06] text-stone-300 px-2 py-1" : "bg-stone-100 text-stone-600 px-2 py-1"}
+                          >
+                            <Plus className="w-3 h-3" />
+                          </ClippedButton>
+                          {(plansByInsurer[category.name.trim().toLowerCase()] || [])
+                            .filter(p => !category.planNames.some(n => n.toLowerCase() === p.toLowerCase()))
+                            .map(s => (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => addCategoryPlanName(category, s)}
+                                disabled={categoryPlanSavingId === category.id}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] font-semibold border border-dashed cursor-pointer transition-colors ${
+                                  dark ? "text-stone-400 border-white/[0.15] hover:bg-white/[0.06]" : "text-stone-500 border-stone-300 hover:bg-stone-100"
+                                }`}
+                                title={`Quick-add "${s}" (from Plan Management)`}
+                              >
+                                <Plus className="w-2.5 h-2.5" /> {s}
+                              </button>
+                            ))}
+                        </div>
+                      )}
                     </div>
+                  ) : (
+                    <ResourceListTab
+                      resources={catResources.filter(r => (activeTab === "all" ? true : r.documentType === activeTab) && resourceMatchesSearch(r))}
+                      dark={dark}
+                      canManage={canManage}
+                      showDocTypeBadge={activeTab === "all"}
+                      showPlanCount={category.type === "insurer"}
+                      onEdit={r => setEditingResourceId(r.id)}
+                      emptyLabel={activeTab === "all" ? "No documents yet — use the + button above to add one." : "No documents of this type yet."}
+                    />
                   )}
                 </div>
               )}
@@ -694,6 +892,497 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           );
         })}
       </div>
+
+      {addInsurerOpen && (
+        <AddInsurerModal
+          theme={theme}
+          name={newCategoryName}
+          type={newCategoryType}
+          saving={saving}
+          error={saveError}
+          onChangeName={setNewCategoryName}
+          onChangeType={setNewCategoryType}
+          onSubmit={addCategory}
+          onClose={() => { setAddInsurerOpen(false); setNewCategoryName(""); setSaveError(null); }}
+        />
+      )}
+
+      {addDocModalCategoryId !== null && (
+        <AddDocumentModal
+          theme={theme}
+          categoryName={categories.find(c => c.id === addDocModalCategoryId)?.name || ""}
+          documentType={pendingDocType(addDocModalCategoryId)}
+          onChangeDocumentType={v => setPendingDocTypeByCategory(prev => ({ ...prev, [addDocModalCategoryId]: v }))}
+          onChooseFile={() => triggerUpload(addDocModalCategoryId)}
+          urlValue={addUrlValue}
+          onChangeUrlValue={setAddUrlValue}
+          titleValue={addUrlTitle}
+          onChangeTitleValue={setAddUrlTitle}
+          addingUrl={addingUrl}
+          urlError={addUrlError}
+          urlSuccess={addUrlSuccess}
+          onSubmitUrl={submitAddUrl}
+          onClose={() => setAddDocModalCategoryId(null)}
+        />
+      )}
+
+      {editingResource && editingCategory && (
+        <ResourceEditModal
+          theme={theme}
+          resource={editingResource}
+          category={editingCategory}
+          categories={categories}
+          canManage={canManage}
+          onClose={() => setEditingResourceId(null)}
+          onChangeDocumentType={v => changeDocumentType(editingResource, v)}
+          changingDocType={changingDocTypeResourceId === editingResource.id}
+          onMove={v => moveResource(editingResource, v)}
+          moving={movingResourceId === editingResource.id}
+          tagInput={tagInputByResource[editingResource.id] || ""}
+          onChangeTagInput={v => setTagInputByResource(prev => ({ ...prev, [editingResource.id]: v }))}
+          onAddTag={t => addPlanTag(editingResource, t)}
+          onRemoveTag={t => removePlanTag(editingResource, t)}
+          tagSaving={tagSavingResourceId === editingResource.id}
+          onDelete={() => deleteResource(editingResource)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Small read-only count chip used in the per-insurer stats row. */
+function StatPill({ label, value, dark }: { label: string; value: number; dark: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap ${dark ? "bg-white/[0.05] text-stone-300" : "bg-stone-100 text-stone-600"}`}>
+      <span className={dark ? "text-white" : "text-stone-900"}>{value}</span> {label}
+    </span>
+  );
+}
+
+/** One plan's summary row inside the Plans tab — compact by default (name +
+ * per-document-type counts), expands into its resources grouped by document
+ * type. Replaces the old approach of rendering every plan as an inline tag
+ * chip with nothing behind it. */
+function PlanRow({
+  planName, resources, counts, dark, expanded, onToggle, canManage, onEditResource, onRemovePlan,
+}: {
+  planName: string;
+  resources: KbResource[];
+  counts: Record<KbDocumentType, number>;
+  dark: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  canManage: boolean;
+  onEditResource: (r: KbResource) => void;
+  onRemovePlan?: () => void;
+}) {
+  const grouped: { docType: KbDocumentType; label: string; items: KbResource[] }[] = [
+    ...DOC_TYPE_TABS.map(t => ({ docType: t.value, label: t.tabLabel, items: resources.filter(r => r.documentType === t.value) })),
+    { docType: "other" as KbDocumentType, label: "Other", items: resources.filter(r => r.documentType === "other") },
+  ].filter(g => g.items.length > 0);
+
+  return (
+    <div className={`rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-100"}`}>
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left cursor-pointer">
+        <div className="flex items-center gap-2 min-w-0">
+          {expanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-content-muted" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-content-muted" />}
+          <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
+          <span className={`text-[12.5px] font-bold truncate ${dark ? "text-stone-100" : "text-stone-900"}`}>{planName}</span>
+          <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{resources.length} resource{resources.length === 1 ? "" : "s"}</span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {DOC_TYPE_TABS.map(t => (
+            <span key={t.value} className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${dark ? "bg-white/[0.05] text-stone-400" : "bg-stone-100 text-stone-500"}`}>
+              {t.shortLabel} {counts[t.value]}
+            </span>
+          ))}
+          {canManage && onRemovePlan && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onRemovePlan(); }}
+              title={`Remove "${planName}" from the plan list`}
+              className={`ml-1 p-1 rounded cursor-pointer ${dark ? "text-stone-500 hover:text-red-400 hover:bg-red-500/10" : "text-stone-400 hover:text-red-600 hover:bg-red-50"}`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </button>
+      {expanded && (
+        <div className={`px-3 pb-3 pt-1 border-t space-y-2.5 ${dark ? "border-white/[0.06]" : "border-stone-200"}`}>
+          {grouped.length === 0 ? (
+            <div className="text-[10.5px] font-semibold text-content-muted italic py-2">No resources apply to this plan yet.</div>
+          ) : (
+            grouped.map(g => (
+              <div key={g.docType}>
+                <div className="text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">{g.label}</div>
+                <ResourceListTab
+                  resources={g.items}
+                  dark={dark}
+                  canManage={canManage}
+                  showDocTypeBadge={false}
+                  showPlanCount={false}
+                  onEdit={onEditResource}
+                  compact
+                />
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Flat resource list — used by All Resources, each document-type tab, and
+ * (in compact mode) each plan's grouped-by-document-type sections. Shows an
+ * associated-plan COUNT instead of rendering every plan tag inline; the
+ * full tag list lives in the edit modal now. */
+function ResourceListTab({
+  resources, dark, canManage, showDocTypeBadge, showPlanCount, onEdit, emptyLabel, compact,
+}: {
+  resources: KbResource[];
+  dark: boolean;
+  canManage: boolean;
+  showDocTypeBadge: boolean;
+  showPlanCount: boolean;
+  onEdit: (r: KbResource) => void;
+  emptyLabel?: string;
+  compact?: boolean;
+}) {
+  if (resources.length === 0) {
+    return <div className="text-[11px] font-semibold text-content-muted py-4 text-center">{emptyLabel || "Nothing here yet."}</div>;
+  }
+  return (
+    <div className={compact ? "space-y-1" : "space-y-1.5"}>
+      {resources.map(resource => (
+        <div key={resource.id} className={`px-3 py-2 rounded-lg flex items-center justify-between gap-3 ${dark ? "bg-white/[0.02]" : "bg-stone-50"}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <FileText className="w-3.5 h-3.5 shrink-0 text-content-muted" />
+            <span className={`text-xs font-semibold truncate ${dark ? "text-stone-200" : "text-stone-800"}`} title={resource.title}>{resource.title}</span>
+            {statusBadge(resource.status, dark)}
+            {showDocTypeBadge && documentTypeBadge(resource.documentType, dark)}
+            {showPlanCount && (
+              <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">
+                {resource.planTags.length === 0 ? "All plans" : `${resource.planTags.length} plan${resource.planTags.length === 1 ? "" : "s"}`}
+              </span>
+            )}
+            {resource.sourceUrl && /^https?:\/\//i.test(resource.sourceUrl) && (
+              <a
+                href={resource.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open source document"
+                className={`text-[10px] font-semibold underline whitespace-nowrap shrink-0 ${dark ? "text-sky-400 hover:text-sky-300" : "text-sky-600 hover:text-sky-700"}`}
+              >
+                Open
+              </a>
+            )}
+            {resource.status === "active" && <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{resource.chunkCount} chunks</span>}
+            {resource.status === "error" && resource.errorMessage && (
+              <span className="text-[10px] font-semibold text-red-400 truncate" title={resource.errorMessage}>{resource.errorMessage}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onEdit(resource)}
+            title={canManage ? "Edit document" : "View document details"}
+            className={`shrink-0 p-1.5 rounded-lg cursor-pointer transition-colors ${dark ? "text-stone-400 hover:text-white hover:bg-white/[0.08]" : "text-stone-500 hover:text-stone-900 hover:bg-stone-200"}`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Shared modal chrome (overlay + centered card) — mirrors
+ * SkillDomainPromptModal.tsx's pattern, the app's existing modal language. */
+function ModalShell({ theme, onClose, widthClassName, children }: { theme: "light" | "dark"; onClose: () => void; widthClassName?: string; children: ReactNode }) {
+  const dark = theme === "dark";
+  return (
+    <div className="fixed inset-0 z-[190] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className={`absolute inset-0 backdrop-blur-md ${dark ? "bg-black/60" : "bg-stone-900/40"}`} onClick={onClose} />
+      <div className={`relative w-full ${widthClassName || "max-w-md"} rounded-2xl border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col ${dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"}`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function AddInsurerModal({
+  theme, name, type, saving, error, onChangeName, onChangeType, onSubmit, onClose,
+}: {
+  theme: "light" | "dark";
+  name: string;
+  type: "insurer" | "general";
+  saving: boolean;
+  error: string | null;
+  onChangeName: (v: string) => void;
+  onChangeType: (v: "insurer" | "general") => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const dark = theme === "dark";
+  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
+    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
+  }`;
+  return (
+    <ModalShell theme={theme} onClose={onClose}>
+      <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between ${dark ? "border-stone-800" : "border-stone-200"}`}>
+        <h2 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>Add Insurer</h2>
+        <button type="button" onClick={onClose} className={dark ? "text-stone-400 hover:text-white cursor-pointer" : "text-stone-400 hover:text-stone-800 cursor-pointer"}>
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="px-5 py-4 space-y-3 overflow-y-auto">
+        {error && <p className="text-[11px] font-semibold text-red-500">{error}</p>}
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Category name</label>
+          <input className={inputClass} value={name} onChange={e => onChangeName(e.target.value)} placeholder='e.g. "Bajaj Allianz" or "General / Others"' autoFocus />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Type</label>
+          <CustomSelect theme={theme} value={type} onChange={v => onChangeType(v as "insurer" | "general")} options={[{ value: "insurer", label: "Insurer" }, { value: "general", label: "General / Others" }]} />
+        </div>
+      </div>
+      <div className={`px-5 py-3 border-t flex items-center justify-end gap-2 ${dark ? "border-stone-800" : "border-stone-200"}`}>
+        <ClippedButton size="md" onClick={onClose} className={dark ? "bg-white/[0.06] text-stone-300 px-4 py-2 text-[11px] font-black uppercase tracking-wider" : "bg-stone-100 text-stone-600 px-4 py-2 text-[11px] font-black uppercase tracking-wider"}>
+          Cancel
+        </ClippedButton>
+        <ClippedButton size="md" onClick={onSubmit} disabled={saving} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider">
+          {saving ? "Adding…" : "Add"}
+        </ClippedButton>
+      </div>
+    </ModalShell>
+  );
+}
+
+function AddDocumentModal({
+  theme, categoryName, documentType, onChangeDocumentType, onChooseFile,
+  urlValue, onChangeUrlValue, titleValue, onChangeTitleValue, addingUrl, urlError, urlSuccess, onSubmitUrl, onClose,
+}: {
+  theme: "light" | "dark";
+  categoryName: string;
+  documentType: KbDocumentType;
+  onChangeDocumentType: (v: KbDocumentType) => void;
+  onChooseFile: () => void;
+  urlValue: string;
+  onChangeUrlValue: (v: string) => void;
+  titleValue: string;
+  onChangeTitleValue: (v: string) => void;
+  addingUrl: boolean;
+  urlError: string | null;
+  urlSuccess: string | null;
+  onSubmitUrl: () => void;
+  onClose: () => void;
+}) {
+  const dark = theme === "dark";
+  const [mode, setMode] = useState<"upload" | "url">("upload");
+  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
+    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
+  }`;
+  return (
+    <ModalShell theme={theme} onClose={onClose}>
+      <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between ${dark ? "border-stone-800" : "border-stone-200"}`}>
+        <div>
+          <h2 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>Add Document</h2>
+          <p className="text-[10.5px] font-semibold text-content-muted mt-0.5">to {categoryName}</p>
+        </div>
+        <button type="button" onClick={onClose} className={dark ? "text-stone-400 hover:text-white cursor-pointer" : "text-stone-400 hover:text-stone-800 cursor-pointer"}>
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="px-5 py-4 space-y-3 overflow-y-auto">
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Document type</label>
+          <CustomSelect theme={theme} value={documentType} onChange={v => onChangeDocumentType(v as KbDocumentType)} options={DOCUMENT_TYPE_OPTIONS} />
+        </div>
+
+        <div className={`flex items-center gap-1 rounded-lg p-0.5 ${dark ? "bg-white/[0.04]" : "bg-stone-100"}`}>
+          <button
+            type="button"
+            onClick={() => setMode("upload")}
+            className={`flex-1 py-1.5 rounded-md text-[10.5px] font-bold uppercase tracking-wide cursor-pointer transition-colors ${
+              mode === "upload" ? (dark ? "bg-white/[0.1] text-white" : "bg-white text-stone-900 shadow-sm") : "text-content-muted"
+            }`}
+          >
+            Upload PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("url")}
+            className={`flex-1 py-1.5 rounded-md text-[10.5px] font-bold uppercase tracking-wide cursor-pointer transition-colors ${
+              mode === "url" ? (dark ? "bg-white/[0.1] text-white" : "bg-white text-stone-900 shadow-sm") : "text-content-muted"
+            }`}
+          >
+            Add by URL
+          </button>
+        </div>
+
+        {mode === "upload" ? (
+          <div className="text-center py-4">
+            <ClippedButton size="md" onClick={onChooseFile} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider inline-flex items-center gap-2">
+              <Upload className="w-3.5 h-3.5" /> Choose PDF…
+            </ClippedButton>
+            <p className="text-[10.5px] font-semibold text-content-muted mt-2">Extraction, chunking, and embedding happen automatically after you pick a file.</p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {urlError && <div className={`text-[10.5px] font-semibold px-2.5 py-1.5 rounded ${dark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>{urlError}</div>}
+            {urlSuccess && <div className={`text-[10.5px] font-semibold px-2.5 py-1.5 rounded ${dark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>{urlSuccess}</div>}
+            <div>
+              <label className="block text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">URL</label>
+              <input value={urlValue} onChange={e => onChangeUrlValue(e.target.value)} placeholder="https://…" disabled={addingUrl} className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-[9.5px] font-bold uppercase tracking-wide text-content-muted mb-1">Title (optional)</label>
+              <input value={titleValue} onChange={e => onChangeTitleValue(e.target.value)} placeholder="Defaults to the page's own title" disabled={addingUrl} className={inputClass} />
+            </div>
+          </div>
+        )}
+      </div>
+      <div className={`px-5 py-3 border-t flex items-center justify-end gap-2 ${dark ? "border-stone-800" : "border-stone-200"}`}>
+        <ClippedButton size="md" onClick={onClose} className={dark ? "bg-white/[0.06] text-stone-300 px-4 py-2 text-[11px] font-black uppercase tracking-wider" : "bg-stone-100 text-stone-600 px-4 py-2 text-[11px] font-black uppercase tracking-wider"}>
+          Close
+        </ClippedButton>
+        {mode === "url" && (
+          <ClippedButton size="md" onClick={onSubmitUrl} disabled={addingUrl} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider">
+            {addingUrl ? "Adding…" : "Add"}
+          </ClippedButton>
+        )}
+      </div>
+    </ModalShell>
+  );
+}
+
+function ResourceEditModal({
+  theme, resource, category, categories, canManage, onClose,
+  onChangeDocumentType, changingDocType, onMove, moving,
+  tagInput, onChangeTagInput, onAddTag, onRemoveTag, tagSaving, onDelete,
+}: {
+  theme: "light" | "dark";
+  resource: KbResource;
+  category: KbCategory;
+  categories: KbCategory[];
+  canManage: boolean;
+  onClose: () => void;
+  onChangeDocumentType: (v: KbDocumentType) => void;
+  changingDocType: boolean;
+  onMove: (categoryId: number) => void;
+  moving: boolean;
+  tagInput: string;
+  onChangeTagInput: (v: string) => void;
+  onAddTag: (tag: string) => void;
+  onRemoveTag: (tag: string) => void;
+  tagSaving: boolean;
+  onDelete: () => void;
+}) {
+  const dark = theme === "dark";
+  const suggestions = category.planNames.filter(p => !resource.planTags.some(t => t.toLowerCase() === p.toLowerCase()));
+  return (
+    <ModalShell theme={theme} onClose={onClose} widthClassName="max-w-lg">
+      <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between gap-3 ${dark ? "border-stone-800" : "border-stone-200"}`}>
+        <div className="min-w-0">
+          <h2 className={`text-sm font-bold truncate ${dark ? "text-white" : "text-stone-900"}`} title={resource.title}>{resource.title}</h2>
+          <div className="flex items-center gap-1.5 mt-1">
+            {statusBadge(resource.status, dark)}
+            {documentTypeBadge(resource.documentType, dark)}
+            {resource.status === "active" && <span className="text-[10px] font-semibold text-content-muted">{resource.chunkCount} chunks</span>}
+          </div>
+        </div>
+        <button type="button" onClick={onClose} className={`shrink-0 ${dark ? "text-stone-400 hover:text-white cursor-pointer" : "text-stone-400 hover:text-stone-800 cursor-pointer"}`}>
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="px-5 py-4 space-y-4 overflow-y-auto">
+        {resource.status === "error" && resource.errorMessage && (
+          <div className={`text-[11px] font-semibold px-2.5 py-1.5 rounded ${dark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-700"}`}>{resource.errorMessage}</div>
+        )}
+        {resource.sourceUrl && /^https?:\/\//i.test(resource.sourceUrl) && (
+          <a href={resource.sourceUrl} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 text-[11px] font-semibold underline ${dark ? "text-sky-400 hover:text-sky-300" : "text-sky-600 hover:text-sky-700"}`}>
+            <Link2 className="w-3 h-3" /> Open source document
+          </a>
+        )}
+
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Document type</label>
+          <CustomSelect theme={theme} value={resource.documentType} onChange={v => onChangeDocumentType(v as KbDocumentType)} options={DOCUMENT_TYPE_OPTIONS} disabled={!canManage || changingDocType} />
+        </div>
+
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1 flex items-center gap-1"><ArrowLeftRight className="w-3 h-3" /> Category</label>
+          <CustomSelect
+            theme={theme}
+            value={String(resource.categoryId)}
+            onChange={v => onMove(Number(v))}
+            options={categories.map(c => ({ value: String(c.id), label: c.name }))}
+            disabled={!canManage || moving}
+          />
+        </div>
+
+        {category.type === "insurer" && (
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1.5 flex items-center gap-1"><Tag className="w-3 h-3" /> Plans</label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {resource.planTags.length === 0 && (
+                <span className="text-[10.5px] font-semibold text-content-muted italic">No plan tags — applies to all {category.name} plans</span>
+              )}
+              {resource.planTags.map(tag => (
+                <span key={tag} className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded text-[10.5px] font-bold border ${dark ? "bg-sky-500/15 text-sky-300 border-sky-500/30" : "bg-sky-50 text-sky-700 border-sky-200"}`}>
+                  {tag}
+                  {canManage && (
+                    <button type="button" onClick={() => onRemoveTag(tag)} disabled={tagSaving} className="hover:opacity-70 cursor-pointer" title={`Remove "${tag}"`}>
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+            {canManage && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <input
+                  value={tagInput}
+                  onChange={e => onChangeTagInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); onAddTag(tagInput); } }}
+                  placeholder="Add plan tag…"
+                  disabled={tagSaving}
+                  className={`w-32 px-1.5 py-1 rounded text-[10.5px] font-semibold border outline-none ${
+                    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400"
+                  }`}
+                />
+                {suggestions.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onAddTag(s)}
+                    disabled={tagSaving}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border border-dashed cursor-pointer transition-colors ${
+                      dark ? "text-stone-400 border-white/[0.15] hover:bg-white/[0.06]" : "text-stone-500 border-stone-300 hover:bg-stone-100"
+                    }`}
+                    title={`Quick-add "${s}"`}
+                  >
+                    <Plus className="w-2.5 h-2.5" /> {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {canManage && (
+        <div className={`px-5 py-3 border-t flex items-center justify-between gap-2 ${dark ? "border-stone-800" : "border-stone-200"}`}>
+          <ClippedButton size="md" onClick={onDelete} className={dark ? "bg-red-500/15 text-red-300 px-3 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5" : "bg-red-50 text-red-700 px-3 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5"}>
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </ClippedButton>
+          <ClippedButton size="md" onClick={onClose} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider">
+            Done
+          </ClippedButton>
+        </div>
+      )}
+    </ModalShell>
   );
 }

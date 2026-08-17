@@ -239,6 +239,20 @@
       "when": 1786600000000,
       "tag": "0033_product_assist_acks",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0034_kb_resource_document_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0035_kb_chunks_embedding_idx_record",
+      "breakpoints": true
     }
   ]
 }

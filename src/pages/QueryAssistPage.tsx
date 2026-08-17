@@ -4,10 +4,11 @@
  */
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, Sparkles } from "lucide-react";
+import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, Sparkles, ExternalLink } from "lucide-react";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkdown";
+import { realPlanNames } from "../utils/kbPlanNames";
 
 interface QueryAssistPageProps {
   theme: "light" | "dark";
@@ -23,7 +24,22 @@ interface KbCategoryLite {
 interface ChatSource {
   title: string;
   categoryName: string;
+  /** brochure/policy_wording/prospectus/addon/other — see 0034's schema
+   * comment and queryAssist.ts's DOCUMENT_TYPE_LABEL. */
+  documentType: "brochure" | "policy_wording" | "prospectus" | "addon" | "other";
+  /** Web resource's URL, or a PDF's original label/filename. Only http(s)
+   * values are rendered as an openable link — a bare filename (legacy PDF
+   * uploads with no real URL) still renders as a plain, unclickable pill. */
+  sourceUrl: string | null;
 }
+
+const SOURCE_DOCUMENT_TYPE_LABEL: Record<ChatSource["documentType"], string> = {
+  policy_wording: "Policy Wording",
+  prospectus: "Prospectus",
+  brochure: "Brochure",
+  addon: "Add-on",
+  other: "",
+};
 
 interface LocalChatMessage {
   id: string;
@@ -223,6 +239,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
   const scopeLocked = currentSessionId !== null || messages.length > 0;
   const selectedCategory = categories.find(c => String(c.id) === selectedCategoryValue);
+  // Excludes the "Add-on"/"Add-ons" pseudo-plan roster entry some insurer
+  // categories carry (a tagging bucket for standalone rider documents, not
+  // a real plan) — an advisor picking "the plan I'm asking about" should
+  // never see it as an option. See isAddOnPlanName's comment.
+  const selectablePlanNames = selectedCategory ? realPlanNames(selectedCategory.planNames) : [];
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const saveSessions = (next: LocalChatSession[]) => {
@@ -316,7 +337,6 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
     }
   };
 
-  const cardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-stone-200";
   const proseClass = `text-xs leading-relaxed space-y-2 [&_ol]:mt-1 [&_ul]:mt-1 [&_li]:pl-0.5 ${dark ? "text-stone-200" : "text-stone-800"}`;
 
   const categoryOptions = [
@@ -360,20 +380,28 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           cards stack and the page scrolls normally, which reads better on
           a narrow/short viewport than a forced fixed-height layout. */}
       <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-4 lg:flex-1 lg:min-h-0">
-        {/* Session history sidebar — local to this browser only */}
-        <div className={`rounded-xl border p-3 flex flex-col min-h-0 lg:h-full overflow-hidden ${cardClass}`}>
-          <span className="shrink-0 block text-[10px] font-bold uppercase tracking-wide text-content-muted px-1 pb-2 mb-1.5 border-b border-dashed border-stone-300/30">Recent conversations</span>
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 no-scrollbar">
+        {/* Session history sidebar — deliberately the LEAST visually heavy
+            surface in this layout (smaller radius, no shadow, more recessed
+            tone than the main chat panel below) so it reads as a navigation
+            rail the advisor scans and clicks through, not a peer content
+            card competing with the conversation itself. */}
+        <div
+          className={`rounded-lg border p-2.5 flex flex-col min-h-0 lg:h-full overflow-hidden ${
+            dark ? "bg-white/[0.015] border-white/[0.06]" : "bg-black/[0.015] border-stone-200/70"
+          }`}
+        >
+          <span className="shrink-0 block text-[9.5px] font-bold uppercase tracking-wide text-content-muted opacity-80 px-1 pb-2 mb-1.5 border-b border-dashed border-stone-300/25">Recent conversations</span>
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-1 no-scrollbar">
           {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
           {sortedSessions.map(s => (
             <button
               key={s.id}
               type="button"
               onClick={() => openSession(s)}
-              className={`group w-full text-left px-2.5 py-2 rounded-lg text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
+              className={`group w-full text-left px-2.5 py-2 rounded-md text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
                 currentSessionId === s.id
                   ? dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-700"
-                  : dark ? "text-stone-300 hover:bg-white/[0.05]" : "text-stone-700 hover:bg-stone-50"
+                  : dark ? "text-stone-400 hover:bg-white/[0.05] hover:text-stone-200" : "text-stone-600 hover:bg-white hover:text-stone-800"
               }`}
             >
               <span className="flex items-center gap-1.5 min-w-0">
@@ -399,19 +427,25 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           </div>
         </div>
 
-        {/* Main chat panel */}
-        <div className={`rounded-xl border p-4 flex flex-col min-h-0 lg:h-full overflow-hidden space-y-3 ${cardClass}`}>
-          {/* Scope selector — insurer + plan chips grouped into one bordered
-              "conversation scope" block so they read as a single context
-              layer sitting above the conversation thread, rather than a bare
-              row of controls blending into the card. */}
-          <div className={`shrink-0 rounded-lg border p-3 flex flex-wrap items-end gap-3 ${
-            dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-200"
-          }`}>
+        {/* Main chat panel — the primary container in this workspace: larger
+            radius, brighter/more opaque surface, and a real shadow lift it
+            above the sidebar's flat nav-rail treatment and the scope strip
+            nested inside it below. */}
+        <div
+          className={`rounded-2xl border p-4 flex flex-col min-h-0 lg:h-full overflow-hidden space-y-3 shadow-card ${
+            dark ? "bg-white/[0.035] border-white/[0.09]" : "bg-white border-stone-200"
+          }`}
+        >
+          {/* Scope selector — deliberately a flat, borderless toolbar strip
+              (bottom divider only) rather than another bordered box, so it
+              reads as a secondary control rail subordinate to the chat panel
+              it sits inside, not a peer "card" competing with the thread
+              below it. */}
+          <div className="shrink-0 flex flex-wrap items-end gap-3 pb-3 border-b border-dashed border-stone-300/25">
             <div className="w-full flex items-center justify-between gap-2 -mb-1">
-              <span className="text-[9.5px] font-bold uppercase tracking-wider text-content-muted">Conversation scope</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-70">Conversation scope</span>
               {scopeLocked && (
-                <span className="text-[10px] font-medium text-content-muted opacity-80">🔒 Locked · Start a new chat to change insurer or plans.</span>
+                <span className="text-[10px] font-medium text-content-muted opacity-70">🔒 Locked · Start a new chat to change insurer or plans.</span>
               )}
             </div>
             <div className="w-full sm:w-64">
@@ -419,7 +453,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   refinement of that context, not a peer choice, so it gets
                   the stronger label treatment (full-contrast text vs the
                   muted/lighter Plans label). */}
-              <label className={`block text-[10.5px] font-black uppercase tracking-wide mb-1 ${dark ? "text-white" : "text-stone-800"}`}>Insurer</label>
+              <label className={`block text-[10px] font-black uppercase tracking-wide mb-1 opacity-80 ${dark ? "text-white" : "text-stone-800"}`}>Insurer</label>
               <CustomSelect
                 theme={theme}
                 value={selectedCategoryValue}
@@ -431,16 +465,16 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // filter/select across the app (Audit, My Activity, Plan
                 // Management, …) instead of CustomSelect's larger default
                 // trigger, which read as oversized next to those.
-                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-3 pr-8 py-2 rounded-lg border outline-none transition-colors relative ${
+                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-3 pr-8 py-1.5 rounded-lg border outline-none transition-colors relative ${
                   scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                } ${dark ? "bg-white/[0.04] border-white/[0.1] text-white" : "bg-white border-stone-300 text-stone-900"}`}
+                } ${dark ? "bg-white/[0.03] border-white/[0.08] text-white" : "bg-stone-50 border-stone-200 text-stone-900"}`}
               />
             </div>
-            {selectedCategory && selectedCategory.planNames.length > 0 && (
+            {selectedCategory && selectablePlanNames.length > 0 && (
               <div className="flex-1 min-w-[200px]">
-                <label className="block text-[9.5px] font-semibold uppercase tracking-wide text-content-muted opacity-80 mb-1 flex items-center gap-1"><Tag className="w-3 h-3" /> Plans · optional</label>
+                <label className="block text-[9px] font-semibold uppercase tracking-wide text-content-muted opacity-70 mb-1 flex items-center gap-1"><Tag className="w-2.5 h-2.5" /> Plans · optional</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {selectedCategory.planNames.map(plan => (
+                  {selectablePlanNames.map(plan => (
                     <button
                       key={plan}
                       type="button"
@@ -449,7 +483,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       className={`px-2 py-1 rounded text-[10.5px] font-bold border transition-colors ${
                         selectedPlanTags.includes(plan)
                           ? dark ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-sky-100 border-sky-300 text-sky-700"
-                          : dark ? "bg-white/[0.04] border-white/[0.1] text-stone-400 hover:bg-white/[0.08]" : "bg-white border-stone-300 text-stone-500 hover:bg-stone-50"
+                          : dark ? "bg-white/[0.03] border-white/[0.08] text-stone-500 hover:bg-white/[0.07]" : "bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100"
                       } ${scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
                     >
                       {plan}
@@ -470,8 +504,8 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-3 pr-1">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center gap-3 text-center py-10">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center ${dark ? "bg-white/[0.06]" : "bg-stone-100"}`}>
-                  <Sparkles className="w-4 h-4 opacity-60" />
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center ${dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
+                  <Sparkles className="w-4 h-4" />
                 </div>
                 <div className="space-y-1 max-w-sm">
                   <p className={`text-xs font-bold ${dark ? "text-white" : "text-stone-800"}`}>
@@ -503,7 +537,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               if (m.role === "user") {
                 return (
                   <div key={m.id} className="flex justify-end">
-                    <div className={`max-w-[80%] px-3 py-2 rounded-xl text-xs font-semibold ${dark ? "bg-sky-500/20 text-sky-100" : "bg-sky-100 text-sky-900"}`}>
+                    <div className={`max-w-[80%] px-3.5 py-2 rounded-2xl rounded-tr-md text-xs font-semibold shadow-soft ${dark ? "bg-sky-500/20 text-sky-100" : "bg-sky-100 text-sky-900"}`}>
                       {m.content}
                     </div>
                   </div>
@@ -512,11 +546,25 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               const { answer, share } = splitAnswer(m.content);
               const { body, references } = splitReferences(answer);
               return (
-                <div key={m.id} className="flex justify-start">
-                  <div className={`max-w-[92%] w-full px-3.5 py-3.5 rounded-xl space-y-3.5 ${dark ? "bg-white/[0.04] border border-white/[0.08]" : "bg-stone-50 border border-stone-200"}`}>
+                <div key={m.id} className="flex justify-start gap-2 max-w-[92%]">
+                  {/* Small avatar badge gives the AI response its own
+                      identity as a chat message rather than a bordered
+                      panel — mirrors the user bubble's alignment cue on the
+                      opposite side of the thread. */}
+                  <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
+                    <Sparkles className="w-3 h-3" />
+                  </div>
+                  {/* Message surface — a soft shadow (not a visible border)
+                      separates this from the page behind it, so it reads as
+                      a chat bubble rather than another bordered card like
+                      the scope strip or sidebar. */}
+                  <div className={`min-w-0 flex-1 px-3.5 py-3.5 rounded-2xl rounded-tl-md space-y-3.5 shadow-soft ${dark ? "bg-white/[0.045]" : "bg-stone-50"}`}>
                     {/* Answer — the verified response to the advisor's question. */}
                     <div>
-                      <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted mb-1">Answer</span>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[9.5px] font-bold uppercase tracking-wider text-content-muted">Answer</span>
+                        <CopyButton text={stripMarkdownForCopy(body)} dark={dark} />
+                      </div>
                       <div className={proseClass}>{renderSimpleMarkdown(body)}</div>
                     </div>
 
@@ -547,12 +595,40 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       </div>
                     )}
                     {m.sources && m.sources.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {m.sources.map(s => (
-                          <span key={s.title} className={`text-[9.5px] font-bold px-2 py-0.5 rounded border ${dark ? "bg-white/[0.04] border-white/[0.12] text-stone-400" : "bg-white border-stone-200 text-stone-500"}`}>
-                            {s.title}
-                          </span>
-                        ))}
+                      // Sources nested one level deeper than the answer body
+                      // — a faintly recessed "well" with its own label, so
+                      // it reads as attached-to/inside the AI message rather
+                      // than a loose row of pills trailing off the bottom.
+                      <div className={`p-2 rounded-lg ${dark ? "bg-black/[0.15]" : "bg-black/[0.03]"}`}>
+                        <span className="block text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-70 mb-1.5">Sources</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {m.sources.map(s => {
+                            const typeLabel = SOURCE_DOCUMENT_TYPE_LABEL[s.documentType];
+                            // Only a real http(s) URL is openable for verification — a
+                            // legacy PDF upload's sourceUrl is just its original
+                            // filename (see pdfIngest.ts), which isn't a link.
+                            const isOpenable = !!s.sourceUrl && /^https?:\/\//i.test(s.sourceUrl);
+                            const pillClass = `inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded border ${dark ? "bg-white/[0.05] border-white/[0.12] text-stone-400" : "bg-white border-stone-200 text-stone-500"} ${isOpenable ? (dark ? "hover:border-white/25 hover:text-stone-200" : "hover:border-stone-400 hover:text-stone-700") : ""}`;
+                            const label = typeLabel ? `${s.title} · ${typeLabel}` : s.title;
+                            return isOpenable ? (
+                              <a
+                                key={s.title}
+                                href={s.sourceUrl!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Open source document to verify"
+                                className={pillClass}
+                              >
+                                {label}
+                                <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                              </a>
+                            ) : (
+                              <span key={s.title} className={pillClass}>
+                                {label}
+                              </span>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -560,8 +636,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               );
             })}
             {sending && (
-              <div className="flex justify-start">
-                <div className={`px-3.5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${dark ? "bg-white/[0.04] text-stone-400" : "bg-stone-50 text-stone-500"}`}>
+              <div className="flex justify-start gap-2">
+                <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
+                  <Sparkles className="w-3 h-3" />
+                </div>
+                <div className={`px-3.5 py-2.5 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-soft ${dark ? "bg-white/[0.045] text-stone-400" : "bg-stone-50 text-stone-500"}`}>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Checking the Knowledge Base…
                 </div>
               </div>
@@ -575,15 +654,17 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
           )}
 
-          {/* Composer — textarea and send action share one bordered
-              container so they read as a single input, not a field with a
-              button bolted on next to it. */}
-          <div className="shrink-0 pt-2 border-t border-dashed border-stone-300/30">
+          {/* Composer — the most visually prominent surface in the whole
+              panel (solid divider above it, stronger border + shadow than
+              every other control here) so it reads unmistakably as THE
+              place to type, not one more muted strip like the scope
+              toolbar above the thread. */}
+          <div className={`shrink-0 pt-3 border-t ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
             <div
-              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 transition-colors ${
+              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-soft transition-colors focus-within:shadow-card ${
                 dark
-                  ? "bg-white/[0.04] border-white/[0.1]"
-                  : "bg-white border-stone-300"
+                  ? "bg-white/[0.06] border-white/[0.14] focus-within:border-sky-500/40"
+                  : "bg-white border-stone-300 focus-within:border-sky-400"
               }`}
             >
               <textarea

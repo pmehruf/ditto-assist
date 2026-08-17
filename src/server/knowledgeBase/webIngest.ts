@@ -4,10 +4,12 @@
  */
 
 import type { Repositories } from "../db/repositories/index.js";
-import type { KbResourceRow } from "../db/schema.js";
+import type { KbResourceRow, kbDocumentTypeEnum } from "../db/schema.js";
 import { contentHash, ingestPdfResource } from "./pdfIngest.js";
 import { chunkText } from "./chunking.js";
 import { embedDocumentChunks } from "./embeddings.js";
+
+type KbDocumentType = (typeof kbDocumentTypeEnum.enumValues)[number];
 
 /**
  * Ingests a document by URL rather than an uploaded file — the "Add by URL"
@@ -121,6 +123,10 @@ export interface IngestUrlInput {
   title: string;
   url: string;
   addedBy: string;
+  /** What kind of document this is (brochure/policy_wording/prospectus/
+   * addon) — defaults to "other" when omitted. Applies whichever pipeline
+   * (PDF or web page) this URL is auto-detected as. */
+  documentType?: KbDocumentType;
 }
 
 export interface IngestUrlResult {
@@ -140,6 +146,7 @@ async function ingestWebBuffer(repos: Repositories, input: IngestUrlInput, htmlB
       categoryId: input.categoryId,
       type: "web",
       title: input.title,
+      documentType: input.documentType ?? "other",
       sourceUrl: input.url,
       status: "processing",
       contentHash: null,
@@ -149,7 +156,11 @@ async function ingestWebBuffer(repos: Repositories, input: IngestUrlInput, htmlB
       addedBy: input.addedBy,
     });
   } else {
-    resource = await repos.kbResources.update(resource.id, { status: "processing", errorMessage: null });
+    resource = await repos.kbResources.update(resource.id, {
+      status: "processing",
+      errorMessage: null,
+      ...(input.documentType ? { documentType: input.documentType } : {}),
+    });
   }
   const resourceId = resource!.id;
 
@@ -208,6 +219,7 @@ export async function ingestUrlResource(repos: Repositories, input: IngestUrlInp
       categoryId: input.categoryId,
       title: input.title,
       sourceLabel: input.url,
+      documentType: input.documentType,
       buffer,
       addedBy: input.addedBy,
     });

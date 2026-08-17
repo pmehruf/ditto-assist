@@ -39,7 +39,38 @@ export interface QueryAssistHistoryTurn {
 export interface QueryAssistSource {
   title: string;
   categoryName: string;
+  /** brochure/policy_wording/prospectus/addon/other — see 0034's schema
+   * comment; drives the citation's badge and the source-precedence
+   * ordering below. */
+  documentType: "brochure" | "policy_wording" | "prospectus" | "addon" | "other";
+  /** Web resource's URL, or a PDF's original filename/label — when it's a
+   * real http(s) URL the UI renders the citation as an openable link so
+   * an advisor can verify the answer against the actual document. */
+  sourceUrl: string | null;
 }
+
+const DOCUMENT_TYPE_LABEL: Record<QueryAssistSource["documentType"], string> = {
+  policy_wording: "Policy Wording",
+  prospectus: "Prospectus",
+  brochure: "Brochure",
+  addon: "Add-on",
+  other: "Other",
+};
+
+// Mirrors SYSTEM_INSTRUCTION's SOURCE PRECEDENCE #2: within DOCUMENT
+// EXCERPTS (Playbook facts are already a separate, higher block), Policy
+// Wording is the plan's actual contract and outranks a Prospectus, which
+// in turn outranks a Brochure/marketing leaflet. Chunks are sorted into
+// this order before being handed to the model so the highest-authority
+// excerpts for a given topic are read first, reinforcing (not replacing)
+// the explicit precedence rule in the prompt.
+const DOCUMENT_TYPE_RANK: Record<QueryAssistSource["documentType"], number> = {
+  policy_wording: 0,
+  prospectus: 1,
+  brochure: 2,
+  addon: 3,
+  other: 4,
+};
 
 export interface QueryAssistAnswer {
   /** Full raw model output — contains both the "1. ANSWER" and "2. MESSAGE
@@ -83,10 +114,10 @@ If CONVERSATION SO FAR is present below, the advisor's current message may be a 
 
 SOURCE PRECEDENCE (highest wins on conflict)
 1. PRODUCT PLAYBOOK PLAN FACTS — the internal team's own authoritative statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. When a PRODUCT PLAYBOOK section is present below for the selected plan, it overrides any conflicting or broader description in the DOCUMENT EXCERPTS below it. Concretely: if the Playbook names ONE specific sub-feature/variant as applying to this plan (e.g. one named bonus type, one named restoration type), answer with only that one — do not also describe other sub-feature/variant options that a generic document mentions for the insurer's range, unless the Playbook itself lists more than one as applying. Only fall back to DOCUMENT EXCERPTS for a fact the Playbook doesn't cover at all.
-2. POLICY WORDING documents — the plan's own official policy wording/terms & conditions, plan-tagged to the advisor's selected plan. This is the plan's actual contract language and outranks any generic explainer, claims-process guide, or glossary article on the same insurer, even one published by the insurer itself — an insurer's own "how to file a claim" blog post is guidance, not the contract.
+2. POLICY WORDING documents — the plan's own official policy wording/terms & conditions, plan-tagged to the advisor's selected plan. This is the plan's actual contract language and outranks any generic explainer, claims-process guide, or glossary article on the same insurer, even one published by the insurer itself — an insurer's own "how to file a claim" blog post is guidance, not the contract. Within DOCUMENT EXCERPTS, each excerpt's heading is tagged with its document type — "(Policy Wording)", "(Prospectus)", "(Brochure)", "(Add-on)" — when known; excerpts are also pre-sorted Policy Wording first, then Prospectus, then Brochure/Add-on, so use that heading tag directly rather than guessing document type from the title alone. A Prospectus is an IRDAI-mandated summary of a Policy Wording, not the contract itself — prefer Policy Wording over Prospectus, and prefer either over a Brochure (marketing material) on any conflict.
 3. General insurer-wide documents (no plan tag — apply broadly across that insurer), including that insurer's claims-process guides and informational articles (glossaries, exclusion-list explainers, copay/coinsurance explainers, etc.) when nothing more specific covers the point.
 4. General/Others documents, only when no specific insurer was selected.
-When two DOCUMENT EXCERPTS conflict and neither is a Playbook fact, prefer the one from a Policy Wording document over an informational/claims-process article before concluding there's a genuine contradiction — see INTERCONNECTED PROVISIONS below on checking whether an apparent conflict is really one provision qualifying or overriding another.
+When two DOCUMENT EXCERPTS conflict and neither is a Playbook fact, prefer the one whose heading tag ranks higher in Policy Wording > Prospectus > Brochure/Add-on > untagged, before concluding there's a genuine contradiction — see INTERCONNECTED PROVISIONS below on checking whether an apparent conflict is really one provision qualifying or overriding another.
 
 INTERCONNECTED PROVISIONS
 Insurance policy wording is one interconnected system, not a set of isolated sentences. Do not read a clause alone and stop — actively check whether other parts of the same document change, qualify, limit, or override it. Pay particular attention to how these interact: definitions, coverage benefits, exclusions, conditions and limitations, waiting periods, sub-limits, deductibles/co-payments, No-Claim Bonus or Cumulative Bonus provisions, add-ons/riders, optional benefits, special conditions, policy schedules, and eligibility/member-specific provisions. A clause elsewhere may create an exception to, or override, the clause you found first.
@@ -152,7 +183,7 @@ Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STR
 Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). "Shorter" refers to sentence-level wording, not fact coverage — see PLAYBOOK COMPLETENESS IN PART 2 above for the specific rule on Playbook-sourced topics, which must stay fully comprehensive even in Part 2. This is what the advisor may copy-paste to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified. If Part 1 couldn't answer the question, this part should tell the advisor to confirm with the product team rather than answer the customer. Do not include a References list here — references belong only in Part 1.`;
 
 function buildSourceBlock(
-  chunks: { resourceTitle: string; content: string }[],
+  chunks: { resourceTitle: string; documentType: QueryAssistSource["documentType"]; content: string }[],
   playbookFacts: { planName: string; content: string }[]
 ): string {
   const parts: string[] = [];
@@ -165,9 +196,15 @@ function buildSourceBlock(
     }
   }
   if (chunks.length > 0) {
-    parts.push("=== DOCUMENT EXCERPTS ===");
-    for (const c of chunks) {
-      parts.push(`[Document: ${c.resourceTitle}]\n${c.content}`);
+    // Highest-authority document type first (Policy Wording > Prospectus >
+    // Brochure/Add-on > other) — see SOURCE PRECEDENCE and
+    // DOCUMENT_TYPE_RANK above. A stable sort keeps each type's chunks in
+    // their original relevance order.
+    const ordered = [...chunks].sort((a, b) => DOCUMENT_TYPE_RANK[a.documentType] - DOCUMENT_TYPE_RANK[b.documentType]);
+    parts.push("=== DOCUMENT EXCERPTS (ordered by source authority — see SOURCE PRECEDENCE) ===");
+    for (const c of ordered) {
+      const typeLabel = c.documentType === "other" ? "" : ` (${DOCUMENT_TYPE_LABEL[c.documentType]})`;
+      parts.push(`[Document: ${c.resourceTitle}${typeLabel}]\n${c.content}`);
     }
   }
   return parts.join("\n\n");
@@ -272,7 +309,7 @@ export async function answerQuery(
       ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", scope.planTags)
       : [];
 
-  const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, content: s.chunk.content }));
+  const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, documentType: s.documentType, content: s.chunk.content }));
   const playbookInputs = playbookFacts.map(f => ({ planName: f.planName, content: f.content }));
 
   const hadNoMatches = similar.length === 0 && playbookFacts.length === 0;
@@ -305,8 +342,14 @@ export async function answerQuery(
   for (const s of similar) {
     if (seenTitles.has(s.resourceTitle)) continue;
     seenTitles.add(s.resourceTitle);
-    sources.push({ title: s.resourceTitle, categoryName: categoryById.get(s.categoryId)?.name || "Unknown" });
+    sources.push({
+      title: s.resourceTitle,
+      categoryName: categoryById.get(s.categoryId)?.name || "Unknown",
+      documentType: s.documentType,
+      sourceUrl: s.sourceUrl,
+    });
   }
+  sources.sort((a, b) => DOCUMENT_TYPE_RANK[a.documentType] - DOCUMENT_TYPE_RANK[b.documentType]);
 
   return { text, sources, hadNoMatches };
 }

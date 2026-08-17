@@ -891,6 +891,17 @@ export const kbResourceTypeEnum = pgEnum("kb_resource_type", ["pdf", "web", "she
 // archived: soft-deleted, kept for history, excluded from retrieval.
 export const kbResourceStatusEnum = pgEnum("kb_resource_status", ["processing", "active", "error", "archived"]);
 
+// What KIND of document this is, independent of type (pdf/web/sheet) and
+// category (insurer) — the "clean Knowledge Base" rebuild's single-purpose
+// resources are one Brochure, one Policy Wording, and one Prospectus PDF
+// per plan instead of a merged multi-document file, and this is what lets
+// queryAssist.ts apply the authority precedence Policy Wording > Prospectus
+// > Brochure across them at retrieval/citation time — see
+// 0034_kb_resource_document_type.sql. 'other' covers everything that isn't
+// one of those three (claim guides, glossaries, the Playbook resource, and
+// every pre-"clean start" legacy merged file).
+export const kbDocumentTypeEnum = pgEnum("kb_document_type", ["brochure", "policy_wording", "prospectus", "addon", "other"]);
+
 export const kbResources = pgTable(
   "kb_resources",
   {
@@ -898,6 +909,7 @@ export const kbResources = pgTable(
     categoryId: integer("category_id").notNull().references(() => kbCategories.id, { onDelete: "cascade" }),
     type: kbResourceTypeEnum("type").notNull(),
     title: text("title").notNull(),
+    documentType: kbDocumentTypeEnum("document_type").notNull().default("other"),
     // Web: the source URL. PDF: original filename (the parsed text lives in
     // kbChunks — the raw file itself isn't persisted, see pdfIngest.ts).
     // Sheet: the Google Sheet URL (informational; the live read path doesn't

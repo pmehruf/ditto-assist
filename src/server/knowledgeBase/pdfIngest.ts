@@ -7,9 +7,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import pdfParse from "pdf-parse";
 import type { Repositories } from "../db/repositories/index.js";
-import type { KbResourceRow } from "../db/schema.js";
+import type { KbResourceRow, kbDocumentTypeEnum } from "../db/schema.js";
 import { chunkText } from "./chunking.js";
 import { embedDocumentChunks } from "./embeddings.js";
+
+type KbDocumentType = (typeof kbDocumentTypeEnum.enumValues)[number];
 
 export function contentHash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -30,6 +32,10 @@ export interface IngestPdfInput {
   /** Free-form origin label stored in sourceUrl for PDFs — e.g. the
    * original filename — since there's no real URL. */
   sourceLabel?: string;
+  /** What kind of document this is (brochure/policy_wording/prospectus/
+   * addon) — defaults to "other" (matching the column default) when
+   * omitted, which is what every pre-"clean start" caller does today. */
+  documentType?: KbDocumentType;
   buffer: Buffer;
   /** Email of the admin who triggered this ingestion, or a fixed label
    * like "seed-script" for one-off imports. */
@@ -55,6 +61,7 @@ export async function ingestPdfResource(repos: Repositories, input: IngestPdfInp
       categoryId: input.categoryId,
       type: "pdf",
       title: input.title,
+      documentType: input.documentType ?? "other",
       sourceUrl: input.sourceLabel ?? null,
       status: "processing",
       contentHash: null,
@@ -64,7 +71,11 @@ export async function ingestPdfResource(repos: Repositories, input: IngestPdfInp
       addedBy: input.addedBy,
     });
   } else {
-    resource = await repos.kbResources.update(resource.id, { status: "processing", errorMessage: null });
+    resource = await repos.kbResources.update(resource.id, {
+      status: "processing",
+      errorMessage: null,
+      ...(input.documentType ? { documentType: input.documentType } : {}),
+    });
   }
   const resourceId = resource!.id;
 
