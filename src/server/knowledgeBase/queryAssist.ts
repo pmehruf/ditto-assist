@@ -280,6 +280,46 @@ function buildRetrievalQueryText(question: string, history: QueryAssistHistoryTu
   return [...priorUserTurns, question].join("\n");
 }
 
+/** Excludes the "Add-on"/"Add-ons" pseudo-plan roster entry (a tagging
+ * bucket for standalone rider documents, not a real plan) from a category's
+ * plan-name roster — mirrors src/utils/kbPlanNames.ts's isAddOnPlanName,
+ * duplicated here since server code doesn't currently cross-import from
+ * src/utils/. */
+function isAddOnPlanName(name: string): boolean {
+  const normalized = name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  return normalized === "addon" || normalized === "addons";
+}
+
+/** Fallback for when the advisor didn't pick a plan chip (or explicitly
+ * chose "No specific plan" in QueryAssistPage.tsx) but named a real plan
+ * directly in their question text — e.g. "what's the bonus in Optima
+ * Secure?" while scoped only to the insurer. Without this, that question
+ * would silently skip the Product Playbook check entirely (see this file's
+ * SOURCE PRECEDENCE and the playbookFacts fetch below), with nothing in the
+ * answer to reveal that it happened.
+ *
+ * Deliberately conservative: whole-word, case-insensitive match against the
+ * category's own plan roster only (no fuzzy matching), and when a longer
+ * roster name matches (e.g. "Optima Secure Plus"), any shorter match that's
+ * purely a prefix substring of it (e.g. "Optima Secure") is dropped — the
+ * question is naming the more specific plan, not both. */
+function detectMentionedPlanNames(question: string, rosterPlanNames: string[]): string[] {
+  const lowerQuestion = question.toLowerCase();
+  const matches = rosterPlanNames.filter(plan => {
+    if (isAddOnPlanName(plan)) return false;
+    const needle = plan.trim().toLowerCase();
+    if (!needle) return false;
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${escaped}\\b`).test(lowerQuestion);
+  });
+  return matches.filter(
+    plan =>
+      !matches.some(
+        other => other !== plan && other.length > plan.length && other.trim().toLowerCase().includes(plan.trim().toLowerCase())
+      )
+  );
+}
+
 export async function answerQuery(
   repos: Repositories,
   scope: QueryAssistScope,
@@ -300,13 +340,18 @@ export async function answerQuery(
     limit: RETRIEVAL_LIMIT,
   });
 
-  // Product Playbook plan facts — only meaningful once the advisor has
-  // picked at least one specific plan (there's no "insurer-wide" playbook
-  // fact, unlike a generic PDF; see kb_playbook_plan_facts's schema
-  // comment). Matched on the selected category's own name as the insurer.
+  // Product Playbook plan facts — only meaningful once a plan is in scope
+  // (there's no "insurer-wide" playbook fact, unlike a generic PDF; see
+  // kb_playbook_plan_facts's schema comment). Normally that's whatever the
+  // advisor picked via the plan chips (scope.planTags). If they didn't pick
+  // one but named a real plan directly in the question, fall back to
+  // detecting it there — see detectMentionedPlanNames's comment.
+  const scopeCategory = scope.categoryId !== null ? categoryById.get(scope.categoryId) : undefined;
+  const effectivePlaybookPlanTags =
+    scope.planTags.length > 0 ? scope.planTags : scopeCategory ? detectMentionedPlanNames(question, scopeCategory.planNames) : [];
   const playbookFacts =
-    scope.categoryId !== null && scope.planTags.length > 0
-      ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", scope.planTags)
+    scope.categoryId !== null && effectivePlaybookPlanTags.length > 0
+      ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", effectivePlaybookPlanTags)
       : [];
 
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, documentType: s.documentType, content: s.chunk.content }));

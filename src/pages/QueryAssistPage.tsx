@@ -190,6 +190,14 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
   const [selectedCategoryValue, setSelectedCategoryValue] = useState<string>("");
   const [selectedPlanTags, setSelectedPlanTags] = useState<string[]>([]);
+  // Tracks the advisor's deliberate "this question isn't about one specific
+  // plan" choice — see the "No specific plan" chip below. Plan selection is
+  // otherwise required (not optional) once an insurer with plans is chosen,
+  // because the Product Playbook (the authoritative source for facts like
+  // bonus/restoration terms) is only ever looked up for plans explicitly in
+  // scope.planTags — an advisor who never picks a plan silently gets no
+  // Playbook check at all, with no way to tell from the answer alone.
+  const [noSpecificPlan, setNoSpecificPlan] = useState(false);
 
   const [questionInput, setQuestionInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -273,7 +281,17 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   };
 
   const togglePlanTag = (plan: string) => {
+    setNoSpecificPlan(false);
     setSelectedPlanTags(prev => (prev.includes(plan) ? prev.filter(p => p !== plan) : [...prev, plan]));
+  };
+
+  // The explicit opt-out from picking a real plan — see noSpecificPlan's
+  // comment above. Deliberately its own action rather than "just leave the
+  // chips unclicked", so skipping the Playbook check is a choice the
+  // advisor visibly makes, not something that happens by default.
+  const chooseNoSpecificPlan = () => {
+    setSelectedPlanTags([]);
+    setNoSpecificPlan(true);
   };
 
   const sendQuestion = async () => {
@@ -281,6 +299,10 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
     if (!question || sending) return;
     if (currentSessionId === null && !selectedCategoryValue) {
       setSendError("Choose an insurer (or General) before asking.");
+      return;
+    }
+    if (currentSessionId === null && selectedCategory && selectablePlanNames.length > 0 && selectedPlanTags.length === 0 && !noSpecificPlan) {
+      setSendError('Select a plan, or choose "No specific plan," before asking — this is what lets the Product Playbook be checked.');
       return;
     }
 
@@ -464,7 +486,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               <CustomSelect
                 theme={theme}
                 value={selectedCategoryValue}
-                onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); }}
+                onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); setNoSpecificPlan(false); }}
                 placeholder="Choose an insurer or General"
                 options={categoryOptions}
                 disabled={scopeLocked}
@@ -479,7 +501,14 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
             {selectedCategory && selectablePlanNames.length > 0 && (
               <div className="flex-1 min-w-[200px]">
-                <label className="block text-[9px] font-semibold uppercase tracking-wide text-content-muted opacity-70 mb-1 flex items-center gap-1"><Tag className="w-2.5 h-2.5" /> Plans · optional</label>
+                {/* No longer "optional" — the Product Playbook (the
+                    authoritative source for plan facts like bonus/
+                    restoration terms) is only ever checked for plans
+                    explicitly picked here. Picking either a real plan or
+                    "No specific plan" is required before the advisor can
+                    send; see sendQuestion's validation and
+                    chooseNoSpecificPlan's comment. */}
+                <label className="block text-[9px] font-semibold uppercase tracking-wide text-content-muted opacity-70 mb-1 flex items-center gap-1"><Tag className="w-2.5 h-2.5" /> Plan</label>
                 <div className="flex flex-wrap gap-1.5">
                   {selectablePlanNames.map(plan => (
                     <button
@@ -496,6 +525,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       {plan}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    disabled={scopeLocked}
+                    onClick={chooseNoSpecificPlan}
+                    title="This question isn't about one specific plan — Playbook won't be checked."
+                    className={`px-2 py-1 rounded text-[10.5px] font-bold border border-dashed transition-colors ${
+                      noSpecificPlan
+                        ? dark ? "bg-white/[0.1] border-white/[0.3] text-white" : "bg-stone-200 border-stone-400 text-stone-700"
+                        : dark ? "bg-transparent border-white/[0.15] text-stone-500 hover:bg-white/[0.06]" : "bg-transparent border-[var(--border-strong)] text-stone-500 hover:bg-white"
+                    } ${scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    No specific plan
+                  </button>
                 </div>
               </div>
             )}
