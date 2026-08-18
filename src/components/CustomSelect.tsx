@@ -225,14 +225,22 @@ export function CustomSelect({
                         opt.disabled
                           ? "opacity-40 cursor-not-allowed border-transparent pl-[10px]"
                           : isSelected
-                            ? `${selectedOptionClassName ?? "bg-blue-600/20 text-blue-300 border-blue-500"} pl-[10px]`
+                            ? // Default (no explicit override) must itself branch on
+                              // `dark` — a light-blue-on-transparent treatment reads
+                              // fine against this panel's near-black dark background,
+                              // but the same text-blue-300 against the panel's WHITE
+                              // light-theme background (see panelClassName's default
+                              // above) was near-invisible, which is exactly the
+                              // "selected option text obscured" bug reported against
+                              // Product Assist's insurer selector.
+                              `${selectedOptionClassName ?? (dark ? "bg-blue-600/20 text-blue-300 border-blue-500" : "bg-blue-50 text-blue-700 border-blue-500")} pl-[10px]`
                             : dark
                               ? "hover:bg-white/[0.04] border-transparent pl-[10px]"
                               : "hover:bg-stone-100 border-transparent pl-[10px]"
                       }`}
                     >
                       <span className="truncate">{opt.label}</span>
-                      {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? "text-blue-400"}`} />}
+                      {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? (dark ? "text-blue-400" : "text-blue-600")}`} />}
                     </button>
                   );
                 })

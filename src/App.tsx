@@ -220,7 +220,7 @@ const RESOURCE_ICON_MAP: Record<string, typeof Link2> = Object.fromEntries(
  * Nothing an Admin can edit — and no stale localStorage permission list —
  * can grant access to anything in this set.
  */
-const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections"]);
+const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections", "smoke_test"]);
 
 function resolveResourceIcon(resource: { title: string; icon?: string }) {
   if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
@@ -681,8 +681,8 @@ export default function App() {
     quality: ["qa_dashboard"],
     reference: ["advisory_zone", "announcement_archive", "resources", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
-    administration: ["profile_access", "audit", "flagged_responses", "smoke_test"],
-    developer: ["owner_controls", "connections"],
+    administration: ["profile_access", "audit", "flagged_responses"],
+    developer: ["owner_controls", "connections", "smoke_test"],
   };
   const [openSections, setOpenSections] = useState<Record<SidebarSectionKey, boolean>>({
     advisorWorkspace: true,
@@ -2884,9 +2884,6 @@ export default function App() {
             navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
               hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
             }),
-            navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
-              iconColorClass: isActive => (isActive ? "text-[#E08D4B]" : "text-blue-300"),
-            }),
           ],
         },
       ],
@@ -2909,6 +2906,9 @@ export default function App() {
                 ) : undefined,
             }),
             navPage("connections", "Connections", Link2, "Viewer"),
+            navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
+              iconColorClass: isActive => (isActive ? "text-[#E08D4B]" : "text-blue-300"),
+            }),
           ],
         },
       ],
@@ -4591,7 +4591,17 @@ export default function App() {
         <div className="w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto">
           <div
             style={{ borderColor: !isDark && activeTab !== "smoke_test" ? "#707a80" : undefined }}
-            className={`pt-2.5 border-t flex justify-between items-center text-[10px] font-mono tracking-widest uppercase select-none w-full ${
+            // Both halves of this footer now share one color/weight token —
+            // previously the left half rode the container's own text/font
+            // classes (which included a light-theme-only font-extrabold)
+            // while the right half set its own separate inline color/weight
+            // ternary that didn't match, so "ADVISOR PRODUCTIVITY PLATFORM"
+            // and "©BLISS GUIDES.DITTO" rendered at visibly different
+            // weights/brightness (most obvious in dark theme, where the left
+            // half read bold/bright and the right half read dim). Neither
+            // span carries its own color/weight now — both inherit this one
+            // shared treatment.
+            className={`pt-2.5 border-t flex justify-between items-center text-[10px] font-mono font-normal tracking-widest uppercase select-none w-full ${
               /* SMOKE TEST EXCEPTION (same reasoning as the GridTexture/backdrop
                  fixes above): this footer is shell-level and renders on every
                  tab, but it reacted to the live theme unconditionally — so
@@ -4601,14 +4611,14 @@ export default function App() {
                  backdrop. Force the dark-theme values whenever Smoke Test is active. */
               theme === "dark" || activeTab === "smoke_test"
                 ? "border-[#252A34]/40 text-slate-400"
-                : "font-extrabold text-stone-600"
+                : "text-stone-600"
             }`}
           >
             <div className="flex items-center gap-1.5 select-none">
               <span>ADVISOR PRODUCTIVITY PLATFORM</span>
               <ShieldCheck className="w-3.5 h-3.5" />
             </div>
-            <span style={{ color: !isDark && activeTab !== "smoke_test" ? "#57534d" : "#90a1b9", fontWeight: !isDark && activeTab !== "smoke_test" ? "bold" : "normal", fontSize: "10px" }} className="font-normal">©BLISS GUIDES.DITTO</span>
+            <span>©BLISS GUIDES.DITTO</span>
           </div>
         </div>
       </div>

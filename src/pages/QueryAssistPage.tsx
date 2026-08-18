@@ -241,15 +241,12 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   const [messages, setMessages] = useState<LocalChatMessage[]>([]);
 
   const [selectedCategoryValue, setSelectedCategoryValue] = useState<string>("");
+  // Picking a plan chip is optional, not required — if the advisor skips
+  // it, the server infers a plan directly from the question text where
+  // possible (or asks a clarifying question when it genuinely can't be
+  // determined and matters for the answer); see queryAssist.ts's
+  // detectMentionedPlanNames / SELECTED SCOPE handling.
   const [selectedPlanTags, setSelectedPlanTags] = useState<string[]>([]);
-  // Tracks the advisor's deliberate "this question isn't about one specific
-  // plan" choice — see the "No specific plan" chip below. Plan selection is
-  // otherwise required (not optional) once an insurer with plans is chosen,
-  // because the Product Playbook (the authoritative source for facts like
-  // bonus/restoration terms) is only ever looked up for plans explicitly in
-  // scope.planTags — an advisor who never picks a plan silently gets no
-  // Playbook check at all, with no way to tell from the answer alone.
-  const [noSpecificPlan, setNoSpecificPlan] = useState(false);
   // Sidebar Library section — collapsed by default (see the restructured
   // sidebar below); expanding it pushes Recent Conversations down inline,
   // it never floats/overlays.
@@ -314,7 +311,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   // footprint for the common case (an active conversation), rather than
   // carrying the same heavy pre-send controls for the whole chat.
   const lockedInsurerLabel = selectedCategoryValue === GENERAL_VALUE ? "General" : selectedCategory?.name ?? "Unknown insurer";
-  const lockedPlanLabel = selectedPlanTags.length > 0 ? selectedPlanTags.join(", ") : selectablePlanNames.length > 0 ? "No specific plan" : null;
+  // No placeholder text when no plan was picked — absence of a selected
+  // plan already communicates that no plan was chosen (see the removed
+  // "No specific plan" chip); showing a substitute label here would just
+  // reintroduce the same thing under a different name.
+  const lockedPlanLabel = selectedPlanTags.length > 0 ? selectedPlanTags.join(", ") : null;
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const saveSessions = (next: LocalChatSession[]) => {
@@ -344,17 +345,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   };
 
   const togglePlanTag = (plan: string) => {
-    setNoSpecificPlan(false);
     setSelectedPlanTags(prev => (prev.includes(plan) ? prev.filter(p => p !== plan) : [...prev, plan]));
-  };
-
-  // The explicit opt-out from picking a real plan — see noSpecificPlan's
-  // comment above. Deliberately its own action rather than "just leave the
-  // chips unclicked", so skipping the Playbook check is a choice the
-  // advisor visibly makes, not something that happens by default.
-  const chooseNoSpecificPlan = () => {
-    setSelectedPlanTags([]);
-    setNoSpecificPlan(true);
   };
 
   const sendQuestion = async () => {
@@ -362,10 +353,6 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
     if (!question || sending) return;
     if (currentSessionId === null && !selectedCategoryValue) {
       setSendError("Choose an insurer (or General) before asking.");
-      return;
-    }
-    if (currentSessionId === null && selectedCategory && selectablePlanNames.length > 0 && selectedPlanTags.length === 0 && !noSpecificPlan) {
-      setSendError('Select a plan, or choose "No specific plan," before asking — this is what lets the Product Playbook be checked.');
       return;
     }
 
@@ -481,7 +468,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <ClippedButton
               size="md"
               onClick={startNewChat}
-              className="w-full bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+              // Deliberately NOT var(--tab-active-bg)/var(--action-navy) here —
+              // both resolve close to this sidebar's own always-dark-navy
+              // background (--sidebar-bg, locked the same in both themes; see
+              // the sidebar wrapper below), which made the button nearly
+              // blend into it, especially in light theme where
+              // --tab-active-bg (#1f2d3d) sits almost on top of --sidebar-bg
+              // (#16232F). Uses a fixed lighter blue-navy instead — the same
+              // literal color dark theme's --action-navy override already
+              // uses for this exact "raise a navy CTA off a near-black
+              // background" problem elsewhere in the app — applied the same
+              // way in BOTH themes, since this sidebar's backdrop is dark
+              // navy regardless of site theme.
+              className="w-full px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 text-white bg-[#355F87] hover:bg-[#294A69] transition-colors"
             >
               <Plus className="w-3.5 h-3.5" /> New Chat
             </ClippedButton>
@@ -605,7 +604,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   <CustomSelect
                     theme={theme}
                     value={selectedCategoryValue}
-                    onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); setNoSpecificPlan(false); }}
+                    onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); }}
                     placeholder="Choose an insurer or General"
                     options={categoryOptions}
                     // Lighter than the band behind it (dark container ->
@@ -623,12 +622,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   // never a single fixed-height horizontally-scrolling
                   // strip, so a plan can never disappear/clip at the edge
                   // regardless of insurer plan count, container width, or
-                  // browser zoom. No longer "optional": the Product
-                  // Playbook (the authoritative source for plan facts like
-                  // bonus/restoration terms) is only ever checked for plans
-                  // explicitly picked here, so choosing a plan or "No
-                  // specific plan" is required before sending — see
-                  // sendQuestion's validation and chooseNoSpecificPlan.
+                  // browser zoom. Picking a plan here is optional — if the
+                  // advisor skips it, the server tries to infer the plan
+                  // directly from the question text, and asks for
+                  // clarification itself when it genuinely can't tell (see
+                  // queryAssist.ts's SELECTED SCOPE / AMBIGUITY handling).
                   <div className="w-full min-w-0 flex flex-wrap items-center gap-1.5">
                     <Tag className="w-3 h-3 shrink-0 text-[#8CA0B3]" />
                     {selectablePlanNames.map(plan => (
@@ -645,18 +643,6 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                         {plan}
                       </button>
                     ))}
-                    <button
-                      type="button"
-                      onClick={chooseNoSpecificPlan}
-                      title="This question isn't about one specific plan — Playbook won't be checked."
-                      className={`whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border border-dashed transition-colors cursor-pointer ${
-                        noSpecificPlan
-                          ? "bg-white/[0.16] border-white/[0.35] text-white"
-                          : "bg-transparent border-white/[0.2] text-[#8CA0B3] hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      No specific plan
-                    </button>
                   </div>
                 )}
               </div>
@@ -728,8 +714,16 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   </div>
                 );
               }
-              const { answer, share } = splitAnswer(m.content);
+              const { answer, share: rawShare } = splitAnswer(m.content);
               const { body, references } = splitReferences(answer);
+              // The model writes the literal sentinel NO_DRAFT_AVAILABLE for
+              // Part 2 when Part 1 didn't reach a genuine sourced answer
+              // (see queryAssist.ts's NO_DRAFT_AVAILABLE RULE) — a Draft
+              // Message is meant to be copied straight to a customer, so one
+              // built on an unsupported or incomplete answer would be
+              // misleading. Suppress the block entirely rather than showing
+              // a fabricated or placeholder draft.
+              const share = rawShare && rawShare.trim().toUpperCase() !== "NO_DRAFT_AVAILABLE" ? rawShare : null;
               return (
                 <div key={m.id} className="flex justify-start gap-2 max-w-[92%]">
                   {/* The AI mascot gives the response its own identity as a
@@ -742,15 +736,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       border in either theme. The outer workspace card
                       already owns the one real border/edge in this layout;
                       stacking a second border around every answer is what
-                      produced the "card inside a card" look before. Light
-                      theme uses the accent-tinted surface tier (a subtle
-                      blue wash, echoing the AI avatar/user-bubble accent)
-                      rather than the neutral elevated tier, so it reads as
-                      distinct even at a glance, without needing an outline.
-                      A drop-shadow reads as "this floats above," a
-                      different (and here, correct) cue from "this is boxed
-                      in." */}
-                  <div className={`min-w-0 flex-1 px-4 py-4 rounded-2xl rounded-tl-md space-y-4 shadow-card ${dark ? "bg-white/[0.06]" : "bg-surface-tint"}`}>
+                      produced the "card inside a card" look before.
+                      bg-surface-tint (not a dark-only bg-white/[alpha]) so
+                      the AI bubble sits in the SAME blue-tinted surface
+                      family as the advisor's own sky-blue bubble below in
+                      BOTH themes — related (same family, both blue-toned)
+                      but distinguishable (advisor = a more saturated sky
+                      fill, "stronger"; AI = the softer --surface-tint wash,
+                      "lighter") purely via the --surface-tint/sky-* tokens
+                      already in the palette, not a new color. A drop-shadow
+                      reads as "this floats above," a different (and here,
+                      correct) cue from "this is boxed in." */}
+                  <div className="min-w-0 flex-1 px-4 py-4 rounded-2xl rounded-tl-md space-y-4 shadow-card bg-surface-tint">
                     {/* Answer — the verified response to the advisor's question. */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
@@ -831,7 +828,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             {sending && (
               <div className="flex justify-start gap-2">
                 <BotAvatar />
-                <div className={`px-4 py-3 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-card ${dark ? "bg-white/[0.06] text-stone-400" : "bg-surface-tint text-stone-500"}`}>
+                <div className={`px-4 py-3 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-card bg-surface-tint ${dark ? "text-stone-400" : "text-stone-500"}`}>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Checking the Knowledge Base…
                 </div>
               </div>
@@ -845,23 +842,23 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
           )}
 
-          {/* Composer band — matches the Scope band's quiet "divider, no
-              fill" treatment, so the workspace reads as one continuous
-              surface with chrome strips top and bottom, not a third
-              differently-shaded panel. The input pill itself is what
-              carries the weight here: the brightest surface tone in the
-              whole panel plus a real border + shadow, unmistakably the
-              primary interaction point. Focus uses a self-contained ring
-              rather than a wide glow shadow — a glow that size would get
-              clipped by the workspace card's own overflow-hidden edge. */}
-          <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
-            <div
-              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:ring-2 ${
-                dark
-                  ? "bg-white/[0.09] border-white/[0.16] focus-within:border-sky-500/40 focus-within:ring-sky-500/20"
-                  : "bg-surface border-[var(--border-strong)] focus-within:border-sky-400 focus-within:ring-sky-400/25"
-              }`}
-            >
+          {/* Composer band — deliberately mirrors the Scope band above the
+              thread: same always-dark-navy container (--sidebar-bg, locked
+              the same in both themes) and the same light-control-on-dark-
+              container pill treatment as the insurer selector's trigger
+              (white-alpha fill/border, white text). Bookending the thread
+              with matching top/bottom toolbars, both built from the same
+              tokens, is what makes the composer read as part of the same
+              interaction system as the selector above it rather than an
+              unrelated input — this was previously a theme-flipping
+              surface/border pairing that only happened to resemble the
+              selector in dark theme and looked like a different component
+              entirely in light theme. */}
+          <div
+            className="shrink-0 px-4 py-3.5 border-t border-white/[0.08]"
+            style={{ backgroundColor: dark ? "#020D18" : "var(--sidebar-bg)" }}
+          >
+            <div className="qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors bg-white/[0.08] border-white/[0.16] focus-within:border-sky-400/50 focus-within:ring-2 focus-within:ring-sky-400/20">
               <textarea
                 ref={textareaRef}
                 value={questionInput}
@@ -890,16 +887,17 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // up to this max-height (a bit shorter on small viewports so
                 // it can't dominate a short screen) — beyond that it scrolls
                 // internally instead of growing the composer further.
-                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden ${
-                  dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
-                }`}
+                className="flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden text-white placeholder:text-white/40"
               />
               <button
                 type="button"
                 onClick={sendQuestion}
                 disabled={sending || !questionInput.trim()}
                 title="Send"
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]"
+                // Same fixed lighter navy as New Chat (see its comment) —
+                // var(--tab-active-bg) would have the identical low-contrast
+                // problem here, sitting on the same dark-navy composer band.
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 text-white bg-[#355F87] hover:bg-[#294A69]"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>

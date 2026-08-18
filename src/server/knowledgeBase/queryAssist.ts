@@ -105,10 +105,11 @@ Before writing the ANSWER, read EVERY excerpt in SOURCE CONTENT — not just the
 This "read everything" instruction is about completeness WITHIN a rank, never a license to override SOURCE PRECEDENCE below. When the Product Playbook covers the topic being asked about, "comprehensive" means comprehensively reporting what the Playbook says — it does NOT mean supplementing the Playbook with extra sub-types, figures, or named benefits pulled from a lower-ranked DOCUMENT EXCERPT just because that excerpt exists and is topically related. See SOURCE PRECEDENCE #1's exclusivity rule.
 
 SELECTED SCOPE
-Every request includes a SELECTED SCOPE line stating the insurer and, if the advisor already picked one, the specific plan(s) — chosen by the advisor through the app's UI BEFORE they typed their question. This is given, established context, not something to re-ask about:
-- If SELECTED SCOPE names specific plan(s), and SOURCE CONTENT's excerpts cover multiple plans/variants of that insurer, restrict your ANSWER to only the named plan(s) — do not ask the advisor which plan they mean, they already told you via SELECTED SCOPE.
-- Only ask a clarifying question about which plan is meant when SELECTED SCOPE itself says no specific plan was selected AND the source content's answer genuinely differs by plan in a way that changes the answer.
-- If an excerpt doesn't clearly say which plan it belongs to, prefer excerpts from documents whose title matches or names the SELECTED SCOPE plan(s) over generic/other-plan documents.
+Every request includes a SELECTED SCOPE line stating the insurer and the plan situation, which is always one of three states — read it carefully, it tells you which state you're in:
+1. The advisor explicitly picked plan(s) via the app's UI before typing their question. Treat this as given, established fact — do not ask the advisor which plan they mean, they already told you.
+2. The advisor didn't pick a plan via the UI, but the line says a plan was detected directly from the wording of their question. You may treat that detected plan as the plan in scope — but only if you're actually confident it's the right one given the full question; if the question is genuinely ambiguous about which plan despite the detection (e.g. it could reasonably be read as being about a different plan too), don't silently trust the detection — ask instead, per AMBIGUITY below.
+3. No plan was picked or detected. Answer using general/insurer-wide information where that's enough to answer the question. Only ask a clarifying question when the source content's answer genuinely differs by plan in a way that changes the answer — see AMBIGUITY for the exact phrasing to use.
+Regardless of which state applies: if an excerpt doesn't clearly say which plan it belongs to, prefer excerpts from documents whose title matches or names the plan(s) in scope over generic/other-plan documents.
 
 CONTINUING A CONVERSATION
 If CONVERSATION SO FAR is present below, the advisor's current message may be a continuation, not a new isolated question — this is especially true when it is short (just a plan name, a yes/no, a number, "the second one", etc.). If your own last turn in CONVERSATION SO FAR asked the advisor a clarifying question, treat their current message as the answer to THAT clarifying question and go back and actually answer the ORIGINAL question it was raised for — do not treat the clarification by itself as a brand-new, unrelated question to research from scratch.
@@ -161,7 +162,7 @@ FORMATTING
 Write using plain markdown only: **bold** for emphasis/labels, numbered lists ("1. ", "2. ", ...) for sequential steps, and bullets ("- " or "* ") for unordered lists. Never write a citation inline mid-point — citations only ever belong in the References list described above.
 
 AMBIGUITY
-If the question doesn't specify which plan/variant/benefit it's about and that materially changes the answer, ask exactly ONE clarifying question instead of guessing.
+If the question doesn't specify which plan/variant/benefit it's about and that materially changes the answer, ask exactly ONE clarifying question instead of guessing — never guess which plan is meant. When no plan was selected or reliably detected (SELECTED SCOPE state 3, or state 2 where you're not actually confident in the detected plan) and the question can't be reliably answered without knowing the plan, use this exact wording unless a more specific clarifying question is clearly better: "I'm not able to determine which plan you're referring to. Could you specify the plan you want to know about?"
 
 INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finalizing your response:
 1. Every claim is traced to a specific document in the source content.
@@ -178,13 +179,15 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 12. Provisions that interact (definitions, exclusions, riders/add-ons, waiting periods, eligibility/member conditions, etc. — see INTERCONNECTED PROVISIONS) were checked against each other, not read in isolation.
 13. Any conclusion beyond what a source states outright is clearly marked as an inference (using language like "this appears to be…" or "this is an inference based on…"), never presented with the same confidence as an explicit statement.
 14. If PRODUCT PLAYBOOK facts were used to answer this topic, Part 2 restates every point those facts make about it (see PLAYBOOK COMPLETENESS IN PART 2) — not just the most prominent one.
+15. If Part 1 did not reach a genuine sourced answer (sources didn't cover it, or Part 1 is itself a clarifying question), Part 2 is exactly NO_DRAFT_AVAILABLE and nothing else — never a fabricated customer-facing paraphrase (see NO_DRAFT_AVAILABLE RULE).
 
 OUTPUT FORMAT
 Produce exactly two parts, separated by a line containing ONLY the text ---SHARE--- and nothing else on that line. Do NOT write your own "ANSWER" or "MESSAGE FOR SHARING" heading anywhere — the app already labels both parts for you, so including either heading yourself duplicates it on screen and is a formatting error.
 
 Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STRUCTURE BY QUESTION TYPE above, ending with the **References** list described in CITATION FORMAT. If the sources don't cover the question, say so plainly here instead of guessing.
 
-Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). "Shorter" refers to sentence-level wording, not fact coverage — see PLAYBOOK COMPLETENESS IN PART 2 above for the specific rule on Playbook-sourced topics, which must stay fully comprehensive even in Part 2. This is what the advisor may copy-paste to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified. If Part 1 couldn't answer the question, this part should tell the advisor to confirm with the product team rather than answer the customer. Do not include a References list here — references belong only in Part 1.`;
+Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). "Shorter" refers to sentence-level wording, not fact coverage — see PLAYBOOK COMPLETENESS IN PART 2 above for the specific rule on Playbook-sourced topics, which must stay fully comprehensive even in Part 2. This is what the advisor may copy-paste directly to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified.
+NO_DRAFT_AVAILABLE RULE: if Part 1 did not reach a genuine, sourced answer for the advisor to relay — because the sources don't cover the question, or because Part 1 is itself a clarifying question rather than an answer — do NOT write any customer-facing paraphrase. Instead write exactly the text NO_DRAFT_AVAILABLE as the entire content of Part 2, nothing else. The app uses that exact literal text to recognize this case and will not show a draft message to the advisor in it — a customer-facing message drafted from an unsupported or incomplete answer would be misleading if copied straight to a customer. Only write a real customer-facing paraphrase when Part 1 reached an actual verified answer, even if that answer is partial or conditional. Do not include a References list here — references belong only in Part 1.`;
 
 function buildSourceBlock(
   chunks: { resourceTitle: string; documentType: QueryAssistSource["documentType"]; content: string }[],
@@ -217,13 +220,21 @@ function buildSourceBlock(
 /**
  * Resolves which kb_resources are actually eligible for a scoped question:
  * every active resource in the chosen category(ies), further narrowed to
- * plan-tag matches when the advisor picked specific plan(s) — a resource
- * with NO plan tags is treated as applying broadly (always eligible)
- * within its category, per kb_resources.planTags's documented convention.
+ * plan-tag matches against `effectivePlanTags` — a resource with NO plan
+ * tags is treated as applying broadly (always eligible) within its
+ * category, per kb_resources.planTags's documented convention.
+ *
+ * `effectivePlanTags` is NOT necessarily the same as `scope.planTags`: the
+ * advisor may not have picked a plan chip at all, in which case the caller
+ * (answerQuery) passes in whatever plan name(s) it detected directly from
+ * the question text instead (see detectMentionedPlanNames) — so a question
+ * that names a plan gets plan-specific retrieval even without a manual
+ * chip selection.
  */
 async function resolveEligibleResourceIds(
   repos: Repositories,
-  scope: QueryAssistScope
+  scope: QueryAssistScope,
+  effectivePlanTags: string[]
 ): Promise<{ categoryIds: number[]; resourceIds?: number[] }> {
   if (scope.categoryId === null) {
     const categories = await repos.kbCategories.list();
@@ -231,13 +242,13 @@ async function resolveEligibleResourceIds(
     return { categoryIds: generalIds };
   }
 
-  if (scope.planTags.length === 0) {
+  if (effectivePlanTags.length === 0) {
     return { categoryIds: [scope.categoryId] };
   }
 
   const resources = await repos.kbResources.list({ categoryId: scope.categoryId, status: "active" });
   const eligible = resources.filter(
-    r => r.planTags.length === 0 || r.planTags.some(t => scope.planTags.some(p => p.toLowerCase() === t.toLowerCase()))
+    r => r.planTags.length === 0 || r.planTags.some(t => effectivePlanTags.some(p => p.toLowerCase() === t.toLowerCase()))
   );
   return { categoryIds: [scope.categoryId], resourceIds: eligible.map(r => r.id) };
 }
@@ -254,18 +265,24 @@ function buildHistoryBlock(history: QueryAssistHistoryTurn[]): string {
   return `CONVERSATION SO FAR (most recent last — for context only; verify any new claim against SOURCE CONTENT below, don't just repeat what was said before):\n${transcript}\n\n`;
 }
 
-/** Spells out, in plain language, the insurer/plan the advisor already
- * picked via the UI — see this file's SYSTEM_INSTRUCTION "SELECTED SCOPE"
- * section. Without this line the model only ever sees a pre-filtered set
- * of document excerpts and has no way to know a plan was already chosen,
- * which was producing "please specify which plan" answers even when the
- * advisor HAD selected one. */
-function buildScopeLine(scope: QueryAssistScope, categoryName: string | null): string {
+/** Spells out, in plain language, the insurer/plan situation for this
+ * request — see this file's SYSTEM_INSTRUCTION "SELECTED SCOPE" section for
+ * the three states this describes. Without this line the model only ever
+ * sees a pre-filtered set of document excerpts and has no way to know
+ * whether a plan was already chosen (explicitly or detected), which was
+ * producing "please specify which plan" answers even when the advisor HAD
+ * selected one, and produced no clarification at all when neither a
+ * selection nor a detection was possible. */
+function buildScopeLine(scope: QueryAssistScope, categoryName: string | null, detectedPlanNames: string[]): string {
   if (scope.categoryId === null) return "SELECTED SCOPE: General question — not tied to one insurer.\n\n";
-  const planPart =
-    scope.planTags.length > 0
-      ? `Plan(s) already selected by the advisor: ${scope.planTags.join(", ")}.`
-      : "No specific plan selected — applies broadly across this insurer.";
+  let planPart: string;
+  if (scope.planTags.length > 0) {
+    planPart = `Plan(s) already selected by the advisor via the UI: ${scope.planTags.join(", ")}.`;
+  } else if (detectedPlanNames.length > 0) {
+    planPart = `No plan was selected via the UI, but the question appears to name: ${detectedPlanNames.join(", ")}. Only rely on this if you're actually confident it's correct — otherwise ask instead, per AMBIGUITY.`;
+  } else {
+    planPart = "No plan was selected via the UI or detected in the question — applies broadly across this insurer unless the answer genuinely differs by plan, in which case ask per AMBIGUITY.";
+  }
   return `SELECTED SCOPE: Insurer: ${categoryName ?? "Unknown"}. ${planPart}\n\n`;
 }
 
@@ -330,11 +347,27 @@ export async function answerQuery(
   question: string,
   history: QueryAssistHistoryTurn[] = []
 ): Promise<QueryAssistAnswer> {
-  const { categoryIds, resourceIds } = await resolveEligibleResourceIds(repos, scope);
-
   const categories = await repos.kbCategories.list();
   const categoryById = new Map(categories.map(c => [c.id, c]));
   const scopeCategoryName = scope.categoryId !== null ? categoryById.get(scope.categoryId)?.name ?? null : null;
+  const scopeCategory = scope.categoryId !== null ? categoryById.get(scope.categoryId) : undefined;
+
+  // The advisor may not have picked a plan chip at all — plan selection is
+  // no longer required before asking (see QueryAssistPage.tsx). If they
+  // named a real plan directly in the question text instead, detect it
+  // here (see detectMentionedPlanNames's comment) and treat it as if it
+  // were selected for BOTH resource retrieval and the Product Playbook
+  // lookup below, so a question like "what's the bonus in Optima Secure?"
+  // still gets plan-specific grounding without a manual chip click. When
+  // neither a selection nor a detection is available, effectivePlanTags
+  // stays empty and the model itself decides (per SYSTEM_INSTRUCTION's
+  // SELECTED SCOPE / AMBIGUITY) whether to answer generally or ask for
+  // clarification — see buildScopeLine.
+  const detectedPlanNames =
+    scope.planTags.length === 0 && scopeCategory ? detectMentionedPlanNames(question, scopeCategory.planNames) : [];
+  const effectivePlanTags = scope.planTags.length > 0 ? scope.planTags : detectedPlanNames;
+
+  const { categoryIds, resourceIds } = await resolveEligibleResourceIds(repos, scope, effectivePlanTags);
 
   const retrievalQueryText = buildRetrievalQueryText(question, history);
   const queryEmbedding = await embedQuery(retrievalQueryText);
@@ -346,16 +379,10 @@ export async function answerQuery(
 
   // Product Playbook plan facts — only meaningful once a plan is in scope
   // (there's no "insurer-wide" playbook fact, unlike a generic PDF; see
-  // kb_playbook_plan_facts's schema comment). Normally that's whatever the
-  // advisor picked via the plan chips (scope.planTags). If they didn't pick
-  // one but named a real plan directly in the question, fall back to
-  // detecting it there — see detectMentionedPlanNames's comment.
-  const scopeCategory = scope.categoryId !== null ? categoryById.get(scope.categoryId) : undefined;
-  const effectivePlaybookPlanTags =
-    scope.planTags.length > 0 ? scope.planTags : scopeCategory ? detectMentionedPlanNames(question, scopeCategory.planNames) : [];
+  // kb_playbook_plan_facts's schema comment).
   const playbookFacts =
-    scope.categoryId !== null && effectivePlaybookPlanTags.length > 0
-      ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", effectivePlaybookPlanTags)
+    scope.categoryId !== null && effectivePlanTags.length > 0
+      ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", effectivePlanTags)
       : [];
 
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, documentType: s.documentType, content: s.chunk.content }));
@@ -367,7 +394,7 @@ export async function answerQuery(
     : buildSourceBlock(chunkInputs, playbookInputs);
 
   const historyBlock = buildHistoryBlock(history);
-  const scopeLine = buildScopeLine(scope, scopeCategoryName);
+  const scopeLine = buildScopeLine(scope, scopeCategoryName, detectedPlanNames);
 
   const ai = getKbAiClient();
   const response = await ai.models.generateContent({
