@@ -468,19 +468,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <ClippedButton
               size="md"
               onClick={startNewChat}
-              // Deliberately NOT var(--tab-active-bg)/var(--action-navy) here —
-              // both resolve close to this sidebar's own always-dark-navy
-              // background (--sidebar-bg, locked the same in both themes; see
-              // the sidebar wrapper below), which made the button nearly
-              // blend into it, especially in light theme where
-              // --tab-active-bg (#1f2d3d) sits almost on top of --sidebar-bg
-              // (#16232F). Uses a fixed lighter blue-navy instead — the same
-              // literal color dark theme's --action-navy override already
-              // uses for this exact "raise a navy CTA off a near-black
-              // background" problem elsewhere in the app — applied the same
-              // way in BOTH themes, since this sidebar's backdrop is dark
-              // navy regardless of site theme.
-              className="w-full px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 text-white bg-[#355F87] hover:bg-[#294A69] transition-colors"
+              className="w-full bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
             >
               <Plus className="w-3.5 h-3.5" /> New Chat
             </ClippedButton>
@@ -636,7 +624,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                         onClick={() => togglePlanTag(plan)}
                         className={`whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border transition-colors cursor-pointer ${
                           selectedPlanTags.includes(plan)
-                            ? "bg-sky-500/25 border-sky-400/50 text-sky-200"
+                            ? // Dark theme's translucent sky-500/25 fill +
+                              // sky-200 text is correct as-is — left
+                              // untouched. Light theme needs its own,
+                              // higher-contrast pairing: the same pale
+                              // sky-200 text over that same translucent fill
+                              // was reading as near-invisible, so light
+                              // theme gets a near-opaque sky fill with solid
+                              // white text instead, guaranteeing contrast
+                              // regardless of what's behind it.
+                              dark
+                                ? "bg-sky-500/25 border-sky-400/50 text-sky-200"
+                                : "bg-sky-500 border-sky-400 text-white"
                             : "bg-white/[0.07] border-white/[0.14] text-[#C4CDD8] hover:bg-white/[0.12]"
                         }`}
                       >
@@ -842,23 +841,27 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
           )}
 
-          {/* Composer band — deliberately mirrors the Scope band above the
-              thread: same always-dark-navy container (--sidebar-bg, locked
-              the same in both themes) and the same light-control-on-dark-
-              container pill treatment as the insurer selector's trigger
-              (white-alpha fill/border, white text). Bookending the thread
-              with matching top/bottom toolbars, both built from the same
-              tokens, is what makes the composer read as part of the same
-              interaction system as the selector above it rather than an
-              unrelated input — this was previously a theme-flipping
-              surface/border pairing that only happened to resemble the
-              selector in dark theme and looked like a different component
-              entirely in light theme. */}
-          <div
-            className="shrink-0 px-4 py-3.5 border-t border-white/[0.08]"
-            style={{ backgroundColor: dark ? "#020D18" : "var(--sidebar-bg)" }}
-          >
-            <div className="qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors bg-white/[0.08] border-white/[0.16] focus-within:border-sky-400/50 focus-within:ring-2 focus-within:ring-sky-400/20">
+          {/* Composer band — a quiet divider only, no fill of its own, so
+              the workspace's normal background (transparent over the card
+              in both themes) continues straight through behind it. The
+              input pill is the ONLY visually distinct surface down here —
+              deliberately NOT wrapped in a second dark-navy container
+              matching the Scope band above: that mirrored treatment put a
+              full-width dark rectangle behind the pill, which read as two
+              competing surfaces in light theme (a white inner input inside
+              a dark charcoal outer box) instead of one cohesive control.
+              The pill's own surface tone (translucent white-on-dark in dark
+              theme, the app's card surface tone in light theme) is what
+              carries the "this is the primary interaction point" weight
+              here, exactly as it did before that mirrored-band experiment. */}
+          <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
+            <div
+              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:ring-2 ${
+                dark
+                  ? "bg-white/[0.09] border-white/[0.16] focus-within:border-sky-500/40 focus-within:ring-sky-500/20"
+                  : "bg-surface border-[var(--border-strong)] focus-within:border-sky-400 focus-within:ring-sky-400/25"
+              }`}
+            >
               <textarea
                 ref={textareaRef}
                 value={questionInput}
@@ -887,17 +890,16 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // up to this max-height (a bit shorter on small viewports so
                 // it can't dominate a short screen) — beyond that it scrolls
                 // internally instead of growing the composer further.
-                className="flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden text-white placeholder:text-white/40"
+                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden ${
+                  dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
+                }`}
               />
               <button
                 type="button"
                 onClick={sendQuestion}
                 disabled={sending || !questionInput.trim()}
                 title="Send"
-                // Same fixed lighter navy as New Chat (see its comment) —
-                // var(--tab-active-bg) would have the identical low-contrast
-                // problem here, sitting on the same dark-navy composer band.
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 text-white bg-[#355F87] hover:bg-[#294A69]"
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]"
               >
                 <Send className="w-3.5 h-3.5" />
               </button>
