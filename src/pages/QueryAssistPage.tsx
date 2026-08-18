@@ -111,10 +111,16 @@ function persistLocalSessions(sessions: LocalChatSession[]): void {
  * vignette rather than true alpha transparency; `isolate` + `mix-blend-screen`
  * erases that vignette against whatever's behind it, so it reads as a clean
  * floating character in both themes instead of a dark square. `object-contain`
- * keeps the full character uncropped/unstretched, per spec. */
+ * keeps the full character uncropped/unstretched, per spec.
+ *
+ * Sized larger than AdvisorAvatar's box (w-11 vs w-8) even though both
+ * render as squares: this source image is a wide 3:2 frame (vs the advisor
+ * avatar's near-square ~1:1 crop), so object-contain letterboxes it down to
+ * ~2/3 of a same-size box's height — without the size bump the character
+ * itself renders visibly smaller side-by-side, even though the boxes match. */
 function BotAvatar() {
   return (
-    <div className="shrink-0 w-8 h-8 isolate mt-0.5">
+    <div className="shrink-0 w-11 h-11 isolate">
       <img
         src="/assets/.aistudio/bot-mascot-avatar.png"
         alt=""
