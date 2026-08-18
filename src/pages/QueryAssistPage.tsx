@@ -252,6 +252,13 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   // a real plan) — an advisor picking "the plan I'm asking about" should
   // never see it as an option. See isAddOnPlanName's comment.
   const selectablePlanNames = selectedCategory ? realPlanNames(selectedCategory.planNames) : [];
+  // Once scope is locked, the full insurer-select + plan-chip controls have
+  // nothing left to do — collapsing them to a single compact summary line
+  // is what actually shrinks the scope band down to a real "toolbar"
+  // footprint for the common case (an active conversation), rather than
+  // carrying the same heavy pre-send controls for the whole chat.
+  const lockedInsurerLabel = selectedCategoryValue === GENERAL_VALUE ? "General" : selectedCategory?.name ?? "Unknown insurer";
+  const lockedPlanLabel = selectedPlanTags.length > 0 ? selectedPlanTags.join(", ") : selectablePlanNames.length > 0 ? "No specific plan" : null;
   const sortedSessions = [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   const saveSessions = (next: LocalChatSession[]) => {
@@ -420,14 +427,21 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               key={s.id}
               type="button"
               onClick={() => openSession(s)}
-              className={`group w-full text-left px-2.5 py-2 rounded-md text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
+              // Selected state reads via a left accent bar + full-contrast
+              // text — a nav-rail "current item" cue — rather than a filled
+              // pill background, so the list stays lightweight typography
+              // instead of a stack of small cards. Unselected rows carry no
+              // border/fill at all, only a hover tint.
+              className={`group w-full text-left pl-2.5 pr-2 py-2 border-l-2 text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
                 currentSessionId === s.id
-                  ? dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-50 text-sky-700"
-                  : dark ? "text-stone-400 hover:bg-white/[0.05] hover:text-stone-200" : "text-stone-600 hover:bg-stone-900/[0.04] hover:text-stone-800"
+                  ? dark ? "border-l-sky-400 text-sky-300" : "border-l-sky-500 text-sky-700"
+                  : dark
+                    ? "border-l-transparent text-stone-400 hover:bg-white/[0.04] hover:text-stone-200"
+                    : "border-l-transparent text-stone-600 hover:bg-stone-900/[0.035] hover:text-stone-800"
               }`}
             >
               <span className="flex items-center gap-1.5 min-w-0">
-                <MessageSquare className="w-3 h-3 shrink-0" />
+                <MessageSquare className="w-3 h-3 shrink-0 opacity-70" />
                 <span className="truncate">{s.title || "Untitled"}</span>
               </span>
               {/* Hidden until the row is hovered (or it's the open
@@ -458,87 +472,81 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             dark ? "bg-white/[0.035] border-white/[0.09]" : "bg-surface border-[var(--border-strong)]"
           }`}
         >
-          {/* Scope band — a full-bleed header strip (flush to the card's own
-              edges, not padded-in like the rest of the panel) with a
-              deliberately RECESSED tone relative to the workspace card
-              behind it, so it reads unmistakably as a toolbar embedded in
-              the workspace rather than a peer section of the conversation.
-              This is the same "sunken chrome band" treatment as the footer
-              composer band below — top and bottom chrome share a tone,
-              the conversation in between reads as the actual content. */}
-          <div
-            className={`shrink-0 flex flex-wrap items-end gap-3 px-4 py-3 border-b ${
-              dark ? "bg-black/[0.16] border-white/[0.07]" : "bg-surface-inset border-[var(--border)]"
-            }`}
-          >
-            <div className="w-full flex items-center justify-between gap-2 -mb-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-70">Conversation scope</span>
-              {scopeLocked && (
-                <span className="text-[10px] font-medium text-content-muted opacity-70">🔒 Locked · Start a new chat to change insurer or plans.</span>
-              )}
-            </div>
-            <div className="w-full sm:w-64">
-              {/* Insurer is the primary context — plans below it are a
-                  refinement of that context, not a peer choice, so it gets
-                  the stronger label treatment (full-contrast text vs the
-                  muted/lighter Plans label). */}
-              <label className={`block text-[10px] font-black uppercase tracking-wide mb-1 opacity-80 ${dark ? "text-white" : "text-stone-800"}`}>Insurer</label>
-              <CustomSelect
-                theme={theme}
-                value={selectedCategoryValue}
-                onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); setNoSpecificPlan(false); }}
-                placeholder="Choose an insurer or General"
-                options={categoryOptions}
-                disabled={scopeLocked}
-                // Matches the compact trigger sizing used for every other
-                // filter/select across the app (Audit, My Activity, Plan
-                // Management, …) instead of CustomSelect's larger default
-                // trigger, which read as oversized next to those.
-                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-3 pr-8 py-1.5 rounded-lg border outline-none transition-colors relative ${
-                  scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-                } ${dark ? "bg-white/[0.05] border-white/[0.1] text-white" : "bg-surface border-[var(--border)] text-stone-900"}`}
-              />
-            </div>
-            {selectedCategory && selectablePlanNames.length > 0 && (
-              <div className="flex-1 min-w-[200px]">
-                {/* No longer "optional" — the Product Playbook (the
-                    authoritative source for plan facts like bonus/
-                    restoration terms) is only ever checked for plans
-                    explicitly picked here. Picking either a real plan or
-                    "No specific plan" is required before the advisor can
-                    send; see sendQuestion's validation and
-                    chooseNoSpecificPlan's comment. */}
-                <label className="block text-[9px] font-semibold uppercase tracking-wide text-content-muted opacity-70 mb-1 flex items-center gap-1"><Tag className="w-2.5 h-2.5" /> Plan</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectablePlanNames.map(plan => (
+          {/* Scope band — a control STRIP, not a card: no fill of its own
+              (the workspace's own bg-surface shows straight through), just
+              a hairline divider marking it off from the conversation below.
+              Once locked it collapses to a single compact summary line —
+              the full insurer-select + plan-chip controls have nothing left
+              to do at that point, so keeping them on screen for the whole
+              conversation was the single biggest reason this band read as
+              "another heavy card" rather than a toolbar. */}
+          <div className={`shrink-0 border-b ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
+            {scopeLocked ? (
+              <div className="flex items-center gap-2 px-4 py-2 text-[10.5px] font-semibold">
+                <span className="opacity-50" title="Locked — start a new chat to change insurer or plans.">🔒</span>
+                <span className={dark ? "text-stone-200" : "text-stone-800"}>{lockedInsurerLabel}</span>
+                {lockedPlanLabel && (
+                  <>
+                    <span className="opacity-30">·</span>
+                    <span className="text-content-muted opacity-80">{lockedPlanLabel}</span>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2.5 px-4 py-2.5">
+                <CustomSelect
+                  theme={theme}
+                  value={selectedCategoryValue}
+                  onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); setNoSpecificPlan(false); }}
+                  placeholder="Choose an insurer or General"
+                  options={categoryOptions}
+                  // Matches the compact trigger sizing used for every other
+                  // filter/select across the app (Audit, My Activity, Plan
+                  // Management, …) instead of CustomSelect's larger default
+                  // trigger, which read as oversized next to those.
+                  triggerClassName={`w-44 shrink-0 flex items-center justify-between gap-2 text-xs font-bold pl-3 pr-8 py-1.5 rounded-lg border outline-none transition-colors relative cursor-pointer ${
+                    dark ? "bg-white/[0.05] border-white/[0.1] text-white" : "bg-surface-inset border-[var(--border)] text-stone-900"
+                  }`}
+                />
+                {selectedCategory && selectablePlanNames.length > 0 && (
+                  // Single-line, horizontally-scrolling chip strip — however
+                  // many plans an insurer has, this band never grows past
+                  // one row. No longer "optional": the Product Playbook (the
+                  // authoritative source for plan facts like bonus/
+                  // restoration terms) is only ever checked for plans
+                  // explicitly picked here, so choosing a plan or "No
+                  // specific plan" is required before sending — see
+                  // sendQuestion's validation and chooseNoSpecificPlan.
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    <Tag className="w-3 h-3 shrink-0 text-content-muted opacity-50" />
+                    {selectablePlanNames.map(plan => (
+                      <button
+                        key={plan}
+                        type="button"
+                        onClick={() => togglePlanTag(plan)}
+                        className={`shrink-0 whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                          selectedPlanTags.includes(plan)
+                            ? dark ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-sky-100 border-sky-300 text-sky-700"
+                            : dark ? "bg-white/[0.04] border-white/[0.09] text-stone-500 hover:bg-white/[0.08]" : "bg-surface-inset border-[var(--border)] text-stone-500 hover:bg-white"
+                        }`}
+                      >
+                        {plan}
+                      </button>
+                    ))}
                     <button
-                      key={plan}
                       type="button"
-                      disabled={scopeLocked}
-                      onClick={() => togglePlanTag(plan)}
-                      className={`px-2 py-1 rounded text-[10.5px] font-bold border transition-colors ${
-                        selectedPlanTags.includes(plan)
-                          ? dark ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-sky-100 border-sky-300 text-sky-700"
-                          : dark ? "bg-white/[0.04] border-white/[0.09] text-stone-500 hover:bg-white/[0.08]" : "bg-surface border-[var(--border)] text-stone-500 hover:bg-white"
-                      } ${scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                      onClick={chooseNoSpecificPlan}
+                      title="This question isn't about one specific plan — Playbook won't be checked."
+                      className={`shrink-0 whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border border-dashed transition-colors cursor-pointer ${
+                        noSpecificPlan
+                          ? dark ? "bg-white/[0.1] border-white/[0.3] text-white" : "bg-stone-200 border-stone-400 text-stone-700"
+                          : dark ? "bg-transparent border-white/[0.15] text-stone-500 hover:bg-white/[0.06]" : "bg-transparent border-[var(--border-strong)] text-stone-500 hover:bg-white"
+                      }`}
                     >
-                      {plan}
+                      No specific plan
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    disabled={scopeLocked}
-                    onClick={chooseNoSpecificPlan}
-                    title="This question isn't about one specific plan — Playbook won't be checked."
-                    className={`px-2 py-1 rounded text-[10.5px] font-bold border border-dashed transition-colors ${
-                      noSpecificPlan
-                        ? dark ? "bg-white/[0.1] border-white/[0.3] text-white" : "bg-stone-200 border-stone-400 text-stone-700"
-                        : dark ? "bg-transparent border-white/[0.15] text-stone-500 hover:bg-white/[0.06]" : "bg-transparent border-[var(--border-strong)] text-stone-500 hover:bg-white"
-                    } ${scopeLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    No specific plan
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -603,14 +611,20 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
                     <Sparkles className="w-3 h-3" />
                   </div>
-                  {/* Message surface — a real, distinct surface tone (the
-                      same "elevated" tier used for content-bearing panels
-                      elsewhere in the app) plus a soft shadow, so it reads
-                      as its own object floating in the conversation rather
-                      than blending into the workspace card behind it. Extra
-                      padding vs. the old tighter bubble gives the answer
-                      genuine breathing room instead of feeling crammed. */}
-                  <div className={`min-w-0 flex-1 px-4 py-4 rounded-2xl rounded-tl-md space-y-4 shadow-soft ${dark ? "bg-white/[0.06]" : "bg-surface-elevated border border-[var(--border)]"}`}>
+                  {/* Message surface — lifted off the workspace behind it by
+                      shadow + a hue shift alone, deliberately with NO
+                      border in either theme. The outer workspace card
+                      already owns the one real border/edge in this layout;
+                      stacking a second border around every answer is what
+                      produced the "card inside a card" look before. Light
+                      theme uses the accent-tinted surface tier (a subtle
+                      blue wash, echoing the AI avatar/user-bubble accent)
+                      rather than the neutral elevated tier, so it reads as
+                      distinct even at a glance, without needing an outline.
+                      A drop-shadow reads as "this floats above," a
+                      different (and here, correct) cue from "this is boxed
+                      in." */}
+                  <div className={`min-w-0 flex-1 px-4 py-4 rounded-2xl rounded-tl-md space-y-4 shadow-card ${dark ? "bg-white/[0.06]" : "bg-surface-tint"}`}>
                     {/* Answer — the verified response to the advisor's question. */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
@@ -620,15 +634,15 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       <div className={proseClass}>{renderSimpleMarkdown(body)}</div>
                     </div>
 
-                    {/* References — the advisor's verification path,
-                        rendered as its own recessed "well" (same treatment
-                        as Sources below, not just a top border) so both
-                        read unambiguously as nested-inside-the-answer
-                        content rather than trailing prose. Content is
-                        untouched — this only changes how it's presented. */}
+                    {/* References — the advisor's verification path. A
+                        hairline top divider + quieter/smaller type marks it
+                        as nested-inside-the-answer content, without a second
+                        filled background box competing with the answer's
+                        own surface. Content is untouched — this only
+                        changes how it's presented. */}
                     {references && (
-                      <div className={`px-2.5 py-2 rounded-lg ${dark ? "bg-black/[0.18]" : "bg-stone-900/[0.05]"}`}>
-                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted opacity-80 mb-1">References</span>
+                      <div className={`pt-2.5 border-t ${dark ? "border-white/[0.08]" : "border-stone-900/[0.08]"}`}>
+                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted opacity-70 mb-1">References</span>
                         <div className={`text-[11px] leading-relaxed [&_ul]:space-y-1 [&_li]:pl-0.5 ${dark ? "text-stone-400" : "text-stone-600"}`}>
                           {renderSimpleMarkdown(references)}
                         </div>
@@ -647,20 +661,21 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       </div>
                     )}
                     {m.sources && m.sources.length > 0 && (
-                      // Sources nested one level deeper than the answer body
-                      // — a clearly recessed "well" with its own label, so
-                      // it reads as attached-to/inside the AI message rather
-                      // than a loose row of pills trailing off the bottom.
-                      <div className={`px-2.5 py-2 rounded-lg ${dark ? "bg-black/[0.18]" : "bg-stone-900/[0.05]"}`}>
-                        <span className="block text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-80 mb-1.5">Sources</span>
-                        <div className="flex flex-wrap gap-1.5">
+                      // Sources — the quietest, smallest-weight content in
+                      // the whole answer, on purpose: a hairline divider and
+                      // small text links, not another filled/bordered pill
+                      // tray. It must read as "these support the answer
+                      // above," never compete with it for attention.
+                      <div className={`pt-2.5 border-t ${dark ? "border-white/[0.08]" : "border-stone-900/[0.08]"}`}>
+                        <span className="block text-[9px] font-bold uppercase tracking-wider text-content-muted opacity-70 mb-1.5">Sources</span>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
                           {m.sources.map(s => {
                             const typeLabel = SOURCE_DOCUMENT_TYPE_LABEL[s.documentType];
                             // Only a real http(s) URL is openable for verification — a
                             // legacy PDF upload's sourceUrl is just its original
                             // filename (see pdfIngest.ts), which isn't a link.
                             const isOpenable = !!s.sourceUrl && /^https?:\/\//i.test(s.sourceUrl);
-                            const pillClass = `inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded border ${dark ? "bg-white/[0.05] border-white/[0.12] text-stone-400" : "bg-white border-stone-200 text-stone-500"} ${isOpenable ? (dark ? "hover:border-white/25 hover:text-stone-200" : "hover:border-stone-400 hover:text-stone-700") : ""}`;
+                            const linkClass = `inline-flex items-center gap-0.5 text-[10px] font-semibold ${dark ? "text-stone-500" : "text-stone-500"} ${isOpenable ? (dark ? "hover:text-sky-300 hover:underline" : "hover:text-sky-700 hover:underline") : ""}`;
                             const label = typeLabel ? `${s.title} · ${typeLabel}` : s.title;
                             return isOpenable ? (
                               <a
@@ -669,13 +684,13 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 title="Open source document to verify"
-                                className={pillClass}
+                                className={linkClass}
                               >
                                 {label}
                                 <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                               </a>
                             ) : (
-                              <span key={s.title} className={pillClass}>
+                              <span key={s.title} className={linkClass}>
                                 {label}
                               </span>
                             );
@@ -692,7 +707,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
                   <Sparkles className="w-3 h-3" />
                 </div>
-                <div className={`px-4 py-3 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-soft ${dark ? "bg-white/[0.06] text-stone-400" : "bg-surface-elevated text-stone-500 border border-[var(--border)]"}`}>
+                <div className={`px-4 py-3 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-card ${dark ? "bg-white/[0.06] text-stone-400" : "bg-surface-tint text-stone-500"}`}>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Checking the Knowledge Base…
                 </div>
               </div>
@@ -706,20 +721,21 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
           )}
 
-          {/* Composer band — the second full-bleed chrome strip (mirrors the
-              Scope band's tone at the top of the card), giving the input
-              its own clearly separated zone rather than one more row inside
-              the conversation's own padding. Within that band, the input
-              pill itself steps back UP to the workspace card's own bright
-              "surface" tone plus a real border + shadow — the most raised,
-              most prominent surface anywhere in this panel — so it reads
-              unmistakably as the primary interaction point. */}
-          <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "bg-black/[0.16] border-white/[0.07]" : "bg-surface-inset border-[var(--border)]"}`}>
+          {/* Composer band — matches the Scope band's quiet "divider, no
+              fill" treatment, so the workspace reads as one continuous
+              surface with chrome strips top and bottom, not a third
+              differently-shaded panel. The input pill itself is what
+              carries the weight here: the brightest surface tone in the
+              whole panel plus a real border + shadow, unmistakably the
+              primary interaction point. Focus uses a self-contained ring
+              rather than a wide glow shadow — a glow that size would get
+              clipped by the workspace card's own overflow-hidden edge. */}
+          <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
             <div
-              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:shadow-overlay ${
+              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:ring-2 ${
                 dark
-                  ? "bg-white/[0.09] border-white/[0.16] focus-within:border-sky-500/40"
-                  : "bg-surface border-[var(--border-strong)] focus-within:border-sky-400"
+                  ? "bg-white/[0.09] border-white/[0.16] focus-within:border-sky-500/40 focus-within:ring-sky-500/20"
+                  : "bg-surface border-[var(--border-strong)] focus-within:border-sky-400 focus-within:ring-sky-400/25"
               }`}
             >
               <textarea
