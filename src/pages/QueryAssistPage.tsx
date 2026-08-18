@@ -468,7 +468,23 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <ClippedButton
               size="md"
               onClick={startNewChat}
-              className="w-full bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+              // Dark theme: unchanged, var(--tab-active-bg)/-text — this is
+              // the approved reference treatment. Light theme: the SAME
+              // navy family, one step lighter (#355F87) rather than the
+              // identical #1f2d3d — that flat value sits almost on top of
+              // this sidebar's own --sidebar-bg (#16232F) in light theme,
+              // barely visible. #355F87 isn't a new/invented color: it's
+              // the exact value the app's own --action-navy token already
+              // resolves to in ITS dark theme, for this identical "lighten
+              // a navy CTA off a near-black backdrop" situation (see
+              // index.css) — reused literally here, just applied to light
+              // theme instead, since this sidebar (unlike the general app
+              // shell) is dark-navy regardless of site theme.
+              className={
+                dark
+                  ? "w-full bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+                  : "w-full bg-[#355F87] text-white px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+              }
             >
               <Plus className="w-3.5 h-3.5" /> New Chat
             </ClippedButton>
@@ -623,19 +639,16 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                         type="button"
                         onClick={() => togglePlanTag(plan)}
                         className={`whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                          // Deliberately ONE style for both themes, not
+                          // theme-branched — the container this sits in is
+                          // the same dark-navy scope band in both themes
+                          // (see --sidebar-bg above), so there's no reason
+                          // for the selected state to differ, and it
+                          // shouldn't render as a different, more-saturated
+                          // "light theme" color. This is the approved
+                          // treatment from dark theme, reused as-is.
                           selectedPlanTags.includes(plan)
-                            ? // Dark theme's translucent sky-500/25 fill +
-                              // sky-200 text is correct as-is — left
-                              // untouched. Light theme needs its own,
-                              // higher-contrast pairing: the same pale
-                              // sky-200 text over that same translucent fill
-                              // was reading as near-invisible, so light
-                              // theme gets a near-opaque sky fill with solid
-                              // white text instead, guaranteeing contrast
-                              // regardless of what's behind it.
-                              dark
-                                ? "bg-sky-500/25 border-sky-400/50 text-sky-200"
-                                : "bg-sky-500 border-sky-400 text-white"
+                            ? "bg-sky-500/25 border-sky-400/50 text-sky-200"
                             : "bg-white/[0.07] border-white/[0.14] text-[#C4CDD8] hover:bg-white/[0.12]"
                         }`}
                       >
@@ -841,27 +854,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             </div>
           )}
 
-          {/* Composer band — a quiet divider only, no fill of its own, so
-              the workspace's normal background (transparent over the card
-              in both themes) continues straight through behind it. The
-              input pill is the ONLY visually distinct surface down here —
-              deliberately NOT wrapped in a second dark-navy container
-              matching the Scope band above: that mirrored treatment put a
-              full-width dark rectangle behind the pill, which read as two
-              competing surfaces in light theme (a white inner input inside
-              a dark charcoal outer box) instead of one cohesive control.
-              The pill's own surface tone (translucent white-on-dark in dark
-              theme, the app's card surface tone in light theme) is what
-              carries the "this is the primary interaction point" weight
-              here, exactly as it did before that mirrored-band experiment. */}
+          {/* Composer band — a quiet divider only, no fill/background of
+              its own (never a second container behind the input), so the
+              workspace's own background continues straight through in both
+              themes. The pill below is the ONLY visually distinct surface
+              here, and deliberately uses the EXACT same classes as the
+              insurer selector's trigger above (bg-white/[0.08] border-
+              white/[0.16] text-white) — same component family, not a
+              theme-flipped approximation of it — so input + send button
+              read as one unified card belonging to the same interaction
+              system as the selector, with no separate visible inner
+              rectangle. */}
           <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
-            <div
-              className={`qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:ring-2 ${
-                dark
-                  ? "bg-white/[0.09] border-white/[0.16] focus-within:border-sky-500/40 focus-within:ring-sky-500/20"
-                  : "bg-surface border-[var(--border-strong)] focus-within:border-sky-400 focus-within:ring-sky-400/25"
-              }`}
-            >
+            <div className="qa-composer flex items-end gap-2 rounded-xl border pl-3 pr-1.5 py-1.5 shadow-card transition-colors bg-white/[0.08] border-white/[0.16] focus-within:border-sky-400/50 focus-within:ring-2 focus-within:ring-sky-400/20">
               <textarea
                 ref={textareaRef}
                 value={questionInput}
@@ -890,16 +895,22 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // up to this max-height (a bit shorter on small viewports so
                 // it can't dominate a short screen) — beyond that it scrolls
                 // internally instead of growing the composer further.
-                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden ${
-                  dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
-                }`}
+                // Unconditional white text — the pill's fill (bg-white/[0.08]
+                // on the composer band, no separate light-theme surface) is
+                // the same in both themes, so the text on top of it must be
+                // too; matches the insurer selector's own text-white.
+                className="flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden text-white placeholder:text-white/40"
               />
               <button
                 type="button"
                 onClick={sendQuestion}
                 disabled={sending || !questionInput.trim()}
                 title="Send"
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]"
+                // Same navy family/logic as New Chat above — dark theme
+                // unchanged, light theme uses the same lighter #355F87.
+                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  dark ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)]" : "bg-[#355F87] text-white"
+                }`}
               >
                 <Send className="w-3.5 h-3.5" />
               </button>
