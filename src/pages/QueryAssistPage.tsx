@@ -468,9 +468,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             <ClippedButton
               size="md"
               onClick={startNewChat}
-              // Fixed literal #1C2937 — identical in both themes, no
-              // dark/light branching. Not derived from any CSS token.
-              className="w-full bg-[#1C2937] text-white px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+              // Dark theme: fixed literal #1C2937 bg / white text —
+              // unchanged. Light theme: NOT the same dark fill (illegible
+              // against a light page) and NOT a new hue either — a pale
+              // tint of that exact same #1C2937 blue-grey (#E3E8EF, derived
+              // by lightening its HSL value, hue/family preserved), with
+              // #1C2937 itself reused as the text ink instead of the
+              // background. Same color family in both themes, no blue/cyan
+              // introduced.
+              className={
+                dark
+                  ? "w-full bg-[#1C2937] text-white px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+                  : "w-full bg-[#E3E8EF] text-[#1C2937] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+              }
             >
               <Plus className="w-3.5 h-3.5" /> New Chat
             </ClippedButton>
@@ -837,13 +847,23 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           {/* Composer band — the outer padding wrapper has no fill of its
               own (just a hairline divider), so the workspace's own
               background continues through in both themes. The qa-composer
-              div below is THE card — one single fixed #1E2C3C surface,
-              identical in both themes, no dark/light branching — covering
-              the input area and the area around the send button alike, so
-              there's no separately-colored inner rectangle for the text
-              input to sit inside. */}
+              div below is THE card — one single surface covering the input
+              area and the area around the send button alike, so there's no
+              separately-colored inner rectangle. Dark theme: fixed #1E2C3C
+              — unchanged. Light theme: a pale tint of that exact same
+              #1E2C3C blue-grey (#E3E8EF, same hue lightened — see the New
+              Chat button's comment above), not the dark fill itself and not
+              a new hue, with a hairline border since a light card needs one
+              to read as raised off the page the way the dark fill did by
+              contrast alone. */}
           <div className={`shrink-0 px-4 py-3.5 border-t ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
-            <div className="qa-composer flex items-end gap-2 rounded-xl pl-3 pr-1.5 py-1.5 shadow-card transition-colors bg-[#1E2C3C] focus-within:ring-2 focus-within:ring-white/[0.15]">
+            <div
+              className={`qa-composer flex items-end gap-2 rounded-xl pl-3 pr-1.5 py-1.5 shadow-card transition-colors focus-within:ring-2 ${
+                dark
+                  ? "bg-[#1E2C3C] focus-within:ring-white/[0.15]"
+                  : "bg-[#E3E8EF] border border-[var(--border-strong)] focus-within:ring-[#1E2C3C]/15"
+              }`}
+            >
               <textarea
                 ref={textareaRef}
                 value={questionInput}
@@ -873,10 +893,17 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 // it can't dominate a short screen) — beyond that it scrolls
                 // internally instead of growing the composer further.
                 // Fully transparent — no background/border of its own, so
-                // the parent card's #1E2C3C fill shows straight through
-                // with no visible seam. White text since that fill is the
-                // same fixed dark color in both themes.
-                className="flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden text-white placeholder:text-white/40"
+                // the parent card's fill shows straight through with no
+                // visible seam. Text ink flips with the card: white on the
+                // dark #1E2C3C fill, #1E2C3C itself on the pale light-theme
+                // tint (see index.css's "PRODUCT ASSIST QUERY INPUT
+                // EXCEPTION" — a higher-specificity global rule forces this
+                // element's color/background in light theme, so the actual
+                // light-theme color is set there, not by this class; kept
+                // here too so the class list stays accurate/self-documenting).
+                className={`flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-xs font-medium py-1.5 max-h-[35vh] sm:max-h-40 overflow-y-hidden ${
+                  dark ? "text-white placeholder:text-white/40" : "text-[#1E2C3C] placeholder:text-[#1E2C3C]/45"
+                }`}
               />
               <button
                 type="button"

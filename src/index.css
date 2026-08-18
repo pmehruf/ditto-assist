@@ -1113,19 +1113,21 @@ html:not(.dark) .smoke-test-scope textarea:focus {
 
 /* PRODUCT ASSIST QUERY INPUT EXCEPTION: same root cause as the Smoke Test
    exception above. QueryAssistPage.tsx's composer textarea is styled
-   bg-transparent so its parent .qa-composer card's fixed #1E2C3C fill shows
-   through with no visible inner rectangle — but the bare `html:not(.dark)
-   textarea` rule above (element selector on a class-scoped parent still
-   outranks a plain Tailwind utility class) was overriding that transparency
-   with the normal light-theme input fill, rendering a bright white box
-   inside the dark card. Re-pin every state to stay transparent instead. */
+   bg-transparent so its parent .qa-composer card's fill shows through with
+   no visible inner rectangle — but the bare `html:not(.dark) textarea` rule
+   above (element selector on a class-scoped parent still outranks a plain
+   Tailwind utility class) was overriding that transparency with the normal
+   light-theme input fill, rendering a bright white box inside the card.
+   Re-pin every state to stay transparent, with #1E2C3C ink to match the
+   light-theme card's own pale tint of that same blue-grey (see
+   QueryAssistPage.tsx's qa-composer/textarea comments). */
 html:not(.dark) .qa-composer textarea {
   background-color: transparent;
   border-color: transparent;
-  color: #FFFFFF;
+  color: #1E2C3C;
 }
 html:not(.dark) .qa-composer textarea::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(30, 44, 60, 0.45);
 }
 html:not(.dark) .qa-composer textarea:not(:disabled):not(:focus):hover,
 html:not(.dark) .qa-composer textarea:focus {
