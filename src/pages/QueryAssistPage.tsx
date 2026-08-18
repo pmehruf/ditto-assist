@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, ExternalLink } from "lucide-react";
+import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, ExternalLink, Library, BookOpen, FileText, Bookmark, ChevronDown } from "lucide-react";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkdown";
@@ -80,6 +80,17 @@ const EXAMPLE_QUESTIONS = [
   "What are the waiting periods for pre-existing conditions?",
   "What's excluded from this plan's coverage?",
   "How does the claims process work for this plan?",
+];
+
+// The sidebar's collapsible Library section — illustrative category rows
+// only for now (no dedicated content/route behind them yet), shown with a
+// muted "Soon" tag rather than pretending they're live links. Structural
+// placeholder for where insurer-agnostic reference material (as opposed to
+// Recent Conversations' per-chat history) will live once it exists.
+const LIBRARY_CATEGORIES: { label: string; Icon: typeof BookOpen }[] = [
+  { label: "Product Playbook", Icon: BookOpen },
+  { label: "Policy Documents", Icon: FileText },
+  { label: "Reference Guides", Icon: Bookmark },
 ];
 
 function genId(): string {
@@ -239,6 +250,10 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   // scope.planTags — an advisor who never picks a plan silently gets no
   // Playbook check at all, with no way to tell from the answer alone.
   const [noSpecificPlan, setNoSpecificPlan] = useState(false);
+  // Sidebar Library section — collapsed by default (see the restructured
+  // sidebar below); expanding it pushes Recent Conversations down inline,
+  // it never floats/overlays.
+  const [libraryOpen, setLibraryOpen] = useState(false);
 
   const [questionInput, setQuestionInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -420,19 +435,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
   return (
     <div className="space-y-5 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0">
-      <div className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
-        <div>
-          <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
-            <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Product Assist</span>
-          </h1>
-          <p className="text-xs mt-1 font-semibold text-content-muted">
-            Ask. Verify. Understand. Get answers to your product queries, backed by references you can verify.
-          </p>
-        </div>
-        <ClippedButton size="md" onClick={startNewChat} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
-          <Plus className="w-3.5 h-3.5" /> New Chat
-        </ClippedButton>
+      {/* New Chat now lives at the top of the sidebar (see below) — moving
+          it out of the header frees a full row of width/height for the
+          workspace, and matches "New Chat" reading as the sidebar's own
+          primary action rather than a page-level one. */}
+      <div className="shrink-0 pb-3 border-b border-stone-200 dark:border-stone-800">
+        <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
+          <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
+          <span>Product Assist</span>
+        </h1>
+        <p className="text-xs mt-1 font-semibold text-content-muted">
+          Ask. Verify. Understand. Get answers to your product queries, backed by references you can verify.
+        </p>
       </div>
 
       {loadError && (
@@ -450,57 +464,101 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
           cards stack and the page scrolls normally, which reads better on
           a narrow/short viewport than a forced fixed-height layout. */}
       <div className="grid grid-cols-1 lg:grid-cols-[clamp(200px,16vw,280px)_1fr] gap-5 lg:flex-1 lg:min-h-0">
-        {/* Session history sidebar — deliberately carries NO card treatment
-            at all (no border, no background fill, no radius, no shadow) so
-            it can never be mistaken for a peer of the Chat Workspace below —
-            it just sits directly on the page, the way a nav rail does, with
-            only a plain typographic heading + hairline rule marking it as
-            its own zone. The workspace is the one real container in this
-            layout; everything else is comparatively "un-carded." */}
-        <div className="flex flex-col min-h-0 lg:h-full overflow-hidden">
-          <span className={`shrink-0 block text-[9.5px] font-bold uppercase tracking-[0.12em] text-content-muted opacity-70 pb-2 mb-2 border-b ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
-            Recent conversations
-          </span>
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-0.5 no-scrollbar">
-          {sortedSessions.length === 0 && <span className="block text-[11px] font-semibold text-content-muted px-1 italic">No conversations yet.</span>}
-          {sortedSessions.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => openSession(s)}
-              // Selected state reads via a left accent bar + full-contrast
-              // text — a nav-rail "current item" cue — rather than a filled
-              // pill background, so the list stays lightweight typography
-              // instead of a stack of small cards. Unselected rows carry no
-              // border/fill at all, only a hover tint.
-              className={`group w-full text-left pl-2.5 pr-2 py-2 border-l-2 text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
-                currentSessionId === s.id
-                  ? dark ? "border-l-sky-400 text-sky-300" : "border-l-sky-500 text-sky-700"
-                  : dark
-                    ? "border-l-transparent text-stone-400 hover:bg-white/[0.04] hover:text-stone-200"
-                    : "border-l-transparent text-stone-600 hover:bg-stone-900/[0.035] hover:text-stone-800"
-              }`}
+        {/* Sidebar — a distinct, always-dark-navy surface (the same locked
+            --sidebar-bg/#020D18 token the app's own main left nav uses, in
+            BOTH themes) rather than transparent, so it reads unmistakably
+            as its own zone next to the workspace. New Chat is pinned at the
+            top as the sidebar's primary action; Library and Recent
+            Conversations share one scrollable region below it, in that
+            order, so an expanded Library pushes the conversation list down
+            inline (never an overlay) and the whole region scrolls on its
+            own once it's taller than the viewport. */}
+        <div
+          className="min-w-0 flex flex-col min-h-0 lg:h-full rounded-2xl overflow-hidden"
+          style={{ backgroundColor: dark ? "#020D18" : "var(--sidebar-bg)" }}
+        >
+          <div className="shrink-0 p-3">
+            <ClippedButton
+              size="md"
+              onClick={startNewChat}
+              className="w-full bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
             >
-              <span className="flex items-center gap-1.5 min-w-0">
-                <MessageSquare className="w-3 h-3 shrink-0 opacity-70" />
-                <span className="truncate">{s.title || "Untitled"}</span>
-              </span>
-              {/* Hidden until the row is hovered (or it's the open
-                  conversation) to cut visual noise in the list — still the
-                  same click target/handler, just not shown by default. */}
-              <span
-                onClick={e => deleteSession(s, e)}
-                className={`shrink-0 cursor-pointer transition-opacity ${
-                  currentSessionId === s.id
-                    ? "opacity-50 hover:opacity-100"
-                    : "opacity-0 pointer-events-none group-hover:opacity-50 group-hover:pointer-events-auto hover:!opacity-100"
-                }`}
-                title="Delete"
-              >
-                <Trash2 className="w-3 h-3" />
-              </span>
+              <Plus className="w-3.5 h-3.5" /> New Chat
+            </ClippedButton>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-3 pb-3 flex flex-col gap-1">
+            {/* Library — collapsed by default; expands/collapses inline. */}
+            <button
+              type="button"
+              onClick={() => setLibraryOpen(v => !v)}
+              aria-expanded={libraryOpen}
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-[10.5px] font-bold uppercase tracking-wide text-[#C4CDD8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+            >
+              <Library className="w-3.5 h-3.5 shrink-0" />
+              <span className="flex-1 text-left">Library</span>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${libraryOpen ? "rotate-180" : ""}`} />
             </button>
-          ))}
+            {libraryOpen && (
+              <div className="flex flex-col gap-0.5 pl-2 pb-1">
+                {LIBRARY_CATEGORIES.map(({ label, Icon }) => (
+                  <div
+                    key={label}
+                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-[#8CA0B3]"
+                  >
+                    <Icon className="w-3 h-3 shrink-0 opacity-70" />
+                    <span className="flex-1 truncate">{label}</span>
+                    <span className="shrink-0 text-[8.5px] font-bold uppercase tracking-wide opacity-50">Soon</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <span className="shrink-0 block text-[9.5px] font-bold uppercase tracking-[0.12em] text-[#C4CDD8] opacity-80 pt-2 pb-2 mt-1 border-t border-white/[0.08]">
+              Recent conversations
+            </span>
+            {sortedSessions.length === 0 && (
+              <span className="block text-[11px] font-semibold text-[#8CA0B3] px-1 italic">No conversations yet.</span>
+            )}
+            {sortedSessions.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => openSession(s)}
+                // Selected state reads via a left accent bar + full-contrast
+                // text — a nav-rail "current item" cue — rather than a
+                // filled pill background, so the list stays lightweight
+                // typography instead of a stack of small cards. Unselected
+                // rows carry no border/fill at all, only a hover tint.
+                // Always the "light text on dark surface" palette now,
+                // regardless of page theme — the sidebar itself no longer
+                // changes with theme, so its content shouldn't either.
+                className={`group w-full text-left pl-2.5 pr-2 py-2 border-l-2 text-[11px] font-semibold flex items-start justify-between gap-1.5 transition-colors cursor-pointer ${
+                  currentSessionId === s.id
+                    ? "border-l-sky-400 text-sky-300"
+                    : "border-l-transparent text-[#8CA0B3] hover:bg-white/[0.06] hover:text-white"
+                }`}
+              >
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <MessageSquare className="w-3 h-3 shrink-0 opacity-70" />
+                  <span className="truncate">{s.title || "Untitled"}</span>
+                </span>
+                {/* Hidden until the row is hovered (or it's the open
+                    conversation) to cut visual noise in the list — still the
+                    same click target/handler, just not shown by default. */}
+                <span
+                  onClick={e => deleteSession(s, e)}
+                  className={`shrink-0 cursor-pointer transition-opacity ${
+                    currentSessionId === s.id
+                      ? "opacity-50 hover:opacity-100"
+                      : "opacity-0 pointer-events-none group-hover:opacity-50 group-hover:pointer-events-auto hover:!opacity-100"
+                  }`}
+                  title="Delete"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </span>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -509,66 +567,79 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             above the sidebar's flat nav-rail treatment and the scope strip
             nested inside it below. */}
         <div
-          className={`rounded-2xl border shadow-card flex flex-col min-h-0 lg:h-full overflow-hidden ${
+          className={`min-w-0 rounded-2xl border shadow-card flex flex-col min-h-0 lg:h-full overflow-hidden ${
             dark ? "bg-white/[0.035] border-white/[0.09]" : "bg-surface border-[var(--border-strong)]"
           }`}
         >
-          {/* Scope band — a control STRIP, not a card: no fill of its own
-              (the workspace's own bg-surface shows straight through), just
-              a hairline divider marking it off from the conversation below.
-              Once locked it collapses to a single compact summary line —
-              the full insurer-select + plan-chip controls have nothing left
-              to do at that point, so keeping them on screen for the whole
-              conversation was the single biggest reason this band read as
-              "another heavy card" rather than a toolbar. */}
-          <div className={`shrink-0 border-b ${dark ? "border-white/[0.07]" : "border-[var(--border)]"}`}>
+          {/* Scope band — now an actual darker container (the same
+              always-dark-navy surface as the sidebar, so the two visually
+              relate) rather than a bare divider, with lighter controls
+              floating on top of it: dark container -> lighter control ->
+              brighter/accent selected state. Once locked it collapses to a
+              single compact summary line — the full insurer-select +
+              plan-chip controls have nothing left to do at that point.
+              Layout is a fixed column stack (selector row, then a
+              full-width, freely-wrapping chip row) rather than trying to
+              keep them on one line via flex-wrap soup — predictable, and
+              guaranteed not to overflow at any zoom level or width, since
+              the chip row always gets the band's full width to wrap within
+              instead of whatever's left over next to the selector. */}
+          <div
+            className="shrink-0 border-b border-white/[0.08] min-w-0"
+            style={{ backgroundColor: dark ? "#020D18" : "var(--sidebar-bg)" }}
+          >
             {scopeLocked ? (
-              <div className="flex items-center gap-2 px-4 py-2 text-[10.5px] font-semibold">
-                <span className="opacity-50" title="Locked — start a new chat to change insurer or plans.">🔒</span>
-                <span className={dark ? "text-stone-200" : "text-stone-800"}>{lockedInsurerLabel}</span>
+              <div className="flex items-center gap-2 px-4 py-2.5 text-[10.5px] font-semibold min-w-0">
+                <span className="opacity-50 shrink-0" title="Locked — start a new chat to change insurer or plans.">🔒</span>
+                <span className="text-white truncate">{lockedInsurerLabel}</span>
                 {lockedPlanLabel && (
                   <>
-                    <span className="opacity-30">·</span>
-                    <span className="text-content-muted opacity-80">{lockedPlanLabel}</span>
+                    <span className="opacity-30 shrink-0">·</span>
+                    <span className="text-[#8CA0B3] truncate">{lockedPlanLabel}</span>
                   </>
                 )}
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-2.5 px-4 py-2.5">
-                <CustomSelect
-                  theme={theme}
-                  value={selectedCategoryValue}
-                  onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); setNoSpecificPlan(false); }}
-                  placeholder="Choose an insurer or General"
-                  options={categoryOptions}
-                  // Matches the compact trigger sizing used for every other
-                  // filter/select across the app (Audit, My Activity, Plan
-                  // Management, …) instead of CustomSelect's larger default
-                  // trigger, which read as oversized next to those.
-                  triggerClassName={`w-44 shrink-0 flex items-center justify-between gap-2 text-xs font-bold pl-3 pr-8 py-1.5 rounded-lg border outline-none transition-colors relative cursor-pointer ${
-                    dark ? "bg-white/[0.05] border-white/[0.1] text-white" : "bg-surface-inset border-[var(--border)] text-stone-900"
-                  }`}
-                />
+              <div className="flex flex-col gap-2.5 px-4 py-3 min-w-0">
+                <div className="w-full sm:w-auto sm:min-w-[240px] sm:max-w-sm">
+                  <CustomSelect
+                    theme={theme}
+                    value={selectedCategoryValue}
+                    onChange={v => { setSelectedCategoryValue(v); setSelectedPlanTags([]); setNoSpecificPlan(false); }}
+                    placeholder="Choose an insurer or General"
+                    options={categoryOptions}
+                    // Lighter than the band behind it (dark container ->
+                    // lighter control), full width of its own responsive
+                    // wrapper rather than a fixed px width — wide enough
+                    // that a long selected label (e.g. "General (not tied
+                    // to one insurer)") is never clipped, and never wider
+                    // than its wrapper's cap, so it can't force horizontal
+                    // overflow at any zoom level.
+                    triggerClassName="w-full flex items-center justify-between gap-2 text-xs font-bold pl-3 pr-8 py-2 rounded-lg border outline-none transition-colors relative cursor-pointer bg-white/[0.08] border-white/[0.16] text-white hover:bg-white/[0.12]"
+                  />
+                </div>
                 {selectedCategory && selectablePlanNames.length > 0 && (
-                  // Single-line, horizontally-scrolling chip strip — however
-                  // many plans an insurer has, this band never grows past
-                  // one row. No longer "optional": the Product Playbook (the
-                  // authoritative source for plan facts like bonus/
-                  // restoration terms) is only ever checked for plans
+                  // Freely wraps onto as many rows as the band needs —
+                  // never a single fixed-height horizontally-scrolling
+                  // strip, so a plan can never disappear/clip at the edge
+                  // regardless of insurer plan count, container width, or
+                  // browser zoom. No longer "optional": the Product
+                  // Playbook (the authoritative source for plan facts like
+                  // bonus/restoration terms) is only ever checked for plans
                   // explicitly picked here, so choosing a plan or "No
                   // specific plan" is required before sending — see
                   // sendQuestion's validation and chooseNoSpecificPlan.
-                  <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                    <Tag className="w-3 h-3 shrink-0 text-content-muted opacity-50" />
+                  <div className="w-full min-w-0 flex flex-wrap items-center gap-1.5">
+                    <Tag className="w-3 h-3 shrink-0 text-[#8CA0B3]" />
                     {selectablePlanNames.map(plan => (
                       <button
                         key={plan}
                         type="button"
                         onClick={() => togglePlanTag(plan)}
-                        className={`shrink-0 whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border transition-colors cursor-pointer ${
+                        className={`whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border transition-colors cursor-pointer ${
                           selectedPlanTags.includes(plan)
-                            ? dark ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-sky-100 border-sky-300 text-sky-700"
-                            : dark ? "bg-white/[0.04] border-white/[0.09] text-stone-500 hover:bg-white/[0.08]" : "bg-surface-inset border-[var(--border)] text-stone-500 hover:bg-white"
+                            ? "bg-sky-500/25 border-sky-400/50 text-sky-200"
+                            : "bg-white/[0.07] border-white/[0.14] text-[#C4CDD8] hover:bg-white/[0.12]"
                         }`}
                       >
                         {plan}
@@ -578,10 +649,10 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       type="button"
                       onClick={chooseNoSpecificPlan}
                       title="This question isn't about one specific plan — Playbook won't be checked."
-                      className={`shrink-0 whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border border-dashed transition-colors cursor-pointer ${
+                      className={`whitespace-nowrap px-2 py-1 rounded text-[10.5px] font-bold border border-dashed transition-colors cursor-pointer ${
                         noSpecificPlan
-                          ? dark ? "bg-white/[0.1] border-white/[0.3] text-white" : "bg-stone-200 border-stone-400 text-stone-700"
-                          : dark ? "bg-transparent border-white/[0.15] text-stone-500 hover:bg-white/[0.06]" : "bg-transparent border-[var(--border-strong)] text-stone-500 hover:bg-white"
+                          ? "bg-white/[0.16] border-white/[0.35] text-white"
+                          : "bg-transparent border-white/[0.2] text-[#8CA0B3] hover:bg-white/[0.06]"
                       }`}
                     >
                       No specific plan
