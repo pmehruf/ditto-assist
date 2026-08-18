@@ -258,6 +258,21 @@ function familyDocTypeCounts(family: PlanFamily): Record<KbDocumentType, number>
   return countByDocType(all);
 }
 
+/** True when every resource actually tagged with this plan name is an
+ * add-on/rider document — i.e. the roster entry is really an add-on's own
+ * product name (e.g. "Limitless", "Unlimited Restore") that got typed into
+ * the plan-tag box instead of the generic "Add-on" pseudo-entry, not a real
+ * base plan or variant. Left alone (still counted as a real plan) whenever
+ * it has zero matched resources or at least one non-addon resource — this
+ * is derived purely from the same resource tagging admins already curated,
+ * never a hardcoded name list. Mirrors server.ts's identical check used for
+ * Product Assist's plan selector. */
+function isAddOnOnlyPlanName(planName: string, catResources: KbResource[]): boolean {
+  const key = planName.trim().toLowerCase();
+  const matched = catResources.filter(r => r.planTags.some(t => t.trim().toLowerCase() === key));
+  return matched.length > 0 && matched.every(r => r.documentType === "addon");
+}
+
 /** The Plans tab's plan list — the admin-curated roster (category.planNames)
  * plus any plan name actually used as a tag on one of this category's
  * resources but missing from that roster (e.g. a tag typed before the name
@@ -268,7 +283,10 @@ function familyDocTypeCounts(family: PlanFamily): Record<KbDocumentType, number>
  * that's a real, useful roster entry for tagging standalone rider documents,
  * but it isn't a plan, so it shouldn't be counted or listed as one here. Its
  * document count gets its own separate display instead (see the "Add-ons"
- * stat next to "N plans"/"M resources"). */
+ * stat next to "N plans"/"M resources"). Also excludes any roster entry
+ * that's really an individual add-on's own product name rather than a base
+ * plan/variant (see isAddOnOnlyPlanName) — those stay visible only in the
+ * Add-ons section below, not counted or listed as a plan. */
 function planNamesForCategory(category: KbCategory, catResources: KbResource[]): string[] {
   const names = [...category.planNames];
   for (const r of catResources) {
@@ -276,7 +294,7 @@ function planNamesForCategory(category: KbCategory, catResources: KbResource[]):
       if (!names.includes(tag)) names.push(tag);
     }
   }
-  return realPlanNames(names);
+  return realPlanNames(names).filter(n => !isAddOnOnlyPlanName(n, catResources));
 }
 
 function countByDocType(list: KbResource[]): Record<KbDocumentType, number> {

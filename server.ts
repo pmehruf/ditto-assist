@@ -3685,15 +3685,45 @@ app.delete("/api/kb/resources/:id", requireAuth, async (req, res) => {
 // src/server/knowledgeBase/queryAssist.ts for the retrieval + prompt logic.
 // ─────────────────────────────────────────────────────────────────────────
 
+/** True when every kb_resource actually tagged with this plan name is an
+ * add-on/rider document — i.e. the roster entry is really an add-on's own
+ * product name (e.g. "Limitless", "Unlimited Restore") that got typed into
+ * the plan-tag box instead of the generic "Add-on" pseudo-entry, not a real
+ * base plan or variant. An advisor should never be offered it as "the plan
+ * you're asking about." Left alone (still treated as a real, selectable
+ * plan) whenever it has zero matched resources or at least one non-addon
+ * resource — this is derived purely from the same KB resource tagging
+ * admins already curated, never a hardcoded name list. Mirrors
+ * KnowledgeBaseResourceManagement.tsx's identical check for the admin UI's
+ * Plans tab. */
+function isAddOnOnlyPlanName(planName: string, resources: { planTags: string[]; documentType: string }[]): boolean {
+  const key = planName.trim().toLowerCase();
+  const matched = resources.filter(r => r.planTags.some(t => t.trim().toLowerCase() === key));
+  return matched.length > 0 && matched.every(r => r.documentType === "addon");
+}
+
 // Read-only category list (id/name/type/planNames) for the query selector —
 // deliberately NOT behind requireAdminOrDeveloper like /api/kb/categories,
 // since every tier needs this to ask a question at all. No document
 // content or chunk data is exposed here, only category metadata.
 app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
   try {
-    const { kbCategories } = createRepositories(getDb());
-    const entries = await kbCategories.list();
-    return res.json({ entries });
+    const { kbCategories, kbResources } = createRepositories(getDb());
+    const [entries, resources] = await Promise.all([kbCategories.list(), kbResources.list({ status: "active" })]);
+    const resourcesByCategory = new Map<number, typeof resources>();
+    for (const r of resources) {
+      const list = resourcesByCategory.get(r.categoryId);
+      if (list) list.push(r);
+      else resourcesByCategory.set(r.categoryId, [r]);
+    }
+    // Selectable-plan view only — the admin-curated roster itself
+    // (kb_categories.planNames) is left untouched so the KB admin's roster
+    // editor can still see/fix every entry, including a mistagged one.
+    const filteredEntries = entries.map(c => ({
+      ...c,
+      planNames: c.planNames.filter(name => !isAddOnOnlyPlanName(name, resourcesByCategory.get(c.id) ?? [])),
+    }));
+    return res.json({ entries: filteredEntries });
   } catch (err: any) {
     console.error("Query Assist: failed to list categories:", err);
     return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
