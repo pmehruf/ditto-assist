@@ -469,17 +469,18 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               size="md"
               onClick={startNewChat}
               // Dark theme: fixed literal #1C2937 bg / white text —
-              // unchanged. Light theme: NOT the same dark fill (illegible
-              // against a light page) and NOT a new hue either — a pale
-              // tint of that exact same #1C2937 blue-grey (#E3E8EF, derived
-              // by lightening its HSL value, hue/family preserved), with
-              // #1C2937 itself reused as the text ink instead of the
-              // background. Same color family in both themes, no blue/cyan
-              // introduced.
+              // unchanged. Light theme: a mid-tone blue-grey rather than a
+              // near-white tint (the earlier #E3E8EF read as too pale/low-
+              // presence) — reuses var(--border-strong)'s exact existing
+              // value (#8A9BB0), already the app's own established
+              // "structural blue-grey" token, with #1C2937 itself as the
+              // text ink for contrast (~5.4:1). Still the same blue-grey
+              // family as dark theme, no new/invented color, just more
+              // visible than the last pass.
               className={
                 dark
                   ? "w-full bg-[#1C2937] text-white px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
-                  : "w-full bg-[#E3E8EF] text-[#1C2937] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
+                  : "w-full bg-[var(--border-strong)] text-[#1C2937] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2"
               }
             >
               <Plus className="w-3.5 h-3.5" /> New Chat
