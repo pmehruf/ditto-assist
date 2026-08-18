@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, Sparkles, ExternalLink } from "lucide-react";
+import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, ExternalLink } from "lucide-react";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkdown";
@@ -105,6 +105,41 @@ function persistLocalSessions(sessions: LocalChatSession[]): void {
     // Storage full/unavailable (private browsing, quota) — the current
     // conversation still works, it just won't survive a refresh.
   }
+}
+
+/** AI/Product Assist message avatar — the source PNG carries its own dark
+ * vignette rather than true alpha transparency; `isolate` + `mix-blend-screen`
+ * erases that vignette against whatever's behind it, so it reads as a clean
+ * floating character in both themes instead of a dark square. `object-contain`
+ * keeps the full character uncropped/unstretched, per spec. */
+function BotAvatar() {
+  return (
+    <div className="shrink-0 w-8 h-8 isolate mt-0.5">
+      <img
+        src="/assets/.aistudio/bot-mascot-avatar.png"
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="w-full h-full object-contain select-none mix-blend-screen"
+      />
+    </div>
+  );
+}
+
+/** Advisor/user message avatar — this source PNG already has a true
+ * transparent background, so it's placed directly with no blend trick. */
+function AdvisorAvatar() {
+  return (
+    <div className="shrink-0 w-8 h-8 mt-0.5">
+      <img
+        src="/assets/.aistudio/advisor-mascot-avatar.png"
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="w-full h-full object-contain select-none"
+      />
+    </div>
+  );
 }
 
 function CopyButton({ text, dark }: { text: string; dark: boolean }) {
@@ -560,9 +595,24 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               and the page scrolls normally. */}
           <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-5 px-4 py-5">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 text-center py-10">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center ${dark ? "bg-sky-500/15 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
-                  <Sparkles className="w-4 h-4" />
+              <div className="flex flex-col items-center justify-center gap-2 text-center py-6">
+                {/* The duo illustration as the empty state's main visual
+                    anchor — sized generously since it's the focal point,
+                    plain (no card/background of its own). The source PNG
+                    carries its own dark vignette rather than true alpha
+                    transparency; `isolate` + `mix-blend-screen` erases that
+                    vignette against whatever's behind it (screen-blending
+                    black is a no-op, so only the character/glow pixels
+                    show) instead of pasting a visible dark rectangle into
+                    the light theme. */}
+                <div className="isolate w-48 sm:w-56">
+                  <img
+                    src="/assets/.aistudio/bot-advisor-mascot-duo.png"
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                    className="w-full h-auto select-none mix-blend-screen"
+                  />
                 </div>
                 <div className="space-y-1 max-w-sm">
                   <p className={`text-xs font-bold ${dark ? "text-white" : "text-stone-800"}`}>
@@ -593,10 +643,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             {messages.map(m => {
               if (m.role === "user") {
                 return (
-                  <div key={m.id} className="flex justify-end">
+                  <div key={m.id} className="flex justify-end items-end gap-2">
                     <div className={`max-w-[80%] px-3.5 py-2 rounded-2xl rounded-tr-md text-xs font-semibold shadow-soft ${dark ? "bg-sky-500/20 text-sky-100" : "bg-sky-100 text-sky-900"}`}>
                       {m.content}
                     </div>
+                    <AdvisorAvatar />
                   </div>
                 );
               }
@@ -604,13 +655,11 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               const { body, references } = splitReferences(answer);
               return (
                 <div key={m.id} className="flex justify-start gap-2 max-w-[92%]">
-                  {/* Small avatar badge gives the AI response its own
-                      identity as a chat message rather than a bordered
-                      panel — mirrors the user bubble's alignment cue on the
-                      opposite side of the thread. */}
-                  <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
-                    <Sparkles className="w-3 h-3" />
-                  </div>
+                  {/* The AI mascot gives the response its own identity as a
+                      chat message rather than a bordered panel — mirrors the
+                      advisor avatar's alignment cue on the opposite side of
+                      the thread. */}
+                  <BotAvatar />
                   {/* Message surface — lifted off the workspace behind it by
                       shadow + a hue shift alone, deliberately with NO
                       border in either theme. The outer workspace card
@@ -704,9 +753,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
             })}
             {sending && (
               <div className="flex justify-start gap-2">
-                <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${dark ? "bg-sky-500/20 text-sky-300" : "bg-sky-100 text-sky-700"}`}>
-                  <Sparkles className="w-3 h-3" />
-                </div>
+                <BotAvatar />
                 <div className={`px-4 py-3 rounded-2xl rounded-tl-md text-xs font-semibold flex items-center gap-2 shadow-card ${dark ? "bg-white/[0.06] text-stone-400" : "bg-surface-tint text-stone-500"}`}>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Checking the Knowledge Base…
                 </div>
