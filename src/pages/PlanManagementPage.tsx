@@ -634,6 +634,92 @@ export function PlanManagementPage({
     });
   };
 
+  // Quick disable/enable toggle right on the plan list row, so an admin
+  // doesn't have to open the full Edit wizard just to take a plan out of
+  // service. Same partial-update-vs-backfill pattern as
+  // saveCategoryMapForPlan/saveSpecificIllnessesForPlan above: PUTs just
+  // `disabled` for a plan that already has a DB row, or POSTs the full
+  // hardcoded payload the first time a built-in-only plan is toggled.
+  // Disabling is gated behind confirmDestructiveAction (it immediately
+  // blocks every advisor from searching this plan); re-enabling isn't,
+  // since undoing that is safe and shouldn't need a confirmation click.
+  // Any existing disabledNote is preserved either way — this toggle never
+  // clears or prompts for a note; that stays a job for the Edit wizard's
+  // "Plan Availability" section.
+  const [togglingPlan, setTogglingPlan] = useState<string | null>(null);
+  const setPlanDisabled = async (name: string, nextDisabled: boolean) => {
+    setTogglingPlan(name);
+    try {
+      const dbRow = dbByName[name];
+      const hasExistingDbRow = !!dbRow;
+      const url = hasExistingDbRow ? `/api/plan-configs/${encodeURIComponent(name)}` : "/api/plan-configs";
+      const method = hasExistingDbRow ? "PUT" : "POST";
+
+      let payload: Record<string, unknown> = { disabled: nextDisabled };
+      if (!hasExistingDbRow) {
+        const hardcoded = hardcodedConfigs[name];
+        if (!hardcoded) throw new Error(`"${name}" isn't a recognized plan.`);
+        const tagged = taggedQuestionsFromHardcoded(hardcoded);
+        payload = {
+          planName: name,
+          insurerName: "Not specified",
+          questions: tagged.map((q) => ({ text: q.text, tag: q.tag })),
+          categoryMap: normalizeCategoryMapToStrings(hardcoded.categoryMap, hardcoded.questions),
+          overrides: hardcoded.overrides,
+          specificIllnesses: [],
+          disabled: nextDisabled,
+        };
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to update this plan (HTTP ${res.status}).`);
+
+      const savedRow: DbPlanConfigEntry = {
+        planName: body.entry.planName,
+        insurerName: body.entry.insurerName,
+        questions: body.entry.questions || [],
+        categoryMap: body.entry.categoryMap || {},
+        anyOther: body.entry.anyOther,
+        hasUmbrella: !!body.entry.hasUmbrella,
+        umbrellaQuestions: body.entry.umbrellaQuestions || [],
+        specificIllnesses: body.entry.specificIllnesses || [],
+        overrides: body.entry.overrides || undefined,
+        disabled: !!body.entry.disabled,
+        disabledNote: body.entry.disabledNote ?? null,
+        addedBy: body.entry.addedBy,
+      };
+      setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
+      logAction(
+        nextDisabled ? "Plan Disabled" : "Plan Enabled",
+        nextDisabled
+          ? `Disabled "${name}" — advisors can no longer search it until it's re-enabled.`
+          : `Re-enabled "${name}" — advisors can search it again.`,
+        name
+      );
+    } catch (err: unknown) {
+      console.error(`Failed to ${nextDisabled ? "disable" : "enable"} plan:`, err);
+      window.alert(err instanceof Error ? err.message : `Failed to ${nextDisabled ? "disable" : "enable"} this plan.`);
+    } finally {
+      setTogglingPlan(null);
+    }
+  };
+
+  const handleQuickToggleDisabled = (name: string, currentlyDisabled: boolean) => {
+    if (currentlyDisabled) {
+      setPlanDisabled(name, false);
+      return;
+    }
+    confirmDestructiveAction(
+      `Disable "${name}" — advisors won't be able to search this plan until you re-enable it`,
+      () => setPlanDisabled(name, true)
+    );
+  };
+
   /**
    * Saves a plan's Specific Illness List on its own, from the Specific
    * Illness Ledger tab — without going through the full add/edit wizard.
@@ -1137,6 +1223,25 @@ export function PlanManagementPage({
                     </div>
                     {canEdit && (
                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <ClippedButton
+                          onClick={() => handleQuickToggleDisabled(name, !!dbRow?.disabled)}
+                          disabled={!isDeveloper || togglingPlan === name}
+                          cornerBg={dark ? "#0e2236" : "#ffffff"}
+                          className={`p-2 flex items-center gap-1 ${
+                            dbRow?.disabled
+                              ? (dark ? "hover:bg-emerald-500/15 text-amber-300 hover:text-emerald-300" : "hover:bg-emerald-50 text-amber-600 hover:text-emerald-700")
+                              : (dark ? "hover:bg-rose-500/15 text-stone-300 hover:text-rose-400" : "hover:bg-rose-50 text-stone-600 hover:text-rose-600")
+                          }`}
+                          title={
+                            !isDeveloper
+                              ? "Developer clearance required to change plan availability"
+                              : dbRow?.disabled
+                                ? "Re-enable this plan for advisors"
+                                : "Disable this plan — advisors won't be able to search it"
+                          }
+                        >
+                          <PowerOff className="w-3.5 h-3.5" />
+                        </ClippedButton>
                         <ClippedButton
                           onClick={() => openEditForm(name)}
                           disabled={!isDeveloper}

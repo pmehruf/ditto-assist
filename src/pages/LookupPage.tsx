@@ -375,16 +375,24 @@ export function LookupPage({
                   {/* Disabled-plan note — set from the Declaration Assistant
                       Control page. Search/submit is blocked while this is
                       showing (see the PrimaryCtaButton below), so this is
-                      the advisor's explanation for why, not just a caution. */}
+                      the advisor's explanation for why, not just a caution.
+                      The mascot mirrors the same "temporarily unavailable"
+                      framing used elsewhere so a disabled plan reads as a
+                      normal, on-brand app state rather than an error. */}
                   {isSelectedPlanDisabled && (
                     <div
-                      className={`flex items-start gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold leading-snug ${
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-[11px] font-semibold leading-snug ${
                         theme === "dark"
                           ? "bg-amber-500/10 border-amber-500/25 text-amber-200"
                           : "bg-amber-50 border-amber-200 text-amber-900"
                       }`}
                     >
-                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <MascotWithFallback
+                        src="/assets/.aistudio/plan-disabled-mascot.png"
+                        alt="Plan temporarily unavailable"
+                        type="doctor"
+                        className="w-11 h-11 shrink-0 object-contain -my-1"
+                      />
                       <span>
                         This plan is temporarily disabled.
                         {selectedPlanDisabledNote ? ` ${selectedPlanDisabledNote}` : " Check back later, or contact the tech team for updates."}
