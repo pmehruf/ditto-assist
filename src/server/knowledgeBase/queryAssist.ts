@@ -182,7 +182,7 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 15. If Part 1 did not reach a genuine sourced answer (sources didn't cover it, or Part 1 is itself a clarifying question), Part 2 is exactly NO_DRAFT_AVAILABLE and nothing else — never a fabricated customer-facing paraphrase (see NO_DRAFT_AVAILABLE RULE).
 
 OUTPUT FORMAT
-Produce exactly two parts, separated by a line containing ONLY the text ---SHARE--- and nothing else on that line. Do NOT write your own "ANSWER" or "MESSAGE FOR SHARING" heading anywhere — the app already labels both parts for you, so including either heading yourself duplicates it on screen and is a formatting error.
+Produce exactly two parts, separated by a line containing ONLY the text ---SHARE--- and nothing else on that line. This separator line is MANDATORY and must appear EXACTLY ONCE in every single response, with no exceptions — even when Part 1 is only a clarifying question, even when Part 2 is just the literal NO_DRAFT_AVAILABLE, even for a very short answer. The app parses your response by searching for this exact line; omitting it means Part 2 is silently lost entirely and the advisor sees no draft message at all, which is a worse failure than writing NO_DRAFT_AVAILABLE. Before finalizing, verify your own output contains the line ---SHARE--- by itself, on its own line, with both parts present around it. Do NOT write your own "ANSWER" or "MESSAGE FOR SHARING" heading anywhere — the app already labels both parts for you, so including either heading yourself duplicates it on screen and is a formatting error.
 
 Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STRUCTURE BY QUESTION TYPE above, ending with the **References** list described in CITATION FORMAT. If the sources don't cover the question, say so plainly here instead of guessing.
 
@@ -412,6 +412,17 @@ export async function answerQuery(
   });
 
   const text = response.text ?? "I wasn't able to generate a response. Please try rephrasing the question.";
+
+  // The model is instructed to always include a literal "---SHARE---" line
+  // separating the answer from the draft message (see OUTPUT FORMAT above),
+  // but doesn't always comply — when it's missing, QueryAssistPage.tsx's
+  // splitAnswer finds nothing to parse and the Draft Message block silently
+  // doesn't render at all, with no error surfaced anywhere. Log it here so
+  // this failure mode's actual rate is visible in Cloud Run logs rather than
+  // only showing up as a one-off advisor report.
+  if (!/-{2,}\s*SHARE\s*-{2,}/i.test(text)) {
+    console.warn("Query Assist: model response missing the ---SHARE--- separator — no Draft Message will render for this answer.");
+  }
 
   const seenTitles = new Set<string>();
   const sources: QueryAssistSource[] = [];

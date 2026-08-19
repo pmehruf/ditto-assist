@@ -719,6 +719,14 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               }
               const { answer, share: rawShare } = splitAnswer(m.content);
               const { body, references } = splitReferences(answer);
+              // The model is told never to include a References list in Part
+              // 2 (see queryAssist.ts's NO_DRAFT_AVAILABLE RULE paragraph),
+              // but doesn't always comply — running it through the same
+              // splitReferences used for the Answer above defensively drops
+              // one if it slips in, since a Draft Message is meant to be
+              // copy-pasted straight to a customer as plain text, not carry
+              // an internal citation list.
+              const shareBody = rawShare ? splitReferences(rawShare).body : null;
               // The model writes the literal sentinel NO_DRAFT_AVAILABLE for
               // Part 2 when Part 1 didn't reach a genuine sourced answer
               // (see queryAssist.ts's NO_DRAFT_AVAILABLE RULE) — a Draft
@@ -726,7 +734,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               // built on an unsupported or incomplete answer would be
               // misleading. Suppress the block entirely rather than showing
               // a fabricated or placeholder draft.
-              const share = rawShare && rawShare.trim().toUpperCase() !== "NO_DRAFT_AVAILABLE" ? rawShare : null;
+              const share = shareBody && shareBody.trim().toUpperCase() !== "NO_DRAFT_AVAILABLE" ? shareBody : null;
               return (
                 <div key={m.id} className="flex justify-start gap-2 max-w-[92%]">
                   {/* The AI mascot gives the response its own identity as a
