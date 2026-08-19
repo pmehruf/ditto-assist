@@ -151,7 +151,7 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
         <span>
           This only controls whether a page is shown. It does not change tiers or permissions — who <em>may</em> use a
-          visible page is still governed by User Management. You will always see every page regardless of these settings.
+          visible page is still governed by the Access Control Center. You will always see every page regardless of these settings.
         </span>
       </div>
 

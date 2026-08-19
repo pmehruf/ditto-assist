@@ -1162,14 +1162,14 @@ app.get("/api/users", requireAuth, async (req, res) => {
 // UI's normal edit flow.
 app.patch("/api/users/:email", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo } = createRepositories(getDb());
+    const { users: usersRepo, departments } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (callerTier !== "Developer") {
       return res.status(403).json({ error: "Only the Developer role can edit the user directory." });
     }
 
     const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
-    const { name, tactId, tier, status, tags } = req.body;
+    const { name, tactId, tier, status, tags, departmentId } = req.body;
     const resolvedTags = tags === undefined ? [] : tags;
     // Normalized regardless of how it was typed/pasted — see
     // normalizeTactId (utils/tactId.ts). TactIdInput already constrains
@@ -1184,6 +1184,18 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
       !isValidAdvisorTags(resolvedTags)
     ) {
       return res.status(400).json({ error: `name, tactId, tier, and status are all required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
+    }
+    // departmentId is pure organizational metadata (see schema.ts's doc
+    // comment) — optional, and either null (unassigned) or a real
+    // department's id. Never treated as a permission input anywhere below.
+    if (departmentId !== undefined && departmentId !== null) {
+      if (typeof departmentId !== "number" || !Number.isInteger(departmentId)) {
+        return res.status(400).json({ error: "departmentId must be a number or null." });
+      }
+      const dept = await departments.get(departmentId);
+      if (!dept) {
+        return res.status(400).json({ error: "That department doesn't exist." });
+      }
     }
 
     const existing = await usersRepo.findByEmail(targetEmail);
@@ -1206,6 +1218,7 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
       tier,
       status,
       tags: resolvedTags,
+      ...(departmentId !== undefined ? { departmentId } : {}),
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -1299,13 +1312,13 @@ app.put("/api/users", requireAuth, async (req, res) => {
 // Developer-only, enforced by the PUT/DELETE-via-PUT route above.
 app.post("/api/users", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo } = createRepositories(getDb());
+    const { users: usersRepo, departments } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (callerTier !== "Admin" && callerTier !== "Developer") {
       return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
     }
 
-    const { email, name, tactId, tier, status, tags } = req.body;
+    const { email, name, tactId, tier, status, tags, departmentId } = req.body;
     const resolvedTags = tags === undefined ? [] : tags;
     const normalizedTactId = typeof tactId === "string" ? normalizeTactId(tactId) : "";
     if (!isValidDirectoryUser({ email, name, tactId, tier, status }) || !normalizedTactId || !isValidAdvisorTags(resolvedTags)) {
@@ -1315,6 +1328,16 @@ app.post("/api/users", requireAuth, async (req, res) => {
     // this lightweight endpoint — that's still an Developer-only directory edit.
     if (callerTier === "Admin" && tier === "Developer") {
       return res.status(403).json({ error: "Only the Developer role can grant Developer clearance." });
+    }
+    // Same organizational-metadata validation as the PATCH route above.
+    if (departmentId !== undefined && departmentId !== null) {
+      if (typeof departmentId !== "number" || !Number.isInteger(departmentId)) {
+        return res.status(400).json({ error: "departmentId must be a number or null." });
+      }
+      const dept = await departments.get(departmentId);
+      if (!dept) {
+        return res.status(400).json({ error: "That department doesn't exist." });
+      }
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -1330,6 +1353,7 @@ app.post("/api/users", requireAuth, async (req, res) => {
       tier,
       status,
       tags: resolvedTags,
+      ...(departmentId !== undefined ? { departmentId } : {}),
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -1898,6 +1922,236 @@ app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to update page visibility:", err);
     return res.status(500).json({ error: `Failed to update page visibility: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Access Control — feature_access_overrides (Developer-editable override of
+// DEFAULT_FEATURE_PERMISSIONS, see schema.ts's doc comment) and departments
+// (pure organizational metadata, zero effect on access). Both live on the
+// "Access Control Center" page (formerly "User Directory & Management").
+//
+// GET is requireAuth-only for feature access, same reasoning as
+// page-visibility above: every signed-in user's own hasAccess() resolution
+// needs the full override set, not just Admin/Developer. Writes are
+// Developer-only — this reshapes who can do what app-wide, same bar as
+// page visibility and directory tier edits.
+// ─────────────────────────────────────────────────────────────────────────
+const FEATURE_ACCESS_LEVELS = ["None", "Viewer", "Editor"] as const;
+function isValidFeatureAccessLevel(v: unknown): v is (typeof FEATURE_ACCESS_LEVELS)[number] | null {
+  return v === null || (typeof v === "string" && (FEATURE_ACCESS_LEVELS as readonly string[]).includes(v));
+}
+
+app.get("/api/feature-access", requireAuth, async (req, res) => {
+  try {
+    const { featureAccess } = createRepositories(getDb());
+    const rows = await featureAccess.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list feature access overrides:", err);
+    return res.status(500).json({ error: `Failed to load feature access: ${err.message}` });
+  }
+});
+
+app.put("/api/feature-access/:featureId", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, featureAccess, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer can change feature access." });
+    }
+
+    const featureId = String(req.params.featureId);
+    // These 3 stay a hardcoded hard-gate in App.tsx's DEVELOPER_ONLY_FEATURES
+    // (checked before this table is ever consulted, specifically so they
+    // can never leak via a stale/incomplete permission list) — refusing the
+    // write here too means the UI can't show an override that would have no
+    // actual effect.
+    if (["owner_controls", "connections", "smoke_test"].includes(featureId)) {
+      return res.status(400).json({ error: `"${featureId}" is always Developer-only and can't be overridden.` });
+    }
+
+    const { generalAccess, adminAccess } = req.body;
+    if (!isValidFeatureAccessLevel(generalAccess) || !isValidFeatureAccessLevel(adminAccess)) {
+      return res.status(400).json({ error: `generalAccess and adminAccess must each be one of: ${FEATURE_ACCESS_LEVELS.join(", ")}, or null to clear.` });
+    }
+
+    const row = await featureAccess.set({
+      featureId,
+      generalAccess,
+      adminAccess,
+      updatedBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Feature Access Changed",
+        planName: null,
+        description: `Set "${featureId}" access to General: ${generalAccess ?? "default"}, Admin: ${adminAccess ?? "default"}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for feature access:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update feature access:", err);
+    return res.status(500).json({ error: `Failed to update feature access: ${err.message}` });
+  }
+});
+
+app.delete("/api/feature-access/:featureId", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, featureAccess, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer can change feature access." });
+    }
+    const featureId = String(req.params.featureId);
+    await featureAccess.clear(featureId);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Feature Access Changed",
+        planName: null,
+        description: `Reset "${featureId}" access to its shipped default.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for feature access reset:", logErr);
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to reset feature access:", err);
+    return res.status(500).json({ error: `Failed to reset feature access: ${err.message}` });
+  }
+});
+
+// Departments — read gated to Admin+Developer (only relevant to directory
+// assignment, General never needs the list); writes Developer-only, same
+// bar as directory tier edits, since this is still an existing-user-record
+// edit surface even though the field itself carries no permission meaning.
+app.get("/api/departments", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing departments"))) return;
+    const { departments } = createRepositories(getDb());
+    const rows = await departments.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list departments:", err);
+    return res.status(500).json({ error: `Failed to load departments: ${err.message}` });
+  }
+});
+
+app.post("/api/departments", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, departments, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer can create departments." });
+    }
+    const { name, description } = req.body;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "name is required." });
+    }
+    const row = await departments.create({
+      name: name.trim(),
+      description: typeof description === "string" ? description.trim() || null : null,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Department Created",
+        planName: null,
+        description: `Created department "${row.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for department creation:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    // Unique constraint on name — surface a clean message instead of the raw
+    // Postgres error text.
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A department with that name already exists." });
+    }
+    console.error("Failed to create department:", err);
+    return res.status(500).json({ error: `Failed to create this department: ${err.message}` });
+  }
+});
+
+app.patch("/api/departments/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, departments, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer can edit departments." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid department id." });
+    }
+    const existing = await departments.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Department not found." });
+    }
+
+    const { name, description, active } = req.body;
+    const patch: { name?: string; description?: string | null; active?: boolean } = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name cannot be empty." });
+      }
+      patch.name = name.trim();
+    }
+    if (description !== undefined) {
+      patch.description = typeof description === "string" ? description.trim() || null : null;
+    }
+    if (active !== undefined) {
+      if (typeof active !== "boolean") {
+        return res.status(400).json({ error: "active must be a boolean." });
+      }
+      patch.active = active;
+    }
+
+    const row = await departments.update(id, patch);
+
+    try {
+      const changeSummary = [
+        patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
+        patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
+        patch.description !== undefined ? "description updated" : null,
+      ].filter(Boolean).join(", ");
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Department Edited",
+        planName: null,
+        description: `Department "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for department edit:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A department with that name already exists." });
+    }
+    console.error("Failed to update department:", err);
+    return res.status(500).json({ error: `Failed to update this department: ${err.message}` });
   }
 });
 

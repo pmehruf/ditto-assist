@@ -30,4 +30,7 @@ export interface UserProfile {
   // see drizzle/0026_advisor_tags.sql for why this isn't live-joined from
   // the QA sheet.
   tags?: string[];
+  // Organizational metadata only — zero effect on access (see schema.ts's
+  // doc comment on the `departments` table). null/undefined = unassigned.
+  departmentId?: number | null;
 }

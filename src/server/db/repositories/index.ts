@@ -34,6 +34,8 @@ import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 import { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
 import { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
 import { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
+import { FeatureAccessRepository } from "./featureAccessRepository.js";
+import { DepartmentsRepository } from "./departmentsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -113,7 +115,7 @@ export { QaDashboardRoleRepository } from "./qaDashboardRoleRepository.js";
 export type { QaDashboardRoleType, UpsertQaDashboardRoleEntry } from "./qaDashboardRoleRepository.js";
 
 export { QaEvaluationHistoryRepository } from "./qaEvaluationHistoryRepository.js";
-export type { NewQaEvaluationHistoryEntry } from "./qaEvaluationHistoryRepository.js";
+export type { NewQaEvaluationHistoryEntry, QaEvaluationHistoryColumns } from "./qaEvaluationHistoryRepository.js";
 
 export { KbCategoriesRepository } from "./kbCategoriesRepository.js";
 export type { CreateKbCategoryEntry, UpdateKbCategoryEntry } from "./kbCategoriesRepository.js";
@@ -161,6 +163,8 @@ export interface Repositories {
   smokeTestPeds: SmokeTestPedsRepository;
   aiMemory: AiMemoryRepository;
   pageVisibility: PageVisibilityRepository;
+  featureAccess: FeatureAccessRepository;
+  departments: DepartmentsRepository;
   categories: CategoriesRepository;
   pedRepository: PedRepositoryRepository;
   pedAliases: PedAliasesRepository;
@@ -195,6 +199,8 @@ export function createRepositories(db: AnyDb): Repositories {
     smokeTestPeds: new SmokeTestPedsRepository(db),
     aiMemory: new AiMemoryRepository(db),
     pageVisibility: new PageVisibilityRepository(db),
+    featureAccess: new FeatureAccessRepository(db),
+    departments: new DepartmentsRepository(db),
     categories: new CategoriesRepository(db),
     pedRepository: new PedRepositoryRepository(db),
     pedAliases: new PedAliasesRepository(db),

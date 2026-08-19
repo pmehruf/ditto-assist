@@ -78,9 +78,10 @@ import {
 } from "./engine.js";
 
 import { SCRIPT_DICTIONARY } from "./constants/scriptDictionary";
-import { DEFAULT_FEATURE_PERMISSIONS } from "./constants/featurePermissions";
+import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "./constants/featurePermissions";
 import { AuditLogEntry, ReportedIssue, QAAnnouncement, ExternalResource } from "./types/announcements";
 import { LoggedUser, UserProfile } from "./types/user";
+import { FeatureAccessOverride, Department } from "./types/permissions";
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
@@ -213,14 +214,9 @@ const RESOURCE_ICON_MAP: Record<string, typeof Link2> = Object.fromEntries(
 /** Resolves a resource's icon: an explicit admin choice (resource.icon)
  * wins if it's a recognized name, otherwise falls back to the keyword-based
  * guess from getResourceIcon so existing/unset resources keep working. */
-/**
- * Features that are Developer-only as a matter of code, not configuration.
- *
- * These bypass the featurePermissions registry entirely (see hasAccess).
- * Nothing an Admin can edit — and no stale localStorage permission list —
- * can grant access to anything in this set.
- */
-const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections", "smoke_test"]);
+// DEVELOPER_ONLY_FEATURES now lives in constants/featurePermissions.ts (see
+// hasAccess() below) so the Access Control Center's Permissions tab can
+// import the same set and render those rows as visibly locked.
 
 function resolveResourceIcon(resource: { title: string; icon?: string }) {
   if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
@@ -263,6 +259,14 @@ export default function App() {
   // because the nav needs it; only the Developer can change it. See hasAccess()
   // — the Developer short-circuit runs before this is consulted.
   const [hiddenPages, setHiddenPages] = useState<string[]>([]);
+  // Access Control Center state — see hasAccess()'s featurePermissions
+  // useMemo (overrides) and ProfileAccessManagement's Departments tab
+  // (departments). Both fetched for every signed-in user because hasAccess()
+  // must resolve overrides for General too; departments is additionally
+  // gated client-side to Admin+Developer below since General never needs the
+  // list and the server itself refuses the read for General.
+  const [featureAccessOverrides, setFeatureAccessOverrides] = useState<FeatureAccessOverride[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<Department[]>([]);
   const [, setAnnouncementsLoadError] = useState<string | null>(null);
 
   const mapAnnouncementRow = (row: any): QAAnnouncement => ({
@@ -292,6 +296,31 @@ export default function App() {
       setHiddenPages((body.entries || []).filter((e: any) => e.hidden).map((e: any) => e.featureId));
     } catch (_) {
       // Never block the app on this — worst case nothing is hidden.
+    }
+  };
+
+  const fetchFeatureAccessOverrides = async () => {
+    try {
+      const res = await fetch("/api/feature-access");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setFeatureAccessOverrides(body.entries || []);
+    } catch (_) {
+      // Never block the app on this — worst case every feature falls back to
+      // its shipped default, same as before this table existed.
+    }
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      const res = await fetch("/api/departments");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setDepartmentsList(body.entries || []);
+    } catch (_) {
+      // Directory-metadata only — never block the app on this.
     }
   };
 
@@ -806,6 +835,8 @@ export default function App() {
       fetchPlanConfigs();
       fetchPedSuggestions();
       fetchPageVisibility();
+      fetchFeatureAccessOverrides();
+      if (currentUser.tier !== "General") fetchDepartments();
       fetchUsersList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1111,15 +1142,34 @@ export default function App() {
   // POST side-effect that every `setChangeLogs(prev => [entry, ...prev])`
   // call site across the app relies on), never by a bulk read.
 
-  // Feature permissions — nothing in the app currently writes to a saved
-  // override (no admin UI ever calls a setter here), so this used to go
-  // through usePersistentState anyway, which meant a browser's very first
-  // page load permanently froze a JSON snapshot of DEFAULT_FEATURE_PERMISSIONS
-  // in localStorage. Any later fix to that source file (e.g. correcting
-  // Smoke Test to Admin-only) would silently never reach a browser that had
-  // already cached the old, wrong entry. Reading the constant directly
-  // guarantees every browser always reflects the current shipped tiers.
-  const featurePermissions = DEFAULT_FEATURE_PERMISSIONS;
+  // Feature permissions — this used to go through usePersistentState, which
+  // meant a browser's very first page load permanently froze a JSON snapshot
+  // of DEFAULT_FEATURE_PERMISSIONS in localStorage; any later fix to that
+  // source file would silently never reach a browser with an already-cached
+  // old entry. Reading the constant directly (no localStorage) fixed that.
+  //
+  // Access Control Center (feature_access_overrides, see
+  // featureAccessRepository.ts) now layers a Developer-editable override on
+  // top: for each shipped feature, a non-null generalAccess/adminAccess in
+  // the fetched override replaces that ONE tier's level; a null level (or no
+  // override row at all) falls through to the shipped default untouched.
+  // DEVELOPER_ONLY_FEATURES and the Developer bypass in hasAccess() are both
+  // evaluated BEFORE this table is ever consulted, so an empty override list
+  // (the shipped-default state, e.g. right after this migration runs)
+  // behaves byte-for-byte identically to the old hardcoded constant.
+  const featurePermissions = useMemo(() => {
+    if (featureAccessOverrides.length === 0) return DEFAULT_FEATURE_PERMISSIONS;
+    const overrideById = new Map<string, FeatureAccessOverride>(featureAccessOverrides.map((o) => [o.featureId, o]));
+    return DEFAULT_FEATURE_PERMISSIONS.map((perm) => {
+      const override = overrideById.get(perm.id);
+      if (!override) return perm;
+      return {
+        ...perm,
+        generalAccess: override.generalAccess ?? perm.generalAccess,
+        adminAccess: override.adminAccess ?? perm.adminAccess,
+      };
+    });
+  }, [featureAccessOverrides]);
 
   // Unified dynamic hasAccess governance function
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
@@ -2902,7 +2952,7 @@ export default function App() {
           label: "Administration",
           GroupIcon: ShieldUser,
           pages: [
-            navPage("profile_access", "User Management", User, "Viewer"),
+            navPage("profile_access", "Access Control Center", User, "Viewer"),
             navPage("audit", "Activity Log", Clock, "Viewer"),
             navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
               hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
@@ -3597,7 +3647,7 @@ export default function App() {
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                profile_access: { label: "User Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                profile_access: { label: "Access Control Center", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 plan_scope: { label: "Declaration Assistant Control", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4231,7 +4281,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="User Management">
+              <ErrorBoundary theme={theme} label="Access Control Center">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <ProfileAccessPage
                 theme={theme}
@@ -4240,6 +4290,11 @@ export default function App() {
                 effectiveTier={effectiveTier}
                 currentUser={currentUser}
                 setChangeLogs={setChangeLogs}
+                featureAccessOverrides={featureAccessOverrides}
+                onFeatureAccessChanged={fetchFeatureAccessOverrides}
+                departments={departmentsList}
+                onDepartmentsChanged={fetchDepartments}
+                hiddenPages={hiddenPages}
               />
               </Suspense>
               </ErrorBoundary>
@@ -4331,7 +4386,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Specific Illness Check">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <SpecificIllnessCheckPage theme={theme} dynamicSuggestions={dynamicSuggestions} />
+              <SpecificIllnessCheckPage theme={theme} dynamicSuggestions={dynamicSuggestions} dbPlanConfigs={dbPlanConfigs} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

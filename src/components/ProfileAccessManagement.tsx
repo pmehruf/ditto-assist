@@ -5,11 +5,13 @@
 
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar } from "lucide-react";
+import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion } from "lucide-react";
 import { UserProfile, LoggedUser } from "../types/user";
+import { Department, FeatureAccessOverride } from "../types/permissions";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { EffectiveAccessModal } from "./EffectiveAccessModal";
 import { AdvisorTagCheckboxes, ADVISOR_TAG_OPTIONS } from "./AdvisorTagCheckboxes";
 import { TactIdInput } from "./TactIdInput";
 import { formatDisplayTimestamp } from "../utils/timestamps";
@@ -29,6 +31,16 @@ interface ProfileAccessManagementProps {
   effectiveTier: "General" | "Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  /** Organizational metadata only — see types/permissions.ts's doc comment
+   * on Department. Only Active departments are offered in the assignment
+   * dropdown below; an already-assigned-but-now-inactive department still
+   * displays correctly on existing rows (see departmentLabel). */
+  departments: Department[];
+  /** For the "Effective Access" panel — see EffectiveAccessModal. Both are
+   * already live App.tsx state (the same values hasAccess() itself reads),
+   * so the panel always reflects the current, real access rules. */
+  featureAccessOverrides: FeatureAccessOverride[];
+  hiddenPages: string[];
 }
 
 const TIERS: UserProfile["tier"][] = ["General", "Admin", "Developer"];
@@ -44,6 +56,7 @@ const emptyDraft = (): UserProfile => ({
   tier: "General",
   status: "Active",
   tags: [],
+  departmentId: null,
 });
 
 /**
@@ -62,7 +75,7 @@ const emptyDraft = (): UserProfile => ({
  * doesn't read `usersList` for its own display, but does patch `setUsersList`
  * after every create/edit/delete so that cache stays correct too.
  */
-export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, currentUser, setChangeLogs }: ProfileAccessManagementProps) {
+export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, currentUser, setChangeLogs, departments, featureAccessOverrides, hiddenPages }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
   const isDeveloper = effectiveTier === "Developer";
   // Admin can see and use "Add User" (same pattern as "Add Plan" on the
@@ -103,6 +116,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  const [effectiveAccessUser, setEffectiveAccessUser] = useState<UserProfile | null>(null);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [draft, setDraft] = useState<UserProfile | null>(null);
   const [addingNew, setAddingNew] = useState(false);
@@ -234,7 +248,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const res = await fetch(`/api/users/${encodeURIComponent(editingEmail)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, tags: draft.tags || [] }),
+        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, tags: draft.tags || [], departmentId: draft.departmentId ?? null }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
@@ -337,6 +351,17 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         : dark
           ? "bg-stone-500/15 text-stone-400 border-stone-500/30"
           : "bg-stone-500/15 text-stone-700 border-stone-500/30";
+
+  // Active departments plus, if given, one already-assigned-but-now-inactive
+  // department — keeps an existing row's dropdown showing its real current
+  // value even after a Developer deactivates that department elsewhere.
+  const departmentOptions = (currentId?: number | null) => [
+    { value: "", label: "Unassigned" },
+    ...departments
+      .filter((d) => d.active || d.id === currentId)
+      .map((d) => ({ value: String(d.id), label: d.active ? d.name : `${d.name} (Inactive)` })),
+  ];
+  const departmentLabel = (id?: number | null) => departments.find((d) => d.id === id)?.name || null;
 
   const statusBadgeClass = (status: UserProfile["status"]) =>
     status === "Active"
@@ -554,6 +579,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <th className={thClass}>Tags</th>
+                <th className={thClass}>Department</th>
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Joined" sortKey="createdAt" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -583,6 +609,15 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       theme={theme}
                       value={newDraft.tags || []}
                       onChange={(tags) => setNewDraft(d => ({ ...d, tags }))}
+                    />
+                  </td>
+                  <td className={tdClass}>
+                    <CustomSelect
+                      theme={theme}
+                      value={newDraft.departmentId != null ? String(newDraft.departmentId) : ""}
+                      onChange={(val) => setNewDraft(d => ({ ...d, departmentId: val ? Number(val) : null }))}
+                      triggerClassName={selectTriggerClass}
+                      options={departmentOptions(newDraft.departmentId)}
                     />
                   </td>
                   <td className={tdClass}>
@@ -621,7 +656,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
               {!loading && entries.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 8 : 7} className="py-10 text-center text-xs font-semibold text-stone-400">
+                  <td colSpan={canManage ? 9 : 8} className="py-10 text-center text-xs font-semibold text-stone-400">
                     {searchQuery ? `No directory entries match "${searchQuery}".` : "No directory entries yet."}
                   </td>
                 </tr>
@@ -690,6 +725,21 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       {isEditing ? (
                         <CustomSelect
                           theme={theme}
+                          value={row.departmentId != null ? String(row.departmentId) : ""}
+                          onChange={(val) => setDraft(d => d && { ...d, departmentId: val ? Number(val) : null })}
+                          triggerClassName={selectTriggerClass}
+                          options={departmentOptions(row.departmentId)}
+                        />
+                      ) : departmentLabel(user.departmentId) ? (
+                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{departmentLabel(user.departmentId)}</span>
+                      ) : (
+                        <span className={`text-[10.5px] ${dark ? "text-stone-600" : "text-stone-400"}`}>—</span>
+                      )}
+                    </td>
+                    <td className={tdClass}>
+                      {isEditing ? (
+                        <CustomSelect
+                          theme={theme}
                           value={row.tier}
                           onChange={(val) => setDraft(d => d && { ...d, tier: val as UserProfile["tier"] })}
                           triggerClassName={selectTriggerClass}
@@ -733,6 +783,14 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                         ) : (
                           <div className="flex items-center justify-end gap-1.5">
                             <ClippedButton
+                              onClick={() => setEffectiveAccessUser(user)}
+                              cornerBg={dark ? "#0e2236" : "#ffffff"}
+                              className={`p-1.5 ${dark ? "hover:bg-violet-500/15 text-stone-400 hover:text-violet-400" : "hover:bg-violet-500/10 text-stone-500 hover:text-violet-600"}`}
+                              title="What can this person actually access, and why?"
+                            >
+                              <ShieldQuestion className="w-3.5 h-3.5" />
+                            </ClippedButton>
+                            <ClippedButton
                               onClick={() => startEdit(user)}
                               disabled={!isDeveloper}
                               cornerBg={dark ? "#0e2236" : "#ffffff"}
@@ -775,6 +833,17 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
           <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       </div>
+
+      {effectiveAccessUser && (
+        <EffectiveAccessModal
+          theme={theme}
+          user={effectiveAccessUser}
+          departments={departments}
+          featureAccessOverrides={featureAccessOverrides}
+          hiddenPages={hiddenPages}
+          onClose={() => setEffectiveAccessUser(null)}
+        />
+      )}
     </div>
   );
 }

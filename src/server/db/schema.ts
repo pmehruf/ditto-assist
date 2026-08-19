@@ -203,6 +203,13 @@ export const users = pgTable("users", {
   // ("Skill Domain") and editable afterward in User Management; validated
   // against the 2 allowed values in server.ts, not enforced at the DB level.
   tags: text("tags").array().notNull().default([]),
+  // Organizational metadata only — see the departments table's own comment
+  // below for why this deliberately has zero effect on what this user can
+  // do. Null = unassigned (every user's default; nothing currently
+  // populates this). Editable only where tier/status/tags already are
+  // (Developer-only PATCH, or set at Admin+Developer creation time via
+  // POST) — one place to assign membership, not duplicated elsewhere.
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
 });
 
 export type UserRow = typeof users.$inferSelect;
@@ -719,6 +726,84 @@ export const pageVisibility = pgTable("page_visibility", {
 
 export type PageVisibilityRow = typeof pageVisibility.$inferSelect;
 export type NewPageVisibilityRow = typeof pageVisibility.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// feature_access_overrides — Developer-editable override of a feature's
+// General/Admin access level (see DEFAULT_FEATURE_PERMISSIONS in
+// src/constants/featurePermissions.ts), managed from the "Permissions" tab
+// on the Access Control Center page. This is what makes the previously
+// hardcoded featurePermissions matrix editable through the UI without a
+// code change/deploy.
+//
+// Same "dumb override table, absence = shipped default" shape as
+// page_visibility above, deliberately: generalAccess/adminAccess are each
+// nullable — a null column means "no override for this tier on this
+// feature, fall back to DEFAULT_FEATURE_PERMISSIONS" rather than every row
+// needing both columns populated. A brand-new feature id therefore needs no
+// seeding and behaves exactly as it does today until a Developer explicitly
+// overrides it.
+//
+// Deliberately does NOT cover the 3 ids in constants/featurePermissions.ts's
+// DEVELOPER_ONLY_FEATURES set ("owner_controls", "connections", "smoke_test")
+// — those stay a hardcoded hard-gate checked before this table is ever
+// consulted (see hasAccess() in App.tsx), specifically so they can never
+// leak to a lower tier via a stale/incomplete permission list. The PUT
+// route below also refuses to write an override row for those 3 ids, so
+// the two mechanisms can't drift out of sync.
+// ─────────────────────────────────────────────────────────────────────────
+export const featureAccessLevelEnum = pgEnum("feature_access_level", ["None", "Viewer", "Editor"]);
+
+export const featureAccessOverrides = pgTable("feature_access_overrides", {
+  // featurePermissions id (e.g. "smoke_test", "advisory_zone") — same
+  // identifier space as page_visibility.featureId above.
+  featureId: text("feature_id").primaryKey(),
+  generalAccess: featureAccessLevelEnum("general_access"),
+  adminAccess: featureAccessLevelEnum("admin_access"),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type FeatureAccessOverrideRow = typeof featureAccessOverrides.$inferSelect;
+export type NewFeatureAccessOverrideRow = typeof featureAccessOverrides.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// departments — purely organizational metadata (Advisory, QA, Operations,
+// etc.), managed from the "Departments" tab on Access Control Center.
+// Introduced with the Access Control system (2026-08) alongside
+// feature_access_overrides above, but deliberately UNRELATED to it: a
+// user's department has zero effect on what they can do. It exists so the
+// org structure can be represented and evolve (Developer can add/rename/
+// deactivate departments, Admin+Developer can assign a user to one — see
+// users.department_id below) without the authorization model assuming that
+// structure implies any permission. If department-scoped permissions are
+// ever genuinely needed, that's a deliberate, separate, auditable follow-up
+// — not something this table does implicitly.
+//
+// No seed rows: every department a Developer hasn't explicitly created
+// simply doesn't exist yet, and every existing user starts with
+// department_id = null ("unassigned") — there is no current organizational
+// data to migrate into this.
+//
+// Deactivating (active=false) rather than deleting is the only path exposed
+// in the UI, so a department already referenced by users.department_id
+// never needs its members silently reassigned — they keep pointing at the
+// (now-inactive) department, which the UI can grey out, and reactivating
+// restores it cleanly. onDelete: "set null" on the FK below is only a
+// defensive backstop for a row removed directly in the database.
+// ─────────────────────────────────────────────────────────────────────────
+export const departments = pgTable("departments", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  nameUnique: uniqueIndex("departments_name_unique").on(table.name),
+}));
+
+export type DepartmentRow = typeof departments.$inferSelect;
+export type NewDepartmentRow = typeof departments.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // qa_dashboard_google_connection — the QA Dashboard's stored Google OAuth

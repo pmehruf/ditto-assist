@@ -5,6 +5,17 @@
 
 import { FeaturePermission } from "../types/permissions";
 
+/**
+ * Features that are Developer-only as a matter of code, not configuration.
+ * These bypass the featurePermissions registry entirely (see App.tsx's
+ * hasAccess()) and can never be overridden via feature_access_overrides —
+ * see server.ts's PUT /api/feature-access/:featureId, which explicitly
+ * rejects writes to any id in this set. Shared here so the Access Control
+ * Center's Permissions tab (FeatureAccessManagement.tsx) can render these
+ * three rows as visibly locked instead of silently omitting them.
+ */
+export const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections", "smoke_test"]);
+
 export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   {
     id: "lookup",
@@ -108,9 +119,9 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     id: "smoke_test",
     name: "Smoke Test",
     description: "Run the deterministic mapping engine against a curated list of common PEDs, per plan, to catch classification regressions",
-    defaultTier: "Admin",
+    defaultTier: "Developer",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "None"
   },
   {
     id: "audit",
@@ -121,9 +132,17 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Editor"
   },
   {
+    // ACCESS CONTROL CENTER — renamed from "User Management" 2026-08-19 as
+    // its scope broadened past the user directory to also cover the
+    // Developer-editable feature-access override table (Permissions tab)
+    // and departments (Departments tab), alongside the pre-existing
+    // Directory and QA Dashboard Access tabs. Internal feature id
+    // "profile_access" kept as-is — it's a stored key (page_visibility rows,
+    // this constant's own id), not a UI label; renaming it would require a
+    // migration for no user-visible benefit.
     id: "profile_access",
-    name: "User Management",
-    description: "Governs systemic user directory logs, security passcodes, and active permissions overrides list",
+    name: "Access Control Center",
+    description: "Manage the user directory, feature access permissions, departments, and QA Dashboard roles",
     defaultTier: "Admin",
     generalAccess: "None",
     adminAccess: "Viewer"

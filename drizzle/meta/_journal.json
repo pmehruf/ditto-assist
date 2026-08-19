@@ -260,6 +260,13 @@
       "when": 1786900000000,
       "tag": "0036_plan_configs_disabled",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0037_access_control",
+      "breakpoints": true
     }
   ]
 }
