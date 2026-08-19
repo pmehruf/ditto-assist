@@ -264,3 +264,79 @@ export async function exchangeCodeForKbPlaybookSheetsGrant(code: string): Promis
 
   return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// QUERY ASSIST LOG EXPORT — "Connect Google Sheets" incremental-scope grant.
+//
+// Same pattern as the two grants above (same OAuth client, same registered
+// redirect URI, disambiguated in server.ts's shared callback by its own
+// distinctly-named state cookie) with one deliberate difference: this
+// requests the WRITE `spreadsheets` scope, not `spreadsheets.readonly`,
+// because it's used to append rows to a Sheet (see
+// queryAssistLogSheetsClient.ts's monthly export), not read one. Connected
+// from Connections, alongside the QA Dashboard and Playbook grants — see
+// query_assist_log_export_connection's schema comment for why it's kept as
+// its own separate stored credential rather than reusing either of those.
+// ─────────────────────────────────────────────────────────────────────────
+
+const QUERY_ASSIST_LOG_EXPORT_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+
+export function getQueryAssistLogExportSheetsAuthUrl(state: string, loginHint?: string): string {
+  const client = getOAuthClient();
+  return client.generateAuthUrl({
+    access_type: "offline",
+    scope: ["openid", "email", QUERY_ASSIST_LOG_EXPORT_WRITE_SCOPE],
+    hd: ALLOWED_DOMAIN,
+    prompt: "consent",
+    include_granted_scopes: true,
+    state,
+    login_hint: loginHint,
+  });
+}
+
+export interface QueryAssistLogExportSheetsGrant {
+  email: string;
+  refreshToken: string;
+}
+
+/**
+ * Exchanges the Query Assist Log Export's "Connect Google Sheets"
+ * authorization code for a refresh token — same verification discipline as
+ * the grants above (signature/domain-checked ID token); only ever stored
+ * for a real @joinditto.in account.
+ */
+export async function exchangeCodeForQueryAssistLogExportGrant(code: string): Promise<QueryAssistLogExportSheetsGrant> {
+  const client = getOAuthClient();
+  const { tokens } = await client.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Google did not return a refresh token for this connection. This usually happens when the account has a " +
+        "prior grant cached — revoke this app's access at https://myaccount.google.com/permissions and try " +
+        "connecting again."
+    );
+  }
+  if (!tokens.id_token) {
+    throw new Error("Google did not return an id_token for this authorization code.");
+  }
+
+  const ticket = await client.verifyIdToken({
+    idToken: tokens.id_token,
+    audience: requireEnv("GOOGLE_CLIENT_ID"),
+  });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) {
+    throw new Error("Could not read an identity from the Google ID token.");
+  }
+  if (!payload.email_verified) {
+    throw new Error("Google account email is not verified.");
+  }
+
+  const emailDomain = payload.email.split("@")[1]?.toLowerCase();
+  const hdClaim = payload.hd?.toLowerCase();
+  if (emailDomain !== ALLOWED_DOMAIN || hdClaim !== ALLOWED_DOMAIN) {
+    throw new Error(`Access restricted to @${ALLOWED_DOMAIN} Google Workspace accounts.`);
+  }
+
+  return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token };
+}

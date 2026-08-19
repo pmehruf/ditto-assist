@@ -38,6 +38,8 @@ import {
   exchangeCodeForQaDashboardSheetsGrant,
   getKbPlaybookSheetsAuthUrl,
   exchangeCodeForKbPlaybookSheetsGrant,
+  getQueryAssistLogExportSheetsAuthUrl,
+  exchangeCodeForQueryAssistLogExportGrant,
 } from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
@@ -70,6 +72,9 @@ import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
 import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
 import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
+import { encryptQueryAssistLogRefreshToken } from "./src/server/knowledgeBase/queryAssistLogTokenCrypto.js";
+import { invalidateQueryAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/queryAssistLogSheetsClient.js";
+import { runQueryAssistLogExport } from "./src/server/knowledgeBase/queryAssistLogExport.js";
 
 dotenv.config();
 
@@ -916,6 +921,11 @@ const QA_SHEETS_OAUTH_STATE_COOKIE = "ditto_qa_sheets_oauth_state";
 // Google Sheets" grant (Knowledge Base Management, not Developer
 // Controls) — see src/server/auth/googleOAuth.ts's Playbook section.
 const KB_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_kb_playbook_oauth_state";
+// Same idea, for the Product Assist Log Export's own independent "Connect
+// Google Sheets" grant (Connections page) — see src/server/auth/googleOAuth.ts's
+// Query Assist Log Export section. This is the only one of the three
+// "Connect Google Sheets" grants that requests a WRITE scope.
+const QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE = "ditto_query_assist_log_oauth_state";
 const isProdEnv = () => process.env.NODE_ENV === "production";
 
 app.get("/api/auth/google/login", (req, res) => {
@@ -990,6 +1000,31 @@ app.get("/api/auth/google/callback", async (req, res) => {
     } catch (err: any) {
       console.error("Product Playbook Google Sheets connection failed:", err);
       res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Knowledge Base Management.`);
+    }
+    return;
+  }
+
+  const queryAssistLogExpectedState = req.cookies?.[QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE];
+  if (queryAssistLogExpectedState) {
+    res.clearCookie(QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== queryAssistLogExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Connections.");
+        return;
+      }
+      const grant = await exchangeCodeForQueryAssistLogExportGrant(code);
+      const { queryAssistLogExportConnection } = createRepositories(getDb());
+      await queryAssistLogExportConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptQueryAssistLogRefreshToken(grant.refreshToken),
+        connectedBy: req.user?.email || grant.email,
+      });
+      invalidateQueryAssistLogSheetsAuthCache();
+      res.redirect("/?query_assist_log_connected=1");
+    } catch (err: any) {
+      console.error("Query Assist Log Export Google Sheets connection failed:", err);
+      res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Connections.`);
     }
     return;
   }
@@ -4399,6 +4434,87 @@ app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
   }
 });
 
+// --- Query Assist Log Export (TEMPORARY — see query_assist_logs's schema
+// comment in schema.ts). Same "Connect Google Sheets" pattern as the QA
+// Dashboard/Playbook connections above, but this grant is WRITE-scope and
+// the export-and-clear route additionally accepts a shared-secret header so
+// an external monthly scheduler (Cloud Scheduler) can trigger it without a
+// human session — see .env.example's QUERY_ASSIST_LOG_EXPORT_SECRET. ---
+
+app.get("/api/query-assist-logs/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getQueryAssistLogExportSheetsAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start Query Assist Log Export Google Sheets connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+app.get("/api/query-assist-logs/connection-status", requireAuth, async (req, res) => {
+  try {
+    const { queryAssistLogExportConnection, queryAssistLogs } = createRepositories(getDb());
+    const [row, pendingCount] = await Promise.all([queryAssistLogExportConnection.get(), queryAssistLogs.count()]);
+    return res.json(
+      row
+        ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, pendingCount }
+        : { connected: false, pendingCount }
+    );
+  } catch (err: any) {
+    console.error("Query Assist Log Export: failed to load connection status:", err);
+    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+  }
+});
+
+app.delete("/api/query-assist-logs/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    const { queryAssistLogExportConnection } = createRepositories(getDb());
+    await queryAssistLogExportConnection.clear();
+    invalidateQueryAssistLogSheetsAuthCache();
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Query Assist Log Export: failed to disconnect Google Sheets:", err);
+    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+// Dual auth: a signed-in Admin/Developer clicking "Export & Clear Now" in
+// Connections, OR a matching X-Cron-Secret header (no session) for an
+// external monthly scheduler — see QUERY_ASSIST_LOG_EXPORT_SECRET in
+// .env.example. Neither path is required if the other is missing/unset;
+// if QUERY_ASSIST_LOG_EXPORT_SECRET isn't set, only the session path works.
+app.post("/api/query-assist-logs/export-and-clear", async (req, res) => {
+  try {
+    const cronSecret = process.env.QUERY_ASSIST_LOG_EXPORT_SECRET;
+    const providedSecret = req.header("X-Cron-Secret");
+    const viaCron = !!cronSecret && !!providedSecret && providedSecret === cronSecret;
+
+    if (!viaCron) {
+      // attachUser (mounted globally) has already populated req.user, if any,
+      // by the time this handler runs.
+      if (!req.user) {
+        return res.status(401).json({ error: "Sign-in required (or provide a valid X-Cron-Secret header)." });
+      }
+      if (!(await requireAdminOrDeveloper(req, res, "Exporting Product Assist logs"))) return;
+    }
+
+    const repos = createRepositories(getDb());
+    const result = await runQueryAssistLogExport(repos);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Query Assist Log Export: export-and-clear failed:", err);
+    return res.status(500).json({ error: `Export failed: ${err.message}` });
+  }
+});
+
 // --- QA Dashboard Access (Admin/Guide/Mentor role management) ---
 // Source of truth for src/server/qaDashboard/qaRoles.ts — see the
 // qa_dashboard_roles table (schema.ts) for why this replaced the
@@ -5010,6 +5126,43 @@ app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (re
     void maybeRefreshPlaybookIfStale(repos);
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
     const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
+
+    // TEMPORARY (see query_assist_logs's schema comment): fire-and-forget,
+    // never awaited — a logging failure must never affect the advisor's
+    // actual answer, which has already been computed above regardless of
+    // what happens here. Gated by QUERY_ASSIST_LOG_ENABLED so this can be
+    // turned off (set to "false") once enough real data has been collected
+    // for the Product Assist optimization review's test set; unset/anything
+    // else defaults to enabled.
+    if (process.env.QUERY_ASSIST_LOG_ENABLED !== "false") {
+      void (async () => {
+        try {
+          const categoryName =
+            scope.categoryId !== null
+              ? (await repos.kbCategories.list()).find(c => c.id === scope.categoryId)?.name ?? null
+              : null;
+          await repos.queryAssistLogs.create({
+            userEmail: req.user!.email,
+            categoryId: scope.categoryId,
+            categoryName,
+            planTags: scope.planTags,
+            question: question.trim(),
+            answer: result.answer,
+            share: result.share,
+            sources: result.sources,
+            hadNoMatches: result.hadNoMatches,
+            retrievedChunkCount: result.meta.retrievedChunkCount,
+            playbookFactCount: result.meta.playbookFactCount,
+            historyTurnCount: result.meta.historyTurnCount,
+            inputTokens: result.meta.inputTokens,
+            outputTokens: result.meta.outputTokens,
+            latencyMs: result.meta.latencyMs,
+          });
+        } catch (logErr) {
+          console.error("Query Assist: failed to write temporary analysis log row (non-fatal):", logErr);
+        }
+      })();
+    }
 
     return res.json({ answer: result.answer, share: result.share, sources: result.sources, hadNoMatches: result.hadNoMatches });
   } catch (err: any) {

@@ -1356,3 +1356,78 @@ export type NewKbChatSessionRow = typeof kbChatSessions.$inferInsert;
 
 export type KbChatMessageRow = typeof kbChatMessages.$inferSelect;
 export type NewKbChatMessageRow = typeof kbChatMessages.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// query_assist_logs — TEMPORARY server-side record of Product Assist
+// conversations, added 2026-08 specifically to build a real representative
+// test set for the optimization-review testing strategy (Product Assist
+// Quality-Preserving Optimization Review, Section 6) — Query Assist's
+// normal design deliberately keeps NO server-side record of conversations
+// (see queryAssist.ts / QueryAssistPage.tsx's doc comments: history lives
+// only in the advisor's own browser). This table is an explicit, knowingly
+// time-boxed exception to that, gated by the QUERY_ASSIST_LOG_ENABLED env
+// flag so it can be turned off once enough real data has been collected —
+// it is not meant to become a permanent record. Rows are periodically
+// pushed to a Google Sheet and deleted from here (see
+// src/server/knowledgeBase/queryAssistLogExport.ts), so this table isn't
+// meant to grow indefinitely either.
+// ─────────────────────────────────────────────────────────────────────────
+export const queryAssistLogs = pgTable(
+  "query_assist_logs",
+  {
+    id: serial("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    // Denormalized alongside categoryId (not just a FK) so a row still
+    // reads meaningfully in the exported Sheet even if the category is
+    // later renamed or deleted from kb_categories.
+    categoryId: integer("category_id"),
+    categoryName: text("category_name"),
+    planTags: text("plan_tags").array().notNull().default([]),
+    question: text("question").notNull(),
+    // The verified "answer" field (queryAssist.ts's structured output) —
+    // never the customer-facing "share" paraphrase alone, since "answer" is
+    // what test-set authors need to judge correctness/completeness against.
+    answer: text("answer").notNull(),
+    share: text("share"),
+    // QueryAssistSource[] as sent to the advisor — title/categoryName/
+    // documentType/sourceUrl per distinct source, for judging citation and
+    // source-fidelity accuracy against the real documents later.
+    sources: jsonb("sources").notNull().default([]),
+    hadNoMatches: boolean("had_no_matches").notNull().default(false),
+    retrievedChunkCount: integer("retrieved_chunk_count").notNull().default(0),
+    playbookFactCount: integer("playbook_fact_count").notNull().default(0),
+    historyTurnCount: integer("history_turn_count").notNull().default(0),
+    // Gemini's own usageMetadata token counts, when the SDK response
+    // includes them — nullable since that's not guaranteed on every call.
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    latencyMs: integer("latency_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("query_assist_logs_created_at_idx").on(table.createdAt)]
+);
+
+export type QueryAssistLogRow = typeof queryAssistLogs.$inferSelect;
+export type NewQueryAssistLogRow = typeof queryAssistLogs.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// query_assist_log_export_connection — same single-row shape/purpose as
+// qaDashboardGoogleConnection above (see that table's comment), but this
+// grant requests the WRITE `spreadsheets` scope rather than
+// `spreadsheets.readonly`, since it's used to append query_assist_logs rows
+// to an export Sheet (see queryAssistLogSheetsClient.ts) rather than to
+// read one. Kept as its own table/connection — deliberately never reuses
+// the QA Dashboard's or Playbook's stored grant — so this is the only place
+// in the app holding a credential capable of writing to a Google Sheet.
+// Encrypted at rest; see queryAssistLogTokenCrypto.ts.
+// ─────────────────────────────────────────────────────────────────────────
+export const queryAssistLogExportConnection = pgTable("query_assist_log_export_connection", {
+  id: text("id").primaryKey().default("default"),
+  connectedEmail: text("connected_email").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedBy: text("connected_by").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type QueryAssistLogExportConnectionRow = typeof queryAssistLogExportConnection.$inferSelect;
+export type NewQueryAssistLogExportConnectionRow = typeof queryAssistLogExportConnection.$inferInsert;

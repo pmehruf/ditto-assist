@@ -91,6 +91,20 @@ export interface QueryAssistAnswer {
   /** True if nothing usable was found in scope — the UI can show a softer
    * "try broadening your search" hint alongside the model's own answer. */
   hadNoMatches: boolean;
+  /** Retrieval/cost metadata — never sent to the advisor's browser (the
+   * /ask route only forwards answer/share/sources/hadNoMatches to the
+   * client); consumed solely by server.ts's fire-and-forget
+   * QUERY_ASSIST_LOG_ENABLED logging so the temporary query_assist_logs
+   * table can carry real per-query retrieval/token/latency figures instead
+   * of just the answer text. See queryAssistLogsRepository.ts. */
+  meta: {
+    retrievedChunkCount: number;
+    playbookFactCount: number;
+    historyTurnCount: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    latencyMs: number;
+  };
 }
 
 /**
@@ -415,6 +429,7 @@ export async function answerQuery(
   const scopeLine = buildScopeLine(scope, scopeCategoryName, detectedPlanNames);
 
   const ai = getKbAiClient();
+  const generationStartedAt = Date.now();
   const response = await ai.models.generateContent({
     model: GENERATION_MODEL,
     contents: [
@@ -488,5 +503,18 @@ export async function answerQuery(
   }
   sources.sort((a, b) => DOCUMENT_TYPE_RANK[a.documentType] - DOCUMENT_TYPE_RANK[b.documentType]);
 
-  return { answer, share, sources, hadNoMatches };
+  return {
+    answer,
+    share,
+    sources,
+    hadNoMatches,
+    meta: {
+      retrievedChunkCount: similar.length,
+      playbookFactCount: playbookFacts.length,
+      historyTurnCount: history.length,
+      inputTokens: response.usageMetadata?.promptTokenCount ?? null,
+      outputTokens: response.usageMetadata?.candidatesTokenCount ?? null,
+      latencyMs: Date.now() - generationStartedAt,
+    },
+  };
 }

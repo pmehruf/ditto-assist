@@ -41,6 +41,8 @@ import { RolesRepository } from "./rolesRepository.js";
 import { RelationshipTypesRepository } from "./relationshipTypesRepository.js";
 import { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
 import { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
+import { QueryAssistLogsRepository } from "./queryAssistLogsRepository.js";
+import { QueryAssistLogExportConnectionRepository } from "./queryAssistLogExportConnectionRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -207,6 +209,8 @@ export interface Repositories {
   kbPlaybookConnection: KbPlaybookConnectionRepository;
   kbPlaybookPlanFacts: KbPlaybookPlanFactsRepository;
   productAssistAcks: ProductAssistAcksRepository;
+  queryAssistLogs: QueryAssistLogsRepository;
+  queryAssistLogExportConnection: QueryAssistLogExportConnectionRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -248,5 +252,7 @@ export function createRepositories(db: AnyDb): Repositories {
     kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
     kbPlaybookPlanFacts: new KbPlaybookPlanFactsRepository(db),
     productAssistAcks: new ProductAssistAcksRepository(db),
+    queryAssistLogs: new QueryAssistLogsRepository(db),
+    queryAssistLogExportConnection: new QueryAssistLogExportConnectionRepository(db),
   };
 }
