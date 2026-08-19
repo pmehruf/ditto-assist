@@ -81,7 +81,7 @@ import { SCRIPT_DICTIONARY } from "./constants/scriptDictionary";
 import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "./constants/featurePermissions";
 import { AuditLogEntry, ReportedIssue, QAAnnouncement, ExternalResource } from "./types/announcements";
 import { LoggedUser, UserProfile } from "./types/user";
-import { FeatureAccessOverride, Department } from "./types/permissions";
+import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole } from "./types/permissions";
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
@@ -267,6 +267,19 @@ export default function App() {
   // list and the server itself refuses the read for General.
   const [featureAccessOverrides, setFeatureAccessOverrides] = useState<FeatureAccessOverride[]>([]);
   const [departmentsList, setDepartmentsList] = useState<Department[]>([]);
+  // The signed-in user's OWN active custom access grants — see hasAccess()'s
+  // grant merge below and schema.ts's doc comment on `custom_access_grants`.
+  // Fetched for every signed-in user (not gated to Admin+) since everyone
+  // needs to be able to resolve their own effective access, same posture as
+  // featureAccessOverrides above.
+  const [myAccessGrants, setMyAccessGrants] = useState<CustomAccessGrant[]>([]);
+  // Team/Role catalogs — lifted here (not fetched locally inside
+  // ProfileAccessPage) for the same reason `departmentsList` is: the
+  // Directory tab's user add/edit form needs both lists for its Team/Role
+  // dropdowns. Foundation-metadata only — see schema.ts's doc comment on
+  // `org_teams`/`roles` for why these currently carry zero access effect.
+  const [orgTeamsList, setOrgTeamsList] = useState<OrgTeam[]>([]);
+  const [rolesList, setRolesList] = useState<AppRole[]>([]);
   const [, setAnnouncementsLoadError] = useState<string | null>(null);
 
   const mapAnnouncementRow = (row: any): QAAnnouncement => ({
@@ -321,6 +334,43 @@ export default function App() {
       setDepartmentsList(body.entries || []);
     } catch (_) {
       // Directory-metadata only — never block the app on this.
+    }
+  };
+
+  const fetchOrgTeams = async () => {
+    try {
+      const res = await fetch("/api/org-teams");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setOrgTeamsList(body.entries || []);
+    } catch (_) {
+      // Directory-metadata only — never block the app on this.
+    }
+  };
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch("/api/roles");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setRolesList(body.entries || []);
+    } catch (_) {
+      // Directory-metadata only — never block the app on this.
+    }
+  };
+
+  const fetchMyAccessGrants = async () => {
+    try {
+      const res = await fetch("/api/my-access-grants");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setMyAccessGrants(body.entries || []);
+    } catch (_) {
+      // Never block the app on this — worst case a grant just doesn't
+      // apply yet, same fail-open posture as featureAccessOverrides.
     }
   };
 
@@ -836,7 +886,12 @@ export default function App() {
       fetchPedSuggestions();
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
-      if (currentUser.tier !== "General") fetchDepartments();
+      fetchMyAccessGrants();
+      if (currentUser.tier !== "General") {
+        fetchDepartments();
+        fetchOrgTeams();
+        fetchRoles();
+      }
       fetchUsersList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1129,7 +1184,7 @@ export default function App() {
   // (The client-side "Preview As" role simulation this used to layer on top
   // of baseUserTier was removed from the UI — effectiveTier is now always
   // the advisor's real, server-resolved tier.)
-  const baseUserTier: "General" | "Admin" | "Developer" = currentUser?.tier ?? "General";
+  const baseUserTier: "General" | "Admin" | "Platform Admin" | "Developer" = currentUser?.tier ?? "General";
   const effectiveTier = baseUserTier;
 
   // NOTE: this used to eagerly bulk-fetch the ENTIRE change_logs table on
@@ -1174,6 +1229,12 @@ export default function App() {
   // Unified dynamic hasAccess governance function
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
     const isRealDeveloper = currentUser?.tier === "Developer";
+    // Platform Admin (Access Control system Phase 2): has every Developer
+    // capability EXCEPT the 4 protections carved out for real Developer
+    // accounts (see server.ts's isDeveloperPower/Developer-record-protection
+    // checks — the client-side bypasses below are a USABILITY mirror of
+    // that server-side truth, never the actual enforcement).
+    const isDeveloperPowerTier = isRealDeveloper || currentUser?.tier === "Platform Admin";
 
     // ── OWNER-ONLY HARD GATE ────────────────────────────────────────────
     // Decided in code, NOT via the featurePermissions registry, and it
@@ -1187,23 +1248,24 @@ export default function App() {
     // became visible to Admin/General users. Anything that must never be
     // reachable by a lower tier belongs in this list, not in the registry.
     if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
-      // True for a real Developer even while previewing a lower tier via
-      // "View As" — otherwise hiding a page mid-preview could leave them
-      // with no route back to these toggles.
-      return isRealDeveloper;
+      // True for a real Developer/Platform Admin even while previewing a
+      // lower tier via "View As" — otherwise hiding a page mid-preview
+      // could leave them with no route back to these toggles.
+      return isDeveloperPowerTier;
     }
 
     const tier = effectiveTier;
 
-    // Developer-hidden page — checked BEFORE the tier grants below so it applies
-    // uniformly. A real Developer not simulating another tier is exempt; a real
-    // Developer who IS simulating sees exactly what that tier sees, so "View As"
-    // stays an honest preview of the hiding they just configured.
-    if (hiddenPages.includes(featureId) && !(isRealDeveloper && tier === "Developer")) {
+    // Developer/Platform-Admin-hidden page — checked BEFORE the tier grants
+    // below so it applies uniformly. A real Developer/Platform Admin not
+    // simulating another tier is exempt; one who IS simulating sees exactly
+    // what that tier sees, so "View As" stays an honest preview of the
+    // hiding they just configured.
+    if (hiddenPages.includes(featureId) && !(isDeveloperPowerTier && (tier === "Developer" || tier === "Platform Admin"))) {
       return false;
     }
 
-    if (tier === "Developer") return true;
+    if (tier === "Developer" || tier === "Platform Admin") return true;
 
     // Resolve against the saved registry first, then fall back to the
     // shipped defaults.
@@ -1222,7 +1284,20 @@ export default function App() {
     // non-page permission checks don't hard-fail.
     if (!perm) return true;
 
-    const level = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
+    const shippedLevel = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
+
+    // Custom Access Grants (max-of, grant-only — see schema.ts's doc
+    // comment on `custom_access_grants`): a grant can only RAISE this
+    // feature's level above what tier+overrides already resolved to, never
+    // lower it. Only grantType "feature_access" is wired here; other grant
+    // kinds aren't functional yet. Always the REAL signed-in user's own
+    // grants — "View As" simulation was removed from the UI, so `tier`
+    // above is always currentUser's real tier (see effectiveTier's doc
+    // comment), meaning this never needs a separate simulation guard.
+    const ACCESS_LEVEL_RANK: Record<"None" | "Viewer" | "Editor", number> = { None: 0, Viewer: 1, Editor: 2 };
+    const grant = myAccessGrants.find(g => g.active && g.grantType === "feature_access" && g.targetId === featureId);
+    const level = grant?.level && ACCESS_LEVEL_RANK[grant.level] > ACCESS_LEVEL_RANK[shippedLevel] ? grant.level : shippedLevel;
+
     if (level === "Editor") return true;
     if (level === "Viewer") return actionType === "Viewer";
     return false;
@@ -3464,6 +3539,8 @@ export default function App() {
                     <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
                       currentUser?.tier === "Developer"
                         ? "bg-red-500/10 text-red-500"
+                        : currentUser?.tier === "Platform Admin"
+                        ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
                         : currentUser?.tier === "Admin"
                         ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                         : "bg-blue-500/10 text-blue-600 dark:text-sky-400"
@@ -3858,7 +3935,7 @@ export default function App() {
                   <span className="block text-[10px] font-bold tracking-wider text-[#C4CDD8]">
                     Resources
                   </span>
-                  {(currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
+                  {(currentUser?.tier === "Developer" || currentUser?.tier === "Platform Admin" || currentUser?.tier === "Admin") && (
                     <button
                       onClick={() => {
                         setIsManagingResources((prev) => !prev);
@@ -3953,7 +4030,7 @@ export default function App() {
                           <ResourceIcon className="w-4 h-4 shrink-0 text-blue-300" />
                           <span className="truncate">{resource.title}</span>
                         </a>
-                        {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
+                        {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Platform Admin" || currentUser?.tier === "Admin") && (
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               onClick={() => handleMoveResource(resource.id, "up")}
@@ -3993,7 +4070,7 @@ export default function App() {
                   );
                 })}
 
-                {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Admin") && (
+                {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Platform Admin" || currentUser?.tier === "Admin") && (
                   <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5 px-0.5">
                     {resourceFormError && (
                       <p className="text-[10px] font-semibold text-red-400">{resourceFormError}</p>
@@ -4294,6 +4371,10 @@ export default function App() {
                 onFeatureAccessChanged={fetchFeatureAccessOverrides}
                 departments={departmentsList}
                 onDepartmentsChanged={fetchDepartments}
+                orgTeams={orgTeamsList}
+                onOrgTeamsChanged={fetchOrgTeams}
+                roles={rolesList}
+                onRolesChanged={fetchRoles}
                 hiddenPages={hiddenPages}
               />
               </Suspense>

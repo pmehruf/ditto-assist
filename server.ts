@@ -1060,7 +1060,7 @@ interface DirectoryUser {
   email: string;
   name: string;
   tactId: string;
-  tier: "General" | "Admin" | "Developer";
+  tier: "General" | "Admin" | "Platform Admin" | "Developer";
   status: "Active" | "Disabled";
 }
 
@@ -1096,13 +1096,41 @@ function isValidAnnouncementTeam(v: unknown): v is "Health" | "Term" {
   return v === "Health" || v === "Term";
 }
 
+type CallerTier = "General" | "Admin" | "Platform Admin" | "Developer";
+
 /** Users not yet present in the directory default to "General" — matches the
  * client's existing fallback for a first-time Google sign-in. */
-async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<"General" | "Admin" | "Developer"> {
+async function getCallerTier(req: any, usersRepo: UsersRepository): Promise<CallerTier> {
   const email = (req.user?.email as string | undefined)?.toLowerCase();
   if (!email) return "General";
   const match = await usersRepo.findByEmail(email);
   return match?.tier ?? "General";
+}
+
+/**
+ * True for both real Developer and Platform Admin — the two tiers meant to
+ * have "every Developer capability" per the Access Control system's Phase 2
+ * spec. Used for every route that used to be a flat `callerTier !==
+ * "Developer"` check (Feature Visibility, Permissions tab, Departments/
+ * Teams/Roles/Relationship-Types catalogs, Connections-adjacent settings,
+ * clearing logs, etc.).
+ *
+ * Deliberately NOT used for the 4 actions that stay real-Developer-only
+ * regardless of Platform Admin status — see the dedicated
+ * `requireDeveloperTierUnchanged`-style inline checks in PATCH/DELETE/POST
+ * /api/users below, which check `callerTier === "Developer"` directly, never
+ * through this helper.
+ */
+function isDeveloperPower(tier: CallerTier): boolean {
+  return tier === "Developer" || tier === "Platform Admin";
+}
+
+/** True for Admin, Platform Admin, or Developer — every tier at or above
+ * "Admin". Platform Admin is a superset of Admin in every existing
+ * Admin+Developer-gated route (directory viewing, QA Dashboard access
+ * management, PED Repository, Connections, Smoke Test, etc.). */
+function isAdminPower(tier: CallerTier): boolean {
+  return tier === "Admin" || tier === "Platform Admin" || tier === "Developer";
 }
 
 function isValidDirectoryUser(u: any): u is DirectoryUser {
@@ -1111,7 +1139,7 @@ function isValidDirectoryUser(u: any): u is DirectoryUser {
     typeof u.email === "string" &&
     typeof u.name === "string" &&
     typeof u.tactId === "string" &&
-    (u.tier === "General" || u.tier === "Admin" || u.tier === "Developer") &&
+    (u.tier === "General" || u.tier === "Admin" || u.tier === "Platform Admin" || u.tier === "Developer") &&
     (u.status === "Active" || u.status === "Disabled")
   );
 }
@@ -1127,13 +1155,13 @@ app.get("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Admin" && callerTier !== "Developer") {
+    if (!isAdminPower(callerTier)) {
       return res.status(403).json({ error: "The user directory is restricted to Admin and Developer roles." });
     }
 
     if (req.query.paginated) {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
-      const tier = pickEnumValue(req.query.tier, ["General", "Admin", "Developer"] as const);
+      const tier = pickEnumValue(req.query.tier, ["General", "Admin", "Platform Admin", "Developer"] as const);
       const status = pickEnumValue(req.query.status, ["Active", "Disabled"] as const);
       const tag = pickEnumValue(req.query.tag, [...ADVISOR_TAG_VALUES, "Unassigned"] as const);
       const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
@@ -1157,19 +1185,21 @@ app.get("/api/users", requireAuth, async (req, res) => {
 
 // Single-row edit — added alongside pagination (see usersRepository.ts's
 // updateUser doc comment for why the old full-array PUT below becomes
-// unsafe once the admin UI only ever holds one page in memory). Only
-// Developer can edit, same restriction as the PUT route it replaces for the
-// UI's normal edit flow.
+// unsafe once the admin UI only ever holds one page in memory). Developer
+// AND Platform Admin can edit — EXCEPT a Developer-tier target account (any
+// field), and EXCEPT granting Developer clearance to anyone: both of those
+// stay real-Developer-only, checked explicitly below (never through
+// isDeveloperPower, which would incorrectly let Platform Admin through).
 app.patch("/api/users/:email", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, departments } = createRepositories(getDb());
+    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer role can edit the user directory." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can edit the user directory." });
     }
 
     const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
-    const { name, tactId, tier, status, tags, departmentId } = req.body;
+    const { name, tactId, tier, status, tags, departmentId, orgTeamId, roleId } = req.body;
     const resolvedTags = tags === undefined ? [] : tags;
     // Normalized regardless of how it was typed/pasted — see
     // normalizeTactId (utils/tactId.ts). TactIdInput already constrains
@@ -1179,15 +1209,16 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
     if (
       typeof name !== "string" || !name.trim() ||
       typeof tactId !== "string" || !normalizedTactId ||
-      (tier !== "General" && tier !== "Admin" && tier !== "Developer") ||
+      (tier !== "General" && tier !== "Admin" && tier !== "Platform Admin" && tier !== "Developer") ||
       (status !== "Active" && status !== "Disabled") ||
       !isValidAdvisorTags(resolvedTags)
     ) {
       return res.status(400).json({ error: `name, tactId, tier, and status are all required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
     }
-    // departmentId is pure organizational metadata (see schema.ts's doc
-    // comment) — optional, and either null (unassigned) or a real
-    // department's id. Never treated as a permission input anywhere below.
+    // departmentId/orgTeamId/roleId are pure organizational metadata (see
+    // schema.ts's doc comments) — each optional, and either null
+    // (unassigned) or a real row's id. Never treated as a permission input
+    // anywhere below.
     if (departmentId !== undefined && departmentId !== null) {
       if (typeof departmentId !== "number" || !Number.isInteger(departmentId)) {
         return res.status(400).json({ error: "departmentId must be a number or null." });
@@ -1197,14 +1228,51 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
         return res.status(400).json({ error: "That department doesn't exist." });
       }
     }
+    if (orgTeamId !== undefined && orgTeamId !== null) {
+      if (typeof orgTeamId !== "number" || !Number.isInteger(orgTeamId)) {
+        return res.status(400).json({ error: "orgTeamId must be a number or null." });
+      }
+      const team = await orgTeams.get(orgTeamId);
+      if (!team) {
+        return res.status(400).json({ error: "That team doesn't exist." });
+      }
+    }
+    if (roleId !== undefined && roleId !== null) {
+      if (typeof roleId !== "number" || !Number.isInteger(roleId)) {
+        return res.status(400).json({ error: "roleId must be a number or null." });
+      }
+      const role = await roles.get(roleId);
+      if (!role) {
+        return res.status(400).json({ error: "That role doesn't exist." });
+      }
+    }
 
     const existing = await usersRepo.findByEmail(targetEmail);
     if (!existing) {
       return res.status(404).json({ error: "No directory entry found for that email." });
     }
+    // Developer-record protection (Access Control system Phase 2): a
+    // Platform Admin has every other capability a Developer has, but can
+    // never touch an EXISTING Developer's account in any way — not the
+    // tier, not the status, not the name/team/department. Only a real
+    // Developer may edit another Developer's record. This single check
+    // covers "changing access tier for developer" and "deactivating the
+    // profile" from the original spec in one place, rather than separate
+    // per-field checks that could develop a gap.
+    if (existing.tier === "Developer" && callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can modify another Developer's account." });
+    }
+    // Promoting someone TO Developer is also real-Developer-only — a
+    // Platform Admin editing a non-Developer user must not be able to grant
+    // Developer clearance via this route either.
+    if (tier === "Developer" && callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can grant Developer clearance." });
+    }
     // Same "at least one Developer must remain" guard the old full-array PUT
     // enforced across the whole submitted array — here it's scoped to just
-    // this one row's tier change.
+    // this one row's tier change. (Only reachable by a real Developer caller
+    // now, per the blanket check above, since existing.tier === "Developer"
+    // would already have been refused for anyone else.)
     if (existing.tier === "Developer" && tier !== "Developer") {
       const remaining = await usersRepo.countOtherDevelopers(targetEmail);
       if (remaining === 0) {
@@ -1219,6 +1287,8 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
       status,
       tags: resolvedTags,
       ...(departmentId !== undefined ? { departmentId } : {}),
+      ...(orgTeamId !== undefined ? { orgTeamId } : {}),
+      ...(roleId !== undefined ? { roleId } : {}),
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -1234,14 +1304,19 @@ app.delete("/api/users/:email", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer role can remove users from the directory." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can remove users from the directory." });
     }
 
     const targetEmail = decodeURIComponent(req.params.email).toLowerCase();
     const existing = await usersRepo.findByEmail(targetEmail);
     if (!existing) {
       return res.status(404).json({ error: "No directory entry found for that email." });
+    }
+    // Developer-record protection (see PATCH /api/users/:email's comment) —
+    // only a real Developer may remove another Developer's account.
+    if (existing.tier === "Developer" && callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can remove another Developer's account." });
     }
     if (existing.tier === "Developer") {
       const remaining = await usersRepo.countOtherDevelopers(targetEmail);
@@ -1265,6 +1340,14 @@ app.delete("/api/users/:email", requireAuth, async (req, res) => {
 // would silently wipe out every user not on that page. Only Developer can
 // edit — Admin gets a read-only view in the UI, enforced again here so the
 // restriction can't be bypassed by calling the API directly.
+//
+// Deliberately NOT extended to Platform Admin (unlike the single-row PATCH/
+// DELETE above): this route replaces the ENTIRE directory in one write, so
+// safely enforcing "never touch a Developer's row" here would mean
+// diffing the incoming array against the existing one row-by-row. Since
+// nothing in the shipped UI calls this route anymore, keeping it strictly
+// Developer-only is the simpler, safer choice rather than reimplementing
+// that diff for genuinely dead code.
 app.put("/api/users", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
@@ -1312,22 +1395,30 @@ app.put("/api/users", requireAuth, async (req, res) => {
 // Developer-only, enforced by the PUT/DELETE-via-PUT route above.
 app.post("/api/users", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, departments } = createRepositories(getDb());
+    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Admin" && callerTier !== "Developer") {
+    if (!isAdminPower(callerTier)) {
       return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
     }
 
-    const { email, name, tactId, tier, status, tags, departmentId } = req.body;
+    const { email, name, tactId, tier, status, tags, departmentId, orgTeamId, roleId } = req.body;
     const resolvedTags = tags === undefined ? [] : tags;
     const normalizedTactId = typeof tactId === "string" ? normalizeTactId(tactId) : "";
     if (!isValidDirectoryUser({ email, name, tactId, tier, status }) || !normalizedTactId || !isValidAdvisorTags(resolvedTags)) {
       return res.status(400).json({ error: `email, name, tactId, tier, and status are all required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
     }
-    // Admin can add users, but shouldn't be able to mint a new Developer from
-    // this lightweight endpoint — that's still an Developer-only directory edit.
-    if (callerTier === "Admin" && tier === "Developer") {
+    // Admin (and Platform Admin) can add users, but shouldn't be able to
+    // mint a new Developer from this lightweight endpoint — granting
+    // Developer clearance stays real-Developer-only everywhere, not just
+    // the PATCH edit route.
+    if (tier === "Developer" && callerTier !== "Developer") {
       return res.status(403).json({ error: "Only the Developer role can grant Developer clearance." });
+    }
+    // Platform Admin clearance is one step narrower than Developer's own:
+    // Developer or an existing Platform Admin can grant it, but a plain
+    // Admin cannot mint a peer/superior tier from this endpoint.
+    if (tier === "Platform Admin" && callerTier === "Admin") {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can grant Platform Admin clearance." });
     }
     // Same organizational-metadata validation as the PATCH route above.
     if (departmentId !== undefined && departmentId !== null) {
@@ -1337,6 +1428,24 @@ app.post("/api/users", requireAuth, async (req, res) => {
       const dept = await departments.get(departmentId);
       if (!dept) {
         return res.status(400).json({ error: "That department doesn't exist." });
+      }
+    }
+    if (orgTeamId !== undefined && orgTeamId !== null) {
+      if (typeof orgTeamId !== "number" || !Number.isInteger(orgTeamId)) {
+        return res.status(400).json({ error: "orgTeamId must be a number or null." });
+      }
+      const team = await orgTeams.get(orgTeamId);
+      if (!team) {
+        return res.status(400).json({ error: "That team doesn't exist." });
+      }
+    }
+    if (roleId !== undefined && roleId !== null) {
+      if (typeof roleId !== "number" || !Number.isInteger(roleId)) {
+        return res.status(400).json({ error: "roleId must be a number or null." });
+      }
+      const role = await roles.get(roleId);
+      if (!role) {
+        return res.status(400).json({ error: "That role doesn't exist." });
       }
     }
 
@@ -1354,6 +1463,8 @@ app.post("/api/users", requireAuth, async (req, res) => {
       status,
       tags: resolvedTags,
       ...(departmentId !== undefined ? { departmentId } : {}),
+      ...(orgTeamId !== undefined ? { orgTeamId } : {}),
+      ...(roleId !== undefined ? { roleId } : {}),
     });
     return res.json({ success: true, user: row });
   } catch (err: any) {
@@ -1378,11 +1489,11 @@ app.post("/api/users", requireAuth, async (req, res) => {
 // data/users.json rather than trusted from the client.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Requires Admin or Developer tier; sends a 403 and returns false otherwise. */
+/** Requires Admin, Platform Admin, or Developer tier; sends a 403 and returns false otherwise. */
 async function requireAdminOrDeveloper(req: any, res: any, action: string): Promise<boolean> {
   const { users: usersRepo } = createRepositories(getDb());
   const callerTier = await getCallerTier(req, usersRepo);
-  if (callerTier !== "Admin" && callerTier !== "Developer") {
+  if (!isAdminPower(callerTier)) {
     res.status(403).json({ error: `${action} requires Admin or Developer tier.` });
     return false;
   }
@@ -1466,8 +1577,8 @@ app.delete("/api/search-history", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer role can clear activity history." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can clear activity history." });
     }
     const { searchHistory } = createRepositories(getDb());
     await searchHistory.clearAll();
@@ -1893,8 +2004,8 @@ app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, pageVisibility, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer can change page visibility." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can change page visibility." });
     }
 
     const featureId = String(req.params.featureId);
@@ -1957,8 +2068,8 @@ app.put("/api/feature-access/:featureId", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, featureAccess, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer can change feature access." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can change feature access." });
     }
 
     const featureId = String(req.params.featureId);
@@ -2007,8 +2118,8 @@ app.delete("/api/feature-access/:featureId", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, featureAccess, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer can change feature access." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can change feature access." });
     }
     const featureId = String(req.params.featureId);
     await featureAccess.clear(featureId);
@@ -2053,8 +2164,8 @@ app.post("/api/departments", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, departments, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer can create departments." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create departments." });
     }
     const { name, description } = req.body;
     if (typeof name !== "string" || !name.trim()) {
@@ -2095,8 +2206,8 @@ app.patch("/api/departments/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, departments, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer can edit departments." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit departments." });
     }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
@@ -2152,6 +2263,594 @@ app.patch("/api/departments/:id", requireAuth, async (req, res) => {
     }
     console.error("Failed to update department:", err);
     return res.status(500).json({ error: `Failed to update this department: ${err.message}` });
+  }
+});
+
+// Org Teams (Bliss / Falcon / Central) — same read/write posture as
+// Departments above: read gated Admin+, writes gated Developer+Platform
+// Admin. Foundation-only for now (see schema.ts's doc comment on
+// `org_teams`) — assigning a user to a team has zero effect on what they
+// can access until a later data-scoping enforcement phase.
+app.get("/api/org-teams", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing teams"))) return;
+    const { orgTeams } = createRepositories(getDb());
+    const rows = await orgTeams.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list org teams:", err);
+    return res.status(500).json({ error: `Failed to load teams: ${err.message}` });
+  }
+});
+
+app.post("/api/org-teams", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, orgTeams, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create teams." });
+    }
+    const { name, description } = req.body;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "name is required." });
+    }
+    const row = await orgTeams.create({
+      name: name.trim(),
+      description: typeof description === "string" ? description.trim() || null : null,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Team Created",
+        planName: null,
+        description: `Created team "${row.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for team creation:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A team with that name already exists." });
+    }
+    console.error("Failed to create team:", err);
+    return res.status(500).json({ error: `Failed to create this team: ${err.message}` });
+  }
+});
+
+app.patch("/api/org-teams/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, orgTeams, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit teams." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid team id." });
+    }
+    const existing = await orgTeams.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Team not found." });
+    }
+
+    const { name, description, active } = req.body;
+    const patch: { name?: string; description?: string | null; active?: boolean } = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name cannot be empty." });
+      }
+      patch.name = name.trim();
+    }
+    if (description !== undefined) {
+      patch.description = typeof description === "string" ? description.trim() || null : null;
+    }
+    if (active !== undefined) {
+      if (typeof active !== "boolean") {
+        return res.status(400).json({ error: "active must be a boolean." });
+      }
+      patch.active = active;
+    }
+
+    const row = await orgTeams.update(id, patch);
+
+    try {
+      const changeSummary = [
+        patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
+        patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
+        patch.description !== undefined ? "description updated" : null,
+      ].filter(Boolean).join(", ");
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Team Edited",
+        planName: null,
+        description: `Team "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for team edit:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A team with that name already exists." });
+    }
+    console.error("Failed to update team:", err);
+    return res.status(500).json({ error: `Failed to update this team: ${err.message}` });
+  }
+});
+
+// Roles (Advisor / Mentor / Guide / ...) — independent of both `tier` and
+// QA Dashboard's own admin/guide/mentor role (see schema.ts). Same
+// read/write posture as Org Teams above.
+app.get("/api/roles", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing roles"))) return;
+    const { roles } = createRepositories(getDb());
+    const rows = await roles.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list roles:", err);
+    return res.status(500).json({ error: `Failed to load roles: ${err.message}` });
+  }
+});
+
+app.post("/api/roles", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, roles, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create roles." });
+    }
+    const { name, description } = req.body;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "name is required." });
+    }
+    const row = await roles.create({
+      name: name.trim(),
+      description: typeof description === "string" ? description.trim() || null : null,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Role Created",
+        planName: null,
+        description: `Created role "${row.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for role creation:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A role with that name already exists." });
+    }
+    console.error("Failed to create role:", err);
+    return res.status(500).json({ error: `Failed to create this role: ${err.message}` });
+  }
+});
+
+app.patch("/api/roles/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, roles, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit roles." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid role id." });
+    }
+    const existing = await roles.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Role not found." });
+    }
+
+    const { name, description, active } = req.body;
+    const patch: { name?: string; description?: string | null; active?: boolean } = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name cannot be empty." });
+      }
+      patch.name = name.trim();
+    }
+    if (description !== undefined) {
+      patch.description = typeof description === "string" ? description.trim() || null : null;
+    }
+    if (active !== undefined) {
+      if (typeof active !== "boolean") {
+        return res.status(400).json({ error: "active must be a boolean." });
+      }
+      patch.active = active;
+    }
+
+    const row = await roles.update(id, patch);
+
+    try {
+      const changeSummary = [
+        patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
+        patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
+        patch.description !== undefined ? "description updated" : null,
+      ].filter(Boolean).join(", ");
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Role Edited",
+        planName: null,
+        description: `Role "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for role edit:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A role with that name already exists." });
+    }
+    console.error("Failed to update role:", err);
+    return res.status(500).json({ error: `Failed to update this role: ${err.message}` });
+  }
+});
+
+// Relationship Types (Mentor / Guide / ...) — the vocabulary usable in
+// user_relationships below. Same read/write posture as Org Teams/Roles.
+app.get("/api/relationship-types", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing relationship types"))) return;
+    const { relationshipTypes } = createRepositories(getDb());
+    const rows = await relationshipTypes.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list relationship types:", err);
+    return res.status(500).json({ error: `Failed to load relationship types: ${err.message}` });
+  }
+});
+
+app.post("/api/relationship-types", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipTypes, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create relationship types." });
+    }
+    const { name, description } = req.body;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "name is required." });
+    }
+    const row = await relationshipTypes.create({
+      name: name.trim(),
+      description: typeof description === "string" ? description.trim() || null : null,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Relationship Type Created",
+        planName: null,
+        description: `Created relationship type "${row.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for relationship type creation:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A relationship type with that name already exists." });
+    }
+    console.error("Failed to create relationship type:", err);
+    return res.status(500).json({ error: `Failed to create this relationship type: ${err.message}` });
+  }
+});
+
+app.patch("/api/relationship-types/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipTypes, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit relationship types." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid relationship type id." });
+    }
+    const existing = await relationshipTypes.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Relationship type not found." });
+    }
+
+    const { name, description, active } = req.body;
+    const patch: { name?: string; description?: string | null; active?: boolean } = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name cannot be empty." });
+      }
+      patch.name = name.trim();
+    }
+    if (description !== undefined) {
+      patch.description = typeof description === "string" ? description.trim() || null : null;
+    }
+    if (active !== undefined) {
+      if (typeof active !== "boolean") {
+        return res.status(400).json({ error: "active must be a boolean." });
+      }
+      patch.active = active;
+    }
+
+    const row = await relationshipTypes.update(id, patch);
+
+    try {
+      const changeSummary = [
+        patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
+        patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
+        patch.description !== undefined ? "description updated" : null,
+      ].filter(Boolean).join(", ");
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Relationship Type Edited",
+        planName: null,
+        description: `Relationship type "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for relationship type edit:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A relationship type with that name already exists." });
+    }
+    console.error("Failed to update relationship type:", err);
+    return res.status(500).json({ error: `Failed to update this relationship type: ${err.message}` });
+  }
+});
+
+// User Relationships — explicit person-to-person mappings (e.g. a Mentor's
+// mentees). Hard-deletable (see userRelationshipsRepository.ts's doc
+// comment on why, unlike the catalogs above).
+app.get("/api/user-relationships", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing user relationships"))) return;
+    const { userRelationships } = createRepositories(getDb());
+    const rows = await userRelationships.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list user relationships:", err);
+    return res.status(500).json({ error: `Failed to load user relationships: ${err.message}` });
+  }
+});
+
+app.post("/api/user-relationships", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipTypes, userRelationships, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create user relationships." });
+    }
+    const { ownerEmail, subjectEmail, relationshipTypeId } = req.body;
+    if (typeof ownerEmail !== "string" || !ownerEmail.trim() || typeof subjectEmail !== "string" || !subjectEmail.trim()) {
+      return res.status(400).json({ error: "ownerEmail and subjectEmail are required." });
+    }
+    if (ownerEmail.trim().toLowerCase() === subjectEmail.trim().toLowerCase()) {
+      return res.status(400).json({ error: "A user cannot be mapped to themselves." });
+    }
+    if (typeof relationshipTypeId !== "number" || !Number.isInteger(relationshipTypeId)) {
+      return res.status(400).json({ error: "relationshipTypeId is required." });
+    }
+    const [owner, subject, relType] = await Promise.all([
+      usersRepo.findByEmail(ownerEmail.trim().toLowerCase()),
+      usersRepo.findByEmail(subjectEmail.trim().toLowerCase()),
+      relationshipTypes.get(relationshipTypeId),
+    ]);
+    if (!owner) return res.status(400).json({ error: "ownerEmail does not match an existing user." });
+    if (!subject) return res.status(400).json({ error: "subjectEmail does not match an existing user." });
+    if (!relType || !relType.active) return res.status(400).json({ error: "relationshipTypeId does not match an active relationship type." });
+
+    const row = await userRelationships.create({
+      ownerEmail: ownerEmail.trim(),
+      subjectEmail: subjectEmail.trim(),
+      relationshipTypeId,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "User Relationship Created",
+        planName: null,
+        description: `Mapped ${subject.name} (${subject.email}) to ${owner.name} (${owner.email}) as "${relType.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for user relationship creation:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "That relationship mapping already exists." });
+    }
+    console.error("Failed to create user relationship:", err);
+    return res.status(500).json({ error: `Failed to create this relationship: ${err.message}` });
+  }
+});
+
+app.delete("/api/user-relationships/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, userRelationships, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can remove user relationships." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid relationship id." });
+    }
+    await userRelationships.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "User Relationship Removed",
+        planName: null,
+        description: `Removed user relationship #${id}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for user relationship removal:", logErr);
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to remove user relationship:", err);
+    return res.status(500).json({ error: `Failed to remove this relationship: ${err.message}` });
+  }
+});
+
+// Custom Access Grants — per-individual, add-only flexibility valve for
+// when Team/Department/Role structure alone doesn't fit someone (see
+// schema.ts's doc comment on `custom_access_grants`). A grant can only ever
+// RAISE a person's effective access above what their tier+overrides already
+// give them — see App.tsx's hasAccess(), which takes the max of the two,
+// never the grant alone. Only grantType "feature_access" is functional
+// today; other grantType values are accepted so future grant kinds
+// (team/department/relationship-scoped) don't need another migration, but
+// nothing currently reads them.
+app.get("/api/custom-access-grants", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing custom access grants"))) return;
+    const { customAccessGrants } = createRepositories(getDb());
+    const rows = await customAccessGrants.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list custom access grants:", err);
+    return res.status(500).json({ error: `Failed to load custom access grants: ${err.message}` });
+  }
+});
+
+// A user's own active grants — used by App.tsx to fold custom grants into
+// its own hasAccess() resolution. Deliberately requireAuth-only (not
+// Admin+Developer) since every signed-in user needs to be able to resolve
+// their own effective access, same posture as GET /api/feature-access.
+app.get("/api/my-access-grants", requireAuth, async (req, res) => {
+  try {
+    const { customAccessGrants } = createRepositories(getDb());
+    const rows = await customAccessGrants.listActiveForEmail(req.user!.email);
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to load caller's access grants:", err);
+    return res.status(500).json({ error: `Failed to load your access grants: ${err.message}` });
+  }
+});
+
+app.post("/api/custom-access-grants", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, customAccessGrants, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can grant custom access." });
+    }
+    const { userEmail, grantType, targetId, level, note } = req.body;
+    if (typeof userEmail !== "string" || !userEmail.trim()) {
+      return res.status(400).json({ error: "userEmail is required." });
+    }
+    if (typeof grantType !== "string" || !grantType.trim()) {
+      return res.status(400).json({ error: "grantType is required." });
+    }
+    if (typeof targetId !== "string" || !targetId.trim()) {
+      return res.status(400).json({ error: "targetId is required." });
+    }
+    if (level !== null && level !== "None" && level !== "Viewer" && level !== "Editor") {
+      return res.status(400).json({ error: 'level must be "None", "Viewer", "Editor", or null.' });
+    }
+    const targetUser = await usersRepo.findByEmail(userEmail.trim().toLowerCase());
+    if (!targetUser) {
+      return res.status(400).json({ error: "userEmail does not match an existing user." });
+    }
+
+    const row = await customAccessGrants.set({
+      userEmail: userEmail.trim(),
+      grantType: grantType.trim(),
+      targetId: targetId.trim(),
+      level: level ?? null,
+      note: typeof note === "string" ? note.trim() || null : null,
+      grantedBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Custom Access Granted",
+        planName: null,
+        description: `Granted ${targetUser.name} (${targetUser.email}) "${level ?? "None"}" access to ${grantType.trim()}:${targetId.trim()}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for custom access grant:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to create custom access grant:", err);
+    return res.status(500).json({ error: `Failed to grant custom access: ${err.message}` });
+  }
+});
+
+app.delete("/api/custom-access-grants/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, customAccessGrants, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can revoke custom access grants." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid grant id." });
+    }
+    const row = await customAccessGrants.revoke(id);
+    if (!row) {
+      return res.status(404).json({ error: "Grant not found." });
+    }
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Custom Access Revoked",
+        planName: null,
+        description: `Revoked ${row.userEmail}'s custom grant for ${row.grantType}:${row.targetId}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for custom access revoke:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to revoke custom access grant:", err);
+    return res.status(500).json({ error: `Failed to revoke this grant: ${err.message}` });
   }
 });
 
@@ -3453,8 +4152,8 @@ app.delete("/api/flagged-issues/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (callerTier !== "Developer") {
-      return res.status(403).json({ error: "Only the Developer role can permanently delete flagged reports." });
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can permanently delete flagged reports." });
     }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid flagged issue id." });

@@ -33,7 +33,7 @@ interface PedSuggestionEntry {
 
 interface PedSuggestionsManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -137,7 +137,7 @@ function renderAddedBy(addedBy: string, dark: boolean) {
  */
 export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, setChangeLogs }: PedSuggestionsManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [

@@ -10,7 +10,7 @@ import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage 
 
 export type CreateUserEntry = NewUserRow;
 
-export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status" | "tags" | "departmentId">>;
+export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status" | "tags" | "departmentId" | "orgTeamId" | "roleId">>;
 
 export interface UserListOptions {
   page?: number;

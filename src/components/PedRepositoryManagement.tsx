@@ -48,7 +48,7 @@ interface AliasEntry {
 
 interface PedRepositoryManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -97,7 +97,7 @@ function statusBadge(status: PedEntry["status"], dark: boolean) {
  */
 export function PedRepositoryManagement({ theme, effectiveTier, currentUser, setChangeLogs }: PedRepositoryManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [

@@ -7,7 +7,7 @@ export interface LoggedUser {
   email: string;
   name: string;
   tactId: string;
-  tier: "General" | "Admin" | "Developer";
+  tier: "General" | "Admin" | "Platform Admin" | "Developer";
   avatarUrl?: string;
   photoUrl?: string;
 }
@@ -16,7 +16,7 @@ export interface UserProfile {
   email: string;
   name: string;
   tactId: string;
-  tier: "General" | "Admin" | "Developer";
+  tier: "General" | "Admin" | "Platform Admin" | "Developer";
   status: "Active" | "Disabled";
   avatarUrl?: string;
   photoUrl?: string;
@@ -33,4 +33,9 @@ export interface UserProfile {
   // Organizational metadata only — zero effect on access (see schema.ts's
   // doc comment on the `departments` table). null/undefined = unassigned.
   departmentId?: number | null;
+  // Foundation-only Team/Role assignment (see schema.ts's doc comments on
+  // `org_teams`/`roles`) — captured now for future data-scoping enforcement,
+  // zero effect on access today. null/undefined = unassigned.
+  orgTeamId?: number | null;
+  roleId?: number | null;
 }

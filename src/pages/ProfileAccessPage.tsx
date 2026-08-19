@@ -6,24 +6,32 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { UserProfile, LoggedUser } from "../types/user";
-import { FeatureAccessOverride, Department } from "../types/permissions";
+import { FeatureAccessOverride, Department, OrgTeam, AppRole } from "../types/permissions";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ProfileAccessManagement } from "../components/ProfileAccessManagement";
 import { QaDashboardAccessManagement } from "../components/QaDashboardAccessManagement";
 import { FeatureAccessManagement } from "../components/FeatureAccessManagement";
 import { DepartmentsManagement } from "../components/DepartmentsManagement";
+import { TeamsManagement } from "../components/TeamsManagement";
+import { RolesManagement } from "../components/RolesManagement";
+import { RelationshipsManagement } from "../components/RelationshipsManagement";
+import { CustomGrantsManagement } from "../components/CustomGrantsManagement";
 
 interface ProfileAccessPageProps {
   theme: "light" | "dark";
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
   featureAccessOverrides: FeatureAccessOverride[];
   onFeatureAccessChanged: () => void;
   departments: Department[];
   onDepartmentsChanged: () => void;
+  orgTeams: OrgTeam[];
+  onOrgTeamsChanged: () => void;
+  roles: AppRole[];
+  onRolesChanged: () => void;
   hiddenPages: string[];
 }
 
@@ -41,10 +49,16 @@ interface ProfileAccessPageProps {
  * All reads/writes go through the server so a Developer's edit is reflected
  * for every user immediately, not just the editor's own browser/localStorage.
  */
-const SUB_TAB_BLURBS: Record<"directory" | "permissions" | "departments" | "qa_access", string> = {
+type SubTab = "directory" | "permissions" | "departments" | "teams" | "roles" | "relationships" | "custom_grants" | "qa_access";
+
+const SUB_TAB_BLURBS: Record<SubTab, string> = {
   directory: "", // computed dynamically below (depends on effectiveTier)
   permissions: "Which tier can view or edit each feature — the Developer-editable override of this app's shipped access defaults.",
   departments: "Organizational metadata only — departments have no effect on what anyone can access.",
+  teams: "Bliss / Falcon / Central — foundation metadata for future access scoping. No effect on access yet.",
+  roles: "Advisor / Mentor / Guide / ... — independent of both tier and the QA Dashboard's own role. No effect on access yet.",
+  relationships: "Explicit person-to-person mappings (e.g. a Mentor's mentees) — the vocabulary and the mappings themselves. No effect on access yet.",
+  custom_grants: "Per-individual, add-only access overrides — the flexibility valve for when Team/Department/Role structure doesn't fit someone. Can only raise access, never lower it.",
   qa_access: "Who holds Admin/Guide/Mentor access on the QA Dashboard, separate from the WebApp tiers above.",
 };
 
@@ -59,9 +73,13 @@ export function ProfileAccessPage({
   onFeatureAccessChanged,
   departments,
   onDepartmentsChanged,
+  orgTeams,
+  onOrgTeamsChanged,
+  roles,
+  onRolesChanged,
   hiddenPages,
 }: ProfileAccessPageProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"directory" | "permissions" | "departments" | "qa_access">("directory");
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>("directory");
   const dark = theme === "dark";
 
   // Shared local-state audit entry, same pattern used by every admin page on
@@ -98,7 +116,7 @@ export function ProfileAccessPage({
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {activeSubTab === "directory"
-              ? <>Organization-wide record of advisor accounts, TACT IDs, and clearance tiers.{effectiveTier === "Developer" ? " Edits here apply to every user immediately." : " Read-only — Developer clearance is required to make changes."}</>
+              ? <>Organization-wide record of advisor accounts, TACT IDs, and clearance tiers.{(effectiveTier === "Developer" || effectiveTier === "Platform Admin") ? " Edits here apply to every user immediately." : " Read-only — Developer clearance is required to make changes."}</>
               : SUB_TAB_BLURBS[activeSubTab]}
           </p>
         </div>
@@ -109,6 +127,10 @@ export function ProfileAccessPage({
           { id: "directory", label: "Directory" },
           { id: "permissions", label: "Permissions" },
           { id: "departments", label: "Departments" },
+          { id: "teams", label: "Teams" },
+          { id: "roles", label: "Roles" },
+          { id: "relationships", label: "Relationships" },
+          { id: "custom_grants", label: "Custom Grants" },
           { id: "qa_access", label: "QA Dashboard Access" },
         ] as const).map((tab) => (
           <button
@@ -127,13 +149,25 @@ export function ProfileAccessPage({
 
       <div className="space-y-5 pb-6">
         {activeSubTab === "directory" && (
-          <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} departments={departments} featureAccessOverrides={featureAccessOverrides} hiddenPages={hiddenPages} />
+          <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} departments={departments} orgTeams={orgTeams} roles={roles} featureAccessOverrides={featureAccessOverrides} hiddenPages={hiddenPages} />
         )}
         {activeSubTab === "permissions" && (
           <FeatureAccessManagement theme={theme} effectiveTier={effectiveTier} overrides={featureAccessOverrides} onChanged={onFeatureAccessChanged} logAction={logAction} />
         )}
         {activeSubTab === "departments" && (
           <DepartmentsManagement theme={theme} effectiveTier={effectiveTier} departments={departments} usersList={usersList} onChanged={onDepartmentsChanged} logAction={logAction} />
+        )}
+        {activeSubTab === "teams" && (
+          <TeamsManagement theme={theme} effectiveTier={effectiveTier} orgTeams={orgTeams} usersList={usersList} onChanged={onOrgTeamsChanged} logAction={logAction} />
+        )}
+        {activeSubTab === "roles" && (
+          <RolesManagement theme={theme} effectiveTier={effectiveTier} roles={roles} usersList={usersList} onChanged={onRolesChanged} logAction={logAction} />
+        )}
+        {activeSubTab === "relationships" && (
+          <RelationshipsManagement theme={theme} effectiveTier={effectiveTier} usersList={usersList} logAction={logAction} />
+        )}
+        {activeSubTab === "custom_grants" && (
+          <CustomGrantsManagement theme={theme} effectiveTier={effectiveTier} usersList={usersList} logAction={logAction} />
         )}
         {activeSubTab === "qa_access" && (
           <QaDashboardAccessManagement theme={theme} effectiveTier={effectiveTier} />

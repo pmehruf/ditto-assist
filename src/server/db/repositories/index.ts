@@ -36,6 +36,11 @@ import { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.j
 import { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
 import { FeatureAccessRepository } from "./featureAccessRepository.js";
 import { DepartmentsRepository } from "./departmentsRepository.js";
+import { OrgTeamsRepository } from "./orgTeamsRepository.js";
+import { RolesRepository } from "./rolesRepository.js";
+import { RelationshipTypesRepository } from "./relationshipTypesRepository.js";
+import { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
+import { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -143,6 +148,21 @@ export type { CreateKbPlaybookPlanFactEntry } from "./kbPlaybookPlanFactsReposit
 
 export { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
 
+export { OrgTeamsRepository } from "./orgTeamsRepository.js";
+export type { CreateOrgTeamEntry, UpdateOrgTeamEntry } from "./orgTeamsRepository.js";
+
+export { RolesRepository } from "./rolesRepository.js";
+export type { CreateRoleEntry, UpdateRoleEntry } from "./rolesRepository.js";
+
+export { RelationshipTypesRepository } from "./relationshipTypesRepository.js";
+export type { CreateRelationshipTypeEntry, UpdateRelationshipTypeEntry } from "./relationshipTypesRepository.js";
+
+export { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
+export type { CreateUserRelationshipEntry } from "./userRelationshipsRepository.js";
+
+export { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
+export type { CreateCustomAccessGrantEntry, CustomAccessGrantLevel } from "./customAccessGrantsRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -165,6 +185,11 @@ export interface Repositories {
   pageVisibility: PageVisibilityRepository;
   featureAccess: FeatureAccessRepository;
   departments: DepartmentsRepository;
+  orgTeams: OrgTeamsRepository;
+  roles: RolesRepository;
+  relationshipTypes: RelationshipTypesRepository;
+  userRelationships: UserRelationshipsRepository;
+  customAccessGrants: CustomAccessGrantsRepository;
   categories: CategoriesRepository;
   pedRepository: PedRepositoryRepository;
   pedAliases: PedAliasesRepository;
@@ -201,6 +226,11 @@ export function createRepositories(db: AnyDb): Repositories {
     pageVisibility: new PageVisibilityRepository(db),
     featureAccess: new FeatureAccessRepository(db),
     departments: new DepartmentsRepository(db),
+    orgTeams: new OrgTeamsRepository(db),
+    roles: new RolesRepository(db),
+    relationshipTypes: new RelationshipTypesRepository(db),
+    userRelationships: new UserRelationshipsRepository(db),
+    customAccessGrants: new CustomAccessGrantsRepository(db),
     categories: new CategoriesRepository(db),
     pedRepository: new PedRepositoryRepository(db),
     pedAliases: new PedAliasesRepository(db),

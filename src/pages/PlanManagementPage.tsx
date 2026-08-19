@@ -16,7 +16,7 @@ import { CustomSelect } from "../components/CustomSelect";
 
 interface PlanManagementPageProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   dbPlanConfigs: DbPlanConfigEntry[];
   setDbPlanConfigs: Dispatch<SetStateAction<DbPlanConfigEntry[]>>;
   dbPlanConfigsLoadError: string | null;
@@ -120,11 +120,11 @@ export function PlanManagementPage({
   currentUser,
 }: PlanManagementPageProps) {
   const dark = theme === "dark";
-  const canEdit = effectiveTier === "Admin" || effectiveTier === "Developer";
-  // Edit/Delete are actionable Developer-only — Admin still sees the buttons
-  // (so the UI doesn't look feature-incomplete) but they render disabled.
-  // Add Plan stays fully enabled for Admin.
-  const isDeveloper = effectiveTier === "Developer";
+  const canEdit = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
+  // Edit/Delete are actionable Developer(+Platform Admin)-only — Admin still
+  // sees the buttons (so the UI doesn't look feature-incomplete) but they
+  // render disabled. Add Plan stays fully enabled for Admin.
+  const isDeveloper = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   useEffect(() => {
     fetchPlanConfigs();

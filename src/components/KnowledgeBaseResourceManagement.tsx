@@ -333,7 +333,7 @@ function countByDocType(list: KbResource[]): Record<KbDocumentType, number> {
 
 interface KnowledgeBaseResourceManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -360,7 +360,7 @@ interface KnowledgeBaseResourceManagementProps {
  */
 export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseResourceManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [

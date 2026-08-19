@@ -24,7 +24,7 @@ interface QaRoleRow {
 
 interface QaDashboardAccessManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
 }
 
 const ROLE_LABEL: Record<QaRoleType, string> = { admin: "Admin", guide: "Guide", mentor: "Mentor" };
@@ -53,7 +53,7 @@ const ROLE_SECTIONS: { role: QaRoleType; title: string; blurb: string }[] = [
  */
 export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboardAccessManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const [roles, setRoles] = useState<QaRoleRow[]>([]);
   const [loading, setLoading] = useState(true);

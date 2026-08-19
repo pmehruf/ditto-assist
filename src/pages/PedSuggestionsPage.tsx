@@ -12,7 +12,7 @@ import { AiMappingReview } from "../components/AiMappingReview";
 
 interface PedSuggestionsPageProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -70,7 +70,7 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Manage the application's PED repository and review AI-assisted mapping recommendations before they become part of the knowledge base.
-            {effectiveTier === "Admin" || effectiveTier === "Developer" ? " Changes apply to every advisor immediately." : " Read-only — Admin clearance is required to make changes."}
+            {effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer" ? " Changes apply to every advisor immediately." : " Read-only — Admin clearance is required to make changes."}
           </p>
         </div>
       </div>

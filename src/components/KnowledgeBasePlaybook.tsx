@@ -8,7 +8,7 @@ import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink } from "lucide-re
 
 interface KnowledgeBasePlaybookProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
 }
 
 interface PlaybookConnectionStatus {
@@ -34,7 +34,7 @@ interface PlaybookConnectionStatus {
  */
 export function KnowledgeBasePlaybook({ theme, effectiveTier }: KnowledgeBasePlaybookProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const [status, setStatus] = useState<PlaybookConnectionStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);

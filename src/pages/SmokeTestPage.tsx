@@ -31,7 +31,7 @@ interface SmokeTestResult {
 
 interface SmokeTestPageProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   productionPlans: string[];
   selectedPlan: string;
@@ -63,7 +63,7 @@ export function SmokeTestPage({
   setChangeLogs,
 }: SmokeTestPageProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Developer";
+  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs((prev) => [

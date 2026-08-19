@@ -7,7 +7,7 @@ export interface FeaturePermission {
   id: string;
   name: string;
   description: string;
-  defaultTier: "General" | "Admin" | "Developer";
+  defaultTier: "General" | "Admin" | "Platform Admin" | "Developer";
   generalAccess: "None" | "Viewer" | "Editor";
   adminAccess: "None" | "Viewer" | "Editor";
 }
@@ -29,4 +29,60 @@ export interface Department {
   name: string;
   description: string | null;
   active: boolean;
+}
+
+/** One row of the `org_teams` table (Bliss / Falcon / Central) — foundation
+ * only for now, zero effect on access until a later data-scoping
+ * enforcement phase (see schema.ts's doc comment on the table). */
+export interface OrgTeam {
+  id: number;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
+/** One row of the `roles` table (Advisor / Mentor / Guide / ...) —
+ * independent of both `tier` and QA Dashboard's own admin/guide/mentor
+ * role. Foundation only for now, zero effect on access. */
+export interface AppRole {
+  id: number;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
+/** One row of the `relationship_types` table (Mentor / Guide / ...) — the
+ * vocabulary usable in user_relationships. */
+export interface RelationshipType {
+  id: number;
+  name: string;
+  description: string | null;
+  active: boolean;
+}
+
+/** One row of the `user_relationships` table — an explicit person-to-person
+ * mapping (e.g. a Mentor's mentees). */
+export interface UserRelationship {
+  id: number;
+  ownerEmail: string;
+  subjectEmail: string;
+  relationshipTypeId: number;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** One row of the `custom_access_grants` table — a per-individual, add-only
+ * access override. Only `grantType === "feature_access"` is functional
+ * today (see App.tsx's hasAccess() and schema.ts's doc comment on the
+ * table for the max-of, grant-only merge semantics). */
+export interface CustomAccessGrant {
+  id: number;
+  userEmail: string;
+  grantType: string;
+  targetId: string;
+  level: "None" | "Viewer" | "Editor" | null;
+  note: string | null;
+  active: boolean;
+  grantedBy: string;
+  grantedAt: string;
 }

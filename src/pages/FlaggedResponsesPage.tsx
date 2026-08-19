@@ -23,7 +23,7 @@ interface FlaggedResponsesPageProps {
   setReportedIssuesFilter: (value: string) => void;
   ownerResolutionNotes: Record<string, string>;
   setOwnerResolutionNotes: Dispatch<SetStateAction<Record<string, string>>>;
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   /** Shows an "are you sure?" confirmation before running a destructive, Developer-tier action. */
   confirmDestructiveAction: (actionDescription: string, onConfirm: () => void) => void;
   currentUser: LoggedUser | null;
@@ -468,7 +468,7 @@ export function FlaggedResponsesPage({
                                 >
                                   Ignore
                                 </ClippedButton>
-                                {effectiveTier === "Developer" && (
+                                {(effectiveTier === "Developer" || effectiveTier === "Platform Admin") && (
                                   <ClippedButton
                                     onClick={() => {
                                       confirmDestructiveAction(`Delete mismatch report for "${issue.pedInput}" permanently`, async () => {
@@ -502,7 +502,7 @@ export function FlaggedResponsesPage({
                               <p className={`text-[10.5px] font-semibold text-right max-w-[200px] whitespace-pre-wrap break-words ${dark ? "text-stone-305" : "text-stone-600"}`}>
                                 {issue.ownerNotes}
                               </p>
-                              {effectiveTier === "Developer" && (
+                              {(effectiveTier === "Developer" || effectiveTier === "Platform Admin") && (
                                 <ClippedButton
                                   onClick={() => {
                                     confirmDestructiveAction(`Delete mismatch record for "${issue.pedInput}" permanently`, async () => {

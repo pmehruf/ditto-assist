@@ -10,7 +10,7 @@ import { KnowledgeBaseResourceManagement } from "../components/KnowledgeBaseReso
 
 interface KnowledgeBaseManagementPageProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
@@ -49,7 +49,7 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Manage the documents "Ask the Playbook" answers advisor questions from, organized per-insurer plus a General/Others bucket.
-            {effectiveTier === "Admin" || effectiveTier === "Developer" ? "" : " Read-only — Admin clearance is required to make changes."}
+            {effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer" ? "" : " Read-only — Admin clearance is required to make changes."}
           </p>
         </div>
       </div>

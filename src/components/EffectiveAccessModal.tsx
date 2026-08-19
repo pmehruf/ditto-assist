@@ -4,20 +4,23 @@
  */
 
 import { useEffect, useState } from "react";
-import { X, ShieldQuestion, RefreshCw } from "lucide-react";
+import { X, ShieldQuestion, RefreshCw, KeyRound } from "lucide-react";
 import { UserProfile } from "../types/user";
-import { Department, FeatureAccessOverride } from "../types/permissions";
+import { Department, FeatureAccessOverride, OrgTeam, AppRole, CustomAccessGrant } from "../types/permissions";
 import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "../constants/featurePermissions";
 import { ClippedButton } from "./ClippedButton";
 
 type AccessLevel = "None" | "Viewer" | "Editor";
 type QaRoleType = "admin" | "guide" | "mentor";
 const QA_ROLE_LABEL: Record<QaRoleType, string> = { admin: "Admin", guide: "Guide", mentor: "Mentor" };
+const ACCESS_LEVEL_RANK: Record<AccessLevel, number> = { None: 0, Viewer: 1, Editor: 2 };
 
 interface EffectiveAccessModalProps {
   theme: "light" | "dark";
   user: UserProfile;
   departments: Department[];
+  orgTeams: OrgTeam[];
+  roles: AppRole[];
   featureAccessOverrides: FeatureAccessOverride[];
   hiddenPages: string[];
   onClose: () => void;
@@ -37,15 +40,17 @@ function resolveEffectiveAccess(
   featureId: string,
   tier: UserProfile["tier"],
   overrides: FeatureAccessOverride[],
-  hiddenPages: string[]
+  hiddenPages: string[],
+  grants: CustomAccessGrant[]
 ): { level: AccessLevel; source: string } {
+  const isDeveloperPowerTier = tier === "Developer" || tier === "Platform Admin";
   if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
-    return tier === "Developer" ? { level: "Editor", source: "Developer-only feature" } : { level: "None", source: "Developer-only feature" };
+    return isDeveloperPowerTier ? { level: "Editor", source: "Developer-only feature" } : { level: "None", source: "Developer-only feature" };
   }
-  if (hiddenPages.includes(featureId) && tier !== "Developer") {
+  if (hiddenPages.includes(featureId) && !isDeveloperPowerTier) {
     return { level: "None", source: "Hidden (Feature Visibility)" };
   }
-  if (tier === "Developer") return { level: "Editor", source: "Developer (full access)" };
+  if (isDeveloperPowerTier) return { level: "Editor", source: tier === "Developer" ? "Developer (full access)" : "Platform Admin (full access)" };
 
   const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId);
   if (!perm) return { level: "Editor", source: "Not a governed feature" };
@@ -53,9 +58,16 @@ function resolveEffectiveAccess(
   const override = overrides.find((o) => o.featureId === featureId);
   const shippedLevel = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
   const overrideLevel = tier === "Admin" ? override?.adminAccess : override?.generalAccess;
+  const baseLevel = overrideLevel ?? shippedLevel;
+  const baseSource = overrideLevel != null ? "Override" : "Default";
 
-  if (overrideLevel != null) return { level: overrideLevel, source: "Override" };
-  return { level: shippedLevel, source: "Default" };
+  // Custom Access Grants — same max-of, grant-only merge as App.tsx's
+  // hasAccess(); mirrored here for display purposes only.
+  const grant = grants.find((g) => g.active && g.grantType === "feature_access" && g.targetId === featureId);
+  if (grant?.level && ACCESS_LEVEL_RANK[grant.level] > ACCESS_LEVEL_RANK[baseLevel]) {
+    return { level: grant.level, source: "Custom Grant" };
+  }
+  return { level: baseLevel, source: baseSource };
 }
 
 /**
@@ -64,9 +76,11 @@ function resolveEffectiveAccess(
  * button). Shows Tier, Department, and QA Dashboard role at a glance, then
  * every governed feature's resolved level + source for this person's tier.
  */
-export function EffectiveAccessModal({ theme, user, departments, featureAccessOverrides, hiddenPages, onClose }: EffectiveAccessModalProps) {
+export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles, featureAccessOverrides, hiddenPages, onClose }: EffectiveAccessModalProps) {
   const dark = theme === "dark";
   const [qaRole, setQaRole] = useState<QaRoleType | null | undefined>(undefined); // undefined = loading
+  const [grants, setGrants] = useState<CustomAccessGrant[]>([]);
+  const [grantsLoading, setGrantsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,7 +99,34 @@ export function EffectiveAccessModal({ theme, user, departments, featureAccessOv
     };
   }, [user.email]);
 
+  // Full grants list is Admin+Developer+Platform-Admin-only (see server.ts's
+  // GET /api/custom-access-grants) — same posture as every other admin-only
+  // read this modal already does. Filtered to just this user + active below.
+  useEffect(() => {
+    let cancelled = false;
+    setGrantsLoading(true);
+    fetch("/api/custom-access-grants")
+      .then((res) => res.json())
+      .then((body) => {
+        if (cancelled) return;
+        setGrants(Array.isArray(body.entries) ? body.entries : []);
+      })
+      .catch(() => {
+        if (!cancelled) setGrants([]);
+      })
+      .finally(() => {
+        if (!cancelled) setGrantsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.email]);
+
+  const myActiveGrants = grants.filter((g) => g.active && g.userEmail === user.email);
+
   const departmentName = departments.find((d) => d.id === user.departmentId)?.name || "Unassigned";
+  const teamName = orgTeams.find((t) => t.id === user.orgTeamId)?.name || "Unassigned";
+  const roleName = roles.find((r) => r.id === user.roleId)?.name || "Unassigned";
 
   const levelBadgeClass = (level: AccessLevel) =>
     level === "Editor"
@@ -132,7 +173,37 @@ export function EffectiveAccessModal({ theme, user, departments, featureAccessOv
               {qaRole === undefined ? <RefreshCw className="w-3 h-3 animate-spin inline" /> : qaRole ? QA_ROLE_LABEL[qaRole] : "—"}
             </p>
           </div>
+          <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Team</p>
+            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{teamName}</p>
+          </div>
+          <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Role</p>
+            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{roleName}</p>
+          </div>
+          <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Custom Grants</p>
+            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>
+              {grantsLoading ? <RefreshCw className="w-3 h-3 animate-spin inline" /> : myActiveGrants.length}
+            </p>
+          </div>
         </div>
+
+        {myActiveGrants.length > 0 && (
+          <div className="mb-4">
+            <p className={`text-[10px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>
+              <KeyRound className="w-3 h-3" /> Active Custom Grants
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {myActiveGrants.map((g) => (
+                <div key={g.id} className={`text-[10.5px] px-2.5 py-1.5 rounded-lg border ${dark ? "border-stone-800 bg-white/[0.02] text-stone-300" : "border-stone-200 bg-stone-50/60 text-stone-700"}`}>
+                  <span className="font-bold">{g.level ?? "None"}</span> access to <span className="font-mono">{DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === g.targetId)?.name || g.targetId}</span>
+                  {g.note && <span className={dark ? "text-stone-500" : "text-stone-400"}> — {g.note}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <p className={`text-[10px] font-black uppercase tracking-wider mb-2 ${dark ? "text-stone-500" : "text-stone-400"}`}>
           Feature Access ({user.tier} tier)
@@ -141,7 +212,7 @@ export function EffectiveAccessModal({ theme, user, departments, featureAccessOv
           <table className="w-full border-collapse">
             <tbody>
               {DEFAULT_FEATURE_PERMISSIONS.map((perm, idx) => {
-                const { level, source } = resolveEffectiveAccess(perm.id, user.tier, featureAccessOverrides, hiddenPages);
+                const { level, source } = resolveEffectiveAccess(perm.id, user.tier, featureAccessOverrides, hiddenPages, myActiveGrants);
                 return (
                   <tr key={perm.id} className={`border-b last:border-b-0 ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
                     <td className={`px-2.5 py-1.5 text-[11px] font-bold ${dark ? "text-stone-200" : "text-stone-800"}`}>{perm.name}</td>

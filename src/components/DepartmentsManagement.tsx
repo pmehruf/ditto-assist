@@ -11,7 +11,7 @@ import { ClippedButton } from "./ClippedButton";
 
 interface DepartmentsManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   departments: Department[];
   /** Full directory member count is only meaningful if the caller has it —
    * ProfileAccessPage passes App.tsx's usersList cache. This is a secondary,
@@ -37,7 +37,7 @@ interface DepartmentsManagementProps {
  */
 export function DepartmentsManagement({ theme, effectiveTier, departments, usersList, onChanged, logAction }: DepartmentsManagementProps) {
   const dark = theme === "dark";
-  const canEdit = effectiveTier === "Developer";
+  const canEdit = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");

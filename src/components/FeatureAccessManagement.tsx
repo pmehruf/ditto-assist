@@ -15,7 +15,7 @@ const ACCESS_LEVELS: AccessLevel[] = ["None", "Viewer", "Editor"];
 
 interface FeatureAccessManagementProps {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   overrides: FeatureAccessOverride[];
   /** Called after a successful save/reset so App.tsx's live override state
    * (the one hasAccess() actually reads) refreshes immediately, instead of
@@ -39,7 +39,7 @@ interface FeatureAccessManagementProps {
  */
 export function FeatureAccessManagement({ theme, effectiveTier, overrides, onChanged, logAction }: FeatureAccessManagementProps) {
   const dark = theme === "dark";
-  const canEdit = effectiveTier === "Developer";
+  const canEdit = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);

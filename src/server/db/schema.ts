@@ -177,7 +177,15 @@ export const flaggedIssues = pgTable("flagged_issues", {
 // primary key — every lookup in this app is keyed by the caller's verified
 // Google session email, never by a synthetic id.
 // ─────────────────────────────────────────────────────────────────────────
-export const userTierEnum = pgEnum("user_tier", ["General", "Admin", "Developer"]);
+// "Platform Admin" added 2026-08 (Access Control system, Phase 2): a tier
+// between Admin and Developer with every Developer capability EXCEPT the 4
+// protections carved out for real Developer accounts specifically — see
+// isDeveloperPower()/the Developer-record-protection checks in server.ts's
+// PATCH/DELETE /api/users routes. Existing Postgres rows are untouched by
+// adding an enum value; only a Developer (or a Platform Admin, per the same
+// rule that lets Platform Admin promote another Platform Admin) can actually
+// grant this tier to someone — see POST/PATCH /api/users.
+export const userTierEnum = pgEnum("user_tier", ["General", "Admin", "Platform Admin", "Developer"]);
 // "Disabled" replaces the old "Pending First Login" value — that used to
 // mark a user a Developer pre-added who hadn't completed first-time setup yet;
 // it's now a real deactivation flag a Developer can set to lock someone out
@@ -210,6 +218,23 @@ export const users = pgTable("users", {
   // (Developer-only PATCH, or set at Admin+Developer creation time via
   // POST) — one place to assign membership, not duplicated elsewhere.
   departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  // Bliss / Falcon / Central (or whatever a Developer/Platform Admin names
+  // them) — see the org_teams table's own comment below for why this is a
+  // SEPARATE concept from department, and from the pre-existing
+  // announcement_team enum (Health/Term skill-domain, unrelated). Nullable
+  // for the same "don't fabricate historical org data" reason department_id
+  // is nullable (see PED_REPOSITORY... no — see departments' comment above):
+  // no existing user is assumed to belong to any team. Required going
+  // forward only at the point of creating a NEW directory entry (enforced
+  // in POST /api/users, not at the DB level) — editing an existing user
+  // never forces a retroactive guess.
+  orgTeamId: integer("org_team_id").references(() => orgTeams.id, { onDelete: "set null" }),
+  // Job-function role (Advisor, Mentor, Guide, Ops, ...) — see the roles
+  // table's own comment below for why this is deliberately independent of
+  // both `tier` (access level) and QA Dashboard's own admin/guide/mentor
+  // role (qa_dashboard_roles, unrelated, unchanged). Nullable, optional,
+  // same reasoning as department_id.
+  roleId: integer("role_id").references(() => roles.id, { onDelete: "set null" }),
 });
 
 export type UserRow = typeof users.$inferSelect;
@@ -804,6 +829,165 @@ export const departments = pgTable("departments", {
 
 export type DepartmentRow = typeof departments.$inferSelect;
 export type NewDepartmentRow = typeof departments.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// org_teams — Bliss / Falcon / Central (Access Control system, Phase 2,
+// 2026-08). Deliberately named "org_teams" in the database (never "teams")
+// to avoid any confusion with the pre-existing, completely unrelated
+// announcement_team enum (Health/Term skill-domain, see the `announcements`
+// table above) — the UI still just calls this "Team".
+//
+// Same shape and same reasoning as `departments` above: a freely-managed
+// catalog (Developer/Platform Admin can add/rename/deactivate), no seed
+// membership assumed for existing users, deactivate-not-delete as the only
+// removal path. Seeded here with Bliss/Falcon/Central as convenience
+// starting rows ONLY — still a real, editable table, not a hardcoded enum,
+// specifically so a 4th team can be added later without a migration.
+//
+// UNLIKE department_id, this is meant to eventually participate in actual
+// data-scoping decisions (which pages someone can see, once that
+// enforcement is built — not yet, as of this migration: see roles/
+// user_relationships below for the rest of that foundation). It carries no
+// access effect on its own today; it is inert metadata until a future page
+// explicitly consults it, exactly like department_id already is.
+// ─────────────────────────────────────────────────────────────────────────
+export const orgTeams = pgTable("org_teams", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  nameUnique: uniqueIndex("org_teams_name_unique").on(table.name),
+}));
+
+export type OrgTeamRow = typeof orgTeams.$inferSelect;
+export type NewOrgTeamRow = typeof orgTeams.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// roles — job-function role (Advisor, Mentor, Guide, Ops, ...), Access
+// Control system Phase 2 (2026-08). Same shape/reasoning as departments and
+// org_teams above (freely-managed catalog, deactivate-not-delete).
+//
+// Deliberately a NEW, independent field — NOT the same thing as `tier`
+// (General/Admin/Platform Admin/Developer, an access level) and NOT the
+// same thing as qa_dashboard_roles' admin/guide/mentor (a QA-Dashboard-
+// specific role sourced from a Google Sheet name match, unchanged by this
+// migration). Two people can hold the same `tier` but different `role` (an
+// Admin who is a Mentor vs an Admin who is a plain Advisor), and this
+// table's rows have no relationship to qa_dashboard_roles' rows.
+//
+// Seeded with "Advisor", "Mentor", "Guide" as convenience starting rows —
+// matching the vocabulary already used by qa_dashboard_roles for
+// familiarity, not because the two systems are linked.
+// ─────────────────────────────────────────────────────────────────────────
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  nameUnique: uniqueIndex("roles_name_unique").on(table.name),
+}));
+
+export type RoleRow = typeof roles.$inferSelect;
+export type NewRoleRow = typeof roles.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// relationship_types — the catalog of relationship kinds usable in
+// user_relationships below (e.g. "Mentor", "Guide", "Manager"). A separate
+// lookup table (rather than a hardcoded enum) so a Developer/Platform Admin
+// can add a new relationship kind from the UI without a deploy — the same
+// "extensible without another migration" reasoning as org_teams/roles.
+// Seeded with "Mentor" and "Guide" to match the concrete example given when
+// this system was designed (a mentor scoped to their mapped mentees).
+// ─────────────────────────────────────────────────────────────────────────
+export const relationshipTypes = pgTable("relationship_types", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  nameUnique: uniqueIndex("relationship_types_name_unique").on(table.name),
+}));
+
+export type RelationshipTypeRow = typeof relationshipTypes.$inferSelect;
+export type NewRelationshipTypeRow = typeof relationshipTypes.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// user_relationships — explicit person-to-person mappings (e.g. "this
+// Mentor's mentees are exactly these advisors"), Access Control system
+// Phase 2 (2026-08). This is the concrete answer to "mapped to that
+// particular member" from the original spec: a generic (owner, subject,
+// relationship type) triple rather than a single hardcoded "reports to"
+// field, so one person can hold multiple relationship kinds at once (e.g.
+// mentored by one person AND guided by another) without another migration.
+//
+// ownerEmail is the person the relationship is FROM (e.g. the mentor);
+// subjectEmail is who it's TO (e.g. the mentee). Both cascade-delete with
+// their user row — a mapping referencing a since-deleted account is
+// meaningless to keep around, unlike departments/org_teams/roles, which
+// intentionally survive their last member via set-null.
+//
+// Inert metadata as of this migration, exactly like org_teams/roles above —
+// nothing reads this table yet to actually filter what anyone sees. It
+// exists so that enforcement can be added to a specific page later without
+// yet another schema change.
+// ─────────────────────────────────────────────────────────────────────────
+export const userRelationships = pgTable("user_relationships", {
+  id: serial("id").primaryKey(),
+  ownerEmail: varchar("owner_email", { length: 320 }).notNull().references(() => users.email, { onDelete: "cascade" }),
+  subjectEmail: varchar("subject_email", { length: 320 }).notNull().references(() => users.email, { onDelete: "cascade" }),
+  relationshipTypeId: integer("relationship_type_id").notNull().references(() => relationshipTypes.id, { onDelete: "restrict" }),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tripleUnique: uniqueIndex("user_relationships_triple_unique").on(table.ownerEmail, table.subjectEmail, table.relationshipTypeId),
+}));
+
+export type UserRelationshipRow = typeof userRelationships.$inferSelect;
+export type NewUserRelationshipRow = typeof userRelationships.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// custom_access_grants — per-INDIVIDUAL access overrides for when the
+// structured Team/Department/Role model doesn't fit someone (Access Control
+// system Phase 2, 2026-08). Deliberately ADD-ONLY: a grant can give someone
+// MORE than their tier/role would normally allow, but is never consulted to
+// take anything away — the structured model always stays a safety floor
+// (see hasAccess() in App.tsx, which takes the MAX of the tier-resolved
+// level and any active grant's level, never the grant alone).
+//
+// `grantType` + `targetId` are deliberately free text, not a foreign key,
+// so a new kind of grant (right now only "feature_access", where targetId
+// is a featurePermissions id) can be introduced later without a migration —
+// same "extensible" reasoning as relationship_types. `level` only has
+// meaning for grant types that resolve to a None/Viewer/Editor level;
+// reuses feature_access_level rather than inventing a parallel enum.
+//
+// active (not hard-delete) preserves a record of what WAS granted and to
+// whom, for audit purposes, even after a grant is revoked.
+// ─────────────────────────────────────────────────────────────────────────
+export const customAccessGrants = pgTable("custom_access_grants", {
+  id: serial("id").primaryKey(),
+  userEmail: varchar("user_email", { length: 320 }).notNull().references(() => users.email, { onDelete: "cascade" }),
+  grantType: text("grant_type").notNull(),
+  targetId: text("target_id").notNull(),
+  level: featureAccessLevelEnum("level"),
+  note: text("note"),
+  active: boolean("active").notNull().default(true),
+  grantedBy: text("granted_by").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tripleUnique: uniqueIndex("custom_access_grants_triple_unique").on(table.userEmail, table.grantType, table.targetId),
+}));
+
+export type CustomAccessGrantRow = typeof customAccessGrants.$inferSelect;
+export type NewCustomAccessGrantRow = typeof customAccessGrants.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // qa_dashboard_google_connection — the QA Dashboard's stored Google OAuth

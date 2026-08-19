@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion } from "lucide-react";
 import { UserProfile, LoggedUser } from "../types/user";
-import { Department, FeatureAccessOverride } from "../types/permissions";
+import { Department, FeatureAccessOverride, OrgTeam, AppRole } from "../types/permissions";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
@@ -28,7 +28,7 @@ interface ProfileAccessManagementProps {
   theme: "light" | "dark";
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
-  effectiveTier: "General" | "Admin" | "Developer";
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
   /** Organizational metadata only — see types/permissions.ts's doc comment
@@ -36,6 +36,11 @@ interface ProfileAccessManagementProps {
    * dropdown below; an already-assigned-but-now-inactive department still
    * displays correctly on existing rows (see departmentLabel). */
   departments: Department[];
+  /** Foundation-only Team/Role catalogs (see types/permissions.ts's doc
+   * comments on OrgTeam/AppRole) — same "Active only in the dropdown,
+   * inactive-but-assigned still displays" posture as departments above. */
+  orgTeams: OrgTeam[];
+  roles: AppRole[];
   /** For the "Effective Access" panel — see EffectiveAccessModal. Both are
    * already live App.tsx state (the same values hasAccess() itself reads),
    * so the panel always reflects the current, real access rules. */
@@ -43,10 +48,16 @@ interface ProfileAccessManagementProps {
   hiddenPages: string[];
 }
 
-const TIERS: UserProfile["tier"][] = ["General", "Admin", "Developer"];
-// Admin can add users, but can't mint a new Developer from this form — matches
-// the server-side check in POST /api/users.
+const TIERS: UserProfile["tier"][] = ["General", "Admin", "Platform Admin", "Developer"];
+// Admin can add users, but can't mint a new Developer or Platform Admin from
+// this form — matches the server-side check in POST /api/users.
 const ADMIN_ADDABLE_TIERS: UserProfile["tier"][] = ["General", "Admin"];
+// Platform Admin can add users up to and including another Platform Admin,
+// but never a Developer — matches server.ts's POST /api/users check
+// (`tier === "Platform Admin" && callerTier === "Admin"` is the only block;
+// Platform Admin itself is still blocked from minting a Developer by the
+// separate `tier === "Developer" && callerTier !== "Developer"` check).
+const PLATFORM_ADMIN_ADDABLE_TIERS: UserProfile["tier"][] = ["General", "Admin", "Platform Admin"];
 const STATUSES: UserProfile["status"][] = ["Active", "Disabled"];
 
 const emptyDraft = (): UserProfile => ({
@@ -57,6 +68,8 @@ const emptyDraft = (): UserProfile => ({
   status: "Active",
   tags: [],
   departmentId: null,
+  orgTeamId: null,
+  roleId: null,
 });
 
 /**
@@ -75,14 +88,30 @@ const emptyDraft = (): UserProfile => ({
  * doesn't read `usersList` for its own display, but does patch `setUsersList`
  * after every create/edit/delete so that cache stays correct too.
  */
-export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, currentUser, setChangeLogs, departments, featureAccessOverrides, hiddenPages }: ProfileAccessManagementProps) {
+export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, currentUser, setChangeLogs, departments, orgTeams, roles, featureAccessOverrides, hiddenPages }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
   const isDeveloper = effectiveTier === "Developer";
+  // Platform Admin gets the same edit/delete/tier-assign rights as a real
+  // Developer EXCEPT for the 3 Developer-record protections enforced
+  // server-side (see server.ts's isDeveloperPower/blanket Developer-record
+  // checks) — those are handled per-row below via canEditRow, not here.
+  const isDeveloperPowerTier = isDeveloper || effectiveTier === "Platform Admin";
   // Admin can see and use "Add User" (same pattern as "Add Plan" on the
   // Plan Management page); Edit/Delete stay visible for Admin but render
-  // disabled — Developer clearance is required to actually edit or remove an
-  // existing directory entry.
-  const canManage = effectiveTier === "Admin" || isDeveloper;
+  // disabled — Developer (or Platform Admin) clearance is required to
+  // actually edit or remove an existing directory entry.
+  const canManage = effectiveTier === "Admin" || isDeveloperPowerTier;
+  // Tiers this caller may assign — mirrors server.ts's POST/PATCH
+  // /api/users tier-clearance checks exactly.
+  const assignableTiers: UserProfile["tier"][] = isDeveloper
+    ? TIERS
+    : effectiveTier === "Platform Admin"
+      ? PLATFORM_ADMIN_ADDABLE_TIERS
+      : ADMIN_ADDABLE_TIERS;
+  // A Platform Admin (not a real Developer) may not edit/delete an existing
+  // Developer's row at all — mirrors server.ts's blanket
+  // `existing.tier === "Developer" && callerTier !== "Developer"` check.
+  const canEditRow = (user: UserProfile) => isDeveloperPowerTier && !(user.tier === "Developer" && !isDeveloper);
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
@@ -248,7 +277,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const res = await fetch(`/api/users/${encodeURIComponent(editingEmail)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, tags: draft.tags || [], departmentId: draft.departmentId ?? null }),
+        body: JSON.stringify({ name: draft.name, tactId: draft.tactId, tier: draft.tier, status: draft.status, tags: draft.tags || [], departmentId: draft.departmentId ?? null, orgTeamId: draft.orgTeamId ?? null, roleId: draft.roleId ?? null }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
@@ -343,14 +372,16 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   const tierBadgeClass = (tier: UserProfile["tier"]) =>
     tier === "Developer"
       ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
-      : tier === "Admin"
-        ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
-        // "General" text-stone-400 measured ~1.82:1 in Light theme — two
-        // shades of the same gray, essentially unreadable (Issue 14). Dark
-        // theme already passes, so only the light-theme text darkens here.
-        : dark
-          ? "bg-stone-500/15 text-stone-400 border-stone-500/30"
-          : "bg-stone-500/15 text-stone-700 border-stone-500/30";
+      : tier === "Platform Admin"
+        ? "bg-violet-500/15 text-violet-400 border-violet-500/30"
+        : tier === "Admin"
+          ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
+          // "General" text-stone-400 measured ~1.82:1 in Light theme — two
+          // shades of the same gray, essentially unreadable (Issue 14). Dark
+          // theme already passes, so only the light-theme text darkens here.
+          : dark
+            ? "bg-stone-500/15 text-stone-400 border-stone-500/30"
+            : "bg-stone-500/15 text-stone-700 border-stone-500/30";
 
   // Active departments plus, if given, one already-assigned-but-now-inactive
   // department — keeps an existing row's dropdown showing its real current
@@ -362,6 +393,25 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       .map((d) => ({ value: String(d.id), label: d.active ? d.name : `${d.name} (Inactive)` })),
   ];
   const departmentLabel = (id?: number | null) => departments.find((d) => d.id === id)?.name || null;
+
+  // Same "active + already-assigned-but-now-inactive" pattern as
+  // departmentOptions above — see types/permissions.ts's doc comments on
+  // OrgTeam/AppRole for why these are currently foundation-only metadata.
+  const teamOptions = (currentId?: number | null) => [
+    { value: "", label: "Unassigned" },
+    ...orgTeams
+      .filter((t) => t.active || t.id === currentId)
+      .map((t) => ({ value: String(t.id), label: t.active ? t.name : `${t.name} (Inactive)` })),
+  ];
+  const teamLabel = (id?: number | null) => orgTeams.find((t) => t.id === id)?.name || null;
+
+  const roleOptions = (currentId?: number | null) => [
+    { value: "", label: "Unassigned" },
+    ...roles
+      .filter((r) => r.active || r.id === currentId)
+      .map((r) => ({ value: String(r.id), label: r.active ? r.name : `${r.name} (Inactive)` })),
+  ];
+  const roleLabel = (id?: number | null) => roles.find((r) => r.id === id)?.name || null;
 
   const statusBadgeClass = (status: UserProfile["status"]) =>
     status === "Active"
@@ -572,7 +622,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         )}
 
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
-          <table className="w-full border-collapse min-w-[820px]">
+          <table className="w-full border-collapse min-w-[1020px]">
             <thead>
               <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
                 <SortableTh label="Name" sortKey="name" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -580,6 +630,8 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <th className={thClass}>Tags</th>
                 <th className={thClass}>Department</th>
+                <th className={thClass}>Team</th>
+                <th className={thClass}>Role</th>
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Joined" sortKey="createdAt" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -623,10 +675,28 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   <td className={tdClass}>
                     <CustomSelect
                       theme={theme}
+                      value={newDraft.orgTeamId != null ? String(newDraft.orgTeamId) : ""}
+                      onChange={(val) => setNewDraft(d => ({ ...d, orgTeamId: val ? Number(val) : null }))}
+                      triggerClassName={selectTriggerClass}
+                      options={teamOptions(newDraft.orgTeamId)}
+                    />
+                  </td>
+                  <td className={tdClass}>
+                    <CustomSelect
+                      theme={theme}
+                      value={newDraft.roleId != null ? String(newDraft.roleId) : ""}
+                      onChange={(val) => setNewDraft(d => ({ ...d, roleId: val ? Number(val) : null }))}
+                      triggerClassName={selectTriggerClass}
+                      options={roleOptions(newDraft.roleId)}
+                    />
+                  </td>
+                  <td className={tdClass}>
+                    <CustomSelect
+                      theme={theme}
                       value={newDraft.tier}
                       onChange={(val) => setNewDraft(d => ({ ...d, tier: val as UserProfile["tier"] }))}
                       triggerClassName={selectTriggerClass}
-                      options={(isDeveloper ? TIERS : ADMIN_ADDABLE_TIERS).map(t => ({ value: t, label: t }))}
+                      options={assignableTiers.map(t => ({ value: t, label: t }))}
                     />
                   </td>
                   <td className={tdClass}>
@@ -656,14 +726,14 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
               {!loading && entries.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 9 : 8} className="py-10 text-center text-xs font-semibold text-stone-400">
+                  <td colSpan={canManage ? 11 : 10} className="py-10 text-center text-xs font-semibold text-stone-400">
                     {searchQuery ? `No directory entries match "${searchQuery}".` : "No directory entries yet."}
                   </td>
                 </tr>
               )}
 
               {entries.map((user, idx) => {
-                const isEditing = isDeveloper && editingEmail === user.email;
+                const isEditing = canEditRow(user) && editingEmail === user.email;
                 const row = isEditing && draft ? draft : user;
                 return (
                   <tr
@@ -740,10 +810,40 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       {isEditing ? (
                         <CustomSelect
                           theme={theme}
+                          value={row.orgTeamId != null ? String(row.orgTeamId) : ""}
+                          onChange={(val) => setDraft(d => d && { ...d, orgTeamId: val ? Number(val) : null })}
+                          triggerClassName={selectTriggerClass}
+                          options={teamOptions(row.orgTeamId)}
+                        />
+                      ) : teamLabel(user.orgTeamId) ? (
+                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{teamLabel(user.orgTeamId)}</span>
+                      ) : (
+                        <span className={`text-[10.5px] ${dark ? "text-stone-600" : "text-stone-400"}`}>—</span>
+                      )}
+                    </td>
+                    <td className={tdClass}>
+                      {isEditing ? (
+                        <CustomSelect
+                          theme={theme}
+                          value={row.roleId != null ? String(row.roleId) : ""}
+                          onChange={(val) => setDraft(d => d && { ...d, roleId: val ? Number(val) : null })}
+                          triggerClassName={selectTriggerClass}
+                          options={roleOptions(row.roleId)}
+                        />
+                      ) : roleLabel(user.roleId) ? (
+                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{roleLabel(user.roleId)}</span>
+                      ) : (
+                        <span className={`text-[10.5px] ${dark ? "text-stone-600" : "text-stone-400"}`}>—</span>
+                      )}
+                    </td>
+                    <td className={tdClass}>
+                      {isEditing ? (
+                        <CustomSelect
+                          theme={theme}
                           value={row.tier}
                           onChange={(val) => setDraft(d => d && { ...d, tier: val as UserProfile["tier"] })}
                           triggerClassName={selectTriggerClass}
-                          options={TIERS.map(t => ({ value: t, label: t }))}
+                          options={assignableTiers.map(t => ({ value: t, label: t }))}
                         />
                       ) : (
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${tierBadgeClass(user.tier)}`}>
@@ -792,19 +892,19 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                             </ClippedButton>
                             <ClippedButton
                               onClick={() => startEdit(user)}
-                              disabled={!isDeveloper}
+                              disabled={!canEditRow(user)}
                               cornerBg={dark ? "#0e2236" : "#ffffff"}
                               className={`p-1.5 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`}
-                              title={isDeveloper ? "Edit user" : "Developer clearance required to edit users"}
+                              title={canEditRow(user) ? "Edit user" : user.tier === "Developer" ? "Only a Developer can edit a Developer's account" : "Developer (or Platform Admin) clearance required to edit users"}
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </ClippedButton>
                             <ClippedButton
                               onClick={() => deleteUser(user.email)}
-                              disabled={!isDeveloper}
+                              disabled={!canEditRow(user)}
                               cornerBg={dark ? "#0e2236" : "#ffffff"}
                               className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`}
-                              title={isDeveloper ? "Remove user" : "Developer clearance required to remove users"}
+                              title={canEditRow(user) ? "Remove user" : user.tier === "Developer" ? "Only a Developer can remove a Developer's account" : "Developer (or Platform Admin) clearance required to remove users"}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </ClippedButton>
@@ -824,11 +924,11 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
             Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
             {"–"}
             {Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()}
-            {searchQuery ? " matching users" : " users"}. {isDeveloper
+            {searchQuery ? " matching users" : " users"}. {isDeveloperPowerTier
               ? "Changes are saved to the server."
               : canManage
-                ? "Admin clearance lets you add new users. Editing or removing an existing user requires Developer clearance."
-                : "Admin clearance grants read-only visibility into the directory. Developer clearance is required to add, edit, or remove users."}
+                ? "Admin clearance lets you add new users. Editing or removing an existing user requires Developer or Platform Admin clearance."
+                : "Admin clearance grants read-only visibility into the directory. Developer or Platform Admin clearance is required to add, edit, or remove users."}
           </p>
           <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
@@ -839,6 +939,8 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
           theme={theme}
           user={effectiveAccessUser}
           departments={departments}
+          orgTeams={orgTeams}
+          roles={roles}
           featureAccessOverrides={featureAccessOverrides}
           hiddenPages={hiddenPages}
           onClose={() => setEffectiveAccessUser(null)}
