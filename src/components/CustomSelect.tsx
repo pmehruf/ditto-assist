@@ -10,6 +10,14 @@ import { ChevronDown, Check } from "lucide-react";
 export interface CustomSelectOption {
   value: string;
   label: string;
+  /** Overrides what's shown in the closed trigger once this option is
+   * selected, while `label` still controls the row inside the open panel.
+   * Falls back to `label` when omitted. Added for the declaration plan
+   * picker: a disabled plan's row is suffixed "— Disabled" so it's clear
+   * while browsing, but once selected the big status card below the
+   * dropdown already conveys that, so the trigger itself shows the plain
+   * name instead of repeating it. */
+  triggerLabel?: string;
   disabled?: boolean;
 }
 
@@ -165,7 +173,7 @@ export function CustomSelect({
             !selected ? `font-medium ${dark ? "text-slate-400" : "text-stone-400"}` : ""
           }`}
         >
-          {selected ? selected.label : placeholder || "Select…"}
+          {selected ? (selected.triggerLabel ?? selected.label) : placeholder || "Select…"}
         </span>
       </button>
       <ChevronDown

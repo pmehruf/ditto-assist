@@ -360,11 +360,16 @@ export function LookupPage({
                       value: plan,
                       // Kept selectable (never CustomSelectOption.disabled)
                       // — an advisor should be able to pick a disabled plan
-                      // to see WHY it's disabled (the banner below), not
-                      // have it silently unclickable. The label suffix is
-                      // what surfaces the state before they've even picked
-                      // it.
+                      // to see WHY it's disabled (the queue card below),
+                      // not have it silently unclickable. The label suffix
+                      // is what surfaces the state while still browsing the
+                      // open list.
                       label: disabledPlanNotes[plan] !== undefined ? `${getPlanDisplayLabel(plan)} — Disabled` : getPlanDisplayLabel(plan),
+                      // Once picked, the queue card below already takes over
+                      // as the disabled-plan message — repeating "— Disabled"
+                      // on the closed trigger too would be redundant, so the
+                      // trigger always shows the plain name.
+                      triggerLabel: getPlanDisplayLabel(plan),
                     }))}
                     triggerClassName={`w-full flex items-center justify-between gap-2 pl-3 pr-8 h-[42px] rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
                       theme === "dark"
@@ -372,33 +377,6 @@ export function LookupPage({
                         : "bg-white border-stone-250 text-stone-850"
                     }`}
                   />
-                  {/* Disabled-plan note — set from the Declaration Assistant
-                      Control page. Search/submit is blocked while this is
-                      showing (see the PrimaryCtaButton below), so this is
-                      the advisor's explanation for why, not just a caution.
-                      The mascot mirrors the same "temporarily unavailable"
-                      framing used elsewhere so a disabled plan reads as a
-                      normal, on-brand app state rather than an error. */}
-                  {isSelectedPlanDisabled && (
-                    <div
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-[11px] font-semibold leading-snug ${
-                        theme === "dark"
-                          ? "bg-amber-500/10 border-amber-500/25 text-amber-200"
-                          : "bg-amber-50 border-amber-200 text-amber-900"
-                      }`}
-                    >
-                      <MascotWithFallback
-                        src="/assets/.aistudio/plan-disabled-mascot.png"
-                        alt="Plan temporarily unavailable"
-                        type="doctor"
-                        className="w-11 h-11 shrink-0 object-contain -my-1"
-                      />
-                      <span>
-                        This plan is temporarily disabled.
-                        {selectedPlanDisabledNote ? ` ${selectedPlanDisabledNote}` : " Check back later, or contact the tech team for updates."}
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 {/* BOX B: Search & Map Condition */}
@@ -422,6 +400,8 @@ export function LookupPage({
                       <div
                         style={{ borderRadius: "12px", height: "42px" }}
                         className={`flex items-center border transition-all duration-200 shadow-sm focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/25 flex-grow ${
+                          isSelectedPlanDisabled ? "opacity-50" : ""
+                        } ${
                           theme === "dark"
                             ? "bg-[#102236] border-[#1e3e5c]"
                             : "bg-white border-stone-250"
@@ -432,6 +412,8 @@ export function LookupPage({
                             ref={pedInputRef}
                             type="text"
                             value={pedInput}
+                            disabled={isSelectedPlanDisabled}
+                            title={isSelectedPlanDisabled ? "This plan is temporarily disabled — see the note below." : undefined}
                             onChange={(e) => {
                               setPedInput(e.target.value);
                               setActiveSuggestionIndex(-1);
@@ -542,7 +524,10 @@ export function LookupPage({
                       </div>
                       <button
                         type="button"
+                        disabled={isSelectedPlanDisabled}
+                        title={isSelectedPlanDisabled ? "This plan is temporarily disabled — see the note below." : undefined}
                         onClick={() => {
+                          if (isSelectedPlanDisabled) return;
                           handleAddLookupPed(pedInput);
                           setActiveSuggestionIndex(-1);
                         }}
@@ -555,7 +540,11 @@ export function LookupPage({
                         // primary/neutral CTA navy pass, since it never went
                         // through the bg-blue-600/var(--accent-solid)
                         // classes that pass covered.
-                        className="h-[42px] px-4 border shadow-sm flex items-center justify-center gap-1.5 shrink-0 select-none text-xs font-mono font-bold uppercase tracking-[0.2em] transition-all duration-200 active:scale-95 cursor-pointer relative isolate overflow-hidden bg-[var(--action-navy)] border-[var(--action-navy)] text-[var(--on-action-navy)] hover:bg-[var(--action-navy-hover)] hover:border-[var(--action-navy-hover)]"
+                        className={`h-[42px] px-4 border shadow-sm flex items-center justify-center gap-1.5 shrink-0 select-none text-xs font-mono font-bold uppercase tracking-[0.2em] transition-all duration-200 active:scale-95 relative isolate overflow-hidden bg-[var(--action-navy)] border-[var(--action-navy)] text-[var(--on-action-navy)] ${
+                          isSelectedPlanDisabled
+                            ? "opacity-50 cursor-not-allowed"
+                            : "cursor-pointer hover:bg-[var(--action-navy-hover)] hover:border-[var(--action-navy-hover)]"
+                        }`}
                       >
                         <span
                           aria-hidden="true"
@@ -589,7 +578,7 @@ export function LookupPage({
                     </p>
 
                     {/* Floating Dropdown for Suggestions */}
-                    {pedInput.trim().length > 0 &&
+                    {!isSelectedPlanDisabled && pedInput.trim().length > 0 &&
                       (() => {
                         const query = pedInput.trim();
                         // Same grouping as the onKeyDown handler above — each
@@ -760,19 +749,52 @@ export function LookupPage({
                   padding: "clamp(10px, 1.5vh, 16px)",
                   // Quiet per-plan insurer border hint — see queueAccentHex
                   // comment above. Falls back to the same neutral look as
-                  // before when no plan is selected/known.
-                  borderColor: selectedPlan ? queueAccentHex : undefined,
+                  // before when no plan is selected/known. A disabled plan
+                  // overrides this with an amber cue instead (set via the
+                  // className branch below) rather than the insurer's own
+                  // brand color, since this card's job right now is "flag
+                  // unavailable", not "identify the plan".
+                  borderColor: isSelectedPlanDisabled ? undefined : selectedPlan ? queueAccentHex : undefined,
                 }}
                 className={`rounded-2xl relative flex flex-col justify-between border overflow-hidden ${
-                  theme === "dark"
-                    ? selectedPlan
-                      ? "bg-white/[0.04]"
-                      : "border-white/[0.12] bg-white/[0.04]"
-                    : selectedPlan
-                      ? "bg-stone-100/60"
-                      : "border-stone-300 bg-stone-100/60"
+                  isSelectedPlanDisabled
+                    ? theme === "dark"
+                      ? "border-amber-500/30 bg-amber-500/[0.06]"
+                      : "border-amber-300 bg-amber-50/70"
+                    : theme === "dark"
+                      ? selectedPlan
+                        ? "bg-white/[0.04]"
+                        : "border-white/[0.12] bg-white/[0.04]"
+                      : selectedPlan
+                        ? "bg-stone-100/60"
+                        : "border-stone-300 bg-stone-100/60"
                 }`}
               >
+                {isSelectedPlanDisabled ? (
+                  /* Disabled-plan takeover — this queue card is the primary
+                     surface for the "why can't I search this plan" message
+                     (the plan picker's own trigger just shows the plain
+                     name now, see triggerLabel above), so it replaces the
+                     normal empty-state/tag-list/counter content entirely
+                     rather than squeezing a small note in alongside it. */
+                  <div className="flex flex-col items-center justify-center text-center gap-3 py-2 px-2 min-h-[106px]">
+                    <MascotWithFallback
+                      src="/assets/.aistudio/plan-disabled-mascot.png"
+                      alt="Plan temporarily unavailable"
+                      type="doctor"
+                      className="object-contain shrink-0"
+                      style={{ height: "clamp(80px, 14vh, 120px)", width: "auto" }}
+                    />
+                    <div className="max-w-md">
+                      <p className={`text-sm font-black ${theme === "dark" ? "text-amber-200" : "text-amber-800"}`}>
+                        This plan is temporarily disabled
+                      </p>
+                      <p className={`text-xs font-medium leading-relaxed mt-1 ${theme === "dark" ? "text-stone-300" : "text-stone-600"}`}>
+                        {selectedPlanDisabledNote || "Check back later, or contact the tech team for updates."}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
                 <div className="flex items-start justify-between gap-4">
                   {/* Selected condition list / empty text */}
                   <div className="flex-grow text-left relative z-10 min-h-[46px] pl-20 pr-2">
@@ -894,6 +916,7 @@ export function LookupPage({
                     />
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Helper text */}
@@ -932,7 +955,7 @@ export function LookupPage({
                   className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
                   title={
                     isSelectedPlanDisabled
-                      ? "This plan is temporarily disabled — see the note above."
+                      ? "This plan is temporarily disabled — see the note below."
                       : !selectedPlan || lookupPeds.length === 0
                       ? "Select a plan and add at least one condition to proceed"
                       : ""
@@ -955,7 +978,7 @@ export function LookupPage({
                     id="match-disclosure-button"
                     title={
                       isSelectedPlanDisabled
-                        ? "This plan is temporarily disabled — see the note above."
+                        ? "This plan is temporarily disabled — see the note below."
                         : !selectedPlan || lookupPeds.length === 0
                         ? "Select a plan and add at least one condition to proceed"
                         : ""
