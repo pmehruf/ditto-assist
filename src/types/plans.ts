@@ -47,5 +47,13 @@ export interface DbPlanConfigEntry {
    * older rows fetched before a re-save won't have it set client-side. */
   specificIllnesses?: SpecificIllnessEntry[];
   overrides?: { excludePrediabetes?: boolean; requiresInsulinForDiabetes?: boolean; bypassBenignTumors?: boolean };
+  /** Takes this plan out of service for advisors — see schema.ts's
+   * plan_configs.disabled comment. Optional/defaults to false since it
+   * postdates plan_configs (migration 0036) — older rows fetched before a
+   * re-save won't have it set client-side. */
+  disabled?: boolean;
+  /** Shown to the advisor in the declaration dropdown once they select a
+   * disabled plan — why it's disabled and/or what to do instead. */
+  disabledNote?: string | null;
   addedBy: string;
 }

@@ -253,6 +253,13 @@
       "when": 1786800000000,
       "tag": "0035_kb_chunks_embedding_idx_record",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786900000000,
+      "tag": "0036_plan_configs_disabled",
+      "breakpoints": true
     }
   ]
 }

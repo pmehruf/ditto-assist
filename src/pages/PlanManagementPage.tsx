@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Plus, Trash2, Pencil, X, Sparkles, Wand2, AlertTriangle, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, Pencil, X, Sparkles, Wand2, AlertTriangle, Check, ChevronDown, ChevronUp, PowerOff } from "lucide-react";
 import { getPlanConfig, CATEGORY_LABELS, guessCategoryMap } from "../types.js";
 import { DbPlanConfigEntry, PlanQuestionEntry, PlanQuestionTag, SpecificIllnessEntry } from "../types/plans";
 import { LoggedUser } from "../types/user";
@@ -93,11 +93,16 @@ function normalizeCategoryMapToStrings(categoryMap: Record<string, string | numb
 }
 
 /**
- * Plan Management — add or edit an insurance plan's declaration
- * questionnaire and its category-to-question mapping. Backed by Postgres
- * (plan_configs table via /api/plan-configs); a plan saved here is
+ * Declaration Assistant Control (renamed from "Plan Management" — the
+ * function name/route key stay as PlanManagementPage/plan_scope, only the
+ * user-facing label changed, to avoid an unnecessary rename across every
+ * import site) — add or edit an insurance plan's declaration questionnaire,
+ * its category-to-question mapping, and take a plan out of service for
+ * advisors (with a note) while its logic is being reworked. Backed by
+ * Postgres (plan_configs table via /api/plan-configs); a plan saved here is
  * immediately usable for real matching, since /api/match reads from the
- * same table server-side (see dbRowToPlanConfig in server.ts).
+ * same table server-side (see dbRowToPlanConfig in server.ts) — and refuses
+ * to match against a plan disabled here.
  *
  * This replaces what used to be inert scaffolding in App.tsx (draftPlans /
  * planQuestionsState / productionPlans in localStorage, never wired to any
@@ -167,6 +172,12 @@ export function PlanManagementPage({
   // (e.g. Care Supreme's requiresInsulinForDiabetes) doesn't silently drop
   // behavior the underwriting rules depend on elsewhere in engine.ts.
   const [overrides, setOverrides] = useState<DbPlanConfigEntry["overrides"]>(undefined);
+  // Takes this plan out of service for advisors (declaration dropdown shows
+  // disabledNote and blocks search) without deleting its configuration —
+  // e.g. while its questions/mapping engine logic is being reworked. See
+  // schema.ts's plan_configs.disabled comment.
+  const [disabled, setDisabled] = useState(false);
+  const [disabledNote, setDisabledNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [refiningWithAi, setRefiningWithAi] = useState(false);
@@ -328,6 +339,8 @@ export function PlanManagementPage({
     setCategoryMap({});
     setSpecificIllnesses([]);
     setOverrides(undefined);
+    setDisabled(false);
+    setDisabledNote("");
     setSaveError(null);
     setAiNotice(null);
     // Nothing exists yet for a brand-new plan, so there's no read-only
@@ -349,6 +362,8 @@ export function PlanManagementPage({
       setCategoryMap(dbRow.categoryMap || {});
       setSpecificIllnesses((dbRow.specificIllnesses || []).map((si) => ({ key: nextRowKey(), category: si.category || "", illness: si.illness })));
       setOverrides(dbRow.overrides);
+      setDisabled(!!dbRow.disabled);
+      setDisabledNote(dbRow.disabledNote || "");
     } else {
       const config = hardcodedConfigs[name];
       const tagged = taggedQuestionsFromHardcoded(config);
@@ -363,6 +378,10 @@ export function PlanManagementPage({
       // full reconstruction from a different hardcoded source.
       setSpecificIllnesses([]);
       setOverrides(config.overrides);
+      // Built-in plans have no DB row yet, so no disabled state exists —
+      // start enabled/no-note, same as a brand-new plan.
+      setDisabled(false);
+      setDisabledNote("");
     }
   };
 
@@ -547,6 +566,11 @@ export function PlanManagementPage({
           categoryMap,
           specificIllnesses: cleanSpecificIllnesses,
           overrides,
+          disabled,
+          // Sent regardless of the checkbox state (not just when disabled)
+          // so toggling disable off temporarily doesn't discard the note —
+          // it's just not shown/enforced anywhere while disabled is false.
+          disabledNote: disabledNote.trim() || null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -571,6 +595,8 @@ export function PlanManagementPage({
         umbrellaQuestions: body.entry.umbrellaQuestions || [],
         specificIllnesses: body.entry.specificIllnesses || [],
         overrides: body.entry.overrides || undefined,
+        disabled: !!body.entry.disabled,
+        disabledNote: body.entry.disabledNote || null,
         addedBy: body.entry.addedBy,
       };
       setDbPlanConfigs(prev => {
@@ -769,7 +795,7 @@ export function PlanManagementPage({
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Plan Management</span>
+            <span>Declaration Assistant Control</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {planMgmtView === "plans"
@@ -1092,6 +1118,16 @@ export function PlanManagementPage({
                           }`}>
                             {dbRow ? "Custom" : "Built-in"}
                           </span>
+                          {dbRow?.disabled && (
+                            <span
+                              className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
+                                dark ? "bg-amber-500/15 text-amber-300" : "bg-amber-50 text-amber-700 border border-amber-200"
+                              }`}
+                              title={dbRow.disabledNote || "Disabled — advisors can't search this plan"}
+                            >
+                              <PowerOff className="w-2.5 h-2.5" /> Disabled
+                            </span>
+                          )}
                         </div>
                         <p className={`text-[11px] mt-0.5 ${dark ? "text-stone-400" : "text-stone-500"}`}>
                           {insurer} · {questionCount} question{questionCount === 1 ? "" : "s"} · {mappedCount} categories mapped
@@ -1203,6 +1239,55 @@ export function PlanManagementPage({
                 <input value={insurerName} onChange={(e) => setInsurerName(e.target.value)} placeholder="e.g. HDFC ERGO" className={inputClass} />
               )}
             </div>
+          </div>
+
+          {/* Plan Availability — takes this plan out of service for
+              advisors (declaration dropdown shows disabledNote, search is
+              blocked) without deleting anything here. Shown in both view
+              and edit mode so an admin can see at a glance whether a plan
+              is currently disabled even without opening Edit. */}
+          <div>
+            <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              Plan Availability
+            </label>
+            {formMode === "view" ? (
+              disabled ? (
+                <div className={`flex items-start gap-2 p-2.5 rounded-lg border text-xs font-semibold ${
+                  dark ? "bg-amber-500/10 border-amber-500/25 text-amber-200" : "bg-amber-50 border-amber-200 text-amber-900"
+                }`}>
+                  <PowerOff className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    Disabled — advisors see a note and can&apos;t search this plan.
+                    {disabledNote ? ` "${disabledNote}"` : ""}
+                  </span>
+                </div>
+              ) : (
+                <p className={`text-xs font-semibold px-2 py-2 ${dark ? "text-stone-400" : "text-stone-500"}`}>Enabled</p>
+              )
+            ) : (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={disabled}
+                    onChange={(e) => setDisabled(e.target.checked)}
+                    className="w-3.5 h-3.5 shrink-0 cursor-pointer accent-amber-500"
+                  />
+                  <span className={`text-xs font-semibold ${dark ? "text-stone-200" : "text-stone-800"}`}>
+                    Disable this plan — takes it out of service for advisors (e.g. while its questions/mapping logic is being reworked)
+                  </span>
+                </label>
+                {disabled && (
+                  <textarea
+                    value={disabledNote}
+                    onChange={(e) => setDisabledNote(e.target.value)}
+                    placeholder="Note shown to advisors when they select this plan, e.g. &quot;Journey update in progress — check back soon.&quot;"
+                    rows={2}
+                    className={inputClass}
+                  />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Declaration Questions */}

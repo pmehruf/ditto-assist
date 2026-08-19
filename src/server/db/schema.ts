@@ -298,6 +298,16 @@ export const planConfigs = pgTable("plan_configs", {
   // field can't silently drop their existing specific-illness matches.
   specificIllnesses: jsonb("specific_illnesses").notNull().default([]),
   overrides: jsonb("overrides"),
+  // Takes this plan out of service for advisors without deleting its
+  // configuration — set from the Declaration Assistant Control page
+  // (formerly "Plan Management") while its questions/mapping engine logic
+  // is being reworked. /api/match refuses to run a lookup for a disabled
+  // plan (see server.ts); the declaration dropdown (LookupPage.tsx) shows
+  // disabledNote to the advisor once they select it. Both default to "not
+  // disabled" so every existing plan is unaffected until an admin opts it
+  // in.
+  disabled: boolean("disabled").notNull().default(false),
+  disabledNote: text("disabled_note"),
   addedBy: text("added_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

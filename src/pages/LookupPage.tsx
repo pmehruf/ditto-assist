@@ -50,6 +50,13 @@ interface LookupPageProps {
   selectedPlan: string;
   setSelectedPlan: (value: string) => void;
   productionPlans: string[];
+  /** Plans taken out of service via the Declaration Assistant Control page
+   * (formerly "Plan Management") — keyed by plan name, value is the
+   * admin's note (possibly ""). A plan not present here is fully enabled.
+   * Still selectable in the dropdown (so the advisor can see why), but
+   * search/submit is blocked while one is selected — see the disabledNote
+   * derivation below. */
+  disabledPlanNotes: Record<string, string>;
   pedInput: string;
   setPedInput: (value: string) => void;
   pedInputRef: RefObject<HTMLInputElement>;
@@ -110,6 +117,7 @@ export function LookupPage({
   selectedPlan,
   setSelectedPlan,
   productionPlans,
+  disabledPlanNotes,
   pedInput,
   setPedInput,
   pedInputRef,
@@ -147,6 +155,12 @@ export function LookupPage({
   const queueInsurerColor = getPlanInsurerColor(selectedPlan);
   const queueAccentHex = theme === "dark" ? queueInsurerColor.dark : queueInsurerColor.light;
   const queueCounterTextColor = getContrastTextForPlanColor(theme);
+
+  // undefined when selectedPlan isn't disabled; "" or a real note when it
+  // is (see disabledPlanNotes' doc comment). Search/submit is blocked
+  // whenever this isn't undefined — see the PrimaryCtaButton below.
+  const selectedPlanDisabledNote = selectedPlan ? disabledPlanNotes[selectedPlan] : undefined;
+  const isSelectedPlanDisabled = selectedPlanDisabledNote !== undefined;
 
   // The QA Announcement card (right column, intro/pre-results view) needs to
   // match the PED Mapping Engine input column's (left column) actual
@@ -344,7 +358,13 @@ export function LookupPage({
                     id="insurance-plan-dropdown"
                     options={productionPlans.map((plan) => ({
                       value: plan,
-                      label: getPlanDisplayLabel(plan),
+                      // Kept selectable (never CustomSelectOption.disabled)
+                      // — an advisor should be able to pick a disabled plan
+                      // to see WHY it's disabled (the banner below), not
+                      // have it silently unclickable. The label suffix is
+                      // what surfaces the state before they've even picked
+                      // it.
+                      label: disabledPlanNotes[plan] !== undefined ? `${getPlanDisplayLabel(plan)} — Disabled` : getPlanDisplayLabel(plan),
                     }))}
                     triggerClassName={`w-full flex items-center justify-between gap-2 pl-3 pr-8 h-[42px] rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
                       theme === "dark"
@@ -352,6 +372,25 @@ export function LookupPage({
                         : "bg-white border-stone-250 text-stone-850"
                     }`}
                   />
+                  {/* Disabled-plan note — set from the Declaration Assistant
+                      Control page. Search/submit is blocked while this is
+                      showing (see the PrimaryCtaButton below), so this is
+                      the advisor's explanation for why, not just a caution. */}
+                  {isSelectedPlanDisabled && (
+                    <div
+                      className={`flex items-start gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold leading-snug ${
+                        theme === "dark"
+                          ? "bg-amber-500/10 border-amber-500/25 text-amber-200"
+                          : "bg-amber-50 border-amber-200 text-amber-900"
+                      }`}
+                    >
+                      <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        This plan is temporarily disabled.
+                        {selectedPlanDisabledNote ? ` ${selectedPlanDisabledNote}` : " Check back later, or contact the tech team for updates."}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* BOX B: Search & Map Condition */}
@@ -884,7 +923,9 @@ export function LookupPage({
                 <div
                   className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
                   title={
-                    !selectedPlan || lookupPeds.length === 0
+                    isSelectedPlanDisabled
+                      ? "This plan is temporarily disabled — see the note above."
+                      : !selectedPlan || lookupPeds.length === 0
                       ? "Select a plan and add at least one condition to proceed"
                       : ""
                   }
@@ -892,19 +933,22 @@ export function LookupPage({
                   <PrimaryCtaButton
                     theme={theme}
                     onClick={() => {
-                      if (!selectedPlan) return;
+                      if (!selectedPlan || isSelectedPlanDisabled) return;
                       executeLookupAll(lookupPeds, selectedPlan);
                     }}
                     disabled={
                       isLookupLoading ||
                       lookupPeds.length === 0 ||
-                      !selectedPlan
+                      !selectedPlan ||
+                      isSelectedPlanDisabled
                     }
                     className="w-full sm:w-auto sm:flex-1 !flex items-center justify-center gap-2"
                     style={{ border: "none" }}
                     id="match-disclosure-button"
                     title={
-                      !selectedPlan || lookupPeds.length === 0
+                      isSelectedPlanDisabled
+                        ? "This plan is temporarily disabled — see the note above."
+                        : !selectedPlan || lookupPeds.length === 0
                         ? "Select a plan and add at least one condition to proceed"
                         : ""
                     }

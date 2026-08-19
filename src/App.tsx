@@ -936,6 +936,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbPlanConfigs]);
 
+  // Maps a disabled plan's name to its disabledNote (or "" if none was set),
+  // sourced from the Declaration Assistant Control page (formerly "Plan
+  // Management"). Passed to LookupPage so it can show the advisor why a
+  // plan is unavailable once they select it from the dropdown, and block
+  // Search — see plan_configs.disabled in schema.ts.
+  const disabledPlanNotes = useMemo(() => {
+    const notes: Record<string, string> = {};
+    dbPlanConfigs.forEach(row => {
+      if (row.disabled) {
+        notes[row.planName] = row.disabledNote?.trim() || "";
+      }
+    });
+    return notes;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbPlanConfigs]);
+
   // Master Change Log State ("Modification History" sub-tab under Audit).
   //
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
@@ -2871,7 +2887,7 @@ export default function App() {
             navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
             navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
             navPage("knowledge_base", "Knowledge Base", Database, "Viewer"),
-            navPage("plan_scope", "Plan Management", FileText, "Viewer"),
+            navPage("plan_scope", "Declaration Assistant Control", FileText, "Viewer"),
           ],
         },
         {
@@ -3576,7 +3592,7 @@ export default function App() {
                 flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 profile_access: { label: "User Management", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                plan_scope: { label: "Plan Management", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                plan_scope: { label: "Declaration Assistant Control", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4074,6 +4090,7 @@ export default function App() {
                 selectedPlan={selectedPlan}
                 setSelectedPlan={setSelectedPlan}
                 productionPlans={productionPlans}
+                disabledPlanNotes={disabledPlanNotes}
                 pedInput={pedInput}
                 setPedInput={setPedInput}
                 pedInputRef={pedInputRef}
@@ -4473,7 +4490,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="Plan Management">
+              <ErrorBoundary theme={theme} label="Declaration Assistant Control">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <PlanManagementPage
                 theme={theme}

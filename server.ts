@@ -240,11 +240,27 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
     // the live source of truth and take precedence over the hardcoded
     // bootstrap defaults — this is what lets a newly-added plan be matched
     // against immediately, with no code change or redeploy.
+    let dbPlan: Awaited<ReturnType<typeof planConfigsRepo.get>>;
     try {
-      const dbPlan = await planConfigsRepo.get(planName);
+      dbPlan = await planConfigsRepo.get(planName);
       if (dbPlan) config = dbRowToPlanConfig(dbPlan);
     } catch (err) {
       console.error("Failed to load DB plan config (falling back to hardcoded defaults if any exist):", err);
+    }
+
+    // Server-side enforcement of the Declaration Assistant Control page's
+    // disable toggle — the declaration dropdown (LookupPage.tsx) already
+    // blocks this client-side, but that's cosmetic on its own; a stale tab
+    // left open from before a plan was disabled, or a direct API call,
+    // would otherwise still run a lookup against a plan whose questions/
+    // mapping logic the disable was specifically meant to take out of
+    // service. Mirrors the note shown client-side.
+    if (dbPlan?.disabled) {
+      return res.status(403).json({
+        error: dbPlan.disabledNote?.trim()
+          ? `This plan is temporarily disabled: ${dbPlan.disabledNote.trim()}`
+          : "This plan is temporarily disabled. Please check back later.",
+      });
     }
 
     if (!config) {
@@ -2809,7 +2825,7 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Adding a plan"))) return;
 
-    const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses } = req.body;
+    const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote } = req.body;
 
     if (typeof planName !== "string" || !planName.trim()) {
       return res.status(400).json({ error: "planName is required." });
@@ -2826,6 +2842,12 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
     if (specificIllnesses !== undefined && !validateSpecificIllnesses(specificIllnesses)) {
       return res.status(400).json({ error: "specificIllnesses must be an array of { category?, illness } entries with a non-empty illness." });
     }
+    if (disabled !== undefined && typeof disabled !== "boolean") {
+      return res.status(400).json({ error: "disabled must be a boolean." });
+    }
+    if (disabledNote !== undefined && disabledNote !== null && typeof disabledNote !== "string") {
+      return res.status(400).json({ error: "disabledNote must be a string or null." });
+    }
 
     const { umbrellaQuestions, hasUmbrella, anyOther } = deriveQuestionFields(questions);
 
@@ -2841,6 +2863,8 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
       umbrellaQuestions,
       specificIllnesses: Array.isArray(specificIllnesses) ? specificIllnesses : [],
       overrides: overrides && typeof overrides === "object" ? overrides : null,
+      disabled: typeof disabled === "boolean" ? disabled : false,
+      disabledNote: typeof disabledNote === "string" ? disabledNote.trim() || null : null,
       addedBy: `${req.user!.name} (${callerTier})`,
     });
     return res.json({ entry: row });
@@ -2855,7 +2879,7 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
     if (!(await requireAdminOrDeveloper(req, res, "Editing a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
 
-    const { insurerName, questions, categoryMap, overrides, specificIllnesses } = req.body;
+    const { insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote } = req.body;
     const update: Record<string, unknown> = {};
 
     if (insurerName !== undefined) {
@@ -2885,6 +2909,18 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
     }
     if (overrides !== undefined) {
       update.overrides = overrides && typeof overrides === "object" ? overrides : null;
+    }
+    if (disabled !== undefined) {
+      if (typeof disabled !== "boolean") {
+        return res.status(400).json({ error: "disabled must be a boolean." });
+      }
+      update.disabled = disabled;
+    }
+    if (disabledNote !== undefined) {
+      if (disabledNote !== null && typeof disabledNote !== "string") {
+        return res.status(400).json({ error: "disabledNote must be a string or null." });
+      }
+      update.disabledNote = typeof disabledNote === "string" ? disabledNote.trim() || null : null;
     }
 
     const { planConfigs } = createRepositories(getDb());
