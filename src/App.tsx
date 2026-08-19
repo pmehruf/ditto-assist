@@ -51,8 +51,7 @@ import {
   Award,
   Library,
   ShieldUser,
-  Terminal,
-  Bot
+  Terminal
 } from "lucide-react";
 
 import {
@@ -85,7 +84,7 @@ import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole 
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon, QaDashboardIcon, OperationsControlIcon, DaMappingConfigIcon } from "./components/icons";
+import { DeclarationMapIcon, QaDashboardIcon, OperationsControlIcon, DaMappingConfigIcon, ProductAssistIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
@@ -2982,7 +2981,7 @@ export default function App() {
               isActive: activeTab === "lookup" && !showIntro,
               onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
             }),
-            navPage("query_assist", "Product Assist", Bot, "Editor"),
+            navPage("query_assist", "Product Assist", ProductAssistIcon, "Editor"),
             navPage("coverage_projection", "Cover projection", FileSpreadsheet, "Viewer"),
             navPage("specific_illness_check", "Specific Illness Check", ClipboardCheck, "Viewer"),
           ],
@@ -3732,7 +3731,7 @@ export default function App() {
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 specific_illness_check: { label: "Specific Illness Check", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                query_assist: { label: "Product Assist", icon: <Bot className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                query_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },

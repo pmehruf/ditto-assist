@@ -28,3 +28,5 @@ export { OperationsControlIcon } from './OperationsControlIcon';
 
 export { DaMappingConfigIcon } from './DaMappingConfigIcon';
 
+export { ProductAssistIcon } from './ProductAssistIcon';
+
