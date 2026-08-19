@@ -779,11 +779,11 @@ export function LookupPage({
                      rather than squeezing a small note in alongside it. */
                   <div className="flex flex-col items-center justify-center text-center gap-3 py-2 px-2 min-h-[106px]">
                     <MascotWithFallback
-                      src="/assets/.aistudio/plan-disabled-mascot.png"
+                      src="/assets/.aistudio/payment-journey-surgery.png"
                       alt="Plan temporarily unavailable"
                       type="doctor"
                       className="object-contain shrink-0"
-                      style={{ height: "clamp(80px, 14vh, 120px)", width: "auto" }}
+                      style={{ height: "clamp(110px, 20vh, 170px)", width: "auto" }}
                     />
                     <div className="max-w-md">
                       <p className={`text-sm font-black ${theme === "dark" ? "text-amber-200" : "text-amber-800"}`}>
