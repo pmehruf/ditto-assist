@@ -15,9 +15,18 @@
  * content covers every variant). The Prospectus's own product benefit
  * table is what actually differentiates the variants' benefits, not a
  * separate document per variant. So all three Activ One resources below
- * are tagged with EVERY variant's plan name (plus the bare "Activ One"),
- * not just one — a resource with a single variant's tag would wrongly drop
- * out of retrieval for the other six variants' questions.
+ * are tagged with EVERY variant's plan name, not just one — a resource
+ * with a single variant's tag would wrongly drop out of retrieval for the
+ * other six variants' questions.
+ *
+ * NO BARE "Activ One" TAG/ROSTER ENTRY: earlier revisions of this script
+ * also tagged these 3 resources with the bare plan name "Activ One" and
+ * added it to the roster, which surfaced it as its own selectable plan in
+ * Product Assist and its own "Base plan" grouping section in the admin UI
+ * — misleading, since "Activ One" isn't itself a product an advisor would
+ * select; every one of its 7 variants is already dedicatedly represented.
+ * See scripts/removeAdityaBirlaBareActivOne.ts for the one-off correction
+ * applied to data already seeded under the old tagging.
  *
  * Also sets kb_categories.plan_names for the "Aditya Birla" category to the
  * full list of plan/variant names below (merged with whatever's already
@@ -62,9 +71,10 @@ interface SeedUrl {
   planTags: string[];
 }
 
-// Activ One's 7 variants, plus the bare plan name — see the file header.
+// Activ One's 7 variants — see the file header on why there's no bare
+// "Activ One" tag alongside them.
 const ACTIV_ONE_VARIANTS = ["Activ One MAX", "Activ One VYTL", "Activ One NXT", "Activ One VIP", "Activ One VIP+", "Activ One MAX+", "Activ One SAVR"];
-const ACTIV_ONE_TAGS = ["Activ One", ...ACTIV_ONE_VARIANTS];
+const ACTIV_ONE_TAGS = [...ACTIV_ONE_VARIANTS];
 
 const URLS: SeedUrl[] = [
   // ── Activ One (7 variants, 3 shared documents — see file header) ───────
