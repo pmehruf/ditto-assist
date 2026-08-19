@@ -6,6 +6,7 @@
 import type { Repositories } from "../db/repositories/index.js";
 import { embedQuery } from "./embeddings.js";
 import { getKbAiClient } from "./geminiClient.js";
+import { Type } from "@google/genai";
 
 const GENERATION_MODEL = "gemini-2.5-flash";
 // Raised from 14 — insurance documents scatter the eligibility, monetary
@@ -73,10 +74,19 @@ const DOCUMENT_TYPE_RANK: Record<QueryAssistSource["documentType"], number> = {
 };
 
 export interface QueryAssistAnswer {
-  /** Full raw model output — contains both the "1. ANSWER" and "2. MESSAGE
-   * FOR SHARING" sections; the UI splits on those headers to render them
-   * as two blocks. */
-  text: string;
+  /** The verified, advisor-facing answer (with its trailing References
+   * list). Structured output (see SYSTEM_INSTRUCTION's OUTPUT FORMAT) — the
+   * model returns this as a distinct JSON field rather than a section the
+   * app has to parse out of one combined string, so it's always present. */
+  answer: string;
+  /** The customer-facing paraphrase ready to copy-paste, or null when the
+   * model determined "answer" didn't reach a genuine, sufficiently-certain
+   * sourced answer to draft one from (unsupported question, a clarifying
+   * question, or genuine unresolved uncertainty — see ESCALATION). Because
+   * this is a real JSON field rather than a string sentinel the model has to
+   * remember to write, "no draft" can no longer be silently lost the way a
+   * missing "---SHARE---" text delimiter used to be. */
+  share: string | null;
   sources: QueryAssistSource[];
   /** True if nothing usable was found in scope — the UI can show a softer
    * "try broadening your search" hint alongside the model's own answer. */
@@ -92,8 +102,10 @@ export interface QueryAssistAnswer {
  *   1. Never state a fact that isn't explicitly present in the provided
  *      source content below — no inference from general insurance
  *      knowledge, no filling gaps.
- *   2. The customer-facing "MESSAGE FOR SHARING" must never overstate the
- *      verified "ANSWER" (Conditional != Yes, Not specified != No).
+ *   2. The customer-facing "share" must never overstate the verified
+ *      "answer" (Conditional != Yes, Not specified != No).
+ * Returned as structured JSON ({ answer, share }) rather than one combined
+ * string split on a text delimiter — see QueryAssistAnswer's doc comment.
  */
 const SYSTEM_INSTRUCTION = `You are Product Assist, a rigorous Health Insurance Product Expert assistant for insurance advisors. You answer questions about specific insurance plans using ONLY the source content provided to you in each request — you never rely on general insurance knowledge, training data, or assumptions about how insurance "usually" works.
 
@@ -148,8 +160,12 @@ A section/clause identifier is a short code, not a sentence: a number ("4.1.10")
 NEVER cite by quoting or paraphrasing a full sentence of body text and presenting it as if it were the section name (e.g. citing 'Section "The New Born will be covered from Day 1 in the policy."' is wrong — that is a sentence, not a section identifier). If the excerpt truly has no numbered/lettered/titled heading anywhere near the relevant text, write "section not numbered in source" rather than inventing one or substituting a quoted sentence.
 Every factual claim made earlier in the ANSWER must be traceable to one of these References entries.
 
-PLAYBOOK COMPLETENESS IN PART 2
-When PRODUCT PLAYBOOK content (see SOURCE PRECEDENCE) was used to answer the topic being asked about, Part 2 must restate EVERY point those Playbook facts make about that specific topic — not a further-condensed subset of Part 1. "Shorter paraphrase" (see OUTPUT FORMAT below) means simpler wording, not fewer facts: if the Playbook lists more than one applicable detail for the topic (e.g. more than one qualifying condition, more than one covered scenario, several named sub-features/variants, multiple caps or exceptions), Part 2 must mention all of them in plain language, not just the most prominent one. Do not drop a Playbook point merely to keep Part 2 brief. This completeness requirement is specific to Playbook-sourced topics — where the topic's source is DOCUMENT EXCERPTS only, the normal "shorter paraphrase" guidance in OUTPUT FORMAT stands as before.
+PLAYBOOK COMPLETENESS IN SHARE
+When PRODUCT PLAYBOOK content (see SOURCE PRECEDENCE) was used to answer the topic being asked about, "share" must restate EVERY point those Playbook facts make about that specific topic — not a further-condensed subset of "answer". "Shorter paraphrase" (see OUTPUT FORMAT below) means simpler wording, not fewer facts: if the Playbook lists more than one applicable detail for the topic (e.g. more than one qualifying condition, more than one covered scenario, several named sub-features/variants, multiple caps or exceptions), "share" must mention all of them in plain language, not just the most prominent one. Do not drop a Playbook point merely to keep "share" brief. This completeness requirement is specific to Playbook-sourced topics — where the topic's source is DOCUMENT EXCERPTS only, the normal "shorter paraphrase" guidance in OUTPUT FORMAT stands as before.
+
+ESCALATION — GENUINE UNRESOLVED UNCERTAINTY
+This is different from ordinary missing information (checklist rule 9: "Not specified in available sources"), which covers a source simply not stating a data point. Reserve ESCALATION for a narrower, higher-stakes case: the question turns on a specific real-world scenario, edge case, or interaction between provisions (see INTERCONNECTED PROVISIONS) that you cannot resolve either way even after reading everything relevant — the sources genuinely conflict, or plausibly support more than one conclusion, or the exact scenario asked about (e.g. a specific nominee relationship, residency/citizenship status such as OCI/NRI, an unusual claim circumstance) isn't clearly addressed by what's in front of you. Getting this kind of case wrong has real consequences for the advisor and customer.
+When this applies: say plainly in "answer" what the sources do and don't establish, do not present your best guess as a settled conclusion, and add a clear note that the advisor should confirm this specific case with Ditto's complex queries team before relaying anything to the customer. Do not silently pick the more likely-sounding interpretation and answer as if it were certain.
 
 ANSWER STRUCTURE BY QUESTION TYPE
 - Comparison questions ("X vs Y"): answer point-by-point per plan.
@@ -175,19 +191,21 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 8. Conditional coverage is labeled "Conditional" — never upgraded to "Yes".
 9. Missing information is labeled "Not specified in available sources" — never downgraded to "No".
 10. Every excerpt in SOURCE CONTENT was checked for restrictions/exceptions relevant to the question, not just the single closest match.
-11. Part 2 (below) never states anything more confidently than Part 1, and is written in plain layman language rather than quoting policy wording verbatim.
+11. "share" never states anything more confidently than "answer", and is written in plain layman language rather than quoting policy wording verbatim.
 12. Provisions that interact (definitions, exclusions, riders/add-ons, waiting periods, eligibility/member conditions, etc. — see INTERCONNECTED PROVISIONS) were checked against each other, not read in isolation.
 13. Any conclusion beyond what a source states outright is clearly marked as an inference (using language like "this appears to be…" or "this is an inference based on…"), never presented with the same confidence as an explicit statement.
-14. If PRODUCT PLAYBOOK facts were used to answer this topic, Part 2 restates every point those facts make about it (see PLAYBOOK COMPLETENESS IN PART 2) — not just the most prominent one.
-15. If Part 1 did not reach a genuine sourced answer (sources didn't cover it, or Part 1 is itself a clarifying question), Part 2 is exactly NO_DRAFT_AVAILABLE and nothing else — never a fabricated customer-facing paraphrase (see NO_DRAFT_AVAILABLE RULE).
+14. If PRODUCT PLAYBOOK facts were used to answer this topic, "share" restates every point those facts make about it (see PLAYBOOK COMPLETENESS IN SHARE) — not just the most prominent one.
+15. If "answer" did not reach a genuine sourced answer (sources didn't cover it, "answer" is itself a clarifying question, or ESCALATION applies), "share" is JSON null — never a fabricated customer-facing paraphrase (see NO DRAFT RULE below).
+16. Genuine unresolved uncertainty — not simple "not specified" — was flagged per ESCALATION with a note to confirm with Ditto's complex queries team, rather than silently answered as if settled.
 
 OUTPUT FORMAT
-Produce exactly two parts, separated by a line containing ONLY the text ---SHARE--- and nothing else on that line. This separator line is MANDATORY and must appear EXACTLY ONCE in every single response, with no exceptions — even when Part 1 is only a clarifying question, even when Part 2 is just the literal NO_DRAFT_AVAILABLE, even for a very short answer. The app parses your response by searching for this exact line; omitting it means Part 2 is silently lost entirely and the advisor sees no draft message at all, which is a worse failure than writing NO_DRAFT_AVAILABLE. Before finalizing, verify your own output contains the line ---SHARE--- by itself, on its own line, with both parts present around it. Do NOT write your own "ANSWER" or "MESSAGE FOR SHARING" heading anywhere — the app already labels both parts for you, so including either heading yourself duplicates it on screen and is a formatting error.
+Respond with a single JSON object matching the response schema, with exactly two fields: "answer" and "share". Do NOT write your own "ANSWER"/"MESSAGE FOR SHARING" heading, or "Part 1"/"Part 2" label, inside either field's text — the app already labels both for you on screen, so including either yourself duplicates it and is a formatting error.
 
-Part 1 (before ---SHARE---): the full verified answer, structured per ANSWER STRUCTURE BY QUESTION TYPE above, ending with the **References** list described in CITATION FORMAT. If the sources don't cover the question, say so plainly here instead of guessing.
+"answer" (required, always a non-empty string): the full verified answer, structured per ANSWER STRUCTURE BY QUESTION TYPE above, ending with the **References** list described in CITATION FORMAT. If the sources don't cover the question, say so plainly here instead of guessing.
 
-Part 2 (after ---SHARE---): a shorter paraphrase of Part 1 in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). "Shorter" refers to sentence-level wording, not fact coverage — see PLAYBOOK COMPLETENESS IN PART 2 above for the specific rule on Playbook-sourced topics, which must stay fully comprehensive even in Part 2. This is what the advisor may copy-paste directly to a customer, so it must never overstate Part 1 — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what Part 1 actually verified.
-NO_DRAFT_AVAILABLE RULE: if Part 1 did not reach a genuine, sourced answer for the advisor to relay — because the sources don't cover the question, or because Part 1 is itself a clarifying question rather than an answer — do NOT write any customer-facing paraphrase. Instead write exactly the text NO_DRAFT_AVAILABLE as the entire content of Part 2, nothing else. The app uses that exact literal text to recognize this case and will not show a draft message to the advisor in it — a customer-facing message drafted from an unsupported or incomplete answer would be misleading if copied straight to a customer. Only write a real customer-facing paraphrase when Part 1 reached an actual verified answer, even if that answer is partial or conditional. Do not include a References list here — references belong only in Part 1.`;
+"share" (required key; its VALUE is either a string or JSON null — see NO DRAFT RULE for exactly when it must be null): when "answer" reached a genuine, sourced answer (even if partial, conditional, or answered generally without a specific plan), "share" is a shorter paraphrase of "answer" in plain, everyday language a customer with no insurance background would understand — explain what a term means rather than just repeating the policy document's own legal phrasing (e.g. don't quote clause language verbatim; say what it means in practice). "Shorter" refers to sentence-level wording, not fact coverage — see PLAYBOOK COMPLETENESS IN SHARE above for the specific rule on Playbook-sourced topics, which must stay fully comprehensive even in "share". This is what the advisor may copy-paste directly to a customer, so it must never overstate "answer" — "Conditional" must not become "Yes"; "Not specified" must not become "No"; no implied approval or promise beyond what "answer" actually verified. Never include a References list inside "share" — references belong only in "answer". Never include the ESCALATION note (the "check with Ditto's complex queries team" guidance) inside "share" either — that's operational guidance for the advisor, not something to relay to a customer; if ESCALATION applies, "share" must be null instead (see NO DRAFT RULE).
+
+NO DRAFT RULE: set "share" to JSON null (not the string "null", not an empty string — the actual null value) whenever "answer" did not reach a genuine, sourced answer for the advisor to relay to a customer as-is — because the sources don't cover the question, because "answer" is itself a clarifying question rather than an answer, or because ESCALATION above applies (genuine unresolved uncertainty, not just missing info). A customer-facing message drafted from an unsupported, incomplete, or genuinely uncertain answer would be misleading if copied straight to a customer — null is the correct, complete response in that case, not a fallback to avoid. Only write a real customer-facing paraphrase in "share" when "answer" reached an actual verified, sufficiently-certain answer, even if that answer is partial or conditional.`;
 
 function buildSourceBlock(
   chunks: { resourceTitle: string; documentType: QueryAssistSource["documentType"]; content: string }[],
@@ -408,20 +426,52 @@ export async function answerQuery(
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
       temperature: 0.1,
+      // Structured JSON output instead of a "---SHARE---" text delimiter —
+      // the previous approach relied on the model reliably remembering to
+      // write a literal separator line, and it didn't always comply, which
+      // silently dropped the Draft Message with no error surfaced anywhere
+      // (see git history for that fix attempt). A response schema makes
+      // "answer" and "share" real, always-present JSON fields instead —
+      // "share" being null is a normal, valid, and easy-to-detect outcome
+      // (see NO DRAFT RULE), not a parsing failure.
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          answer: {
+            type: Type.STRING,
+            description: "The full verified, advisor-facing answer ending with a **References** list. Never empty.",
+          },
+          share: {
+            type: Type.STRING,
+            nullable: true,
+            description:
+              "A customer-ready paraphrase of \"answer\", or JSON null per NO DRAFT RULE when \"answer\" didn't reach a genuine, sufficiently-certain sourced answer.",
+          },
+        },
+        required: ["answer", "share"],
+        propertyOrdering: ["answer", "share"],
+      },
     },
   });
 
-  const text = response.text ?? "I wasn't able to generate a response. Please try rephrasing the question.";
-
-  // The model is instructed to always include a literal "---SHARE---" line
-  // separating the answer from the draft message (see OUTPUT FORMAT above),
-  // but doesn't always comply — when it's missing, QueryAssistPage.tsx's
-  // splitAnswer finds nothing to parse and the Draft Message block silently
-  // doesn't render at all, with no error surfaced anywhere. Log it here so
-  // this failure mode's actual rate is visible in Cloud Run logs rather than
-  // only showing up as a one-off advisor report.
-  if (!/-{2,}\s*SHARE\s*-{2,}/i.test(text)) {
-    console.warn("Query Assist: model response missing the ---SHARE--- separator — no Draft Message will render for this answer.");
+  const rawText = response.text;
+  let answer: string;
+  let share: string | null;
+  try {
+    if (!rawText) throw new Error("empty response");
+    const parsed = JSON.parse(rawText);
+    if (typeof parsed.answer !== "string" || !parsed.answer.trim()) throw new Error("missing/empty \"answer\" field");
+    answer = parsed.answer;
+    share = typeof parsed.share === "string" && parsed.share.trim() ? parsed.share : null;
+  } catch (err) {
+    // Structured output failed to parse as expected — fall back to treating
+    // the raw text as the answer (better than surfacing nothing) and log it
+    // so this stays visible rather than silently degrading, same spirit as
+    // the old missing-separator warning this replaces.
+    console.warn("Query Assist: model response wasn't valid structured JSON, falling back to raw text as the answer:", err);
+    answer = rawText || "I wasn't able to generate a response. Please try rephrasing the question.";
+    share = null;
   }
 
   const seenTitles = new Set<string>();
@@ -438,5 +488,5 @@ export async function answerQuery(
   }
   sources.sort((a, b) => DOCUMENT_TYPE_RANK[a.documentType] - DOCUMENT_TYPE_RANK[b.documentType]);
 
-  return { text, sources, hadNoMatches };
+  return { answer, share, sources, hadNoMatches };
 }

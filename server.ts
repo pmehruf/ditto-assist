@@ -3835,7 +3835,7 @@ app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (re
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
     const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
 
-    return res.json({ answer: result.text, sources: result.sources, hadNoMatches: result.hadNoMatches });
+    return res.json({ answer: result.answer, share: result.share, sources: result.sources, hadNoMatches: result.hadNoMatches });
   } catch (err: any) {
     console.error("Query Assist: failed to answer question:", err);
     return res.status(500).json({ error: `Failed to get an answer: ${err.message}` });

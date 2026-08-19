@@ -44,7 +44,15 @@ const SOURCE_DOCUMENT_TYPE_LABEL: Record<ChatSource["documentType"], string> = {
 interface LocalChatMessage {
   id: string;
   role: "user" | "assistant";
+  /** User turn: the question as typed. Assistant turn: the verified,
+   * advisor-facing answer (queryAssist.ts's structured "answer" field). */
   content: string;
+  /** Assistant only — the customer-facing paraphrase (structured "share"
+   * field), or null when the model didn't reach a genuine, sufficiently-
+   * certain sourced answer to draft one from. `undefined` (as opposed to
+   * `null`) marks a message saved before this structured-output migration —
+   * see splitAnswer's legacy fallback below for how those still render. */
+  share?: string | null;
   sources: ChatSource[] | null;
   createdAt: string;
 }
@@ -179,14 +187,15 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
   );
 }
 
-/** Splits Query Assist's dual-part model output into an ANSWER and a
- * MESSAGE FOR SHARING piece — the app supplies both labels itself (see
- * queryAssist.ts's system instruction, which asks the model NOT to write
- * its own "ANSWER"/"MESSAGE FOR SHARING" headings), separated by a literal
- * "---SHARE---" line. Falls back to the older "2. MESSAGE FOR SHARING"
- * marker for any conversation still holding pre-migration text in
- * localStorage, and defensively strips a stray heading line either way in
- * case the model ever echoes one out of habit. */
+/** LEGACY ONLY — queryAssist.ts now returns "answer"/"share" as separate
+ * structured JSON fields (see LocalChatMessage's `content`/`share`), so a
+ * freshly-received message no longer needs this parsed out of one combined
+ * string. Kept only so a conversation already sitting in someone's
+ * localStorage from before that migration (holding the old combined
+ * "---SHARE---"-delimited text, or even older "2. MESSAGE FOR SHARING" text)
+ * still renders correctly instead of breaking — see the `m.share ===
+ * undefined` branch below. Defensively strips a stray heading line either
+ * way in case the model ever echoed one out of habit. */
 function splitAnswer(content: string): { answer: string; share: string | null } {
   const sentinel = /\n?\s*-{2,}\s*SHARE\s*-{2,}\s*\n?/i;
   const legacyMarker = /\n?\s*2\.\s*MESSAGE FOR SHARING\s*\n?/i;
@@ -381,6 +390,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
         id: genId(),
         role: "assistant",
         content: body.answer,
+        share: body.share ?? null,
         sources: body.sources || null,
         createdAt: new Date().toISOString(),
       };
@@ -717,23 +727,27 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   </div>
                 );
               }
-              const { answer, share: rawShare } = splitAnswer(m.content);
+              // `m.share === undefined` marks a pre-migration message still
+              // holding the old combined "---SHARE---"-delimited text in
+              // localStorage (see LocalChatMessage's doc comment) — fall
+              // back to parsing it apart. A current message already has
+              // `answer`/`share` as separate fields straight from the server
+              // (queryAssist.ts's structured JSON output), nothing to split.
+              const legacy = m.share === undefined;
+              const { answer, share: rawShare } = legacy ? splitAnswer(m.content) : { answer: m.content, share: m.share };
               const { body, references } = splitReferences(answer);
-              // The model is told never to include a References list in Part
-              // 2 (see queryAssist.ts's NO_DRAFT_AVAILABLE RULE paragraph),
-              // but doesn't always comply — running it through the same
+              // The model is told never to include a References list in
+              // "share" (see queryAssist.ts's NO DRAFT RULE paragraph), but
+              // doesn't always comply — running it through the same
               // splitReferences used for the Answer above defensively drops
               // one if it slips in, since a Draft Message is meant to be
               // copy-pasted straight to a customer as plain text, not carry
-              // an internal citation list.
+              // an internal citation list. Only the legacy text-parsing path
+              // can still contain the old literal NO_DRAFT_AVAILABLE
+              // sentinel — a current message already has share as real JSON
+              // null instead, which the `rawShare ? ... : null` short-
+              // circuits before this check ever runs.
               const shareBody = rawShare ? splitReferences(rawShare).body : null;
-              // The model writes the literal sentinel NO_DRAFT_AVAILABLE for
-              // Part 2 when Part 1 didn't reach a genuine sourced answer
-              // (see queryAssist.ts's NO_DRAFT_AVAILABLE RULE) — a Draft
-              // Message is meant to be copied straight to a customer, so one
-              // built on an unsupported or incomplete answer would be
-              // misleading. Suppress the block entirely rather than showing
-              // a fabricated or placeholder draft.
               const share = shareBody && shareBody.trim().toUpperCase() !== "NO_DRAFT_AVAILABLE" ? shareBody : null;
               return (
                 <div key={m.id} className="flex justify-start gap-2 max-w-[92%]">
