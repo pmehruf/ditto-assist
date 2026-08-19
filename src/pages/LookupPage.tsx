@@ -50,8 +50,9 @@ interface LookupPageProps {
   selectedPlan: string;
   setSelectedPlan: (value: string) => void;
   productionPlans: string[];
-  /** Plans taken out of service via the Declaration Assistant Control page
-   * (formerly "Plan Management") — keyed by plan name, value is the
+  /** Plans taken out of service via the DA Mapping Config page (formerly
+   * "Declaration Assistant Control", formerly "Plan Management") — keyed
+   * by plan name, value is the
    * admin's note (possibly ""). A plan not present here is fully enabled.
    * Still selectable in the dropdown (so the advisor can see why), but
    * search/submit is blocked while one is selected — see the disabledNote

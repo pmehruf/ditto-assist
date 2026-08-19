@@ -85,7 +85,7 @@ import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole 
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon, QaDashboardIcon, OperationsControlIcon } from "./components/icons";
+import { DeclarationMapIcon, QaDashboardIcon, OperationsControlIcon, DaMappingConfigIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
@@ -1030,8 +1030,9 @@ export default function App() {
   }, [dbPlanConfigs]);
 
   // Maps a disabled plan's name to its disabledNote (or "" if none was set),
-  // sourced from the Declaration Assistant Control page (formerly "Plan
-  // Management"). Passed to LookupPage so it can show the advisor why a
+  // sourced from the DA Mapping Config page (formerly "Declaration
+  // Assistant Control", formerly "Plan Management"). Passed to LookupPage
+  // so it can show the advisor why a
   // plan is unavailable once they select it from the dropdown, and block
   // Search — see plan_configs.disabled in schema.ts.
   const disabledPlanNotes = useMemo(() => {
@@ -3019,7 +3020,7 @@ export default function App() {
             navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
             navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
             navPage("knowledge_base", "Knowledge Base", Database, "Viewer"),
-            navPage("plan_scope", "Declaration Assistant Control", FileText, "Viewer"),
+            navPage("plan_scope", "DA Mapping Config", DaMappingConfigIcon, "Viewer"),
           ],
         },
         {
@@ -3726,7 +3727,7 @@ export default function App() {
                 flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 profile_access: { label: "Access Control Center", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                plan_scope: { label: "Declaration Assistant Control", icon: <FileText className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                plan_scope: { label: "DA Mapping Config", icon: <DaMappingConfigIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4633,7 +4634,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="Declaration Assistant Control">
+              <ErrorBoundary theme={theme} label="DA Mapping Config">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <PlanManagementPage
                 theme={theme}

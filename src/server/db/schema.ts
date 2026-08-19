@@ -331,9 +331,10 @@ export const planConfigs = pgTable("plan_configs", {
   specificIllnesses: jsonb("specific_illnesses").notNull().default([]),
   overrides: jsonb("overrides"),
   // Takes this plan out of service for advisors without deleting its
-  // configuration — set from the Declaration Assistant Control page
-  // (formerly "Plan Management") while its questions/mapping engine logic
-  // is being reworked. /api/match refuses to run a lookup for a disabled
+  // configuration — set from the DA Mapping Config page (formerly
+  // "Declaration Assistant Control", formerly "Plan Management") while its
+  // questions/mapping engine logic is being reworked. /api/match refuses to
+  // run a lookup for a disabled
   // plan (see server.ts); the declaration dropdown (LookupPage.tsx) shows
   // disabledNote to the advisor once they select it. Both default to "not
   // disabled" so every existing plan is unaffected until an admin opts it

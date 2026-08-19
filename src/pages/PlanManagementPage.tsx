@@ -93,10 +93,11 @@ function normalizeCategoryMapToStrings(categoryMap: Record<string, string | numb
 }
 
 /**
- * Declaration Assistant Control (renamed from "Plan Management" — the
- * function name/route key stay as PlanManagementPage/plan_scope, only the
- * user-facing label changed, to avoid an unnecessary rename across every
- * import site) — add or edit an insurance plan's declaration questionnaire,
+ * DA Mapping Config (renamed from "Plan Management", then "Declaration
+ * Assistant Control" — the function name/route key stay as
+ * PlanManagementPage/plan_scope, only the user-facing label changed each
+ * time, to avoid an unnecessary rename across every import site) — add or
+ * edit an insurance plan's declaration questionnaire,
  * its category-to-question mapping, and take a plan out of service for
  * advisors (with a note) while its logic is being reworked. Backed by
  * Postgres (plan_configs table via /api/plan-configs); a plan saved here is
@@ -898,7 +899,7 @@ export function PlanManagementPage({
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Declaration Assistant Control</span>
+            <span>DA Mapping Config</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {planMgmtView === "plans"

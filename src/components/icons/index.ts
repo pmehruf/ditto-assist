@@ -26,3 +26,5 @@ export type { } from './QaDashboardIcon';
 
 export { OperationsControlIcon } from './OperationsControlIcon';
 
+export { DaMappingConfigIcon } from './DaMappingConfigIcon';
+
