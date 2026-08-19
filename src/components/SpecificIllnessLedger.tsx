@@ -203,8 +203,14 @@ export function SpecificIllnessLedger({
   const results = useMemo<SpecificIllnessMatchResult[] | null>(() => {
     const trimmed = pedInput.trim();
     if (!trimmed) return null;
-    return matchSpecificIllness(trimmed);
-  }, [pedInput]);
+    // Pass the live, DB-backed Specific Illness List for every plan
+    // (dbPlanConfigs, already loaded for this page) so this sandbox reflects
+    // the exact same coverage a real advisor lookup would see — previously
+    // this only ever checked the hardcoded MASTER_ILLNESSES catalog, so any
+    // illness added or edited via the Plan-Specific Illness Manager below
+    // never actually showed up here even though the UI implied it would.
+    return matchSpecificIllness(trimmed, dbPlanConfigs);
+  }, [pedInput, dbPlanConfigs]);
 
   const filteredCatalog = useMemo(() => {
     const q = catalogSearch.trim().toLowerCase();

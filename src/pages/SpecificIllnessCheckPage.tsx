@@ -3,10 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useRef, useState } from "react";
-import { ClipboardCheck, CheckCircle2, Search, Stethoscope, X, AlertTriangle, Circle, Tag, BookOpen } from "lucide-react";
-import { MASTER_ILLNESSES, matchSpecificIllness, type SpecificIllnessMatchResult } from "../specificIllnessEngine";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardCheck, CheckCircle2, Search, Stethoscope, X, AlertTriangle, Circle, Tag, BookOpen, Sparkles, Loader2 } from "lucide-react";
+import { MASTER_ILLNESSES, matchSpecificIllness, type SpecificIllnessMatchResult, type DbPlanSpecificIllnessConfig } from "../specificIllnessEngine";
 import { buildGroupedSuggestions } from "../constants/pedSynonymGroups";
+
+interface AiIllnessMatch {
+  planName: string;
+  matchedIllness: string;
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+}
+interface AiCheckResponse {
+  condition: string;
+  ai_matches: AiIllnessMatch[];
+  disclaimer: string;
+}
 
 interface SpecificIllnessCheckPageProps {
   theme: "light" | "dark";
@@ -14,6 +26,11 @@ interface SpecificIllnessCheckPageProps {
    * uses (App.tsx's dynamicSuggestions) — passed down rather than rebuilt
    * here so both surfaces stay in sync with exactly one source of truth. */
   dynamicSuggestions: string[];
+  /** Every plan's live, DB-backed Specific Illness List (App.tsx's
+   * dbPlanConfigs) — passed through to matchSpecificIllness() so this page
+   * reflects illnesses an admin has added/edited via the Plan-Specific
+   * Illness Manager, not just the hardcoded catalog. */
+  dbPlanConfigs?: DbPlanSpecificIllnessConfig[];
 }
 
 // Same fixed display set the Admin Zone's underlying sandbox uses (see
@@ -68,13 +85,52 @@ function plainLanguageNote(result: SpecificIllnessMatchResult): string {
  * and results flowing top-to-bottom below it instead of a side-by-side
  * input/results split.
  */
-export function SpecificIllnessCheckPage({ theme, dynamicSuggestions }: SpecificIllnessCheckPageProps) {
+export function SpecificIllnessCheckPage({ theme, dynamicSuggestions, dbPlanConfigs = [] }: SpecificIllnessCheckPageProps) {
   const dark = theme === "dark";
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [pedInput, setPedInput] = useState("");
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  // selectValue() re-focuses the input after picking a suggestion (so the
+  // user can keep typing/tab away naturally), but that focus event would
+  // otherwise hit the same onFocus handler that reopens the dropdown for a
+  // non-empty input — reopening the just-closed list right after selecting
+  // it. This flag tells the next onFocus to skip that reopen exactly once.
+  const suppressFocusOpenRef = useRef(false);
+
+  // AI fallback — on-demand only (never fires automatically): an advisor
+  // clicks "Check with AI" when the deterministic engine finds nothing, so
+  // this costs an API call only when someone actually wants one. Keyed to
+  // the exact condition text it ran for, so switching the search input
+  // discards a stale AI answer rather than showing it against a new query.
+  const [aiCheckedFor, setAiCheckedFor] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiResult, setAiResult] = useState<AiCheckResponse | null>(null);
+
+  const runAiCheck = async (condition: string) => {
+    setAiLoading(true);
+    setAiError(null);
+    setAiResult(null);
+    setAiCheckedFor(condition);
+    try {
+      const res = await fetch("/api/specific-illness/ai-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ condition }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body?.error || "AI check failed.");
+      }
+      setAiResult(body as AiCheckResponse);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI check failed.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const suggestions = useMemo(() => {
     const query = pedInput.trim();
@@ -91,13 +147,25 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions }: Specific
     setPedInput(value);
     setDropdownOpen(false);
     setActiveSuggestionIndex(-1);
+    suppressFocusOpenRef.current = true;
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
   const results = useMemo<SpecificIllnessMatchResult[] | null>(() => {
     const trimmed = pedInput.trim();
     if (!trimmed) return null;
-    return matchSpecificIllness(trimmed);
+    return matchSpecificIllness(trimmed, dbPlanConfigs);
+  }, [pedInput, dbPlanConfigs]);
+
+  // Discard a stale AI answer as soon as the search moves on to a different
+  // condition, so it's never shown against the wrong query.
+  useEffect(() => {
+    if (pedInput.trim() !== aiCheckedFor) {
+      setAiCheckedFor(null);
+      setAiResult(null);
+      setAiError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedInput]);
 
   const labelClass = `text-[10px] font-black uppercase tracking-wider font-mono ${dark ? "text-stone-400" : "text-stone-500"}`;
@@ -145,6 +213,10 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions }: Specific
                     setDropdownOpen(e.target.value.trim().length > 0);
                   }}
                   onFocus={() => {
+                    if (suppressFocusOpenRef.current) {
+                      suppressFocusOpenRef.current = false;
+                      return;
+                    }
                     if (pedInput.trim().length > 0) setDropdownOpen(true);
                   }}
                   onKeyDown={(e) => {
@@ -386,6 +458,75 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions }: Specific
                         </p>
                       )}
                     </>
+                  )}
+
+                  {/* AI FALLBACK — only offered when the deterministic engine
+                      found nothing, and only runs when explicitly clicked
+                      (never automatically) so it never fires an API call the
+                      advisor didn't ask for. Its answer is always framed as a
+                      suggestion to verify, never as a confirmed match — same
+                      "advisory, not authoritative" posture the main
+                      Declaration Assistant engine's own AI fallback uses. */}
+                  {result.match_type === "no_match" && idx === results.length - 1 && (
+                    <div className={`pt-1 space-y-3 ${aiCheckedFor || aiLoading ? "" : "border-t"} ${dark ? "border-stone-800" : "border-stone-200"}`}>
+                      {!aiLoading && aiCheckedFor !== result.declared_condition.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => runAiCheck(result.declared_condition.trim())}
+                          className={`inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-lg border transition-all cursor-pointer ${
+                            dark
+                              ? "bg-violet-500/10 border-violet-500/30 text-violet-300 hover:bg-violet-500/15"
+                              : "bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100"
+                          }`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" /> Check with AI (last-resort check)
+                        </button>
+                      )}
+
+                      {aiLoading && (
+                        <p className={`inline-flex items-center gap-1.5 text-xs font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Asking AI to double-check against every plan's specific illness list…
+                        </p>
+                      )}
+
+                      {aiError && aiCheckedFor === result.declared_condition.trim() && (
+                        <p className={`text-[11px] font-semibold ${dark ? "text-red-400" : "text-red-600"}`}>{aiError}</p>
+                      )}
+
+                      {aiResult && aiCheckedFor === result.declared_condition.trim() && (
+                        <div className="space-y-2">
+                          {aiResult.ai_matches.length === 0 ? (
+                            <p className={`text-[11px] ${dark ? "text-stone-400" : "text-stone-600"}`}>
+                              AI agrees — no plan's specific illness list plausibly covers this condition.
+                            </p>
+                          ) : (
+                            <>
+                              <label className={labelClass}>AI-Suggested Matches — Verify Before Advising</label>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {aiResult.ai_matches.map((m, mi) => (
+                                  <div
+                                    key={`${m.planName}-${mi}`}
+                                    className={`p-3.5 rounded-xl border space-y-1.5 ${dark ? "bg-violet-500/[0.06] border-violet-500/25" : "bg-violet-50/60 border-violet-200"}`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className={`text-xs font-black ${dark ? "text-violet-300" : "text-violet-700"}`}>{m.planName}</span>
+                                      <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wide ${dark ? "text-violet-400" : "text-violet-600"}`}>
+                                        <Sparkles className="w-3 h-3" /> AI Suggested · {m.confidence}
+                                      </span>
+                                    </div>
+                                    <p className={`text-[11px] leading-relaxed ${dark ? "text-stone-300" : "text-stone-700"}`}>
+                                      <span className="font-bold">Possible match:</span> {m.matchedIllness}
+                                    </p>
+                                    <p className={`text-[10.5px] italic leading-relaxed ${dark ? "text-stone-400" : "text-stone-500"}`}>{m.reasoning}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                          <p className={`text-[10px] italic ${dark ? "text-stone-500" : "text-stone-400"}`}>{aiResult.disclaimer}</p>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );

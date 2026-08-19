@@ -21,6 +21,12 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > every master 
     "top_matched_illness": "Pilonidal sinus",
   },
   {
+    "id": "perianal_abscess",
+    "parent_illness": "Perianal / Perineal Abscess",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Fissure / Fistula in Ano",
+  },
+  {
     "id": "gallbladder_stone",
     "parent_illness": "Gallbladder stone / Cholecystitis",
     "top_match_type": "direct",
@@ -117,6 +123,24 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > every master 
     "top_matched_illness": "Non-infective arthritis",
   },
   {
+    "id": "non_specific_arthritis",
+    "parent_illness": "Non Specific Arthritis",
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Non-infective arthritis",
+  },
+  {
+    "id": "ankylosing_spondylitis",
+    "parent_illness": "Ankylosing Spondylitis",
+    "top_match_type": "direct",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
+    "id": "psoriatic_arthritis",
+    "parent_illness": "Psoriatic Arthritis",
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Spondylosis / Spondyloarthritis",
+  },
+  {
     "id": "cataract",
     "parent_illness": "Cataract",
     "top_match_type": "direct",
@@ -171,6 +195,12 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > every master 
     "top_matched_illness": "Otitis media",
   },
   {
+    "id": "nasal_concha_resection",
+    "parent_illness": "Nasal concha resection",
+    "top_match_type": "direct",
+    "top_matched_illness": "Nasal concha resection",
+  },
+  {
     "id": "nasal_polyps",
     "parent_illness": "Nasal polyps",
     "top_match_type": "direct",
@@ -180,6 +210,12 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > every master 
     "id": "fibroids",
     "parent_illness": "Fibroids / Fibromyoma",
     "top_match_type": "direct",
+    "top_matched_illness": "Fibroids / Fibromyoma",
+  },
+  {
+    "id": "hysterectomy_standalone",
+    "parent_illness": "Hysterectomy",
+    "top_match_type": "procedure_mapped",
     "top_matched_illness": "Fibroids / Fibromyoma",
   },
   {
@@ -243,6 +279,12 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > every master 
     "top_matched_illness": "Hernia",
   },
   {
+    "id": "hydrocele_rectocele",
+    "parent_illness": "Hydrocele / Rectocele",
+    "top_match_type": "alias",
+    "top_matched_illness": "Uterine prolapse",
+  },
+  {
     "id": "varicocele",
     "parent_illness": "Varicocele",
     "top_match_type": "direct",
@@ -265,6 +307,12 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > every master 
     "parent_illness": "All skin diseases",
     "top_match_type": "direct",
     "top_matched_illness": "All skin diseases",
+  },
+  {
+    "id": "parkinsons_alzheimers_dementia",
+    "parent_illness": "Parkinson's / Alzheimer's disease / Dementia",
+    "top_match_type": "direct",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "id": "any_cyst",
@@ -629,8 +677,8 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "fibroid",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Fibroids / Fibromyoma",
   },
   {
     "ped": "fibroadenoma",
@@ -979,18 +1027,18 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "alzheimer",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "alias",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "dementia",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "parkinson",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "broad_category",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "epilepsy",
@@ -1529,8 +1577,8 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "adenoid",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "sub_condition",
+    "top_matched_illness": "Tonsillitis",
   },
   {
     "ped": "adenoids",
@@ -2719,28 +2767,28 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "parkinson disease",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "parkinsonism",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "alias",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "parkinson's disease",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "alzheimer disease",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "alzheimer's disease",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Parkinson's / Alzheimer's disease / Dementia",
   },
   {
     "ped": "motor neuron disease",
@@ -3154,12 +3202,12 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "polycystic ovary disease",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "alias",
+    "top_matched_illness": "Polycystic ovarian disease",
   },
   {
     "ped": "uterine fibroid",
-    "top_match_type": "alias",
+    "top_match_type": "direct",
     "top_matched_illness": "Fibroids / Fibromyoma",
   },
   {
@@ -3559,8 +3607,8 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "varicose vein",
-    "top_match_type": "no_match",
-    "top_matched_illness": null,
+    "top_match_type": "direct",
+    "top_matched_illness": "Varicose veins",
   },
   {
     "ped": "lymphedema",
@@ -4084,7 +4132,7 @@ exports[`specificIllnessEngine.ts matching (regression baseline) > produces stab
   },
   {
     "ped": "kidney stone removal",
-    "top_match_type": "alias",
+    "top_match_type": "direct",
     "top_matched_illness": "Kidney / Urinary stones",
   },
   {

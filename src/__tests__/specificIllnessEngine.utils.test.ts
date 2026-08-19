@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { normalizePlanName, matchesPhrase } from "../specificIllnessEngine";
+import { normalizePlanName, matchesPhrase, matchSpecificIllness } from "../specificIllnessEngine";
 
 describe("normalizePlanName", () => {
   it.each([
@@ -49,5 +49,67 @@ describe("matchesPhrase", () => {
 
   it("safely escapes regex special characters in the phrase", () => {
     expect(matchesPhrase("type 1 diabetes (insulin dependent)", "(insulin dependent)")).toBe(true);
+  });
+
+  // Regression coverage for the plural/hyphen matching bug: a declared
+  // condition entered as a plural ("Peptic Ulcers") previously failed to
+  // match a catalog entry stored in the singular ("peptic ulcer"), because
+  // the old word-boundary check required an exact match on both sides.
+  it("matches a plural declared condition against a singular stored phrase", () => {
+    expect(matchesPhrase("Peptic Ulcers", "peptic ulcer")).toBe(true);
+  });
+
+  it("matches a singular declared condition against a plural stored phrase", () => {
+    expect(matchesPhrase("hemorrhoid", "hemorrhoids")).toBe(true);
+  });
+
+  it("treats hyphens and spaces as interchangeable separators", () => {
+    expect(matchesPhrase("fistula-in-ano", "fistula in ano")).toBe(true);
+  });
+
+  it("does not strip the trailing 's' off medical terms that are singular by nature (-itis/-sis)", () => {
+    // "sinusitis" and "psoriasis" are not plurals — matching still works
+    // because both sides go through the same transform, but a plural-only
+    // search term must not spuriously match them.
+    expect(matchesPhrase("sinusitis", "sinusitis")).toBe(true);
+    expect(matchesPhrase("psoriasis", "psoriasis")).toBe(true);
+  });
+
+  it("still respects word boundaries for short abbreviations after the pluralization change", () => {
+    expect(matchesPhrase("sore throat", "ra")).toBe(false);
+  });
+});
+
+describe("matchSpecificIllness — DB-backed Specific Illness List wiring", () => {
+  it("extends an existing catalog match's applicable plans when a plan's DB list names the same condition", () => {
+    // "Custom Plan" isn't in the hardcoded MASTER_ILLNESSES catalog at all,
+    // but its admin-managed Specific Illness List names "Piles" — this
+    // should extend the existing "Haemorrhoids / Piles" catalog match to
+    // include this plan, exactly like the main Declaration Assistant
+    // results flow already does (App.tsx's checkIllnessInPlanSpecificList).
+    const results = matchSpecificIllness("piles", [
+      { planName: "Custom Plan", specificIllnesses: [{ category: "Gastro", illness: "Piles" }] },
+    ]);
+    const pilesMatch = results.find((r) => r.matched_listed_illness === "Haemorrhoids / Piles");
+    expect(pilesMatch).toBeDefined();
+    expect(pilesMatch!.plans_applicable).toContain("Custom Plan");
+    // Built-in plans with a hardcoded schedule for piles are still present.
+    expect(pilesMatch!.plans_applicable).toContain("Optima Secure");
+  });
+
+  it("surfaces a plan's own custom Specific Illness List entry even when the catalog doesn't know it", () => {
+    const results = matchSpecificIllness("some rare custom condition", [
+      { planName: "Custom Plan", specificIllnesses: [{ illness: "Some Rare Custom Condition" }] },
+    ]);
+    const customMatch = results.find((r) => r.matched_listed_illness === "Some Rare Custom Condition");
+    expect(customMatch).toBeDefined();
+    expect(customMatch!.plans_applicable).toEqual(["Custom Plan"]);
+    expect(customMatch!.match_type).toBe("direct");
+  });
+
+  it("is a no-op when dbPlanConfigs is omitted (existing callers unaffected)", () => {
+    const withoutDb = matchSpecificIllness("piles");
+    const withEmptyDb = matchSpecificIllness("piles", []);
+    expect(withoutDb).toEqual(withEmptyDb);
   });
 });

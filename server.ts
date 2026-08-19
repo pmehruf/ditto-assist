@@ -18,6 +18,7 @@ import dotenv from "dotenv";
 // Import types & engine logic
 import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES } from "./src/types.js";
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
+import { MASTER_ILLNESSES } from "./src/specificIllnessEngine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
 import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup } from "./src/server/pedRuntimeCache.js";
 import {
@@ -59,6 +60,12 @@ import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClie
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
+import { kbDocumentTypeEnum } from "./src/server/db/schema.js";
+
+// Valid kb_resources.document_type values, for request-body validation on
+// the upload/add-url/PATCH routes below — kept as a plain string[] (not the
+// Drizzle enum object itself) so it's cheap to .includes() against.
+const KB_DOCUMENT_TYPES: string[] = [...kbDocumentTypeEnum.enumValues];
 import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
 import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
@@ -2946,6 +2953,174 @@ app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
   }
 });
 
+// --- Specific Illness Check — AI fallback (last-resort layer) ---
+//
+// The deterministic matchSpecificIllness() engine (src/specificIllnessEngine.ts)
+// checks a declared condition against each plan's own already-listed
+// Specific Illness schedule (hardcoded MASTER_ILLNESSES catalog + each
+// plan's live DB-backed list). This endpoint is ONLY reached when that
+// engine finds no_match for every plan — an advisor must explicitly click
+// "Check with AI" (never fired automatically) — and Gemini is asked to
+// double-check the SAME already-listed items, never to invent new ones or
+// decide plan policy itself. Same "advisory, not authoritative" posture as
+// the main Declaration Assistant engine's own Gemini fallback (see
+// MASTER_CONSTITUTION.md's AI Usage section): the response is always framed
+// as a suggestion for the advisor to verify against the plan's actual
+// policy wording, never as a confirmed match.
+function validateSpecificIllnessAiCheckBody(body: any): body is { condition: string } {
+  return body && typeof body.condition === "string" && body.condition.trim().length > 0;
+}
+
+app.post("/api/specific-illness/ai-check", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!validateSpecificIllnessAiCheckBody(req.body)) {
+      return res.status(400).json({ error: "condition is required." });
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "AI check is not configured on this server (missing GEMINI_API_KEY)." });
+    }
+    const condition = req.body.condition.trim();
+
+    // Build the same "every plan's already-listed Specific Illness items"
+    // picture the Declaration Assistant results page shows (App.tsx's
+    // effectiveSpecificIllnessesDict): a DB-backed list (Plan Management's
+    // Plan-Specific Illness Manager) where one has been saved, falling back
+    // to the hardcoded MASTER_ILLNESSES catalog's per-plan schedule text
+    // where it hasn't. Gemini is only ever shown these existing items — it
+    // is never asked to invent a new illness or a new plan.
+    let dbPlanRows: Array<{ planName: string; specificIllnesses?: Array<{ category?: string | null; illness: string }> }> = [];
+    try {
+      const { planConfigs } = createRepositories(getDb());
+      // planConfigs.list() types its jsonb columns (specificIllnesses among
+      // them) as `unknown` at the repository layer — same as every other
+      // consumer of this column elsewhere in server.ts — so a narrowing cast
+      // to the shape validateSpecificIllnesses() already enforces on write
+      // is expected here, not a type-safety gap.
+      dbPlanRows = (await planConfigs.list()) as unknown as typeof dbPlanRows;
+    } catch (err) {
+      console.error("[Specific Illness AI Check] Failed to load DB plan configs (continuing with hardcoded catalog only):", err);
+    }
+
+    const planIllnessLists: Record<string, string[]> = {};
+    dbPlanRows.forEach((row) => {
+      if (row.specificIllnesses && row.specificIllnesses.length > 0) {
+        planIllnessLists[row.planName] = Array.from(new Set(row.specificIllnesses.map((si) => si.illness.trim()).filter(Boolean)));
+      }
+    });
+    // Every plan name MASTER_ILLNESSES has a schedule for, whether or not it
+    // already has a DB-backed list above — placeholder empty arrays here get
+    // filled in the derivation pass below.
+    MASTER_ILLNESSES.forEach((def) => {
+      Object.keys(def.plan_schedules).forEach((planName) => {
+        if (!planIllnessLists[planName]) planIllnessLists[planName] = [];
+      });
+    });
+    // For plans with no DB list, derive their item set from MASTER_ILLNESSES
+    // the same way the results page does — one entry per catalog condition
+    // that has a schedule for that plan.
+    Object.keys(planIllnessLists).forEach((planName) => {
+      if (planIllnessLists[planName].length > 0) return;
+      const derived = MASTER_ILLNESSES.filter((def) => Boolean(def.plan_schedules[planName])).map((def) => def.parent_illness);
+      planIllnessLists[planName] = Array.from(new Set(derived));
+    });
+
+    const eligiblePlans = Object.entries(planIllnessLists).filter(([, items]) => items.length > 0);
+    if (eligiblePlans.length === 0) {
+      return res.json({
+        condition,
+        ai_matches: [],
+        disclaimer: "No plan has any Specific Illness List on record to check against.",
+      });
+    }
+
+    const ai = getAiClient();
+    const prompt = [
+      "You are assisting a health insurance advisor in India. A customer has declared this pre-existing medical condition:",
+      `"${condition}"`,
+      "",
+      "Below is a JSON object of insurance plans, each with the EXACT list of illnesses/procedures already named in that plan's own Specific Illness waiting-period schedule (a fixed 2-year wait for the ones on the list, versus the standard longer non-specific PED wait for anything not on it).",
+      "",
+      JSON.stringify(planIllnessLists, null, 2),
+      "",
+      "TASK: For each plan, decide whether the declared condition is the SAME clinical condition as, or a direct clinical synonym/manifestation/procedure-equivalent of, one of that plan's OWN LISTED items above.",
+      "",
+      "STRICT RULES:",
+      "1. Only ever select an item that is already listed for that plan, verbatim. Do not invent, rename, or generalize an item.",
+      "2. Do not include a plan at all if none of its listed items plausibly cover the condition — do not force a weak match.",
+      "3. Never guess across unrelated organ systems (e.g. do not match a skin condition to a cardiac item just because both are 'chronic').",
+      "4. This is advisory only — you are not deciding underwriting policy, only flagging plausible matches for a human advisor to verify against the plan's actual policy wording.",
+      "",
+      "Respond with a JSON array (possibly empty) of matches, each with: planName (must be one of the plan names given above, exactly), matchedIllness (must be one of that plan's own listed items, exactly), confidence ('high'|'medium'|'low'), and reasoning (one concise sentence).",
+    ].join("\n");
+
+    const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+    let response: any = null;
+    let lastError: any = null;
+    for (const model of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            temperature: 0,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  planName: { type: Type.STRING },
+                  matchedIllness: { type: Type.STRING },
+                  confidence: { type: Type.STRING, description: "'high', 'medium', or 'low'." },
+                  reasoning: { type: Type.STRING },
+                },
+                required: ["planName", "matchedIllness", "confidence", "reasoning"],
+              },
+            },
+          },
+        });
+        break;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Specific Illness AI Check] Attempt failed with model ${model}:`, err?.message || err);
+      }
+    }
+    if (!response) {
+      throw lastError || new Error("Failed to get a response from Gemini.");
+    }
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("No response returned from the Gemini API model.");
+    }
+    const parsed = JSON.parse(text);
+    const rawMatches = Array.isArray(parsed) ? parsed : [];
+
+    // Defense in depth: drop anything that isn't actually one of the plan's
+    // own listed items, in case the model didn't follow instructions exactly
+    // — this endpoint must never surface a fabricated illness or plan name.
+    const aiMatches = rawMatches.filter((m: any) => {
+      if (!m || typeof m.planName !== "string" || typeof m.matchedIllness !== "string") return false;
+      const items = planIllnessLists[m.planName];
+      return Array.isArray(items) && items.some((item) => item.toLowerCase() === m.matchedIllness.toLowerCase());
+    }).map((m: any) => ({
+      planName: m.planName,
+      matchedIllness: m.matchedIllness,
+      confidence: ["high", "medium", "low"].includes(String(m.confidence).toLowerCase()) ? String(m.confidence).toLowerCase() : "low",
+      reasoning: typeof m.reasoning === "string" ? m.reasoning : "",
+    }));
+
+    return res.json({
+      condition,
+      ai_matches: aiMatches,
+      disclaimer: "AI-suggested — not a confirmed match. Verify against the plan's actual policy wording before advising a customer.",
+    });
+  } catch (err: any) {
+    console.error("Specific Illness AI check failed:", err);
+    return res.status(500).json({ error: `AI check failed: ${err.message}` });
+  }
+});
+
 app.get("/api/flagged-issues", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Viewing flagged responses"))) return;
@@ -3600,6 +3775,9 @@ app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
     const categoryId = Number(req.body.categoryId);
     if (!Number.isInteger(categoryId)) return res.status(400).json({ error: "categoryId is required." });
     const title = typeof req.body.title === "string" && req.body.title.trim() ? req.body.title.trim() : file.originalname;
+    if (req.body.documentType !== undefined && !KB_DOCUMENT_TYPES.includes(req.body.documentType)) {
+      return res.status(400).json({ error: `documentType must be one of: ${KB_DOCUMENT_TYPES.join(", ")}.` });
+    }
 
     const { kbCategories } = createRepositories(getDb());
     const category = await kbCategories.get(categoryId);
@@ -3610,6 +3788,7 @@ app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
       categoryId,
       title,
       sourceLabel: file.originalname,
+      documentType: req.body.documentType,
       buffer: file.buffer,
       addedBy: `${req.user!.name} (${req.user!.email})`,
     });
@@ -3634,7 +3813,7 @@ app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
 app.post("/api/kb/resources/add-url", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Adding a Knowledge Base document"))) return;
-    const { url, categoryId: rawCategoryId, title: rawTitle } = req.body;
+    const { url, categoryId: rawCategoryId, title: rawTitle, documentType } = req.body;
     if (typeof url !== "string" || !url.trim()) return res.status(400).json({ error: "url is required." });
     let parsedUrl: URL;
     try {
@@ -3644,6 +3823,9 @@ app.post("/api/kb/resources/add-url", requireAuth, expensiveActionLimiter, async
     }
     if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
       return res.status(400).json({ error: "Only http(s) URLs are supported." });
+    }
+    if (documentType !== undefined && !KB_DOCUMENT_TYPES.includes(documentType)) {
+      return res.status(400).json({ error: `documentType must be one of: ${KB_DOCUMENT_TYPES.join(", ")}.` });
     }
 
     const categoryId = Number(rawCategoryId);
@@ -3659,6 +3841,7 @@ app.post("/api/kb/resources/add-url", requireAuth, expensiveActionLimiter, async
       categoryId,
       title,
       url: parsedUrl.toString(),
+      documentType,
       addedBy: `${req.user!.name} (${req.user!.email})`,
     });
 
@@ -3677,11 +3860,14 @@ app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
     if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base resource"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
-    const { title, categoryId, status, planTags } = req.body;
+    const { title, categoryId, status, planTags, documentType } = req.body;
     if (planTags !== undefined) {
       if (!Array.isArray(planTags) || !planTags.every((t: unknown) => typeof t === "string")) {
         return res.status(400).json({ error: "planTags must be an array of strings." });
       }
+    }
+    if (documentType !== undefined && !KB_DOCUMENT_TYPES.includes(documentType)) {
+      return res.status(400).json({ error: `documentType must be one of: ${KB_DOCUMENT_TYPES.join(", ")}.` });
     }
     const { kbResources } = createRepositories(getDb());
     const resource = await kbResources.update(id, {
@@ -3689,6 +3875,7 @@ app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
       ...(categoryId !== undefined ? { categoryId: Number(categoryId) } : {}),
       ...(status !== undefined ? { status } : {}),
       ...(planTags !== undefined ? { planTags: (planTags as string[]).map(t => t.trim()).filter(Boolean) } : {}),
+      ...(documentType !== undefined ? { documentType } : {}),
     });
     if (!resource) return res.status(404).json({ error: "Resource not found." });
     return res.json({ resource });

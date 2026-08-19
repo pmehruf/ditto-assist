@@ -26,7 +26,7 @@ export interface IllnessOverrideRecord {
 export interface MasterIllnessDefinition {
   id: string; // unique key
   parent_illness: string; // normalized English parent
-  category: "Gastroenterology" | "Orthopaedic / Rheumatological" | "Eye" | "ENT" | "Gynaecology" | "Urogenital" | "Skin" | "General / Benign tumours";
+  category: "Gastroenterology" | "Orthopaedic / Rheumatological" | "Eye" | "ENT" | "Gynaecology" | "Urogenital" | "Skin" | "Neurological" | "General / Benign tumours";
   direct_names: string[]; // standard direct names
   aliases: string[]; // different names, same condition
   procedures: string[]; // surgical/medical interventions
@@ -90,6 +90,30 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     }
   },
   {
+    // Added 2026-08-19, verified against the actual Optima Secure policy
+    // wording — "Perianal Abscesses" (and a near-duplicate "Perineal
+    // Abscesses" line, and a separate "Surgery for Perianal Abscesses"
+    // procedure line) are their own standalone schedule entries there, not
+    // part of the Fissure/Fistula/Haemorrhoids line. Only Optima Secure is
+    // populated: for Activ Fit Preferred, Care Supreme, Activ One Max,
+    // Aspire, and Reassure 2.0, abscess IS genuinely bundled into the
+    // fissure_fistula/piles wording above (their own text explicitly says
+    // "...Ano-rectal & Perianal Abscess" / "...abscess of anal and rectal
+    // region"), so `fissure_fistula`'s sub_conditions list is left
+    // unchanged — correct for those plans.
+    id: "perianal_abscess",
+    parent_illness: "Perianal / Perineal Abscess",
+    category: "Gastroenterology",
+    direct_names: ["perianal abscess", "perineal abscess"],
+    aliases: ["perianal abscesses", "perineal abscesses", "ano-rectal abscess", "anal abscess", "rectal abscess"],
+    procedures: ["surgery for perianal abscess", "incision and drainage of perianal abscess"],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Optima Secure": "Perianal Abscesses"
+    }
+  },
+  {
     id: "gallbladder_stone",
     parent_illness: "Gallbladder stone / Cholecystitis",
     category: "Gastroenterology",
@@ -130,7 +154,7 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     parent_illness: "Gastric / Duodenal ulcer",
     category: "Gastroenterology",
     direct_names: ["gastric ulcer", "duodenal ulcer", "peptic ulcer", "gastric / duodenal ulcer"],
-    aliases: ["stomach ulcer", "gastric erosion", "duodenal erosion", "peptic ulcer disease", "stomach ulcers", "pud"],
+    aliases: ["stomach ulcer", "gastric erosion", "duodenal erosion", "peptic ulcer disease", "stomach ulcers", "pud", "duodenal ulcer disease", "gastroduodenal ulcer", "gastric ulcer disease", "erosive gastritis"],
     procedures: ["vagotomy", "pyloroplasty", "gastrojejunostomy", "endoscopy for ulcer bleeding"],
     sub_conditions: ["gastritis", "duodenitis", "colitis", "hyperacidity with gastritis", "antral gastritis", "erosion of stomach"],
     is_broad_category: false,
@@ -370,6 +394,69 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Reassure 2.0": "Osteoarthritis, joint replacement, osteoporosis, systemic connective tissue disorders, inflammatory polyarthropathies, Rheumatoid Arthritis, gout, intervertebral disc disorders, arthroscopic surgeries for ligament repair"
     }
   },
+  {
+    // Added 2026-08-19, verified against the Activ Fit Preferred and Activ
+    // One Max policy PDFs — "Non Specific Arthritis" is its own standalone
+    // schedule line there, distinct from "Non infective arthritis" above
+    // (both appear as separate rows in the same Orthopedic/Rheumatological
+    // section). Kept as its own entry rather than folded into
+    // `non_infective_arthritis` so the quoted wording stays accurate.
+    id: "non_specific_arthritis",
+    parent_illness: "Non Specific Arthritis",
+    category: "Orthopaedic / Rheumatological",
+    direct_names: ["non specific arthritis", "nonspecific arthritis"],
+    aliases: ["arthritis nos", "unspecified arthritis"],
+    procedures: [],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Activ Fit Preferred": "Non Specific Arthritis",
+      "Activ One Max": "Non Specific Arthritis"
+    }
+  },
+  {
+    // Added 2026-08-19, verified against the Activ One Max policy PDF —
+    // "Ankylosing Spondylitis / Spondyloarthropathies" is its own additional
+    // schedule line unique to Activ One Max (not present in Activ Fit
+    // Preferred's otherwise-identical list), separate from the generic
+    // "Spondilosis, Spondioarthritis, Spondylopathies" line on `spondylosis`
+    // above. Since "ankylosing spondylitis" is already an alias on
+    // `spondylosis`, a search for it will correctly surface both cards for
+    // Activ One Max — the generic spondylosis line and this more precise
+    // one — rather than only the less-precise one.
+    id: "ankylosing_spondylitis",
+    parent_illness: "Ankylosing Spondylitis",
+    category: "Orthopaedic / Rheumatological",
+    direct_names: ["ankylosing spondylitis"],
+    aliases: ["ankylosing spondyloarthropathies", "bechterew disease", "ankylosing spondyloarthritis"],
+    procedures: [],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Activ One Max": "Ankylosing Spondylitis / Spondyloarthropathies"
+    }
+  },
+  {
+    // Added 2026-08-19, verified against the Activ One Max policy PDF —
+    // "Psoriatic Arthritis / Arthropathy" is its own additional schedule
+    // line unique to Activ One Max, separate from the generic "Non infective
+    // arthritis" line on `non_infective_arthritis` (which already lists
+    // "psoriatic arthritis" as an alias). Kept as its own entry for the same
+    // reason as `ankylosing_spondylitis` above — precise wording for the one
+    // plan that lists it separately, while the broader card still surfaces
+    // too.
+    id: "psoriatic_arthritis",
+    parent_illness: "Psoriatic Arthritis",
+    category: "Orthopaedic / Rheumatological",
+    direct_names: ["psoriatic arthritis", "psoriatic arthropathy"],
+    aliases: ["psoriatic joint disease"],
+    procedures: [],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Activ One Max": "Psoriatic Arthritis / Arthropathy"
+    }
+  },
 
   // Eye
   {
@@ -433,11 +520,22 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     is_broad_category: true,
     broad_category_terms: ["retinal", "retina", "retinopathy", "macular", "photocoagulation"],
     plan_schedules: {
-      "Activ Fit Preferred": "All Cysts, Mass, Swelling, Lump, Granulomas, Polyps, Fibroids & Benign Tumour of the female genito urinary system", // wait, just placeholder if not mapped
-      "Optima Secure": "Cataract and other disorders of lens and Retina",
-      "Activ One Max": "Cataract and other disorders of lens and Retina", // listed in Optima and Activ One
+      // Verified against the actual Optima Secure policy wording (2026-08-19):
+      // "Retinal detachment" is its own distinct schedule line, separate from
+      // "Cataract and other disorders of lens and Retina" — previously this
+      // reused the cataract line's text, which was a wording inaccuracy
+      // (the condition was still correctly flagged as covered, but quoted
+      // the wrong policy line to the advisor).
+      "Optima Secure": "Retinal detachment",
       "Aspire": "Cataract, glaucoma and retinal detachment",
       "Reassure 2.0": "Cataract, glaucoma and retinal detachment"
+      // Verified 2026-08-19 against the Activ Fit Preferred and Activ One
+      // Max policy PDFs: their Eye sections only list Cataract / Glaucoma /
+      // Refractive Error Correction — neither plan has a separate
+      // retinal-disorder line item, so no entry is populated for them here.
+      // (The old Activ Fit Preferred entry was a stray Gynaecology-section
+      // string pasted in by mistake; the old Activ One Max entry quoted
+      // text that doesn't appear anywhere in that plan's schedule.)
     }
   },
 
@@ -522,11 +620,35 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     is_broad_category: false,
     plan_schedules: {
       "Activ Fit Preferred": "Otitis Media",
-      "Optima Secure": "Tympanoplasty, Mastoidectomy / Nasal concha resection",
+      // Verified against the actual Optima Secure policy wording
+      // (2026-08-19): "Tympanoplasty, Mastoidectomy" and "Nasal concha
+      // resection" are two separate schedule lines, not one combined phrase
+      // — the nasal concha resection half now lives in its own catalog entry
+      // below instead of being appended here.
+      "Optima Secure": "Tympanoplasty, Mastoidectomy",
       "Care Supreme": "Surgical treatments for Benign ear, nose and throat (ENT) disorders and surgeries",
       "Activ One Max": "Otitis Media",
       "Aspire": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses",
       "Reassure 2.0": "Surgical treatment for diseases of middle ear and mastoid (including otitis media, cholesteatoma, perforation of tympanic membrane), Tonsils and adenoids, nasal septum and nasal sinuses"
+    }
+  },
+  {
+    // Added 2026-08-19, verified against the actual Optima Secure policy
+    // wording — a standalone schedule line, distinct from otitis_media's
+    // "Tympanoplasty, Mastoidectomy" line above (previously incorrectly
+    // appended to it as one merged phrase). Only Optima Secure is populated
+    // here since that's the only plan verified against a primary source so
+    // far — add other plans' schedule text only once verified the same way.
+    id: "nasal_concha_resection",
+    parent_illness: "Nasal concha resection",
+    category: "ENT",
+    direct_names: ["nasal concha resection"],
+    aliases: ["turbinate resection", "concha resection", "inferior turbinate resection"],
+    procedures: ["turbinectomy", "submucous diathermy of turbinate"],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Optima Secure": "Nasal concha resection"
     }
   },
   {
@@ -562,6 +684,30 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
       "Activ One Max": "Fibroids (Fibromyoma)",
       "Aspire": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)",
       "Reassure 2.0": "Prolapse uterus or cervix, endometriosis, Fibroids, Polycystic ovarian disease (PCOD), hysterectomy (unless necessitated by Malignancy)"
+    }
+  },
+  {
+    // Added 2026-08-19, verified against the actual Optima Secure policy
+    // wording — "Hysterectomy" is its own standalone schedule line there,
+    // distinct from "Fibroids (fibromyoma)". Left deliberately narrow
+    // (only Optima Secure populated): for Care Supreme, Aspire, and
+    // Reassure 2.0, "hysterectomy" is genuinely bundled into their
+    // fibroids/menorrhagia/prolapse wording already (see those plans'
+    // schedule text on the `fibroids` entry below), so this entry must NOT
+    // duplicate a plan_schedules value for them, or "hysterectomy" would
+    // show two conflicting quoted lines for the same plan. `fibroids`
+    // keeps its existing "hysterectomy" procedure mapping unchanged for
+    // that reason — this entry only adds the missing Optima Secure line.
+    id: "hysterectomy_standalone",
+    parent_illness: "Hysterectomy",
+    category: "Gynaecology",
+    direct_names: ["hysterectomy"],
+    aliases: ["total hysterectomy", "subtotal hysterectomy", "radical hysterectomy", "hysterectomy surgery"],
+    procedures: [],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Optima Secure": "Hysterectomy"
     }
   },
   {
@@ -610,7 +756,13 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     plan_schedules: {
       "Activ Fit Preferred": "Dysfunctional Uterine Bleeding (DUB)",
       "Optima Secure": "Dilatation and curettage (D&C)",
-      "Care Supreme": "Hysterectomy for menorrhagia or Fibromyoma or prolapse of uterus",
+      // Verified 2026-08-19 against the Care Supreme policy PDF: "Dilatation
+      // and Curettage" is its own numbered schedule item there, separate
+      // from "Hysterectomy for menorrhagia or Fibromyoma or prolapse of
+      // uterus" (which stays on `fibroids` / `uterine_prolapse` below,
+      // unchanged — that text is correct for those). The previous entry
+      // here mistakenly reused the hysterectomy line's text instead of D&C's.
+      "Care Supreme": "Dilatation and Curettage",
       "Activ One Max": "Dysfunctional Uterine Bleeding (DUB)"
     }
   },
@@ -673,10 +825,21 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     is_broad_category: true,
     broad_category_terms: ["ovarian cyst", "dermoid cyst", "follicular cyst", "ovary cyst", "theca lutein cyst"],
     plan_schedules: {
-      "Activ Fit Preferred": "Ovarian cyst / benign tumour",
+      // Verified 2026-08-19 against the source policy PDFs: neither Activ
+      // Fit Preferred nor Activ One Max actually uses the phrase "Ovarian
+      // cyst / benign tumour" anywhere — their Gynaecology sections list
+      // "All Cysts, Mass, Swelling, Lump, Granulomas, Polyps, Fibroids &
+      // Benign Tumour of the female genito urinary system" as its own line
+      // item, which is what this condition maps to for those two plans.
+      "Activ Fit Preferred": "All Cysts, Mass, Swelling, Lump, Granulomas, Polyps, Fibroids & Benign Tumour of the female genito urinary system",
       "Optima Secure": "Surgery of Genito urinary system unless necessitated by Malignancy",
-      "Care Supreme": "Internal tumours, skin tumours, cysts, nodules, polyps including breast lumps",
-      "Activ One Max": "Ovarian cyst / benign tumour"
+      // Verified 2026-08-19: Care Supreme's genito-urinary-surgery line
+      // ("Surgery of Genito-urinary system unless necessitated by
+      // malignancy") is the correct match for ovarian cysts, not the
+      // internal/skin-tumour line (that text is already correctly used on
+      // `breast_lump`, `skin_tumour`, and `any_cyst` below).
+      "Care Supreme": "Surgery of Genito-urinary system unless necessitated by malignancy",
+      "Activ One Max": "All Cysts, Mass, Swelling, Lump, Granulomas, Polyps, Fibroids & Benign Tumour of the female genito urinary system"
     }
   },
 
@@ -729,11 +892,38 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     broad_category_terms: ["hernia", "hernioplasty", "herniorrhaphy", "hiatal", "inguinal", "umbilical", "incisional", "epigastric"],
     plan_schedules: {
       "Activ Fit Preferred": "Hernia, Hydrocele",
-      "Optima Secure": "Hernia / Hydrocele",
+      // Verified against the actual Optima Secure policy wording
+      // (2026-08-19): "Hernia" is its own standalone line there — Hydrocele
+      // is bundled with Rectocele instead (see the new
+      // "hydrocele_rectocele" entry below), not with Hernia. Hydrocele
+      // itself stays a `sub_condition` above because that's still correct
+      // for Activ Fit Preferred / Care Supreme / Activ One Max, where it
+      // genuinely is bundled with Hernia in their own wording.
+      "Optima Secure": "Hernia",
       "Care Supreme": "All types of Hernia & Hydrocele",
       "Activ One Max": "Hernia, Hydrocele",
       "Aspire": "Hernia of any site or type",
       "Reassure 2.0": "Hernia of any site or type"
+    }
+  },
+  {
+    // Added 2026-08-19, verified against the actual Optima Secure policy
+    // wording — "Hydrocele/Rectocele" is its own standalone schedule line
+    // there, separate from both Hernia and Prolapsed Uterus. Only Optima
+    // Secure is populated: for the plans above, Hydrocele is already
+    // correctly covered as a `hernia` sub_condition (their wording
+    // genuinely bundles it with Hernia), so this entry must not also add a
+    // conflicting plan_schedules value for them.
+    id: "hydrocele_rectocele",
+    parent_illness: "Hydrocele / Rectocele",
+    category: "Urogenital",
+    direct_names: ["hydrocele/rectocele"],
+    aliases: ["hydrocele", "hydrocoele", "rectocele"],
+    procedures: [],
+    sub_conditions: [],
+    is_broad_category: false,
+    plan_schedules: {
+      "Optima Secure": "Hydrocele/Rectocele"
     }
   },
   {
@@ -747,7 +937,11 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     is_broad_category: false,
     plan_schedules: {
       "Activ Fit Preferred": "Varicocoele / Spermatocoele",
-      "Optima Secure": "Varicocele / Hydrocele/Rectocele",
+      // Verified against the actual Optima Secure policy wording
+      // (2026-08-19): "Varicocele" is its own standalone line — the
+      // Hydrocele/Rectocele part belongs to the separate
+      // "hydrocele_rectocele" entry above, not bundled with Varicocele.
+      "Optima Secure": "Varicocele",
       "Activ One Max": "Varicocoele / Spermatocoele",
       "Aspire": "Hyperplasia of prostate, hydrocele and spermatocele",
       "Reassure 2.0": "Hyperplasia of prostate, hydrocele and spermatocele"
@@ -808,6 +1002,28 @@ export const MASTER_ILLNESSES: MasterIllnessDefinition[] = [
     }
   },
 
+  // Neurological
+  {
+    // Added 2026-08-19, verified against the Care Supreme policy PDF —
+    // "Parkinson's or Alzheimer's disease or Dementia" is its own numbered
+    // schedule item there. This is a genuinely new condition not covered by
+    // any existing catalog entry, so it gets a new "Neurological" category
+    // rather than being force-fit into an unrelated one. Only Care Supreme
+    // is populated — none of the other verified plans list this separately.
+    id: "parkinsons_alzheimers_dementia",
+    parent_illness: "Parkinson's / Alzheimer's disease / Dementia",
+    category: "Neurological",
+    direct_names: ["parkinson's disease", "parkinsons disease", "alzheimer's disease", "alzheimers disease", "dementia"],
+    aliases: ["parkinsonism", "alzheimer's", "alzheimers", "cognitive decline dementia", "senile dementia", "vascular dementia"],
+    procedures: [],
+    sub_conditions: [],
+    is_broad_category: true,
+    broad_category_terms: ["parkinson", "alzheimer", "dementia"],
+    plan_schedules: {
+      "Care Supreme": "Parkinson's or Alzheimer's disease or Dementia"
+    }
+  },
+
   // General / Benign tumours
   {
     id: "any_cyst",
@@ -851,12 +1067,53 @@ export function normalizePlanName(rawPlan: string): string {
 }
 
 /**
+ * Collapses hyphens/underscores/em-dashes into plain spaces and normalizes
+ * whitespace, so "fistula-in-ano" and "fistula in ano" are treated as the
+ * same phrase instead of requiring every hyphenated variant to be listed
+ * out separately as its own alias.
+ */
+function collapseSeparators(text: string): string {
+  return text.replace(/[-–—_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Crude, deliberately conservative English pluralization stripper — applied
+ * identically to both sides of a comparison, so it only ever makes matching
+ * MORE permissive (never changes whether two equal strings match). Fixes
+ * the class of bug where a declared condition entered as a plural (e.g.
+ * "Peptic Ulcers") failed to match a catalog entry stored in the singular
+ * ("peptic ulcer"), or vice versa.
+ *
+ * Guards:
+ * - Words of length <= 4 are left untouched, so short clinical abbreviations
+ *   ("ra", "oa", "pcod", "copd") are never mangled.
+ * - Words ending in "-itis" or "-sis" (gastritis, sinusitis, psoriasis,
+ *   nephrolithiasis, ...) are left untouched — these are singular disease
+ *   names that happen to end in "s", not plurals.
+ */
+function singularizeToken(token: string): string {
+  if (token.length <= 4) return token;
+  if (/(itis|sis)$/i.test(token)) return token;
+  if (/[^aeiou]ies$/i.test(token)) return token.slice(0, -3) + "y";
+  if (/(sses|shes|ches|xes)$/i.test(token)) return token.slice(0, -2);
+  if (/s$/i.test(token) && !/ss$/i.test(token)) return token.slice(0, -1);
+  return token;
+}
+
+function singularizeText(text: string): string {
+  return text.replace(/[a-zA-Z]+/g, (word) => singularizeToken(word));
+}
+
+/**
  * Safely checks if a short term or phrase matches the declared condition fully (whole phrase/word boundary).
  * Prevents issues where short terms (like "oa" or "ra") or partial terms match inside unrelated words (like "throat" or "brain").
+ *
+ * Tolerant of: hyphen vs. space variants ("fistula-in-ano" == "fistula in ano")
+ * and simple plural/singular mismatches ("peptic ulcers" == "peptic ulcer").
  */
 export function matchesPhrase(input: string, phrase: string): boolean {
-  const normInput = input.toLowerCase().trim();
-  const normPhrase = phrase.toLowerCase().trim();
+  const normInput = singularizeText(collapseSeparators(input.toLowerCase().trim()));
+  const normPhrase = singularizeText(collapseSeparators(phrase.toLowerCase().trim()));
   if (normInput === normPhrase) return true;
 
   // Escape any regex characters
@@ -865,14 +1122,55 @@ export function matchesPhrase(input: string, phrase: string): boolean {
   return regex.test(normInput);
 }
 
+/** A plan's DB-backed Specific Illness List, as fetched from /api/plan-configs
+ * (`DbPlanConfigEntry` in src/types/plans.ts). Declared structurally here
+ * (rather than importing that type) so this engine — which also runs
+ * standalone in tests — has no dependency on the server/DB type module. */
+export interface DbPlanSpecificIllnessConfig {
+  planName: string;
+  specificIllnesses?: IllnessOverrideRecord2[];
+}
+interface IllnessOverrideRecord2 {
+  category?: string | null;
+  illness: string;
+}
+
+/** True if a free-text illness label (from a plan's DB-backed Specific
+ * Illness List) already refers to a catalog condition — i.e. it names the
+ * same condition MASTER_ILLNESSES already knows under `parent_illness`, a
+ * `direct_names` entry, or an `aliases` entry. Used to decide whether a DB
+ * entry should extend an existing catalog match to a new plan, versus stand
+ * on its own as a plan-specific custom illness the catalog doesn't have. */
+function dbEntryMatchesCatalogDefinition(definition: MasterIllnessDefinition, illnessText: string): boolean {
+  return (
+    matchesPhrase(illnessText, definition.parent_illness) ||
+    definition.direct_names.some((dn) => matchesPhrase(illnessText, dn)) ||
+    definition.aliases.some((al) => matchesPhrase(illnessText, al))
+  );
+}
+
 /**
  * Execution engine for specific illnesses matching ledger mapping.
+ *
+ * @param declaredPed The advisor-entered condition to check.
+ * @param dbPlanConfigs Optional live, DB-backed Specific Illness Lists per
+ *   plan (from /api/plan-configs). Additive on top of the hardcoded
+ *   MASTER_ILLNESSES catalog below — never replaces it — in two ways:
+ *   (1) a DB entry that names a condition the catalog already knows extends
+ *   that catalog match's `plans_applicable` to the new plan; (2) a DB entry
+ *   for a condition the catalog does NOT know produces its own "direct"
+ *   match, sourced entirely from that plan's own admin-entered text.
+ *   Callers that only care about the hardcoded catalog (e.g. tests) can
+ *   omit this parameter entirely.
  */
-export function matchSpecificIllness(declaredPed: string): SpecificIllnessMatchResult[] {
-  const normalizedInput = declaredPed.toLowerCase().trim();
+export function matchSpecificIllness(
+  declaredPed: string,
+  dbPlanConfigs: DbPlanSpecificIllnessConfig[] = []
+): SpecificIllnessMatchResult[] {
+  const normalizedInput = singularizeText(collapseSeparators(declaredPed.toLowerCase().trim()));
 
   const results: SpecificIllnessMatchResult[] = [];
-  
+
   // Dynamically load all plans in scope (default + dynamically created ones)
   let PLANS_IN_SCOPE = ["Optima Secure", "Care Supreme", "Activ One Max", "Activ Fit Preferred"];
   try {
@@ -891,6 +1189,14 @@ export function matchSpecificIllness(declaredPed: string): SpecificIllnessMatchR
       }
     }
   } catch (_) {}
+  // Always include every plan that has its own DB-backed Specific Illness
+  // List, even if it wasn't in the production/draft plan localStorage lists
+  // above (e.g. Aspire, Reassure 2.0, or any newly added plan).
+  dbPlanConfigs.forEach((cfg) => {
+    if (cfg.specificIllnesses && cfg.specificIllnesses.length > 0 && !PLANS_IN_SCOPE.includes(cfg.planName)) {
+      PLANS_IN_SCOPE.push(cfg.planName);
+    }
+  });
 
   // Load custom specific illness overrides
   let overridesMap: Record<string, IllnessOverrideRecord[]> = {};
@@ -900,6 +1206,13 @@ export function matchSpecificIllness(declaredPed: string): SpecificIllnessMatchR
       overridesMap = JSON.parse(existing);
     }
   } catch (_) {}
+
+  const dbEntriesByPlan: Record<string, IllnessOverrideRecord2[]> = {};
+  dbPlanConfigs.forEach((cfg) => {
+    if (cfg.specificIllnesses && cfg.specificIllnesses.length > 0) {
+      dbEntriesByPlan[cfg.planName] = cfg.specificIllnesses;
+    }
+  });
 
   for (const definition of MASTER_ILLNESSES) {
     // High-fidelity safeguard: "valve replacement", "cardiac valve", and "lens replacement" or "cataract" shouldn't map to orthopaedic Joint replacement
@@ -994,6 +1307,17 @@ export function matchSpecificIllness(declaredPed: string): SpecificIllnessMatchR
             return true;
           }
         }
+        // checks this plan's live, DB-backed Specific Illness List (Plan
+        // Management's Plan-Specific Illness Manager) — an admin-added entry
+        // whose free text names this same catalog condition confirms/extends
+        // the catalog's coverage to this plan, even where plan_schedules
+        // above has no hardcoded entry for it (e.g. Aspire, Reassure 2.0, or
+        // any plan whose list has since been edited in the admin UI).
+        const dbEntries = dbEntriesByPlan[plan];
+        if (Array.isArray(dbEntries)) {
+          const dbConfirms = dbEntries.some((entry) => dbEntryMatchesCatalogDefinition(definition, entry.illness));
+          if (dbConfirms) return true;
+        }
         return false;
       });
 
@@ -1010,6 +1334,39 @@ export function matchSpecificIllness(declaredPed: string): SpecificIllnessMatchR
       }
     }
   }
+
+  // Fold in any DB-backed Specific Illness List entries that don't
+  // correspond to a known MASTER_ILLNESSES catalog condition at all — a
+  // plan-specific illness an admin has entered that the hardcoded catalog
+  // simply doesn't have yet. Matched purely against its own free text
+  // (direct name matching only — no alias/procedure/sub-condition expansion,
+  // since none exists for admin-entered text), and clearly labeled as
+  // sourced from the plan's own list rather than the master catalog.
+  const customMatches = new Map<string, { illness: string; plans: Set<string> }>();
+  Object.entries(dbEntriesByPlan).forEach(([plan, entries]) => {
+    entries.forEach((entry) => {
+      const illnessText = entry.illness?.trim();
+      if (!illnessText) return;
+      const isKnownCatalogIllness = MASTER_ILLNESSES.some((def) => dbEntryMatchesCatalogDefinition(def, illnessText));
+      if (isKnownCatalogIllness) return; // already handled via plansApplicable extension above
+      if (!matchesPhrase(normalizedInput, illnessText)) return;
+      const key = illnessText.toLowerCase();
+      if (!customMatches.has(key)) {
+        customMatches.set(key, { illness: illnessText, plans: new Set() });
+      }
+      customMatches.get(key)!.plans.add(plan);
+    });
+  });
+  customMatches.forEach(({ illness, plans }) => {
+    results.push({
+      declared_condition: declaredPed,
+      matched_listed_illness: illness,
+      match_type: "direct",
+      plans_applicable: Array.from(plans),
+      confidence: "medium",
+      notes: `Matched against ${plans.size > 1 ? "these plans'" : "this plan's"} own Specific Illness List entry (admin-managed, not yet in the master catalog): "${illness}".`
+    });
+  });
 
   // If we have matches, return them. If empty, return standard "no match"
   if (results.length > 0) {
