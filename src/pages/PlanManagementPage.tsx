@@ -638,16 +638,17 @@ export function PlanManagementPage({
   // doesn't have to open the full Edit wizard just to take a plan out of
   // service. Same partial-update-vs-backfill pattern as
   // saveCategoryMapForPlan/saveSpecificIllnessesForPlan above: PUTs just
-  // `disabled` for a plan that already has a DB row, or POSTs the full
-  // hardcoded payload the first time a built-in-only plan is toggled.
-  // Disabling is gated behind confirmDestructiveAction (it immediately
-  // blocks every advisor from searching this plan); re-enabling isn't,
-  // since undoing that is safe and shouldn't need a confirmation click.
-  // Any existing disabledNote is preserved either way — this toggle never
-  // clears or prompts for a note; that stays a job for the Edit wizard's
-  // "Plan Availability" section.
+  // the changed fields for a plan that already has a DB row, or POSTs the
+  // full hardcoded payload the first time a built-in-only plan is toggled.
+  // Disabling goes through disableNoteDraft's modal below (confirmation +
+  // note in one step, since that's the whole reason an admin is here);
+  // re-enabling skips straight to this, no modal, since undoing a disable
+  // is safe and shouldn't need a confirmation click. Re-enabling never
+  // touches the note (noteOverride only applies when nextDisabled=true) —
+  // it stays on record for next time, editable later from the Edit
+  // wizard's "Plan Availability" section.
   const [togglingPlan, setTogglingPlan] = useState<string | null>(null);
-  const setPlanDisabled = async (name: string, nextDisabled: boolean) => {
+  const setPlanDisabled = async (name: string, nextDisabled: boolean, noteOverride?: string) => {
     setTogglingPlan(name);
     try {
       const dbRow = dbByName[name];
@@ -655,7 +656,9 @@ export function PlanManagementPage({
       const url = hasExistingDbRow ? `/api/plan-configs/${encodeURIComponent(name)}` : "/api/plan-configs";
       const method = hasExistingDbRow ? "PUT" : "POST";
 
-      let payload: Record<string, unknown> = { disabled: nextDisabled };
+      const disabledNoteField: Record<string, unknown> =
+        nextDisabled && noteOverride !== undefined ? { disabledNote: noteOverride.trim() || null } : {};
+      let payload: Record<string, unknown> = { disabled: nextDisabled, ...disabledNoteField };
       if (!hasExistingDbRow) {
         const hardcoded = hardcodedConfigs[name];
         if (!hardcoded) throw new Error(`"${name}" isn't a recognized plan.`);
@@ -668,6 +671,7 @@ export function PlanManagementPage({
           overrides: hardcoded.overrides,
           specificIllnesses: [],
           disabled: nextDisabled,
+          ...disabledNoteField,
         };
       }
 
@@ -709,15 +713,18 @@ export function PlanManagementPage({
     }
   };
 
+  // Disabling opens disableNoteDraft's modal (confirmation + note in one
+  // step — see setPlanDisabled's comment above) instead of the generic
+  // confirmDestructiveAction, since that dialog has no room for a text
+  // field. Pre-fills with any note the plan already has, so re-disabling
+  // a plan (after a re-enable) doesn't lose what was written before.
+  const [disableNoteDraft, setDisableNoteDraft] = useState<{ planName: string; note: string } | null>(null);
   const handleQuickToggleDisabled = (name: string, currentlyDisabled: boolean) => {
     if (currentlyDisabled) {
       setPlanDisabled(name, false);
       return;
     }
-    confirmDestructiveAction(
-      `Disable "${name}" — advisors won't be able to search this plan until you re-enable it`,
-      () => setPlanDisabled(name, true)
-    );
+    setDisableNoteDraft({ planName: name, note: dbByName[name]?.disabledNote || "" });
   };
 
   /**
@@ -777,6 +784,13 @@ export function PlanManagementPage({
       umbrellaQuestions: body.entry.umbrellaQuestions || [],
       specificIllnesses: body.entry.specificIllnesses || [],
       overrides: body.entry.overrides || undefined,
+      // Same latent bug as mapPlanConfigRow in App.tsx (see its comment) —
+      // omitting these here would locally reset a disabled plan's badge
+      // back to "enabled" the moment its illness list was edited on its
+      // own, even though the DB row's disabled state never actually
+      // changed. Fixed at the same time since it's the same root cause.
+      disabled: !!body.entry.disabled,
+      disabledNote: body.entry.disabledNote ?? null,
       addedBy: body.entry.addedBy,
     };
     setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
@@ -837,6 +851,9 @@ export function PlanManagementPage({
       umbrellaQuestions: body.entry.umbrellaQuestions || [],
       specificIllnesses: body.entry.specificIllnesses || [],
       overrides: body.entry.overrides || undefined,
+      // Same latent bug as mapPlanConfigRow in App.tsx (see its comment).
+      disabled: !!body.entry.disabled,
+      disabledNote: body.entry.disabledNote ?? null,
       addedBy: body.entry.addedBy,
     };
     setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
@@ -1602,6 +1619,83 @@ export function PlanManagementPage({
         </div>
       )}
         </>
+      )}
+
+      {/* Disable-with-note modal — see disableNoteDraft's comment above.
+          Deliberately its own lightweight modal rather than routing through
+          confirmDestructiveAction: that dialog is a plain yes/no with no
+          room for a text field, and the whole point here is capturing the
+          note in the same step as the confirmation instead of sending the
+          admin to hunt for it in the Edit wizard afterward. */}
+      {disableNoteDraft && (
+        <div className="fixed inset-0 z-55 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
+          <div
+            className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl text-left ${
+              dark ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-white border-stone-200 text-stone-900"
+            }`}
+          >
+            <div className={`flex justify-between items-center pb-3 border-b ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+              <div className="flex items-center gap-2">
+                <PowerOff className="w-4 h-4 text-amber-500" />
+                <h3 className="text-xs font-black uppercase tracking-wider">Disable Plan</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDisableNoteDraft(null)}
+                className={`p-1 rounded-lg transition-colors cursor-pointer ${dark ? "text-stone-400 hover:text-white hover:bg-white/10" : "text-stone-400 hover:text-stone-900 hover:bg-stone-100"}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 py-4 text-left">
+              <p className={`text-xs font-semibold leading-relaxed ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                Disable <span className={dark ? "text-white" : "text-stone-900"}>&quot;{disableNoteDraft.planName}&quot;</span> — advisors won&apos;t be able to search this plan until you re-enable it. This is reversible any time from this page.
+              </p>
+              <div>
+                <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                  Note shown to advisors <span className="normal-case font-medium opacity-70">(optional)</span>
+                </label>
+                <textarea
+                  autoFocus
+                  value={disableNoteDraft.note}
+                  onChange={(e) => setDisableNoteDraft({ ...disableNoteDraft, note: e.target.value })}
+                  placeholder="e.g. Temporarily disabled due to a payment journey update. We'll be back soon."
+                  rows={3}
+                  className={`w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition-all ${
+                    dark
+                      ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-blue-500"
+                      : "bg-white border-stone-250 text-stone-900 placeholder:text-stone-400 focus:border-blue-400"
+                  }`}
+                />
+                <p className={`text-[10px] mt-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                  Left blank, advisors see a generic &quot;check back later&quot; message instead.
+                </p>
+              </div>
+            </div>
+
+            <div className={`flex justify-end gap-3 pt-3 border-t ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+              <button
+                type="button"
+                onClick={() => setDisableNoteDraft(null)}
+                className={`px-4 py-2 text-xs font-bold cursor-pointer ${dark ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-900"}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const { planName, note } = disableNoteDraft;
+                  setDisableNoteDraft(null);
+                  setPlanDisabled(planName, true, note);
+                }}
+                className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
+              >
+                Disable Plan
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

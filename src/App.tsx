@@ -419,6 +419,13 @@ export default function App() {
     // ever looked broken after a reload/refetch, not right after saving.
     specificIllnesses: row.specificIllnesses || [],
     overrides: row.overrides || undefined,
+    // Same class of bug as specificIllnesses above, just discovered later:
+    // omitting these here meant every fetch of the plan list (page load,
+    // manual refresh) silently reset a disabled plan back to "enabled" in
+    // the client's own state — the DB row itself was never touched, so the
+    // very next refresh looked like the disable had "reset itself".
+    disabled: !!row.disabled,
+    disabledNote: row.disabledNote ?? null,
     addedBy: row.addedBy,
   });
 

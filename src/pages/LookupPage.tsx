@@ -360,16 +360,12 @@ export function LookupPage({
                       value: plan,
                       // Kept selectable (never CustomSelectOption.disabled)
                       // — an advisor should be able to pick a disabled plan
-                      // to see WHY it's disabled (the queue card below),
-                      // not have it silently unclickable. The label suffix
-                      // is what surfaces the state while still browsing the
-                      // open list.
-                      label: disabledPlanNotes[plan] !== undefined ? `${getPlanDisplayLabel(plan)} — Disabled` : getPlanDisplayLabel(plan),
-                      // Once picked, the queue card below already takes over
-                      // as the disabled-plan message — repeating "— Disabled"
-                      // on the closed trigger too would be redundant, so the
-                      // trigger always shows the plain name.
-                      triggerLabel: getPlanDisplayLabel(plan),
+                      // to see WHY it's disabled. Deliberately no "—
+                      // Disabled" (or any other) suffix anywhere in this
+                      // picker, open list or closed trigger alike — the
+                      // queue card below is the single, unambiguous place
+                      // that message lives once a plan is selected.
+                      label: getPlanDisplayLabel(plan),
                     }))}
                     triggerClassName={`w-full flex items-center justify-between gap-2 pl-3 pr-8 h-[42px] rounded-xl border outline-none font-bold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
                       theme === "dark"
@@ -771,12 +767,12 @@ export function LookupPage({
                 }`}
               >
                 {isSelectedPlanDisabled ? (
-                  /* Disabled-plan takeover — this queue card is the primary
-                     surface for the "why can't I search this plan" message
-                     (the plan picker's own trigger just shows the plain
-                     name now, see triggerLabel above), so it replaces the
-                     normal empty-state/tag-list/counter content entirely
-                     rather than squeezing a small note in alongside it. */
+                  /* Disabled-plan takeover — the plan picker itself never
+                     mentions "disabled" (open list or closed trigger), so
+                     this queue card is the ONE place that message lives.
+                     It replaces the normal empty-state/tag-list/counter
+                     content entirely rather than squeezing a small note in
+                     alongside it. */
                   <div className="flex flex-col items-center justify-center text-center gap-3 py-2 px-2 min-h-[106px]">
                     <MascotWithFallback
                       src="/assets/.aistudio/payment-journey-surgery.png"
