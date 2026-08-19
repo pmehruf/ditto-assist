@@ -189,26 +189,52 @@ interface PlanFamily {
   variants: PlanVariant[];
 }
 
+/** True when two roster entries' matched-resource sets are exactly the same
+ * documents (same resource ids, nothing more/less either way) — meaning
+ * neither name actually has its own distinct content, they're just two
+ * labels pointing at one identical shared document pool. Used by
+ * buildPlanFamilies to tell a genuine base -> variant relationship (e.g.
+ * "Optima Secure" has its own Brochure that "Optima Secure+" doesn't share,
+ * alongside PW/Prospectus both do share) apart from same-length siblings
+ * that only *look* related by name (e.g. Aditya Birla's "Activ One MAX" and
+ * "Activ One MAX+" — 7 equally dedicated variants that all draw from the
+ * exact same 3 shared documents with zero per-variant differentiation, not
+ * a MAX -> MAX+ upgrade). */
+function sameResourceSet(a: KbResource[], b: KbResource[]): boolean {
+  if (a.length !== b.length) return false;
+  const idsA = new Set(a.map(r => r.id));
+  return b.every(r => idsA.has(r.id));
+}
+
 /** Groups a category's deduplicated plan-name roster into families purely
  * from the existing name strings — never invents a relationship the roster
  * data doesn't already spell out. A name only becomes another name's
  * variant when it's literally that name plus a real word boundary (see
- * isVariantOf) AND that shorter name is itself both a real roster entry and
- * substantial enough to anchor a family (see qualifiesAsFamilyRoot). Chains
- * more than one level deep (e.g. "ReAssure 2.0 Bronze Plus" ->
- * "ReAssure 2.0" -> "ReAssure") flatten to their top root, so the UI stays a
- * clean two-level Base -> Variants rather than a deeper tree. Resources are
- * matched into each bucket via resourcesForPlanKey (case-insensitive,
- * add-ons excluded); the root's own bucket is the "base plan" — resources
- * tagged to the un-varianted name itself, if any. */
+ * isVariantOf), that shorter name is itself both a real roster entry and
+ * substantial enough to anchor a family (see qualifiesAsFamilyRoot), AND the
+ * two names' matched resources aren't byte-identical (see sameResourceSet —
+ * without this, any set of same-length sibling plans that happen to share
+ * literally every document, with no base plan actually differentiated from
+ * its "variant", would wrongly nest one under the other). Chains more than
+ * one level deep (e.g. "ReAssure 2.0 Bronze Plus" -> "ReAssure 2.0" ->
+ * "ReAssure") flatten to their top root, so the UI stays a clean two-level
+ * Base -> Variants rather than a deeper tree. Resources are matched into
+ * each bucket via resourcesForPlanKey (case-insensitive, add-ons excluded);
+ * the root's own bucket is the "base plan" — resources tagged to the
+ * un-varianted name itself, if any. */
 function buildPlanFamilies(planNames: string[], catResources: KbResource[]): PlanFamily[] {
   const dedupedNames = dedupeCaseInsensitive(planNames);
+  const resourcesByName = new Map<string, KbResource[]>(
+    dedupedNames.map(name => [name, resourcesForPlanKey(catResources, normalizePlanKey(name))])
+  );
   const parentOf = new Map<string, string>();
   for (const name of dedupedNames) {
     let bestParent: string | null = null;
     for (const other of dedupedNames) {
       if (other === name || !qualifiesAsFamilyRoot(other)) continue;
-      if (isVariantOf(name, other) && (!bestParent || other.length > bestParent.length)) bestParent = other;
+      if (!isVariantOf(name, other)) continue;
+      if (sameResourceSet(resourcesByName.get(name)!, resourcesByName.get(other)!)) continue;
+      if (!bestParent || other.length > bestParent.length) bestParent = other;
     }
     if (bestParent) parentOf.set(name, bestParent);
   }
@@ -232,7 +258,7 @@ function buildPlanFamilies(planNames: string[], catResources: KbResource[]): Pla
       order.push(rootName);
     }
     const family = familyMap.get(rootName)!;
-    const matched = resourcesForPlanKey(catResources, normalizePlanKey(name));
+    const matched = resourcesByName.get(name)!;
     if (normalizePlanKey(name) === normalizePlanKey(rootName)) family.baseResources = matched;
     else family.variants.push({ name, resources: matched });
   }
