@@ -162,9 +162,11 @@ function resourcesForPlanKey(resources: KbResource[], key: string): KbResource[]
 // literally called "Care") would wrongly swallow them into one umbrella.
 const FAMILY_ROOT_MIN_LEN = 8;
 // The character right after the shared prefix has to be a real word/variant
-// boundary, not a continuation of the same word — so "ReAssure30" is never
-// folded into "ReAssure" (no space before "30"), but "Optima Secure+" is
-// folded into "Optima Secure" (a "+" boundary).
+// boundary, not a continuation of the same word — so a plan literally named
+// "Foo2" is never folded into a shorter roster entry "Foo" (no boundary
+// before "2"), but "Optima Secure+" is folded into "Optima Secure" (a "+"
+// boundary), and "ReAssure 3.0" folds into "ReAssure" (a space boundary),
+// same as "ReAssure 2.0" already does.
 const FAMILY_VARIANT_BOUNDARY = /^[\s+\-(]/;
 
 function qualifiesAsFamilyRoot(name: string): boolean {

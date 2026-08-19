@@ -17,7 +17,7 @@
  *   - ReAssure 2.0: Bronze Plus / (Titanium Plus & Platinum Plus, one shared
  *     brochure) / (Bronze & Gold, one shared brochure) — 3 brochures, 1
  *     shared PW+Prospectus covering all 5 tier names
- *   - ReAssure30: Unlimited / Limited (2 brochures, 1 shared PW+Prospectus)
+ *   - ReAssure 3.0: Unlimited / Limited (2 brochures, 1 shared PW+Prospectus)
  * Each variant-specific Brochure is tagged with only its own tier name(s);
  * the shared Policy Wording/Prospectus for that plan family is tagged with
  * EVERY tier name under it (plus the bare plan name) so it stays in
@@ -61,7 +61,7 @@ interface SeedUrl {
   planTags: string[];
 }
 
-// ── Health Premia's 3 tiers, ReAssure 2.0's 5 tiers, ReAssure30's 2 tiers —
+// ── Health Premia's 3 tiers, ReAssure 2.0's 5 tiers, ReAssure 3.0's 2 tiers —
 //    each plan's shared PW/Prospectus gets the bare plan name + every tier. ──
 const HEALTH_PREMIA_TIERS = ["Health Premia Gold", "Health Premia Platinum"];
 const HEALTH_PREMIA_TAGS = ["Health Premia", ...HEALTH_PREMIA_TIERS];
@@ -69,8 +69,11 @@ const HEALTH_PREMIA_TAGS = ["Health Premia", ...HEALTH_PREMIA_TIERS];
 const REASSURE_2_TIERS = ["ReAssure 2.0 Bronze Plus", "ReAssure 2.0 Titanium Plus", "ReAssure 2.0 Platinum Plus", "ReAssure 2.0 Bronze", "ReAssure 2.0 Gold"];
 const REASSURE_2_TAGS = ["ReAssure 2.0", ...REASSURE_2_TIERS];
 
-const REASSURE30_TIERS = ["ReAssure30 Unlimited", "ReAssure30 Limited"];
-const REASSURE30_TAGS = ["ReAssure30", ...REASSURE30_TIERS];
+// Was mistakenly seeded as "ReAssure30" (no space) — the real product name
+// is "ReAssure 3.0". See scripts/renameNivaBupaReassure3.ts for the one-off
+// correction applied to data seeded under the old name.
+const REASSURE30_TIERS = ["ReAssure 3.0 Unlimited", "ReAssure 3.0 Limited"];
+const REASSURE30_TAGS = ["ReAssure 3.0", ...REASSURE30_TIERS];
 
 const URLS: SeedUrl[] = [
   // ── Aspire ──────────────────────────────────────────────────────────────
@@ -197,27 +200,27 @@ const URLS: SeedUrl[] = [
     planTags: REASSURE_2_TAGS,
   },
 
-  // ── ReAssure30 (Unlimited / Limited) ────────────────────────────────────
+  // ── ReAssure 3.0 (Unlimited / Limited) ──────────────────────────────────
   {
-    title: "Niva Bupa ReAssure30 (Unlimited) — Brochure",
+    title: "Niva Bupa ReAssure 3.0 (Unlimited) — Brochure",
     url: "https://transactions.nivabupa.com/pages/doc/brochure/Reassure30_SS_Unlimited.pdf?v=1.2",
     documentType: "brochure",
-    planTags: ["ReAssure30 Unlimited"],
+    planTags: ["ReAssure 3.0 Unlimited"],
   },
   {
-    title: "Niva Bupa ReAssure30 (Limited) — Brochure",
+    title: "Niva Bupa ReAssure 3.0 (Limited) — Brochure",
     url: "https://transactions.nivabupa.com/pages/doc/brochure/Reassure30_SS_Limited.pdf?v=1.2",
     documentType: "brochure",
-    planTags: ["ReAssure30 Limited"],
+    planTags: ["ReAssure 3.0 Limited"],
   },
   {
-    title: "Niva Bupa ReAssure30 (all tiers) — Policy Wording",
+    title: "Niva Bupa ReAssure 3.0 (all tiers) — Policy Wording",
     url: "https://transactions.nivabupa.com/pages/doc/policy_wording/ReAssure30_Policy_Wordings.pdf?v=1.5",
     documentType: "policy_wording",
     planTags: REASSURE30_TAGS,
   },
   {
-    title: "Niva Bupa ReAssure30 (all tiers) — Prospectus",
+    title: "Niva Bupa ReAssure 3.0 (all tiers) — Prospectus",
     url: "https://transactions.nivabupa.com/pages/doc/prospectus/ReAssure30_Prospectus.pdf?v=1.2",
     documentType: "prospectus",
     planTags: REASSURE30_TAGS,
