@@ -4604,6 +4604,28 @@ app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
 // an external monthly scheduler (Cloud Scheduler) can trigger it without a
 // human session — see .env.example's QUERY_ASSIST_LOG_EXPORT_SECRET. ---
 
+/**
+ * drizzle-orm's postgres-js driver wraps every failed query in a generic
+ * `Error: Failed query: <sql> params: <params>` — the ACTUAL Postgres error
+ * (e.g. "relation ... does not exist") lands on `err.cause`, not
+ * `err.message`. Routes that only read `err.message` (as several below did)
+ * surface that useless wrapper to the client instead of the real cause —
+ * exactly what happened here when migration 0039 (query_assist_logs /
+ * query_assist_log_export_connection) hadn't been applied yet against a
+ * given database: the UI showed "Failed query: select count(*) from
+ * \"query_assist_logs\" params:" with nothing after "params:", instead of
+ * the actual "relation ... does not exist". Mirrors the same
+ * missing-table detection server.ts's ai_memory routes already do inline,
+ * generalized to any table and reusable across this block.
+ */
+function describeDbError(err: any): string {
+  const cause = err?.cause?.message || err?.message || "Unknown error";
+  if (/relation .* does not exist/i.test(cause)) {
+    return `${cause} — a database migration hasn't been applied yet. Run "npm run db:migrate" against this environment's DATABASE_URL.`;
+  }
+  return cause;
+}
+
 app.get("/api/query-assist-logs/connect-google", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
@@ -4632,7 +4654,7 @@ app.get("/api/query-assist-logs/connection-status", requireAuth, async (req, res
     );
   } catch (err: any) {
     console.error("Query Assist Log Export: failed to load connection status:", err);
-    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+    return res.status(500).json({ error: `Failed to load connection status: ${describeDbError(err)}` });
   }
 });
 
@@ -4645,7 +4667,7 @@ app.delete("/api/query-assist-logs/connection", requireAuth, async (req, res) =>
     return res.json({ ok: true });
   } catch (err: any) {
     console.error("Query Assist Log Export: failed to disconnect Google Sheets:", err);
-    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+    return res.status(500).json({ error: `Failed to disconnect: ${describeDbError(err)}` });
   }
 });
 
@@ -4674,7 +4696,7 @@ app.post("/api/query-assist-logs/export-and-clear", async (req, res) => {
     return res.json(result);
   } catch (err: any) {
     console.error("Query Assist Log Export: export-and-clear failed:", err);
-    return res.status(500).json({ error: `Export failed: ${err.message}` });
+    return res.status(500).json({ error: `Export failed: ${describeDbError(err)}` });
   }
 });
 
