@@ -439,9 +439,14 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
+        // Cross-app UI consistency pass (2026-08): the "on" state is now the
+        // app's own --accent/--accent-subtle-bg/--accent-border tokens
+        // (aqua in dark, brand blue in light — index.css's stated "the ONLY
+        // foreground accent" for each theme) instead of Tailwind's generic
+        // `blue-*` swatch, which wasn't tied to either theme's palette.
         className={`relative w-8 rounded-full border transition-colors cursor-pointer shrink-0 ${
           checked
-            ? dark ? "bg-blue-500/30 border-blue-500/50" : "bg-blue-100 border-blue-300"
+            ? "bg-[var(--accent-subtle-bg)] border-[var(--accent-border)]"
             : dark ? "bg-white/5 border-white/10" : "bg-stone-100 border-stone-250"
         }`}
         style={{ height: "18px" }}
@@ -449,7 +454,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
         <span
           className={`absolute top-1/2 -translate-y-1/2 rounded-full transition-all duration-200 shadow-sm ${
             checked ? "left-[16px]" : "left-0.5"
-          } ${checked ? (dark ? "bg-blue-400" : "bg-blue-600") : dark ? "bg-slate-400" : "bg-stone-400"}`}
+          } ${checked ? "bg-[var(--accent)]" : dark ? "bg-slate-400" : "bg-stone-400"}`}
           style={{ width: "14px", height: "14px" }}
         />
       </button>
@@ -511,14 +516,17 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
             <div>
               <label className={`block text-[11px] font-bold mb-1.5 ${dark ? "text-slate-300" : "text-stone-600"}`}>Plan</label>
+              {/* Cross-app UI consistency pass (2026-08): dropped this
+                  select's own hardcoded #102236/#1e3e5c triggerClassName
+                  override — CustomSelect's shared default now already
+                  renders the correct token-based control treatment (see
+                  CustomSelect.tsx), so a page-specific override here only
+                  risked drifting back out of sync with it later. */}
               <CustomSelect
                 value={planId}
                 onChange={handlePlanChange}
                 options={planOptions}
                 theme={theme}
-                triggerClassName={`w-full flex items-center justify-between gap-2 pl-2.5 pr-8 py-1.5 rounded-lg border outline-none font-semibold text-xs transition-all cursor-pointer font-sans shadow-sm relative ${
-                  dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
-                }`}
               />
 
               {/* Toggle options sit directly under the Plan field instead of
@@ -549,7 +557,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                   setResults(null);
                 }}
                 className={`w-full px-3 py-1.5 rounded-lg border outline-none font-semibold text-xs ${
-                  dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                  "bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)]"
                 }`}
               />
               <div className="flex flex-wrap gap-1.5 mt-2">
@@ -561,14 +569,18 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                       setSiLakhs(val);
                       setResults(null);
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                    // Cross-app UI consistency pass (2026-08): selected state
+                    // reuses Product Assist's own fixed #01334F/#AEDCF4
+                    // selected-chip pair (see QueryAssistPage.tsx's plan
+                    // tags) instead of generic Tailwind blue-* — identical
+                    // literal in both themes there, so no dark/light branch
+                    // is needed here either.
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
                       siLakhs === val
-                        ? dark
-                          ? "bg-blue-600/25 text-blue-300 border border-blue-500/40"
-                          : "bg-blue-100 text-blue-700 border border-blue-400"
+                        ? "bg-[#01334F] border-[#01334F] text-[#AEDCF4]"
                         : dark
-                          ? "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
-                          : "bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200 hover:border-stone-300"
+                          ? "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
+                          : "bg-stone-100 text-stone-600 border-stone-200 hover:bg-stone-200 hover:border-stone-300"
                     }`}
                   >
                     {label}
@@ -592,7 +604,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                 }}
                 onBlur={() => setYearsText(String(clampYears(yearsText)))}
                 className={`w-full px-3 py-1.5 rounded-lg border outline-none font-semibold text-xs ${
-                  dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                  "bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)]"
                 }`}
               />
             </div>
@@ -636,9 +648,13 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                     {(claimsByYear[y] || []).map((amt, idx) => (
                       <span
                         key={idx}
-                        className={`inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-bold ${
-                          dark ? "bg-blue-600/20 text-blue-300 border border-blue-500/30" : "bg-blue-50 text-blue-700 border border-blue-200"
-                        }`}
+                        // Cross-app UI consistency pass (2026-08): informational
+                        // badge (an already-added claim amount, not a control)
+                        // on the app's --accent-subtle-bg/--accent/--accent-border
+                        // tokens instead of generic Tailwind blue — preserves
+                        // the legitimate "accent-tinted badge" role per the
+                        // task's own "preserve semantic color" guidance.
+                        className={`inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full text-[11px] font-bold border bg-[var(--accent-subtle-bg)] text-[var(--accent)] border-[var(--accent-border)]`}
                       >
                         ₹{formatINR(amt)}
                         <button
@@ -663,7 +679,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                         if (e.key === "Enter") addClaim(y);
                       }}
                       className={`w-24 px-2.5 py-1.5 rounded-lg border outline-none font-semibold text-[11px] ${
-                        dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                        "bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)]"
                       }`}
                     />
                     {/* App-wide clipped-corner button (see ClippedButton.tsx)

@@ -101,9 +101,7 @@ function ToolbarButton({
       onClick={onClick}
       className={`p-1.5 rounded-md transition-colors cursor-pointer ${
         active
-          ? theme === "dark"
-            ? "bg-blue-500/20 text-blue-400"
-            : "bg-blue-100 text-blue-700"
+          ? "bg-[var(--accent-subtle-bg)] text-[var(--accent)]"
           : theme === "dark"
             ? "text-stone-400 hover:bg-white/[0.07] hover:text-white"
             : "text-stone-500 hover:bg-black/[0.05] hover:text-stone-900"

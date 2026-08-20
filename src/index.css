@@ -837,6 +837,21 @@ html:not(.dark) select:not(#insurance-plan-dropdown) {
 /* Accent rings */
 .ring-blue-500, .ring-cyan-500 { --tw-ring-color: var(--accent); }
 
+/* Legacy blue removal sweep (2026-08): a handful of pseudo-class and
+   odd-opacity combinations of the same blue-* family used above weren't
+   covered by the bare-class rules (Tailwind compiles focus:/hover: variants
+   to distinct selectors, so they need their own rules). Same accent tokens,
+   just closing the remaining gaps found across AiMappingReview,
+   PlanManagementPage, SpecificIllnessLedger(+Card), QAAnnouncementForm,
+   AuditPage, AnnouncementLogPage and MyActivityPage. */
+.focus\:border-blue-500:focus, .focus\:border-blue-400:focus { border-color: var(--focus-ring); }
+.focus\:ring-blue-500:focus { --tw-ring-color: var(--focus-ring); }
+.text-blue-300, .text-blue-200 { color: var(--accent); }
+.border-blue-300, .border-blue-600 { border-color: var(--accent-border); }
+.hover\:bg-blue-500\/10:hover, .hover\:bg-blue-50:hover, .hover\:bg-blue-50\/60:hover { background-color: var(--accent-subtle-bg); }
+.hover\:bg-blue-600\/30:hover, .hover\:bg-blue-600\/25:hover { background-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+.hover\:border-blue-400\/40:hover { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
 /* Subtle accent fills (chips, pills, highlight rows) */
 .bg-cyan-500\/5, .bg-blue-500\/5, .bg-blue-500\/6 { background-color: color-mix(in srgb, var(--accent) 5%, transparent); }
 .bg-cyan-500\/10, .bg-blue-500\/10, .bg-blue-600\/10, .bg-blue-600\/12,
@@ -918,8 +933,23 @@ html:not(.dark) .text-emerald-700, html:not(.dark) .text-emerald-805 {
 }
 
 /* Blue-tinted info panels keep their subtle tint, via one token */
-.dark .bg-\[\#10233a\], .dark .bg-\[\#102236\] {
+.dark .bg-\[\#10233a\] {
   background-color: var(--surface-tint);
+}
+
+/* Cross-app UI consistency pass (2026-08): #102236 was previously grouped
+   into the "info panel" rule above, but every real call site pairs it with
+   `border-[#1e3e5c]` and light input text (`text-[#eff6ff]`/`text-white`)
+   — it's always a hardcoded copy of the OLD (pre-fix) CustomSelect/input
+   control fill, duplicated by hand across App.tsx, TactIdInput.tsx,
+   AdvisoryZonePage.tsx, LookupPage.tsx, QaDashboardPage.tsx,
+   SpecificIllnessCheckPage.tsx — never a genuine info panel. Routed to
+   --input-bg (the same token CustomSelect's default trigger and every
+   fixed text input already use) instead of --surface-tint, so these
+   controls actually become the app's one control-surface color instead of
+   a legacy blue tint. */
+.dark .bg-\[\#102236\] {
+  background-color: var(--input-bg);
 }
 
 .dark .border-stone-800, .dark .border-stone-850, .dark .border-stone-900,

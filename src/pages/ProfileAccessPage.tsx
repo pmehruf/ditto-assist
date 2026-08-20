@@ -138,7 +138,7 @@ export function ProfileAccessPage({
             onClick={() => setActiveSubTab(tab.id)}
             className={`px-4 py-2 text-xs font-bold rounded-t-lg -mb-0.5 border-b-[3px] cursor-pointer transition-colors ${
               activeSubTab === tab.id
-                ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                ? "border-[var(--accent)] text-[var(--accent)]"
                 : "border-transparent text-content-muted hover:text-content"
             }`}
           >

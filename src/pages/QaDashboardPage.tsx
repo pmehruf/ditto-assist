@@ -327,9 +327,7 @@ function AdvisorCombobox({
                 }}
                 onMouseEnter={() => setHighlighted(i)}
                 className={`px-3 py-2 text-xs flex justify-between gap-2 cursor-pointer ${
-                  i === highlighted
-                    ? dark ? "bg-blue-600/20" : "bg-blue-50"
-                    : ""
+                  i === highlighted ? "bg-[var(--accent-subtle-bg)]" : ""
                 } ${a.tactId === value ? "font-bold" : ""}`}
               >
                 <span>{a.name || a.tactId}</span>

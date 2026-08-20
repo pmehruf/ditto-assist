@@ -431,7 +431,7 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
                         <strong className={`text-xs block font-bold mb-1 ${theme === "dark" ? "text-white" : ""}`}>
                           7 critical tests — name exactly:
                         </strong>
-                        <p className="font-mono text-xs text-indigo-500 dark:text-blue-300 font-extrabold leading-relaxed">
+                        <p className="font-mono text-xs font-extrabold leading-relaxed" style={{ color: theme === "dark" ? "var(--accent)" : "#6366f1" }}>
                           Angiography · TRT (Treadmill Test) / Stress Test · ECG · MRI · Endoscopy · Colonoscopy · USG
                         </p>
                       </div>
@@ -610,7 +610,7 @@ export default function DisclosureMap({ theme }: DisclosureMapProps) {
               <div className={`p-4 rounded-xl border ${
                 theme === "dark" ? "bg-stone-950/25 border-white/5" : "bg-[#F1F6FB] border-[#3b9eff]/20"
               }`}>
-                <div className="flex items-center gap-1.5 font-black text-[11px] mb-1 uppercase tracking-wide text-blue-500 dark:text-blue-400">
+                <div className="flex items-center gap-1.5 font-black text-[11px] mb-1 uppercase tracking-wide" style={{ color: theme === "dark" ? "var(--accent)" : "#3b82f6" }}>
                   🛡️ Care plans
                 </div>
                 <p className={`text-[11.5px] leading-relaxed m-0 font-medium ${theme === "dark" ? "text-[#90a6c4]" : "text-stone-650"}`}>

@@ -291,7 +291,7 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
                             e.preventDefault();
                             pickUser(u);
                           }}
-                          className={`px-3 py-2 text-xs flex justify-between gap-2 cursor-pointer ${dark ? "hover:bg-blue-600/20" : "hover:bg-blue-50"}`}
+                          className={`px-3 py-2 text-xs flex justify-between gap-2 cursor-pointer hover:bg-[var(--accent-subtle-bg)]`}
                         >
                           <span className="font-semibold">{u.name}</span>
                           <span className={dark ? "text-slate-400" : "text-stone-400"}>{u.email}</span>

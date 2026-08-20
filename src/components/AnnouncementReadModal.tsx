@@ -56,9 +56,13 @@ export function AnnouncementReadModal({
               {item.title || item.category}
             </h2>
             <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {/* Cross-app UI consistency pass (2026-08): background/border
+                  now on the same --accent-subtle-bg/--accent-border tokens
+                  the text color already used, instead of a raw Tailwind
+                  blue-500 literal that happened to look similar. */}
               <span
-                className="text-[9px] font-mono font-bold bg-[#3B82F6]/10 px-1.5 py-[1px] rounded border border-[#3B82F6]/25"
-                style={{ color: "var(--accent)" }}
+                className="text-[9px] font-mono font-bold px-1.5 py-[1px] rounded border"
+                style={{ color: "var(--accent)", backgroundColor: "var(--accent-subtle-bg)", borderColor: "var(--accent-border)" }}
               >
                 {item.category}
               </span>
