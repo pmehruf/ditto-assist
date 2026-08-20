@@ -231,6 +231,17 @@ function toLocalDateKey(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// Sidebar rail active-state accent colors — two distinct shades so "this
+// group contains the active page" (RAIL_GROUP_ACTIVE) and "this is the
+// active page itself" (RAIL_PAGE_ACTIVE) never look identical. Both are
+// fixed hex values rather than theme-branched: the rail's own background
+// (App.tsx's <motion.aside>) is always a dark navy in both app themes
+// (bg-[#03101a] dark / var(--sidebar-bg) light, itself #16232F), so a single
+// pair of rail-tuned accents reads correctly regardless of the app's
+// light/dark theme setting.
+const RAIL_GROUP_ACTIVE = "#58A3FF";
+const RAIL_PAGE_ACTIVE = "#00D3F3";
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "query_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
@@ -3355,27 +3366,38 @@ export default function App() {
                             }
                             toggleRailGroup(group.key);
                           }}
-                          className={`relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all border-l-[3px] ${
-                            isGroupActive || isExpanded ? "" : "border-l-transparent hover:bg-white/5"
+                          className={`relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
+                            isGroupActive ? "" : "hover:bg-white/5"
                           }`}
-                          style={{
-                            color: isGroupActive ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4"),
-                            // Thick left-border accent instead of the old
-                            // rounded filled-box highlight — accent-colored
-                            // when this group's own page is active, a
-                            // dimmer neutral tone when it's merely expanded
-                            // (browsing, not "here"), matching the same
-                            // distinction the icon color above already made.
-                            borderLeftColor: isGroupActive
-                              ? (theme === "dark" ? "var(--accent)" : "#00D3F3")
-                              : isExpanded
-                                ? (theme === "dark" ? "var(--text-muted)" : "#90A6C4")
-                                : "transparent",
-                          }}
+                          // Highlighted ONLY when a page inside this group is
+                          // actually the active tab — merely expanding the
+                          // group to browse its pages (isExpanded) shows no
+                          // highlight of its own. RAIL_GROUP_ACTIVE is a
+                          // deliberately different shade from
+                          // RAIL_PAGE_ACTIVE below (used on the individual
+                          // page button), so "this group contains the active
+                          // page" and "this is the exact active page" read as
+                          // two distinguishable states rather than identical
+                          // color repeated at both levels.
+                          style={{ color: isGroupActive ? RAIL_GROUP_ACTIVE : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
                           title={group.label}
                           aria-haspopup={!group.isDirectPage}
                           aria-expanded={isExpanded}
                         >
+                          {isGroupActive && (
+                            // A straight, sharp-cornered accent bar overlaid
+                            // on the button's left edge — NOT a CSS
+                            // border-left, which would curve along with the
+                            // button's own rounded-xl corners at this small
+                            // size (a border-left reads cleanly straight on
+                            // large elements like the QA Dashboard's score
+                            // cards, but visibly bends on a 40px button).
+                            // Overflow is left visible (no overflow-hidden on
+                            // the button) so this sharp rectangle sits flush
+                            // against the rounded shape instead of being
+                            // clipped by it.
+                            <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: RAIL_GROUP_ACTIVE }} />
+                          )}
                           <group.GroupIcon style={{ width: "18px", height: "18px" }} />
                           {hasAlert && (
                             <span className="absolute top-1 left-1 flex h-2 w-2">
@@ -3429,21 +3451,22 @@ export default function App() {
                                 <button
                                   key={page.tab}
                                   onClick={() => { page.onSelect(); }}
-                                  className={`relative w-9 h-9 mt-1.5 rounded-lg shrink-0 flex items-center justify-center cursor-pointer transition-all border-l-[3px] ${
-                                    page.isActive ? "" : "border-l-transparent hover:bg-white/5"
+                                  className={`relative w-9 h-9 mt-1.5 rounded-lg shrink-0 flex items-center justify-center cursor-pointer transition-all ${
+                                    page.isActive ? "" : "hover:bg-white/5"
                                   }`}
-                                  // Same thick left-border accent as the group
-                                  // button above, replacing the old filled
-                                  // rounded box. Set via inline style (not a
-                                  // border-current utility) since this
-                                  // button's own `color` doesn't track
-                                  // page.iconColorClass — that class is
-                                  // applied directly on the <page.Icon />
-                                  // child instead, so the border needs its
-                                  // own explicit color to stay in sync.
-                                  style={page.isActive ? { borderLeftColor: isDark ? "var(--accent)" : "#00D3F3" } : undefined}
                                   title={page.label}
                                 >
+                                  {page.isActive && (
+                                    // Same straight sharp-cornered accent bar
+                                    // as the group button above (not a
+                                    // border-left, which would curve with
+                                    // this button's own rounded-lg corners).
+                                    // RAIL_PAGE_ACTIVE — a brighter, distinct
+                                    // shade from RAIL_GROUP_ACTIVE — marks
+                                    // the exact active page rather than just
+                                    // the group it lives in.
+                                    <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: RAIL_PAGE_ACTIVE }} />
+                                  )}
                                   <page.Icon className={`w-[15px] h-[15px] shrink-0 ${page.iconColorClass(page.isActive)}`} style={page.iconStyle} />
                                   {page.hasAlertDot && (
                                     <span className="absolute top-0.5 right-0.5 flex h-1.5 w-1.5">
