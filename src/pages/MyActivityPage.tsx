@@ -326,7 +326,7 @@ export function MyActivityPage({
             </p>
             <p className="text-xs text-stone-500 mt-1">
               {!hasActiveFilter
-                ? "Initiate a medical term lookup in the Declaration Assistant page to populate this history."
+                ? "Initiate a medical term lookup in the Declaration Assist page to populate this history."
                 : "Try relaxing your search terms or filters to reveal matching logs."}
             </p>
           </div>

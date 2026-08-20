@@ -19,7 +19,7 @@ export const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections",
 export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   {
     id: "lookup",
-    name: "Declaration Assistant",
+    name: "Declaration Assist",
     description: "Search and medical policy category mapping assistant",
     defaultTier: "General",
     generalAccess: "Editor",

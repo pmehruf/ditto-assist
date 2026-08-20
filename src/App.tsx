@@ -2977,7 +2977,7 @@ export default function App() {
           label: "Advisor Workspace",
           GroupIcon: ToolCase,
           pages: [
-            navPage("lookup", "Declaration Assistant", Sparkles, "Viewer", {
+            navPage("lookup", "Declaration Assist", Sparkles, "Viewer", {
               isActive: activeTab === "lookup" && !showIntro,
               onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
             }),
@@ -3740,7 +3740,7 @@ export default function App() {
                 );
               }
               const tabMeta = {
-                lookup: { label: "Declaration Assistant", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                lookup: { label: "Declaration Assist", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
                 audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4195,7 +4195,7 @@ export default function App() {
               style={{ width: "100%", maxWidth: "100%", marginTop: "2px", marginBottom: "2px" }}
               className="py-1 sm:py-2 space-y-2 flex-grow flex flex-col justify-start min-h-0"
             >
-              <ErrorBoundary theme={theme} label="Declaration Assistant">
+              <ErrorBoundary theme={theme} label="Declaration Assist">
                 <Suspense fallback={<TabLoadingFallback theme={theme} />}>
                   <LookupIntroPage
                     theme={theme}
@@ -4237,7 +4237,7 @@ export default function App() {
               }}
               className="flex flex-col gap-4 lg:flex-1 lg:min-h-0"
             >
-              <ErrorBoundary theme={theme} label="Declaration Assistant">
+              <ErrorBoundary theme={theme} label="Declaration Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <LookupPage
                 theme={theme}

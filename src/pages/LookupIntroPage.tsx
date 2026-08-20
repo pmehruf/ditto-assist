@@ -214,7 +214,7 @@ export function LookupIntroPage({
     {
       id: "lookup",
       featureId: "lookup",
-      title: "Declaration Assistant",
+      title: "Declaration Assist",
       tag: "Map conditions to declarations",
       icon: <Sparkles className="w-[18px] h-[18px]" />,
       hex: "#0EA5E9",
@@ -707,7 +707,7 @@ export function LookupIntroPage({
                   untouched. */}
               <SectionLabel
                 icon={<Lightbulb className="w-4 h-4" />}
-                text="Quick Tips · Declaration Assistant"
+                text="Quick Tips · Declaration Assist"
                 hex={lightSafe("#FACC15", theme)}
               />
               <div className="flex-1 flex flex-col min-h-0">
