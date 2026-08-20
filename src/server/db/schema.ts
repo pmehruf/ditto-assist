@@ -1431,3 +1431,83 @@ export const queryAssistLogExportConnection = pgTable("query_assist_log_export_c
 
 export type QueryAssistLogExportConnectionRow = typeof queryAssistLogExportConnection.$inferSelect;
 export type NewQueryAssistLogExportConnectionRow = typeof queryAssistLogExportConnection.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// special_instructions — Product Assist's "Special Instructions" layer
+// (Knowledge Base, 2026-08). A small, admin-curated set of controlled
+// instructions Product Assist checks BEFORE consulting the normal
+// knowledge-retrieval chain (Product Playbook -> Policy Wording -> other
+// resources; see queryAssist.ts's SOURCE PRECEDENCE). Purely additive: when
+// no active instruction matches a given question, retrieval and answer
+// behavior is byte-identical to before this table existed.
+//
+// Three types, increasing generality, decreasing authority:
+//   - override_rule: highest authority in the whole retrieval chain. When
+//     one applies to a topic, its statement of that topic is used INSTEAD
+//     OF conflicting Playbook/document content, the same "exclusive"
+//     treatment the Playbook already gets over document excerpts one rung
+//     down (SOURCE PRECEDENCE #1) — this becomes the new #0.
+//   - additional_information: supplementary context injected ALONGSIDE the
+//     normal retrieved resources — never a replacement for the underlying
+//     product/policy facts.
+//   - general_instruction: broad guidance on how to handle a topic (e.g.
+//     "distinguish X from Y") — advisory only, same non-override treatment
+//     as additional_information.
+//
+// Scope is two independent optional fields, not a single enum — see
+// queryAssist.ts's SOURCE PRECEDENCE #8/#9 (spec) for the resulting 4-level
+// specificity ladder this produces:
+//   insurerCategoryId + productPlanName both set -> Product+Insurer+Topic (most specific)
+//   productPlanName only                          -> Product+Topic
+//   insurerCategoryId only                         -> Insurer+Topic
+//   neither set                                    -> Topic only (globally applicable)
+// Topic relevance itself (is this question actually ABOUT this topic, not
+// just same insurer/product) is established separately at query time via
+// embedding similarity against `topicEmbedding` — see
+// src/server/knowledgeBase/specialInstructions.ts. Deliberately reuses the
+// exact query embedding queryAssist.ts already computes for kbChunks
+// retrieval (RETRIEVAL_QUERY task type) — zero extra embedding calls.
+// ─────────────────────────────────────────────────────────────────────────
+export const specialInstructionTypeEnum = pgEnum("special_instruction_type", [
+  "override_rule",
+  "additional_information",
+  "general_instruction",
+]);
+
+export const specialInstructions = pgTable(
+  "special_instructions",
+  {
+    id: serial("id").primaryKey(),
+    topic: text("topic").notNull(),
+    instructionText: text("instruction_text").notNull(),
+    instructionType: specialInstructionTypeEnum("instruction_type").notNull(),
+    // Optional insurer scope — reuses kb_categories (type="insurer") rather
+    // than a free-text insurer name, consistent with the rest of the
+    // Knowledge Base. Nullable = applies across insurers (subject to the
+    // productPlanName/topic checks below).
+    insurerCategoryId: integer("insurer_category_id").references(() => kbCategories.id, { onDelete: "set null" }),
+    // Optional product/plan scope. Free text, matched case-insensitively
+    // against the advisor's effective plan tags at query time — same
+    // convention as kbResources.planTags / kbPlaybookPlanFacts.planName,
+    // since a Product+Topic instruction (no Insurer) must still be
+    // supportable per the spec, and plan-name rosters are themselves free
+    // text (kb_categories.planNames).
+    productPlanName: text("product_plan_name"),
+    // gemini-embedding-001 at 768 dims (RETRIEVAL_DOCUMENT task type),
+    // embedding just the Topic string — recomputed on every create/update
+    // that changes `topic`. See embeddings.ts's KB_EMBEDDING_DIMENSIONS.
+    topicEmbedding: vector("topic_embedding", { dimensions: 768 }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    updatedBy: text("updated_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("special_instructions_insurer_category_id_idx").on(table.insurerCategoryId),
+    index("special_instructions_is_active_idx").on(table.isActive),
+  ]
+);
+
+export type SpecialInstructionRow = typeof specialInstructions.$inferSelect;
+export type NewSpecialInstructionRow = typeof specialInstructions.$inferInsert;

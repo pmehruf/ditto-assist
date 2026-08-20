@@ -62,12 +62,13 @@ import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClie
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
-import { kbDocumentTypeEnum } from "./src/server/db/schema.js";
+import { kbDocumentTypeEnum, specialInstructionTypeEnum } from "./src/server/db/schema.js";
 
 // Valid kb_resources.document_type values, for request-body validation on
 // the upload/add-url/PATCH routes below — kept as a plain string[] (not the
 // Drizzle enum object itself) so it's cheap to .includes() against.
 const KB_DOCUMENT_TYPES: string[] = [...kbDocumentTypeEnum.enumValues];
+const SPECIAL_INSTRUCTION_TYPES: string[] = [...specialInstructionTypeEnum.enumValues];
 import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
 import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
@@ -75,6 +76,7 @@ import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledg
 import { encryptQueryAssistLogRefreshToken } from "./src/server/knowledgeBase/queryAssistLogTokenCrypto.js";
 import { invalidateQueryAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/queryAssistLogSheetsClient.js";
 import { runQueryAssistLogExport } from "./src/server/knowledgeBase/queryAssistLogExport.js";
+import { embedDocumentChunks } from "./src/server/knowledgeBase/embeddings.js";
 
 dotenv.config();
 
@@ -5150,6 +5152,205 @@ app.delete("/api/kb/resources/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete KB resource:", err);
     return res.status(500).json({ error: `Failed to delete resource: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Special Instructions — Product Assist's controlled instruction-override
+// layer (see schema.ts's doc comment on `specialInstructions` and
+// src/server/knowledgeBase/specialInstructions.ts for how these are matched
+// and applied at query time). Read access matches the rest of the Knowledge
+// Base admin routes (Admin/Platform Admin/Developer); writes are narrower —
+// per spec, ONLY Developer or Platform Admin may create/edit/activate/
+// deactivate/delete an instruction (isDeveloperPower, not
+// requireAdminOrDeveloper/isAdminPower) since these directly steer Product
+// Assist's answers.
+// ─────────────────────────────────────────────────────────────────────────
+
+app.get("/api/kb/special-instructions", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing Special Instructions"))) return;
+    const { topic, instructionType, insurerCategoryId, isActive } = req.query;
+    const { specialInstructions } = createRepositories(getDb());
+    const entries = await specialInstructions.list({
+      ...(typeof topic === "string" && topic.trim() ? { topic: topic.trim() } : {}),
+      ...(typeof instructionType === "string" && SPECIAL_INSTRUCTION_TYPES.includes(instructionType) ? { instructionType: instructionType as any } : {}),
+      ...(insurerCategoryId !== undefined && Number.isInteger(Number(insurerCategoryId)) ? { insurerCategoryId: Number(insurerCategoryId) } : {}),
+      ...(isActive === "true" ? { isActive: true } : isActive === "false" ? { isActive: false } : {}),
+    });
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list Special Instructions:", err);
+    return res.status(500).json({ error: `Failed to load Special Instructions: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/special-instructions", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, specialInstructions, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can create Special Instructions." });
+    }
+    const { topic, instructionText, instructionType, insurerCategoryId, productPlanName } = req.body;
+    if (typeof topic !== "string" || !topic.trim()) return res.status(400).json({ error: "topic is required." });
+    if (typeof instructionText !== "string" || !instructionText.trim()) {
+      return res.status(400).json({ error: "instructionText is required." });
+    }
+    if (typeof instructionType !== "string" || !SPECIAL_INSTRUCTION_TYPES.includes(instructionType)) {
+      return res.status(400).json({ error: `instructionType must be one of: ${SPECIAL_INSTRUCTION_TYPES.join(", ")}.` });
+    }
+    let resolvedInsurerCategoryId: number | null = null;
+    if (insurerCategoryId !== undefined && insurerCategoryId !== null && insurerCategoryId !== "") {
+      const idNum = Number(insurerCategoryId);
+      if (!Number.isInteger(idNum)) return res.status(400).json({ error: "Invalid insurerCategoryId." });
+      const category = await createRepositories(getDb()).kbCategories.get(idNum);
+      if (!category) return res.status(400).json({ error: "Insurer category not found." });
+      resolvedInsurerCategoryId = idNum;
+    }
+    const resolvedProductPlanName =
+      typeof productPlanName === "string" && productPlanName.trim() ? productPlanName.trim() : null;
+
+    const [topicEmbedding] = await embedDocumentChunks([topic.trim()]);
+    const entry = await specialInstructions.create({
+      topic: topic.trim(),
+      instructionText: instructionText.trim(),
+      instructionType: instructionType as any,
+      insurerCategoryId: resolvedInsurerCategoryId,
+      productPlanName: resolvedProductPlanName,
+      topicEmbedding,
+      createdBy: `${req.user!.name} (${req.user!.email})`,
+      updatedBy: `${req.user!.name} (${req.user!.email})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Special Instruction Created",
+        planName: null,
+        description: `Created "${entry.topic}" (${entry.instructionType}).`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Special Instruction creation:", logErr);
+    }
+
+    return res.json({ entry });
+  } catch (err: any) {
+    console.error("Failed to create Special Instruction:", err);
+    return res.status(500).json({ error: `Failed to create this Special Instruction: ${err.message}` });
+  }
+});
+
+app.patch("/api/kb/special-instructions/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, specialInstructions, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can edit Special Instructions." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid Special Instruction id." });
+    const existing = await specialInstructions.get(id);
+    if (!existing) return res.status(404).json({ error: "Special Instruction not found." });
+
+    const { topic, instructionText, instructionType, insurerCategoryId, productPlanName, isActive } = req.body;
+    if (instructionType !== undefined && !SPECIAL_INSTRUCTION_TYPES.includes(instructionType)) {
+      return res.status(400).json({ error: `instructionType must be one of: ${SPECIAL_INSTRUCTION_TYPES.join(", ")}.` });
+    }
+    let resolvedInsurerCategoryId: number | null | undefined = undefined;
+    if (insurerCategoryId !== undefined) {
+      if (insurerCategoryId === null || insurerCategoryId === "") {
+        resolvedInsurerCategoryId = null;
+      } else {
+        const idNum = Number(insurerCategoryId);
+        if (!Number.isInteger(idNum)) return res.status(400).json({ error: "Invalid insurerCategoryId." });
+        const category = await createRepositories(getDb()).kbCategories.get(idNum);
+        if (!category) return res.status(400).json({ error: "Insurer category not found." });
+        resolvedInsurerCategoryId = idNum;
+      }
+    }
+
+    const trimmedTopic = typeof topic === "string" && topic.trim() ? topic.trim() : undefined;
+    // Recompute the topic embedding whenever the topic text actually
+    // changes — the stored embedding must always reflect the current topic
+    // for query-time relevance matching to stay accurate. Skipped on every
+    // other field-only edit (Activate/Deactivate, scope change, instruction
+    // text edit) to avoid an unnecessary embedding call.
+    const newTopicEmbedding =
+      trimmedTopic !== undefined && trimmedTopic !== existing.topic ? (await embedDocumentChunks([trimmedTopic]))[0] : undefined;
+
+    const entry = await specialInstructions.update(id, {
+      ...(trimmedTopic !== undefined ? { topic: trimmedTopic } : {}),
+      ...(newTopicEmbedding !== undefined ? { topicEmbedding: newTopicEmbedding } : {}),
+      ...(typeof instructionText === "string" && instructionText.trim() ? { instructionText: instructionText.trim() } : {}),
+      ...(instructionType !== undefined ? { instructionType: instructionType as any } : {}),
+      ...(resolvedInsurerCategoryId !== undefined ? { insurerCategoryId: resolvedInsurerCategoryId } : {}),
+      ...(productPlanName !== undefined
+        ? { productPlanName: typeof productPlanName === "string" && productPlanName.trim() ? productPlanName.trim() : null }
+        : {}),
+      ...(typeof isActive === "boolean" ? { isActive } : {}),
+      updatedBy: `${req.user!.name} (${req.user!.email})`,
+    });
+    if (!entry) return res.status(404).json({ error: "Special Instruction not found." });
+
+    try {
+      const actionType =
+        typeof isActive === "boolean" && Object.keys(req.body).length === 1
+          ? isActive
+            ? "Special Instruction Activated"
+            : "Special Instruction Deactivated"
+          : "Special Instruction Edited";
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType,
+        planName: null,
+        description: `Updated "${entry.topic}" (${entry.instructionType}).`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Special Instruction edit:", logErr);
+    }
+
+    return res.json({ entry });
+  } catch (err: any) {
+    console.error("Failed to update Special Instruction:", err);
+    return res.status(500).json({ error: `Failed to update this Special Instruction: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/special-instructions/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, specialInstructions, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can delete Special Instructions." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid Special Instruction id." });
+    const existing = await specialInstructions.get(id);
+    if (!existing) return res.status(404).json({ error: "Special Instruction not found." });
+    await specialInstructions.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Special Instruction Deleted",
+        planName: null,
+        description: `Deleted "${existing.topic}" (${existing.instructionType}).`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Special Instruction deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete Special Instruction:", err);
+    return res.status(500).json({ error: `Failed to delete this Special Instruction: ${err.message}` });
   }
 });
 

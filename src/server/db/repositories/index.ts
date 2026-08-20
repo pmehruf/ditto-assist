@@ -43,6 +43,7 @@ import { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
 import { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
 import { QueryAssistLogsRepository } from "./queryAssistLogsRepository.js";
 import { QueryAssistLogExportConnectionRepository } from "./queryAssistLogExportConnectionRepository.js";
+import { SpecialInstructionsRepository } from "./specialInstructionsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -211,6 +212,7 @@ export interface Repositories {
   productAssistAcks: ProductAssistAcksRepository;
   queryAssistLogs: QueryAssistLogsRepository;
   queryAssistLogExportConnection: QueryAssistLogExportConnectionRepository;
+  specialInstructions: SpecialInstructionsRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -254,5 +256,6 @@ export function createRepositories(db: AnyDb): Repositories {
     productAssistAcks: new ProductAssistAcksRepository(db),
     queryAssistLogs: new QueryAssistLogsRepository(db),
     queryAssistLogExportConnection: new QueryAssistLogExportConnectionRepository(db),
+    specialInstructions: new SpecialInstructionsRepository(db),
   };
 }

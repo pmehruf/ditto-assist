@@ -7,6 +7,8 @@ import type { Repositories } from "../db/repositories/index.js";
 import { embedQuery } from "./embeddings.js";
 import { getKbAiClient } from "./geminiClient.js";
 import { Type } from "@google/genai";
+import { resolveApplicableInstructions, type SpecialInstructionConflict } from "./specialInstructions.js";
+import type { SpecialInstructionRow } from "../db/schema.js";
 
 const GENERATION_MODEL = "gemini-2.5-flash";
 // Raised from 14 — insurance documents scatter the eligibility, monetary
@@ -141,6 +143,9 @@ CONTINUING A CONVERSATION
 If CONVERSATION SO FAR is present below, the advisor's current message may be a continuation, not a new isolated question — this is especially true when it is short (just a plan name, a yes/no, a number, "the second one", etc.). If your own last turn in CONVERSATION SO FAR asked the advisor a clarifying question, treat their current message as the answer to THAT clarifying question and go back and actually answer the ORIGINAL question it was raised for — do not treat the clarification by itself as a brand-new, unrelated question to research from scratch.
 
 SOURCE PRECEDENCE (highest wins on conflict)
+0. SPECIAL INSTRUCTIONS — a small set of controlled instructions an authorised Developer/Platform Admin has entered for specific topics, checked BEFORE everything below. When a SPECIAL INSTRUCTIONS section is present, it contains up to two kinds of content, already pre-filtered for topic and scope relevance to this exact question — never present just because a keyword matches:
+   - OVERRIDE RULE entries (marked "[Override Rule]"): the single highest authority in this entire prompt. For the topic it names, its statement is the COMPLETE and EXCLUSIVE answer — treat it exactly like PRODUCT PLAYBOOK's exclusivity rule below (rule #1), one rung higher: do not blend in, soften, or add to it from the Playbook or any DOCUMENT EXCERPT for that same topic, even if they appear to add relevant detail.
+   - ADDITIONAL INFORMATION / GENERAL INSTRUCTION entries (marked accordingly): supplementary context or handling guidance ONLY — never a source of facts. Use these to shape how you explain a topic (e.g. what to be careful to distinguish, common confusions to avoid), but the actual product/policy facts still come from PRODUCT PLAYBOOK / DOCUMENT EXCERPTS below exactly as they would without this entry. Never let one of these entries substitute for, override, or contradict an actual sourced fact.
 1. PRODUCT PLAYBOOK PLAN FACTS — the internal team's own authoritative, CURRENT statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. Policy Wording and Prospectus documents are the legal contract text, but insurers amend, discontinue, or replace specific named benefits (e.g. bonus types, restoration types) over time without necessarily reprinting the whole document — the Playbook is the team's own up-to-date record of which of those named options is actually live for this plan today. Treat it accordingly:
    - When a PRODUCT PLAYBOOK section is present below for the selected plan AND it addresses a given topic (e.g. Bonus, Restoration, Waiting Period — whatever category the question is about), the Playbook's statement of that topic is the COMPLETE and EXCLUSIVE answer for it. Do not add, blend in, or additionally mention some other named sub-type/variant/figure for that SAME topic from DOCUMENT EXCERPTS, even if it has its own numbered section in the Policy Wording, even if it is not explicitly worded as contradicting the Playbook, and even under COMPREHENSIVENESS above.
    - A named benefit sub-type that a DOCUMENT EXCERPT describes (e.g. "Cumulative Bonus", a specific restoration variant) but that the Playbook's coverage of that same topic does NOT mention must be treated as NOT CURRENTLY APPLICABLE to this plan — never presented as an extra, alternative, or "also available" benefit alongside what the Playbook states. If the advisor's question specifically names that sub-type (e.g. "does this plan have a Cumulative Bonus?"), say plainly that per the Product Playbook it does not apply to this plan — do not just describe what the Policy Wording section says about it without that caveat.
@@ -211,6 +216,7 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 14. If PRODUCT PLAYBOOK facts were used to answer this topic, "share" restates every point those facts make about it (see PLAYBOOK COMPLETENESS IN SHARE) — not just the most prominent one.
 15. If "answer" did not reach a genuine sourced answer (sources didn't cover it, "answer" is itself a clarifying question, or ESCALATION applies), "share" is JSON null — never a fabricated customer-facing paraphrase (see NO DRAFT RULE below).
 16. Genuine unresolved uncertainty — not simple "not specified" — was flagged per ESCALATION with a note to confirm with Ditto's complex queries team, rather than silently answered as if settled.
+17. Any SPECIAL INSTRUCTIONS section was checked first (SOURCE PRECEDENCE #0): an Override Rule entry for this topic was treated as complete and exclusive, never blended with lower-ranked sources; Additional Information/General Instruction entries were used only to shape explanation, never as a substitute for an actual sourced fact.
 
 OUTPUT FORMAT
 Respond with a single JSON object matching the response schema, with exactly two fields: "answer" and "share". Do NOT write your own "ANSWER"/"MESSAGE FOR SHARING" heading, or "Part 1"/"Part 2" label, inside either field's text — the app already labels both for you on screen, so including either yourself duplicates it and is a formatting error.
@@ -221,11 +227,70 @@ Respond with a single JSON object matching the response schema, with exactly two
 
 NO DRAFT RULE: set "share" to JSON null (not the string "null", not an empty string — the actual null value) whenever "answer" did not reach a genuine, sourced answer for the advisor to relay to a customer as-is — because the sources don't cover the question, because "answer" is itself a clarifying question rather than an answer, or because ESCALATION above applies (genuine unresolved uncertainty, not just missing info). A customer-facing message drafted from an unsupported, incomplete, or genuinely uncertain answer would be misleading if copied straight to a customer — null is the correct, complete response in that case, not a fallback to avoid. Only write a real customer-facing paraphrase in "share" when "answer" reached an actual verified, sufficiently-certain answer, even if that answer is partial or conditional.`;
 
+/** Renders the SOURCE PRECEDENCE #0 block — see this file's SYSTEM_INSTRUCTION
+ * for the exact authority rules the model is told to apply to each kind of
+ * entry. Placed ahead of PRODUCT PLAYBOOK in the source text so the
+ * highest-authority content is also physically first. Returns "" (nothing
+ * added) when both lists are empty — the normal case whenever no Special
+ * Instruction matched this question, keeping the prompt byte-identical to
+ * before this feature existed. */
+function buildSpecialInstructionsBlock(overrideRules: SpecialInstructionRow[], advisory: SpecialInstructionRow[]): string {
+  if (overrideRules.length === 0 && advisory.length === 0) return "";
+  const parts: string[] = [
+    "=== SPECIAL INSTRUCTIONS (authoritative per SOURCE PRECEDENCE #0 — read before everything else below) ===",
+  ];
+  for (const row of overrideRules) {
+    parts.push(`[Override Rule: ${row.topic}]\n${row.instructionText}`);
+  }
+  for (const row of advisory) {
+    const label = row.instructionType === "additional_information" ? "Additional Information" : "General Instruction";
+    parts.push(`[${label}: ${row.topic}]\n${row.instructionText}`);
+  }
+  return parts.join("\n\n");
+}
+
+/** Deterministic hard-stop answer for a detected Override Rule conflict
+ * (spec section 9: "do NOT allow the AI to arbitrarily choose one... flag
+ * the conflict for an authorised user"). No AI call is made — the
+ * conflicting instruction text is never shown to the model at all, so
+ * there's no risk of it leaning toward either side despite being told not
+ * to. `share` is null per NO DRAFT RULE (nothing here is a sourced answer
+ * an advisor could relay to a customer). */
+function buildConflictAnswer(conflicts: SpecialInstructionConflict[], historyTurnCount: number, latencyMs: number): QueryAssistAnswer {
+  const lines = conflicts.map(
+    c => `- **${c.topic}**: ${c.instructions.length} conflicting active Override Rules (IDs: ${c.instructions.map(i => i.id).join(", ")}).`
+  );
+  const answer = [
+    "I can't answer this yet — Product Assist found more than one active Special Instruction (Override Rule) for the same topic and scope that disagree with each other, and I'm not able to silently pick one:",
+    ...lines,
+    "",
+    "Please ask a Developer or Platform Admin to review and resolve the conflicting Special Instruction(s) in the Knowledge Hub before this question can be answered.",
+  ].join("\n");
+  return {
+    answer,
+    share: null,
+    sources: [],
+    hadNoMatches: false,
+    meta: {
+      retrievedChunkCount: 0,
+      playbookFactCount: 0,
+      historyTurnCount,
+      inputTokens: null,
+      outputTokens: null,
+      latencyMs,
+    },
+  };
+}
+
 function buildSourceBlock(
   chunks: { resourceTitle: string; documentType: QueryAssistSource["documentType"]; content: string }[],
-  playbookFacts: { planName: string; content: string }[]
+  playbookFacts: { planName: string; content: string }[],
+  specialInstructionsBlock: string
 ): string {
   const parts: string[] = [];
+  if (specialInstructionsBlock) {
+    parts.push(specialInstructionsBlock);
+  }
   if (playbookFacts.length > 0) {
     parts.push(
       "=== PRODUCT PLAYBOOK (authoritative and COMPLETE for the selected plan on any topic it covers — see SOURCE PRECEDENCE #1. For a topic covered here, DOCUMENT EXCERPTS below must not be used to add another named sub-type/benefit/figure — only to cover a genuinely different topic this section is silent on.) ==="
@@ -403,6 +468,29 @@ export async function answerQuery(
 
   const retrievalQueryText = buildRetrievalQueryText(question, history);
   const queryEmbedding = await embedQuery(retrievalQueryText);
+
+  // SOURCE PRECEDENCE #0 — checked before any normal retrieval below, per
+  // Special Instructions' additive precedence layer. Reuses queryEmbedding
+  // (already computed above) for topic-relevance matching — zero extra
+  // embedding calls. See specialInstructions.ts for the full algorithm.
+  const generationStartedAtForConflict = Date.now();
+  const { overrideRules, advisory, conflicts } = await resolveApplicableInstructions(
+    repos,
+    scope,
+    effectivePlanTags,
+    queryEmbedding
+  );
+  if (conflicts.length > 0) {
+    // Hard stop, per product decision: never let the model see conflicting
+    // Override Rule text at all (not even to be told "don't pick one") —
+    // short-circuit deterministically instead of risking it leaning toward
+    // either instruction. Applies to the whole answer, not just the
+    // conflicting topic's portion, since a partial answer here could still
+    // read as implicitly endorsing one side.
+    return buildConflictAnswer(conflicts, history.length, Date.now() - generationStartedAtForConflict);
+  }
+  const specialInstructionsBlock = buildSpecialInstructionsBlock(overrideRules, advisory);
+
   const similar = await repos.kbChunks.findSimilar(queryEmbedding, {
     categoryIds,
     ...(resourceIds !== undefined ? { resourceIds } : {}),
@@ -420,10 +508,10 @@ export async function answerQuery(
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, documentType: s.documentType, content: s.chunk.content }));
   const playbookInputs = playbookFacts.map(f => ({ planName: f.planName, content: f.content }));
 
-  const hadNoMatches = similar.length === 0 && playbookFacts.length === 0;
+  const hadNoMatches = similar.length === 0 && playbookFacts.length === 0 && overrideRules.length === 0 && advisory.length === 0;
   const sourceBlock = hadNoMatches
     ? "(No matching Playbook facts or document excerpts were found for this question within the selected scope.)"
-    : buildSourceBlock(chunkInputs, playbookInputs);
+    : buildSourceBlock(chunkInputs, playbookInputs, specialInstructionsBlock);
 
   const historyBlock = buildHistoryBlock(history);
   const scopeLine = buildScopeLine(scope, scopeCategoryName, detectedPlanNames);
