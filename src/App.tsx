@@ -3355,12 +3355,23 @@ export default function App() {
                             }
                             toggleRailGroup(group.key);
                           }}
-                          className={`relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                            isGroupActive || isExpanded
-                              ? "bg-white/[0.08] border border-white/[0.14]"
-                              : "hover:bg-white/5"
+                          className={`relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all border-l-[3px] ${
+                            isGroupActive || isExpanded ? "" : "border-l-transparent hover:bg-white/5"
                           }`}
-                          style={{ color: isGroupActive ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                          style={{
+                            color: isGroupActive ? (theme === "dark" ? "var(--accent)" : "#00D3F3") : (theme === "dark" ? "var(--text-muted)" : "#90A6C4"),
+                            // Thick left-border accent instead of the old
+                            // rounded filled-box highlight — accent-colored
+                            // when this group's own page is active, a
+                            // dimmer neutral tone when it's merely expanded
+                            // (browsing, not "here"), matching the same
+                            // distinction the icon color above already made.
+                            borderLeftColor: isGroupActive
+                              ? (theme === "dark" ? "var(--accent)" : "#00D3F3")
+                              : isExpanded
+                                ? (theme === "dark" ? "var(--text-muted)" : "#90A6C4")
+                                : "transparent",
+                          }}
                           title={group.label}
                           aria-haspopup={!group.isDirectPage}
                           aria-expanded={isExpanded}
@@ -3418,9 +3429,19 @@ export default function App() {
                                 <button
                                   key={page.tab}
                                   onClick={() => { page.onSelect(); }}
-                                  className={`relative w-9 h-9 mt-1.5 rounded-lg shrink-0 flex items-center justify-center cursor-pointer transition-all ${
-                                    page.isActive ? "bg-white/[0.08] border border-white/[0.14]" : "hover:bg-white/5"
+                                  className={`relative w-9 h-9 mt-1.5 rounded-lg shrink-0 flex items-center justify-center cursor-pointer transition-all border-l-[3px] ${
+                                    page.isActive ? "" : "border-l-transparent hover:bg-white/5"
                                   }`}
+                                  // Same thick left-border accent as the group
+                                  // button above, replacing the old filled
+                                  // rounded box. Set via inline style (not a
+                                  // border-current utility) since this
+                                  // button's own `color` doesn't track
+                                  // page.iconColorClass — that class is
+                                  // applied directly on the <page.Icon />
+                                  // child instead, so the border needs its
+                                  // own explicit color to stay in sync.
+                                  style={page.isActive ? { borderLeftColor: isDark ? "var(--accent)" : "#00D3F3" } : undefined}
                                   title={page.label}
                                 >
                                   <page.Icon className={`w-[15px] h-[15px] shrink-0 ${page.iconColorClass(page.isActive)}`} style={page.iconStyle} />
