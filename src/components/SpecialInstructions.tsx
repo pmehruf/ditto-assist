@@ -328,9 +328,13 @@ export function SpecialInstructions({ theme, effectiveTier, currentUser, setChan
     }
   };
 
-  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
-    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
-  }`;
+  // Cross-app UI consistency pass (2026-08): matches Product Assist's own
+  // control language via the shared --input-*/--focus-ring tokens (see
+  // CustomSelect.tsx's defaultTriggerClass and
+  // KnowledgeBaseResourceManagement.tsx's identical inputClass) instead of
+  // a hardcoded per-theme ternary and Tailwind's generic `sky-*` blue.
+  const inputClass =
+    "w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)] placeholder:text-[var(--text-disabled)] focus:border-[var(--focus-ring)]";
   const cardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-stone-200";
 
   return (

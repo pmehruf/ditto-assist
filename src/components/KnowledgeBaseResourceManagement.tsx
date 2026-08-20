@@ -755,9 +755,13 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   const editingResource = resources.find(r => r.id === editingResourceId) ?? null;
   const editingCategory = editingResource ? categories.find(c => c.id === editingResource.categoryId) ?? null : null;
 
-  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
-    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
-  }`;
+  // Cross-app UI consistency pass (2026-08): on --input-bg/-border/-text/
+  // --focus-ring tokens (the same pair a CustomSelect trigger now uses —
+  // see CustomSelect.tsx) instead of a hardcoded per-theme ternary, so a
+  // text field and a dropdown trigger read as one control family and this
+  // page's inputs pick up the same dark-theme contrast pass automatically.
+  const inputClass =
+    "w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)] placeholder:text-[var(--text-disabled)] focus:border-[var(--focus-ring)]";
   const cardClass = dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-stone-200";
   // The per-insurer outer wrapper reads as the "most raised" tier in the
   // light theme's actual elevation ladder (see index.css's --surface/
@@ -1425,9 +1429,13 @@ function AddInsurerModal({
   onClose: () => void;
 }) {
   const dark = theme === "dark";
-  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
-    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
-  }`;
+  // Cross-app UI consistency pass (2026-08): on --input-bg/-border/-text/
+  // --focus-ring tokens (the same pair a CustomSelect trigger now uses —
+  // see CustomSelect.tsx) instead of a hardcoded per-theme ternary, so a
+  // text field and a dropdown trigger read as one control family and this
+  // page's inputs pick up the same dark-theme contrast pass automatically.
+  const inputClass =
+    "w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)] placeholder:text-[var(--text-disabled)] focus:border-[var(--focus-ring)]";
   return (
     <ModalShell theme={theme} onClose={onClose}>
       <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between ${dark ? "border-stone-800" : "border-stone-200"}`}>
@@ -1480,9 +1488,13 @@ function AddDocumentModal({
 }) {
   const dark = theme === "dark";
   const [mode, setMode] = useState<"upload" | "url">("upload");
-  const inputClass = `w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors ${
-    dark ? "bg-white/[0.04] border-white/[0.1] text-white placeholder:text-stone-500 focus:border-sky-500/50" : "bg-white border-stone-300 text-stone-900 placeholder:text-stone-400 focus:border-sky-500"
-  }`;
+  // Cross-app UI consistency pass (2026-08): on --input-bg/-border/-text/
+  // --focus-ring tokens (the same pair a CustomSelect trigger now uses —
+  // see CustomSelect.tsx) instead of a hardcoded per-theme ternary, so a
+  // text field and a dropdown trigger read as one control family and this
+  // page's inputs pick up the same dark-theme contrast pass automatically.
+  const inputClass =
+    "w-full px-3 py-2 rounded-lg text-xs font-medium border outline-none transition-colors bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)] placeholder:text-[var(--text-disabled)] focus:border-[var(--focus-ring)]";
   return (
     <ModalShell theme={theme} onClose={onClose}>
       <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between ${dark ? "border-stone-800" : "border-stone-200"}`}>

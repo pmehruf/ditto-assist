@@ -278,18 +278,29 @@
      staircase instead of 2 tones. Still deep navy throughout — no gray,
      no charcoal, no OLED black — per the "same app, easier on the eyes"
      brief. */
-  --bg: #041B2E;                    /* page                         */
-  --surface-inset: #082238;         /* step cards / inner widgets   */
-  --surface-elevated: #0B2A44;      /* section containers           */
-  --surface: #102F4C;               /* cards — the brightest static tier */
-  --surface-tint: #123659;          /* accent-tinted panels         */
-  --surface-hover: #163963;         /* row / control hover-active   */
+  /* Cross-app UI consistency pass (2026-08): one more controlled step up
+     from the ladder above — each tier's own lightness nudged a further
+     ~2 HSL-L points (same hue/saturation, same relative gaps preserved so
+     the staircase doesn't collapse back into itself the way the original
+     near-black ladder did), plus a larger, separate bump to --border/
+     -border-strong opacity specifically (the "borders/dividers are slightly
+     difficult to perceive" complaint came back, so that one gets a bigger
+     nudge than the surfaces do). Deliberately NOT touching --accent/
+     --action-navy/--text-* here — those were already tuned in the prior
+     passes documented above and this task is scoped to surface/border
+     separation, not identity or text color. */
+  --bg: #052036;                    /* page                         */
+  --surface-inset: #092842;         /* step cards / inner widgets   */
+  --surface-elevated: #0D304E;      /* section containers           */
+  --surface: #123454;               /* cards — the brightest static tier */
+  --surface-tint: #143B61;          /* accent-tinted panels         */
+  --surface-hover: #173D6A;         /* row / control hover-active   */
 
-  /* Borders — nudged up slightly so structure is perceptible without
-     drawing the eye (brief: "current borders are slightly difficult to
-     perceive"). Same aqua hue, a bit more opacity. */
-  --border: rgba(120, 190, 255, 0.16);
-  --border-strong: rgba(120, 190, 255, 0.28);
+  /* Borders — a further nudge past the previous pass (0.16/0.28), still the
+     same aqua hue, now ~30-40% more opaque so structure/dividers read
+     clearly without becoming a visible line-art outline. */
+  --border: rgba(120, 190, 255, 0.22);
+  --border-strong: rgba(120, 190, 255, 0.36);
 
   /* PRIMARY ACCENT — Aqua / Cyan Blue */
   --accent: #00D3F3;

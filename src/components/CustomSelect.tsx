@@ -143,11 +143,25 @@ export function CustomSelect({
 
   const selected = options.find((o) => o.value === value);
 
-  const defaultTriggerClass = `w-full flex items-center justify-between gap-2 pl-3 pr-8 py-3 rounded-xl border outline-none font-bold text-input-value transition-all font-sans shadow-sm relative ${
+  // Cross-app UI consistency pass (2026-08): rebuilt to match Product
+  // Assist's own dropdown trigger (its insurer selector on QueryAssistPage,
+  // which passes a custom triggerClassName rather than using this default)
+  // — py-2/rounded-lg instead of py-3/rounded-xl (this default was
+  // noticeably taller/larger-radius than every other control in the app,
+  // the literal "oversized controls" complaint against Knowledge Base's
+  // filter row, which never passes its own triggerClassName and so was
+  // always rendering this default), and --input-bg/--input-border/
+  // --input-text tokens instead of hardcoded hex — the same token pair a
+  // text <input> already uses, so a select trigger and a text field read as
+  // the same control family instead of two different ones. The open/
+  // selected states below are on --accent/--focus-ring tokens instead of
+  // Tailwind's generic `blue-*` swatch, which isn't tied to either theme's
+  // palette and was the actual source of the "flat heavy blue" look.
+  const defaultTriggerClass = `w-full flex items-center justify-between gap-2 pl-3 pr-8 py-2 rounded-lg border outline-none font-bold text-input-value transition-colors font-sans relative ${
     disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-  } ${
-    dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
-  } ${open ? (dark ? "border-blue-500 ring-1 ring-blue-500/30" : "border-blue-400 ring-1 ring-blue-400/30") : ""}`;
+  } bg-[var(--input-bg)] border-[var(--input-border)] text-[var(--input-text)] hover:bg-[var(--surface-hover)] ${
+    open ? "border-[var(--focus-ring)] ring-1 ring-[var(--focus-ring)]/30" : ""
+  }`;
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -225,22 +239,23 @@ export function CustomSelect({
                         opt.disabled
                           ? "opacity-40 cursor-not-allowed border-transparent pl-[10px]"
                           : isSelected
-                            ? // Default (no explicit override) must itself branch on
-                              // `dark` — a light-blue-on-transparent treatment reads
-                              // fine against this panel's near-black dark background,
-                              // but the same text-blue-300 against the panel's WHITE
-                              // light-theme background (see panelClassName's default
-                              // above) was near-invisible, which is exactly the
-                              // "selected option text obscured" bug reported against
-                              // Product Assist's insurer selector.
-                              `${selectedOptionClassName ?? (dark ? "bg-blue-600/20 text-blue-300 border-blue-500" : "bg-blue-50 text-blue-700 border-blue-500")} pl-[10px]`
+                            ? // Default (no explicit override) is on the app's own
+                              // --accent-subtle-bg/--accent tokens rather than
+                              // Tailwind's generic `blue-*` swatch — that generic
+                              // blue wasn't tied to either theme's palette (the
+                              // "flat heavy blue" complaint) and wasn't AA-safe
+                              // against a white light-theme panel by itself, which
+                              // is why an earlier fix branched it by `dark`; the
+                              // token pair already carries a correct value for
+                              // each theme, so no branching is needed here anymore.
+                              `${selectedOptionClassName ?? "bg-[var(--accent-subtle-bg)] text-[var(--accent)] border-[var(--accent)]"} pl-[10px]`
                             : dark
                               ? "hover:bg-white/[0.04] border-transparent pl-[10px]"
                               : "hover:bg-stone-100 border-transparent pl-[10px]"
                       }`}
                     >
                       <span className="truncate">{opt.label}</span>
-                      {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? (dark ? "text-blue-400" : "text-blue-600")}`} />}
+                      {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? "text-[var(--accent)]"}`} />}
                     </button>
                   );
                 })
