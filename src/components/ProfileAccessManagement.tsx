@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion } from "lucide-react";
+import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion, CheckSquare, Square, Layers } from "lucide-react";
 import { UserProfile, LoggedUser } from "../types/user";
 import { Department, FeatureAccessOverride, OrgTeam, AppRole } from "../types/permissions";
 import { ChangeLogEntry } from "../types/changeLog";
@@ -169,6 +169,63 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
     setStatusFilter("");
     setJoinedFrom("");
     setJoinedTo("");
+  };
+
+  // Bulk selection — `selectedEmails` persists across page changes (check
+  // rows on page 1, flip to page 2, check more, then Apply once) since only
+  // ONE page of the directory is ever loaded at a time (see the component
+  // doc comment above). `selectAllMatching` is a SEPARATE flag for "every
+  // row matching the current search/filters, not just what's loaded" — the
+  // two are mutually exclusive, since the server has no notion of "every row
+  // matching this filter EXCEPT these few explicitly-unchecked ones": turning
+  // one on always clears the other, and toggling any individual checkbox
+  // while selectAllMatching is on drops back into ordinary explicit selection
+  // starting from the current page.
+  const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
+  const selectionCount = selectAllMatching ? total : selectedEmails.size;
+  const [bulkFields, setBulkFields] = useState({ tier: false, status: false, department: false, team: false, role: false, tags: false });
+  const [bulkTier, setBulkTier] = useState<UserProfile["tier"]>("General");
+  const [bulkStatus, setBulkStatus] = useState<UserProfile["status"]>("Active");
+  const [bulkDepartmentId, setBulkDepartmentId] = useState<number | null>(null);
+  const [bulkTeamId, setBulkTeamId] = useState<number | null>(null);
+  const [bulkRoleId, setBulkRoleId] = useState<number | null>(null);
+  const [bulkTags, setBulkTags] = useState<string[]>([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
+
+  const clearSelection = () => {
+    setSelectedEmails(new Set());
+    setSelectAllMatching(false);
+    setBulkFields({ tier: false, status: false, department: false, team: false, role: false, tags: false });
+    setBulkError(null);
+  };
+  const toggleRowSelection = (email: string) => {
+    setSelectAllMatching(false);
+    setSelectedEmails(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email); else next.add(email);
+      return next;
+    });
+  };
+  // Only rows this caller could edit one-by-one are selectable in bulk
+  // either — same clearance the row's Pencil/Trash icons already require
+  // (see canEditRow above), kept consistent rather than letting a checkbox
+  // silently include a row the caller can't actually change.
+  const selectableEntries = entries.filter(canEditRow);
+  const allOnPageSelected = selectableEntries.length > 0 && selectableEntries.every(u => selectedEmails.has(u.email));
+  const toggleSelectAllOnPage = () => {
+    setSelectAllMatching(false);
+    setSelectedEmails(prev => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        selectableEntries.forEach(u => next.delete(u.email));
+      } else {
+        selectableEntries.forEach(u => next.add(u.email));
+      }
+      return next;
+    });
   };
 
   const buildFilterParams = (params: URLSearchParams) => {
@@ -352,6 +409,75 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       setSaveError(err.message || "Failed to add this user. Please try again.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const anyBulkFieldEnabled = bulkFields.tier || bulkFields.status || bulkFields.department || bulkFields.team || bulkFields.role || bulkFields.tags;
+
+  // Applies whichever fields are toggled ON in `bulkFields` to the whole
+  // current selection in ONE request — either the explicit checked-email
+  // list, or (when selectAllMatching) the active search/filter, which the
+  // server re-resolves itself via PATCH /api/users/bulk rather than the
+  // client ever needing to fetch every matching row just to list their
+  // emails. Only enabled fields are sent, so leaving (say) Department off
+  // never touches anyone's existing department.
+  const applyBulkEdit = async () => {
+    if (!anyBulkFieldEnabled || selectionCount === 0) return;
+    const changes: Record<string, any> = {};
+    const changedLabels: string[] = [];
+    if (bulkFields.tier) { changes.tier = bulkTier; changedLabels.push(`Tier → ${bulkTier}`); }
+    if (bulkFields.status) { changes.status = bulkStatus; changedLabels.push(`Status → ${bulkStatus}`); }
+    if (bulkFields.department) { changes.departmentId = bulkDepartmentId; changedLabels.push(`Department → ${departmentLabel(bulkDepartmentId) || "Unassigned"}`); }
+    if (bulkFields.team) { changes.orgTeamId = bulkTeamId; changedLabels.push(`Team → ${teamLabel(bulkTeamId) || "Unassigned"}`); }
+    if (bulkFields.role) { changes.roleId = bulkRoleId; changedLabels.push(`Role → ${roleLabel(bulkRoleId) || "Unassigned"}`); }
+    if (bulkFields.tags) { changes.tags = bulkTags; changedLabels.push(`Tags → ${bulkTags.length ? bulkTags.join(" + ") : "Unassigned"}`); }
+
+    const confirmMsg = `Apply ${changedLabels.join(", ")} to ${selectionCount.toLocaleString()} ${selectionCount === 1 ? "user" : "users"}? This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setBulkSaving(true);
+    setBulkError(null);
+    try {
+      const body: Record<string, any> = { changes };
+      if (selectAllMatching) {
+        body.filter = {
+          search: searchQuery || undefined,
+          tag: tagFilter || undefined,
+          tier: tierFilter || undefined,
+          status: statusFilter || undefined,
+          dateFrom: joinedFrom || undefined,
+          dateTo: joinedTo || undefined,
+        };
+      } else {
+        body.emails = Array.from(selectedEmails);
+      }
+      const res = await fetch("/api/users/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const resBody = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(resBody.error || `Failed to bulk-update users (HTTP ${res.status}).`);
+      const updatedCount = resBody.updatedCount ?? 0;
+      const skippedCount = resBody.skippedCount ?? 0;
+      logAction(
+        "Bulk Edit",
+        `Bulk-updated ${updatedCount} ${updatedCount === 1 ? "user" : "users"} in the directory — ${changedLabels.join(", ")}.${
+          skippedCount ? ` ${skippedCount} skipped (Developer-record protection).` : ""
+        }`
+      );
+      setBulkResult(
+        `Updated ${updatedCount.toLocaleString()} ${updatedCount === 1 ? "user" : "users"}.${
+          skippedCount ? ` ${skippedCount.toLocaleString()} skipped (Developer-record protection).` : ""
+        }`
+      );
+      setTimeout(() => setBulkResult(null), 5000);
+      clearSelection();
+      await loadEntries();
+    } catch (err: any) {
+      setBulkError(err.message || "Failed to bulk-update the selected users. Please try again.");
+    } finally {
+      setBulkSaving(false);
     }
   };
 
@@ -621,10 +747,173 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
           </div>
         )}
 
+        {bulkResult && (
+          <div className="px-3 py-2 rounded-lg text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            {bulkResult}
+          </div>
+        )}
+
+        {/* "Select all N on this page" only offers the "select every N
+            matching this filter" upsell once the page itself is fully
+            checked AND there's more beyond this one page — otherwise the two
+            numbers would be identical and the link would be pointless. */}
+        {canManage && !selectAllMatching && allOnPageSelected && total > selectableEntries.length && (
+          <div className={`px-3 py-2 rounded-lg text-[11px] font-bold flex items-center gap-1.5 ${dark ? "bg-sky-500/10 text-sky-300 border border-sky-500/25" : "bg-sky-50 text-sky-700 border border-sky-200"}`}>
+            All {selectableEntries.length} users on this page are selected.
+            <button onClick={() => setSelectAllMatching(true)} className="underline hover:no-underline">
+              Select all {total.toLocaleString()} users matching your filters
+            </button>
+          </div>
+        )}
+
+        {canManage && selectionCount > 0 && (
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "bg-sky-950/10 border-sky-500/20" : "bg-sky-50/60 border-sky-200"}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Layers className={`w-4 h-4 shrink-0 ${dark ? "text-sky-400" : "text-sky-600"}`} />
+                <span className={`text-[11.5px] font-black ${dark ? "text-white" : "text-stone-900"}`}>
+                  {selectionCount.toLocaleString()} {selectionCount === 1 ? "user" : "users"} selected
+                  {selectAllMatching ? " (every user matching your filters)" : ""}
+                </span>
+              </div>
+              <button
+                onClick={clearSelection}
+                className={`text-[10.5px] font-bold px-2 py-1 rounded-lg ${dark ? "text-stone-400 hover:bg-stone-800" : "text-stone-500 hover:bg-stone-100"}`}
+              >
+                Clear selection
+              </button>
+            </div>
+
+            {bulkError && (
+              <div className="px-3 py-2 rounded-lg text-[11px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {bulkError}
+              </div>
+            )}
+
+            <p className={`text-[10.5px] font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              Turn on a field below to change it for everyone selected. Fields left off are untouched.
+            </p>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={bulkFields.tier} onChange={e => setBulkFields(f => ({ ...f, tier: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Tier</span>
+              </label>
+              <div className="w-36 shrink-0">
+                <CustomSelect
+                  theme={theme}
+                  value={bulkTier}
+                  onChange={(val) => setBulkTier(val as UserProfile["tier"])}
+                  triggerClassName={selectTriggerClass}
+                  disabled={!bulkFields.tier}
+                  options={assignableTiers.map(t => ({ value: t, label: t }))}
+                />
+              </div>
+
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={bulkFields.status} onChange={e => setBulkFields(f => ({ ...f, status: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Status</span>
+              </label>
+              <div className="w-32 shrink-0">
+                <CustomSelect
+                  theme={theme}
+                  value={bulkStatus}
+                  onChange={(val) => setBulkStatus(val as UserProfile["status"])}
+                  triggerClassName={selectTriggerClass}
+                  disabled={!bulkFields.status}
+                  options={STATUSES.map(s => ({ value: s, label: s }))}
+                />
+              </div>
+
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={bulkFields.department} onChange={e => setBulkFields(f => ({ ...f, department: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Department</span>
+              </label>
+              <div className="w-36 shrink-0">
+                <CustomSelect
+                  theme={theme}
+                  value={bulkDepartmentId != null ? String(bulkDepartmentId) : ""}
+                  onChange={(val) => setBulkDepartmentId(val ? Number(val) : null)}
+                  triggerClassName={selectTriggerClass}
+                  disabled={!bulkFields.department}
+                  options={departmentOptions(bulkDepartmentId)}
+                />
+              </div>
+
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={bulkFields.team} onChange={e => setBulkFields(f => ({ ...f, team: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Team</span>
+              </label>
+              <div className="w-36 shrink-0">
+                <CustomSelect
+                  theme={theme}
+                  value={bulkTeamId != null ? String(bulkTeamId) : ""}
+                  onChange={(val) => setBulkTeamId(val ? Number(val) : null)}
+                  triggerClassName={selectTriggerClass}
+                  disabled={!bulkFields.team}
+                  options={teamOptions(bulkTeamId)}
+                />
+              </div>
+
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={bulkFields.role} onChange={e => setBulkFields(f => ({ ...f, role: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Role</span>
+              </label>
+              <div className="w-36 shrink-0">
+                <CustomSelect
+                  theme={theme}
+                  value={bulkRoleId != null ? String(bulkRoleId) : ""}
+                  onChange={(val) => setBulkRoleId(val ? Number(val) : null)}
+                  triggerClassName={selectTriggerClass}
+                  disabled={!bulkFields.role}
+                  options={roleOptions(bulkRoleId)}
+                />
+              </div>
+
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none self-center">
+                <input type="checkbox" checked={bulkFields.tags} onChange={e => setBulkFields(f => ({ ...f, tags: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Tags</span>
+              </label>
+              <div className={`shrink-0 ${bulkFields.tags ? "" : "opacity-40 pointer-events-none"}`}>
+                <AdvisorTagCheckboxes theme={theme} value={bulkTags} onChange={setBulkTags} />
+              </div>
+
+              <ClippedButton
+                onClick={applyBulkEdit}
+                disabled={!anyBulkFieldEnabled || bulkSaving}
+                cornerBg={dark ? "#0e2236" : "#ffffff"}
+                style={{ backgroundColor: "var(--action-navy)", borderColor: "var(--action-navy)", color: "var(--on-action-navy)" }}
+                className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0 ml-auto"
+              >
+                {bulkSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Apply to {selectionCount.toLocaleString()}
+              </ClippedButton>
+            </div>
+          </div>
+        )}
+
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[1020px]">
             <thead>
               <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
+                {canManage && (
+                  <th className={`${thClass} w-8`}>
+                    <button
+                      onClick={toggleSelectAllOnPage}
+                      disabled={selectableEntries.length === 0}
+                      title={allOnPageSelected ? "Deselect all on this page" : "Select all on this page"}
+                      className={`flex items-center justify-center ${selectableEntries.length === 0 ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      {allOnPageSelected || selectAllMatching ? (
+                        <CheckSquare className={`w-4 h-4 ${dark ? "text-sky-400" : "text-sky-600"}`} />
+                      ) : (
+                        <Square className={`w-4 h-4 ${dark ? "text-stone-600" : "text-stone-400"}`} />
+                      )}
+                    </button>
+                  </th>
+                )}
                 <SortableTh label="Name" sortKey="name" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -641,6 +930,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
             <tbody>
               {addingNew && (
                 <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-sky-50/60"}`}>
+                  {canManage && <td className={tdClass} />}
                   <td className={tdClass}>
                     <input className={inputClass} placeholder="Full name" value={newDraft.name} onChange={e => setNewDraft(d => ({ ...d, name: e.target.value }))} />
                   </td>
@@ -726,7 +1016,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
               {!loading && entries.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 11 : 10} className="py-10 text-center text-xs font-semibold text-stone-400">
+                  <td colSpan={canManage ? 12 : 10} className="py-10 text-center text-xs font-semibold text-stone-400">
                     {searchQuery ? `No directory entries match "${searchQuery}".` : "No directory entries yet."}
                   </td>
                 </tr>
@@ -735,6 +1025,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
               {entries.map((user, idx) => {
                 const isEditing = canEditRow(user) && editingEmail === user.email;
                 const row = isEditing && draft ? draft : user;
+                const isChecked = selectAllMatching || selectedEmails.has(user.email);
                 return (
                   <tr
                     key={user.email}
@@ -742,6 +1033,22 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""
                     }`}
                   >
+                    {canManage && (
+                      <td className={tdClass}>
+                        <button
+                          onClick={() => toggleRowSelection(user.email)}
+                          disabled={!canEditRow(user)}
+                          title={canEditRow(user) ? (isChecked ? "Deselect" : "Select for bulk edit") : "Developer (or Platform Admin) clearance required to include this row in a bulk edit"}
+                          className={`flex items-center justify-center ${!canEditRow(user) ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}`}
+                        >
+                          {isChecked ? (
+                            <CheckSquare className={`w-4 h-4 ${dark ? "text-sky-400" : "text-sky-600"}`} />
+                          ) : (
+                            <Square className={`w-4 h-4 ${dark ? "text-stone-600" : "text-stone-400"}`} />
+                          )}
+                        </button>
+                      </td>
+                    )}
                     <td className={tdClass}>
                       {isEditing ? (
                         <input className={inputClass} value={row.name} onChange={e => setDraft(d => d && { ...d, name: e.target.value })} />

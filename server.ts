@@ -1218,6 +1218,169 @@ app.get("/api/users", requireAuth, async (req, res) => {
   }
 });
 
+// Bulk edit — applies the SAME partial field change to every user in a
+// selection: either an explicit `emails` array (the rows a Developer/Admin
+// checked on the Directory's current page) or a `filter` object mirroring
+// GET /api/users?paginated=1's own search/tag/tier/status/date filters (the
+// Directory's "select all N matching this search" option) — resolved
+// server-side via listMatching so the client never has to hold more than
+// one page of rows in memory to act on a filtered set that spans thousands.
+// MUST be registered before PATCH /api/users/:email below, or Express would
+// match "bulk" as an :email param and this route would never be reached.
+//
+// Looser than the single-row PATCH below: Admin may also use this route
+// (per product decision), not just Developer/Platform Admin. The same three
+// safety invariants that route enforces per-row still apply here, just
+// re-checked across a whole batch instead of one row:
+//   1. Developer-record protection — a non-Developer caller's batch silently
+//      drops any row currently at Developer tier (never touched, not even
+//      its other fields).
+//   2. Tier-grant ceiling — a caller may only set `changes.tier` to a tier
+//      they're allowed to assign (mirrors POST/PATCH /api/users's existing
+//      ADMIN_ADDABLE_TIERS / PLATFORM_ADMIN_ADDABLE_TIERS ceiling).
+//   3. At least one Developer must remain, checked across the WHOLE batch
+//      before anything is written — not per-row, since a batch could
+//      otherwise downgrade every remaining Developer at once.
+app.patch("/api/users/bulk", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isAdminPower(callerTier)) {
+      return res.status(403).json({ error: "Admin, Platform Admin, or Developer clearance is required to bulk-edit the user directory." });
+    }
+
+    const { emails, filter, changes } = req.body ?? {};
+    if (emails !== undefined && !Array.isArray(emails)) {
+      return res.status(400).json({ error: "emails, if present, must be an array of email strings." });
+    }
+    const hasEmails = Array.isArray(emails) && emails.length > 0;
+    if (!hasEmails && (!filter || typeof filter !== "object" || Array.isArray(filter))) {
+      return res.status(400).json({ error: "Provide either a non-empty emails array or a filter object to select which users to update." });
+    }
+    if (!changes || typeof changes !== "object" || Array.isArray(changes)) {
+      return res.status(400).json({ error: "changes must be an object with at least one field to update." });
+    }
+
+    // Build the validated patch — same per-field rules as the single-row
+    // PATCH route, but every field here is OPTIONAL: a bulk edit usually
+    // touches only one or two fields (e.g. just Tier), never a forced
+    // full-row overwrite the way the single-row edit form always sends.
+    const patch: Record<string, any> = {};
+    if ("tier" in changes) {
+      if (changes.tier !== "General" && changes.tier !== "Admin" && changes.tier !== "Platform Admin" && changes.tier !== "Developer") {
+        return res.status(400).json({ error: "changes.tier must be one of General, Admin, Platform Admin, Developer." });
+      }
+      const assignableTiers: readonly string[] =
+        callerTier === "Developer"
+          ? ["General", "Admin", "Platform Admin", "Developer"]
+          : callerTier === "Platform Admin"
+            ? ["General", "Admin", "Platform Admin"]
+            : ["General", "Admin"]; // Admin
+      if (!assignableTiers.includes(changes.tier)) {
+        return res.status(403).json({ error: `Your role can't bulk-assign the ${changes.tier} tier.` });
+      }
+      patch.tier = changes.tier;
+    }
+    if ("status" in changes) {
+      if (changes.status !== "Active" && changes.status !== "Disabled") {
+        return res.status(400).json({ error: "changes.status must be Active or Disabled." });
+      }
+      patch.status = changes.status;
+    }
+    if ("tags" in changes) {
+      if (!isValidAdvisorTags(changes.tags)) {
+        return res.status(400).json({ error: `changes.tags must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
+      }
+      patch.tags = changes.tags;
+    }
+    if ("departmentId" in changes) {
+      if (changes.departmentId !== null) {
+        if (typeof changes.departmentId !== "number" || !Number.isInteger(changes.departmentId)) {
+          return res.status(400).json({ error: "changes.departmentId must be a number or null." });
+        }
+        if (!(await departments.get(changes.departmentId))) {
+          return res.status(400).json({ error: "That department doesn't exist." });
+        }
+      }
+      patch.departmentId = changes.departmentId;
+    }
+    if ("orgTeamId" in changes) {
+      if (changes.orgTeamId !== null) {
+        if (typeof changes.orgTeamId !== "number" || !Number.isInteger(changes.orgTeamId)) {
+          return res.status(400).json({ error: "changes.orgTeamId must be a number or null." });
+        }
+        if (!(await orgTeams.get(changes.orgTeamId))) {
+          return res.status(400).json({ error: "That team doesn't exist." });
+        }
+      }
+      patch.orgTeamId = changes.orgTeamId;
+    }
+    if ("roleId" in changes) {
+      if (changes.roleId !== null) {
+        if (typeof changes.roleId !== "number" || !Number.isInteger(changes.roleId)) {
+          return res.status(400).json({ error: "changes.roleId must be a number or null." });
+        }
+        if (!(await roles.get(changes.roleId))) {
+          return res.status(400).json({ error: "That role doesn't exist." });
+        }
+      }
+      patch.roleId = changes.roleId;
+    }
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: "changes must include at least one recognized field: tier, status, tags, departmentId, orgTeamId, roleId." });
+    }
+
+    // Resolve the target set. An explicit `emails` array (checked rows on
+    // the current page) always wins over `filter` when both are present.
+    const targetRows = hasEmails
+      ? await usersRepo.listByEmails(emails)
+      : await usersRepo.listMatching({
+          tier: pickEnumValue(filter.tier, ["General", "Admin", "Platform Admin", "Developer"] as const),
+          status: pickEnumValue(filter.status, ["Active", "Disabled"] as const),
+          tag: pickEnumValue(filter.tag, [...ADVISOR_TAG_VALUES, "Unassigned"] as const),
+          dateFrom: typeof filter.dateFrom === "string" && filter.dateFrom.trim() ? filter.dateFrom.trim() : undefined,
+          dateTo: typeof filter.dateTo === "string" && filter.dateTo.trim() ? filter.dateTo.trim() : undefined,
+          search: typeof filter.search === "string" && filter.search.trim() ? filter.search.trim() : undefined,
+        });
+
+    // Developer-record protection — a non-Developer caller's batch silently
+    // drops any row currently at Developer tier, mirroring the single-row
+    // PATCH route's blanket `existing.tier === "Developer" && callerTier !==
+    // "Developer"` check, just applied per-row across a batch instead of to
+    // one row.
+    const eligible = callerTier === "Developer" ? targetRows : targetRows.filter((u) => u.tier !== "Developer");
+    const skippedForDeveloperProtection = targetRows.length - eligible.length;
+
+    // At least one Developer must remain, checked across the WHOLE batch —
+    // only reachable when callerTier === "Developer" (the branch above
+    // already drops every Developer-tier row for anyone else, so a downgrade
+    // can only happen when a real Developer is bulk-editing Developer rows).
+    if (patch.tier && patch.tier !== "Developer") {
+      const beingDowngraded = eligible.filter((u) => u.tier === "Developer").length;
+      if (beingDowngraded > 0) {
+        const totalDevelopers = await usersRepo.countDevelopers();
+        if (totalDevelopers - beingDowngraded < 1) {
+          return res.status(400).json({ error: "At least one user must remain a Developer — this bulk change would remove the last one." });
+        }
+      }
+    }
+
+    const finalEmails = eligible.map((u) => u.email);
+    const updated = finalEmails.length > 0 ? await usersRepo.bulkUpdate(finalEmails, patch) : [];
+
+    return res.json({
+      success: true,
+      totalMatched: targetRows.length,
+      updatedCount: updated.length,
+      skippedCount: skippedForDeveloperProtection,
+      users: updated,
+    });
+  } catch (err: any) {
+    console.error("Failed to bulk-update the user directory:", err);
+    return res.status(500).json({ error: "Failed to bulk-update the selected users." });
+  }
+});
+
 // Single-row edit — added alongside pagination (see usersRepository.ts's
 // updateUser doc comment for why the old full-array PUT below becomes
 // unsafe once the admin UI only ever holds one page in memory). Developer

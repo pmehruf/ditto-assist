@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, arrayOverlaps, asc, count, desc, eq, gte, ilike, lte, ne, or, sql } from "drizzle-orm";
+import { and, arrayOverlaps, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { users, type UserRow, type NewUserRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
@@ -11,6 +11,13 @@ import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage 
 export type CreateUserEntry = NewUserRow;
 
 export type UpdateUserEntry = Partial<Pick<NewUserRow, "name" | "tactId" | "tier" | "status" | "tags" | "departmentId" | "orgTeamId" | "roleId">>;
+
+/** Fields a bulk edit may change — deliberately a SUBSET of UpdateUserEntry
+ * (no name/tactId): the single-row PATCH form always has a full row to send,
+ * but a bulk edit typically changes only one or two fields (e.g. just Tier)
+ * across many users at once, so name/tactId — which are per-person by
+ * definition — are never bulk-settable. */
+export type BulkUpdateFields = Partial<Pick<NewUserRow, "tier" | "status" | "tags" | "departmentId" | "orgTeamId" | "roleId">>;
 
 export interface UserListOptions {
   page?: number;
@@ -179,6 +186,43 @@ export class UsersRepository {
       .from(users)
       .where(and(eq(users.tier, "Developer"), ne(users.email, excludeEmail.toLowerCase())));
     return value;
+  }
+
+  /** Total Developer-tier users across the WHOLE directory — the bulk-edit
+   * counterpart to countOtherDevelopers above, used by PATCH /api/users/bulk
+   * to enforce "at least one Developer must remain" across an entire batch
+   * rather than a single row. */
+  async countDevelopers(): Promise<number> {
+    const [{ value }] = await this.db.select({ value: count() }).from(users).where(eq(users.tier, "Developer"));
+    return value;
+  }
+
+  /** Looks up multiple users by email in one query — resolves an explicit
+   * bulk-selection list (checked rows on the Directory's current page)
+   * without a per-email round trip. Used by PATCH /api/users/bulk. */
+  async listByEmails(emails: string[]): Promise<UserRow[]> {
+    if (emails.length === 0) return [];
+    return this.db.select().from(users).where(inArray(users.email, emails.map((e) => e.toLowerCase())));
+  }
+
+  /**
+   * Bulk-applies the SAME partial field patch to every row in `emails`, in
+   * one UPDATE ... WHERE email IN (...) statement — the bulk-edit
+   * counterpart to updateUser above. Only the keys present in `patch` are
+   * touched; a bulk edit typically changes just one or two fields (e.g. only
+   * Tier) across many users, never a forced full-row overwrite. The caller
+   * (PATCH /api/users/bulk) is responsible for pre-filtering `emails` down to
+   * rows this caller is actually allowed to touch (Developer-record
+   * protection, tier-grant ceiling, last-Developer guard) — this method has
+   * no tier-authorization awareness of its own.
+   */
+  async bulkUpdate(emails: string[], patch: BulkUpdateFields): Promise<UserRow[]> {
+    if (emails.length === 0 || Object.keys(patch).length === 0) return [];
+    return this.db
+      .update(users)
+      .set(patch)
+      .where(inArray(users.email, emails.map((e) => e.toLowerCase())))
+      .returning();
   }
 
   /**
