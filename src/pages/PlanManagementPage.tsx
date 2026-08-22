@@ -168,10 +168,13 @@ export function PlanManagementPage({
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [specificIllnesses, setSpecificIllnesses] = useState<FormSpecificIllness[]>([]);
-  // Not directly editable in this wizard (niche, rarely-touched clinical
-  // guard flags) — carried through unchanged so customizing a built-in plan
-  // (e.g. Care Supreme's requiresInsulinForDiabetes) doesn't silently drop
-  // behavior the underwriting rules depend on elsewhere in engine.ts.
+  // Plan-specific clinical guard flags (engine.ts reads these per-plan) —
+  // editable via the "Plan-Specific Restrictions" checkboxes below. Starts
+  // out carried through unchanged from a built-in plan's hardcoded default
+  // (see populateFormFields) so customizing a built-in plan for the first
+  // time doesn't silently drop existing behavior — but from then on this is
+  // ordinary DB-backed state the admin can see and turn off, not a hidden
+  // holdover from the old hardcoded config.
   const [overrides, setOverrides] = useState<DbPlanConfigEntry["overrides"]>(undefined);
   // Takes this plan out of service for advisors (declaration dropdown shows
   // disabledNote and blocks search) without deleting its configuration —
@@ -553,8 +556,16 @@ export function PlanManagementPage({
       // hardcoded getPlanConfig() so far, with no DB row yet. Using PUT for
       // that case 404'd with "Plan not found." POST (upsert) is safe
       // either way, so use it whenever there's no existing DB row to PUT.
+      //
+      // A rename of a plan that already has a DB row is ALSO a PUT (to the
+      // *original* name's URL, with the new name in the body) — the server
+      // renames the row's primary key in place in one atomic UPDATE. This
+      // used to POST a brand-new row under the new name and then
+      // fire-and-forget DELETE the old one, which could leave an orphaned
+      // duplicate "K Supreme v2" row (a second, stale logical plan) if that
+      // DELETE ever failed silently.
       const hasExistingDbRow = !isNewPlan && !!originalPlanName && !!dbByName[originalPlanName];
-      const shouldCreate = isNewPlan || isRename || !hasExistingDbRow;
+      const shouldCreate = isNewPlan || !hasExistingDbRow;
       const url = shouldCreate ? "/api/plan-configs" : `/api/plan-configs/${encodeURIComponent(originalPlanName!)}`;
       const method = shouldCreate ? "POST" : "PUT";
       const res = await fetch(url, {
@@ -576,15 +587,6 @@ export function PlanManagementPage({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save this plan (HTTP ${res.status}).`);
-
-      // Renaming a plan that already had its own DB row (hasExistingDbRow)
-      // creates a new row under the new name via POST above — clean up the
-      // old row so it doesn't linger as an orphaned duplicate.
-      if (isRename && hasExistingDbRow) {
-        fetch(`/api/plan-configs/${encodeURIComponent(originalPlanName!)}`, { method: "DELETE" }).catch((err) => {
-          console.error("Failed to clean up the old plan name after rename:", err);
-        });
-      }
 
       const savedRow: DbPlanConfigEntry = {
         planName: body.entry.planName,
@@ -1409,6 +1411,70 @@ export function PlanManagementPage({
                     className={inputClass}
                   />
                 )}
+              </div>
+            )}
+          </div>
+
+          {/* Plan-Specific Restrictions — narrows which PEDs route to a
+              question beyond its plain text, e.g. "this plan's diabetes
+              question only covers Type 1 / insulin-dependent / diabetes
+              with blindness or a chronic foot ulcer". Backed by the same
+              plan_configs.overrides column the Declaration Engine already
+              reads (engine.ts) — this is just the missing UI to see/edit
+              it, instead of it only ever being silently carried through
+              from a built-in plan's hardcoded default the first time that
+              plan is customized here. Leave every box unchecked for a plan
+              with no special restrictions (the normal case). */}
+          <div>
+            <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              Plan-Specific Restrictions
+            </label>
+            {formMode === "view" ? (
+              overrides && (overrides.requiresInsulinForDiabetes || overrides.excludePrediabetes || overrides.bypassBenignTumors) ? (
+                <ul className="space-y-1">
+                  {overrides.requiresInsulinForDiabetes && (
+                    <li className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
+                      Diabetes question restricted to Type 1 / insulin-dependent / diabetes with blindness or chronic foot ulcer
+                    </li>
+                  )}
+                  {overrides.excludePrediabetes && (
+                    <li className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
+                      Prediabetes / borderline diabetes excluded from the diabetes question
+                    </li>
+                  )}
+                  {overrides.bypassBenignTumors && (
+                    <li className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
+                      Benign tumors bypass the cancer/neoplasm question
+                    </li>
+                  )}
+                </ul>
+              ) : (
+                <p className={`text-xs font-semibold px-2 py-2 ${dark ? "text-stone-400" : "text-stone-500"}`}>None — this plan's questions apply exactly as written above.</p>
+              )
+            ) : (
+              <div className="space-y-2">
+                {([
+                  ["requiresInsulinForDiabetes", "Restrict the diabetes question to Type 1 / insulin-dependent / diabetes with blindness or chronic foot ulcer"],
+                  ["excludePrediabetes", "Exclude prediabetes / borderline diabetes from the diabetes question"],
+                  ["bypassBenignTumors", "Bypass benign tumors from the cancer/neoplasm question"],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!overrides?.[key]}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setOverrides(prev => {
+                          const next = { ...(prev || {}) };
+                          if (checked) next[key] = true; else delete next[key];
+                          return Object.keys(next).length > 0 ? next : undefined;
+                        });
+                      }}
+                      className="w-3.5 h-3.5 shrink-0 cursor-pointer accent-amber-500"
+                    />
+                    <span className={`text-xs font-semibold ${dark ? "text-stone-200" : "text-stone-800"}`}>{label}</span>
+                  </label>
+                ))}
               </div>
             )}
           </div>

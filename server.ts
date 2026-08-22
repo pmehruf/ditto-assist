@@ -4074,7 +4074,21 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
     if (!(await requireAdminOrDeveloper(req, res, "Editing a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
 
-    const { insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote } = req.body;
+    const { planName: newPlanNameRaw, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote } = req.body;
+
+    // A rename: the body's planName differs from the URL's current name.
+    // Renames the canonical DB record in place (an actual PK update) rather
+    // than requiring the client to POST a new row and DELETE the old one —
+    // see PlanConfigsRepository.rename for why that two-step was unsafe.
+    let newPlanName: string | undefined;
+    if (newPlanNameRaw !== undefined) {
+      if (typeof newPlanNameRaw !== "string" || !newPlanNameRaw.trim()) {
+        return res.status(400).json({ error: "planName cannot be empty." });
+      }
+      const trimmed = newPlanNameRaw.trim();
+      if (trimmed !== planName) newPlanName = trimmed;
+    }
+
     const update: Record<string, unknown> = {};
 
     if (insurerName !== undefined) {
@@ -4119,10 +4133,15 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
     }
 
     const { planConfigs } = createRepositories(getDb());
-    const row = await planConfigs.update(planName, update);
+    const row = newPlanName
+      ? await planConfigs.rename(planName, newPlanName, update)
+      : await planConfigs.update(planName, update);
     if (!row) return res.status(404).json({ error: "Plan not found." });
     return res.json({ entry: row });
   } catch (err: any) {
+    if (err?.code === "23505" || err?.cause?.code === "23505") {
+      return res.status(409).json({ error: "A plan with that name already exists." });
+    }
     console.error("Failed to update plan config:", err);
     return res.status(500).json({ error: `Failed to update this plan: ${err.message}` });
   }

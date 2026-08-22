@@ -53,6 +53,25 @@ export class PlanConfigsRepository {
     return row;
   }
 
+  /**
+   * Renames a plan in place — an actual UPDATE of the `plan_configs` primary
+   * key (Postgres allows updating a PK column; no other table has a FK
+   * reference to plan_configs.planName, so this is safe). Replaces the old
+   * "POST a new row under the new name, then fire-and-forget DELETE the old
+   * one" two-step the UI used to do, which could leave an orphaned duplicate
+   * row (and therefore a stale, still-matchable "identity") if the DELETE
+   * ever failed. Any other field in `entry` is updated in the same
+   * statement. Throws (Postgres 23505) if `newPlanName` already exists.
+   */
+  async rename(oldPlanName: string, newPlanName: string, entry: UpdatePlanConfigEntry): Promise<PlanConfigRow | undefined> {
+    const [row] = await this.db
+      .update(planConfigs)
+      .set({ ...entry, planName: newPlanName, updatedAt: new Date() })
+      .where(eq(planConfigs.planName, oldPlanName))
+      .returning();
+    return row;
+  }
+
   async delete(planName: string): Promise<void> {
     await this.db.delete(planConfigs).where(eq(planConfigs.planName, planName));
   }

@@ -490,6 +490,12 @@ export default function App() {
   // writes gated to Admin/Developer both here and server-side.
   const [dbPlanConfigs, setDbPlanConfigs] = useState<DbPlanConfigEntry[]>([]);
   const [dbPlanConfigsLoadError, setDbPlanConfigsLoadError] = useState<string | null>(null);
+  // True once the first successful /api/plan-configs fetch has completed —
+  // guards the productionPlans reconciliation effect below so it never
+  // treats the initial (or a failed) empty dbPlanConfigs as "the DB really
+  // has zero custom plans" and prunes real plans out of the picker before
+  // the real list has actually loaded.
+  const [dbPlanConfigsLoaded, setDbPlanConfigsLoaded] = useState(false);
 
   const mapPlanConfigRow = (row: any): DbPlanConfigEntry => ({
     planName: row.planName,
@@ -525,6 +531,7 @@ export default function App() {
       if (!res.ok) throw new Error(body.error || `Failed to load plans (HTTP ${res.status}).`);
       setDbPlanConfigs((body.entries || []).map(mapPlanConfigRow));
       setDbPlanConfigsLoadError(null);
+      setDbPlanConfigsLoaded(true);
     } catch (err: unknown) {
       setDbPlanConfigsLoadError(err instanceof Error ? err.message : "Could not load plans from the server.");
     }
@@ -1005,39 +1012,40 @@ export default function App() {
     () => PLANS
   );
 
-  // Keep the plan picker's live plan-name list inclusive of anything added
-  // via the Plan Management page — productionPlans already feeds the
-  // dropdown everywhere else in the app, so this just folds DB-added names
-  // into that existing list rather than introducing a second list to sync.
+  // Keep the plan picker's live plan-name list in sync with the database —
+  // productionPlans feeds the Declaration Assistant's plan dropdown (and,
+  // via the planConfigs merge below, the client-side deterministic engine
+  // itself) everywhere else in the app.
   //
-  // Also folds in any newly-hardcoded entries from types.ts's PLANS array
-  // (e.g. when a new built-in plan like Niva Bupa's "Aspire" is added to the
-  // codebase). productionPlans is a usePersistentState value seeded from
-  // PLANS only the very first time a browser ever loads the app — for any
-  // returning user, its localStorage value already exists and the PLANS
-  // initializer never runs again, so without this reconciliation a plan
-  // added to PLANS post-launch would silently never appear in an existing
-  // user's plan picker.
+  // This used to be add-only: it folded in newly-hardcoded PLANS entries
+  // and DB-added names, but never removed a name once added. Since
+  // productionPlans is a usePersistentState value (persisted to
+  // localStorage) seeded once and then never fully re-derived, that meant a
+  // plan renamed or deleted through Plan Management stayed in this list
+  // (and therefore in the picker, still resolving to its last-known local
+  // config) forever — the actual bug behind "rename/delete doesn't
+  // propagate to the Declaration Assistant".
+  //
+  // Now this fully reconciles productionPlans to the current authoritative
+  // sources every time dbPlanConfigs changes: the hardcoded PLANS bootstrap
+  // list, the live DB rows, and any still-pending draft plans. A name that
+  // has disappeared from all three (renamed away, or deleted) is dropped.
+  // Gated on dbPlanConfigsLoaded so the very first render (or a failed
+  // fetch, where dbPlanConfigs is still just []) can't be mistaken for "the
+  // database genuinely has zero custom plans" and wipe real ones out of the
+  // picker before they've ever loaded.
   useEffect(() => {
+    if (!dbPlanConfigsLoaded) return;
     setProductionPlans(prev => {
-      const names = new Set(prev);
-      let changed = false;
-      PLANS.forEach(planName => {
-        if (!names.has(planName)) {
-          names.add(planName);
-          changed = true;
-        }
-      });
-      dbPlanConfigs.forEach(row => {
-        if (!names.has(row.planName)) {
-          names.add(row.planName);
-          changed = true;
-        }
-      });
-      return changed ? Array.from(names) : prev;
+      const valid = new Set<string>(PLANS);
+      dbPlanConfigs.forEach(row => valid.add(row.planName));
+      draftPlans.forEach(draft => valid.add(draft.name));
+      const next = Array.from(valid);
+      const same = prev.length === next.length && prev.every(name => valid.has(name));
+      return same ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbPlanConfigs]);
+  }, [dbPlanConfigs, dbPlanConfigsLoaded]);
 
   // Maps a disabled plan's name to its disabledNote (or "" if none was set),
   // sourced from the DA Mapping Config page (formerly "Declaration
