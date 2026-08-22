@@ -1511,3 +1511,107 @@ export const specialInstructions = pgTable(
 
 export type SpecialInstructionRow = typeof specialInstructions.$inferSelect;
 export type NewSpecialInstructionRow = typeof specialInstructions.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// kb_faq_connection — the Ditto FAQ Google Sheet's stored OAuth grant, same
+// shape/purpose as kbPlaybookConnection above but its own table since the
+// FAQ workbook has its own owner/account, separate from the Playbook's (see
+// "Connect Google Sheets" in Knowledge Base Management, not Developer
+// Controls). Encrypted at rest — see src/server/knowledgeBase/faqTokenCrypto.ts.
+// ─────────────────────────────────────────────────────────────────────────
+export const kbFaqConnection = pgTable("kb_faq_connection", {
+  id: text("id").primaryKey().default("default"),
+  connectedEmail: text("connected_email").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedBy: text("connected_by").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type KbFaqConnectionRow = typeof kbFaqConnection.$inferSelect;
+export type NewKbFaqConnectionRow = typeof kbFaqConnection.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// faq_records — "Ditto FAQ" (2026-08): Ditto's own official Q&A rulebook,
+// imported read-only from a dedicated Google Sheet (2 tabs: "Sheet1" =
+// Health Product FAQs, "Operations Health FAQs" = Operations Health FAQs;
+// only column A/question and column B/answer are ever read — see
+// src/server/knowledgeBase/faqIngest.ts). Deliberately its OWN table, not
+// folded into kb_chunks like a normal document: an FAQ record is always a
+// whole (question, answer) pair, never chunked, and needs question-weighted
+// retrieval (see faqRelevanceThreshold in faq.ts) rather than generic
+// passage similarity — see queryAssist.ts's SOURCE PRECEDENCE #1 ("DITTO
+// CONSTITUTION"), where this is an equal-authority peer to
+// kb_playbook_plan_facts, never a subordinate DOCUMENT EXCERPT.
+//
+// One kb_resources row (type="sheet", title="Ditto FAQ", in the "general"/
+// "Ditto Constitution" category) owns every faq_records row the same way
+// the Playbook Sheet owns kb_playbook_plan_facts — see faqIngest.ts's
+// syncFaq.
+// ─────────────────────────────────────────────────────────────────────────
+export const faqCategoryEnum = pgEnum("faq_category", ["health_product", "operations_health"]);
+
+export const faqRecords = pgTable(
+  "faq_records",
+  {
+    id: serial("id").primaryKey(),
+    resourceId: integer("resource_id").notNull().references(() => kbResources.id, { onDelete: "cascade" }),
+    category: faqCategoryEnum("category").notNull(),
+    question: text("question").notNull(),
+    // Preserved verbatim from Column B — never rewritten/summarized/
+    // "improved" at ingestion (spec: FAQ answers must not be altered).
+    // Empty string when the sheet's Column B was blank; isAnswerable below
+    // is what actually gates whether this can be used as a sourced answer,
+    // not this field being non-empty.
+    answer: text("answer").notNull().default(""),
+    // false when Column B was blank ("INCOMPLETE FAQ" per spec §17) — never
+    // used as an authoritative answer, but still stored/visible for admin
+    // review. Also false for every row in a conflicting-duplicate group
+    // (hasConflict below), so a conflict can never be silently used either.
+    isAnswerable: boolean("is_answerable").notNull().default(true),
+    // true when this question (normalized: trim + collapse whitespace +
+    // casefold) appears more than once in the SAME category tab with
+    // MATERIALLY DIFFERENT answers — per spec §18, never auto-resolved.
+    // Excluded from retrieval (see faq.ts) until an admin deactivates the
+    // stale duplicate(s) via isActive below, at which point a resync will
+    // naturally stop re-flagging it (only the remaining active question
+    // text is compared against). Duplicate rows whose answers were
+    // materially IDENTICAL are collapsed into a single canonical row at
+    // ingestion instead — see faqIngest.ts — so they never reach this table
+    // as separate conflicting rows.
+    hasConflict: boolean("has_conflict").notNull().default(false),
+    // The normalized question text shared by every row in a conflict group,
+    // so the admin review UI can group them — null when hasConflict=false.
+    conflictGroupKey: text("conflict_group_key"),
+    // gemini-embedding-001 at 768 dims (RETRIEVAL_DOCUMENT task type),
+    // embedding ONLY the question text — never the answer — which is what
+    // gives "FAQ question receives the strongest retrieval weight" (spec §9)
+    // by construction, the same convention special_instructions.topic_embedding
+    // already uses for its topic-only matching. Null whenever this record
+    // must never be used as an authoritative answer (isAnswerable=false or
+    // hasConflict=true) — a null embedding structurally can't be
+    // similarity-matched, on top of faq.ts's own explicit filter.
+    questionEmbedding: vector("question_embedding", { dimensions: 768 }),
+    // 1-based row number in the source tab — admin/debug traceability only,
+    // never surfaced to advisors (spec §13/§20: internal metadata only).
+    sourceRowNumber: integer("source_row_number").notNull(),
+    // Lets an admin retire a bad/outdated record (e.g. one side of a
+    // resolved conflict) without waiting for the next sheet edit — full
+    // resync still fully replaces this table's contents (see faqIngest.ts's
+    // replaceForResource), so a manual deactivation only "sticks" until the
+    // next resync unless it's also fixed at the sheet level; that's a
+    // deliberate, documented limitation matching kb_playbook_plan_facts'
+    // own always-replace-on-resync convention (the Sheet, not this table,
+    // is the authoring source per spec §19).
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("faq_records_resource_id_idx").on(table.resourceId),
+    index("faq_records_category_idx").on(table.category),
+    index("faq_records_is_active_idx").on(table.isActive),
+  ]
+);
+
+export type FaqRecordRow = typeof faqRecords.$inferSelect;
+export type NewFaqRecordRow = typeof faqRecords.$inferInsert;

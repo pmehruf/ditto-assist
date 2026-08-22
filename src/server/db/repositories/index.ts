@@ -44,6 +44,8 @@ import { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js"
 import { QueryAssistLogsRepository } from "./queryAssistLogsRepository.js";
 import { QueryAssistLogExportConnectionRepository } from "./queryAssistLogExportConnectionRepository.js";
 import { SpecialInstructionsRepository } from "./specialInstructionsRepository.js";
+import { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
+import { FaqRecordsRepository } from "./faqRecordsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -166,6 +168,11 @@ export type { CreateUserRelationshipEntry } from "./userRelationshipsRepository.
 export { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
 export type { CreateCustomAccessGrantEntry, CustomAccessGrantLevel } from "./customAccessGrantsRepository.js";
 
+export { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
+
+export { FaqRecordsRepository } from "./faqRecordsRepository.js";
+export type { CreateFaqRecordEntry, FaqRecordFilter } from "./faqRecordsRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -213,6 +220,8 @@ export interface Repositories {
   queryAssistLogs: QueryAssistLogsRepository;
   queryAssistLogExportConnection: QueryAssistLogExportConnectionRepository;
   specialInstructions: SpecialInstructionsRepository;
+  kbFaqConnection: KbFaqConnectionRepository;
+  faqRecords: FaqRecordsRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -257,5 +266,7 @@ export function createRepositories(db: AnyDb): Repositories {
     queryAssistLogs: new QueryAssistLogsRepository(db),
     queryAssistLogExportConnection: new QueryAssistLogExportConnectionRepository(db),
     specialInstructions: new SpecialInstructionsRepository(db),
+    kbFaqConnection: new KbFaqConnectionRepository(db),
+    faqRecords: new FaqRecordsRepository(db),
   };
 }

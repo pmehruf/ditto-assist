@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink, Download } from "lucide-react";
 import { KnowledgeBasePlaybook } from "../components/KnowledgeBasePlaybook";
+import { KnowledgeBaseFaqConnection } from "../components/KnowledgeBaseFaqConnection";
 
 interface ConnectionsPageProps {
   theme: "light" | "dark";
@@ -16,11 +17,13 @@ interface ConnectionsPageProps {
  * Connections — Developer Zone. The single home for this app's Google
  * Sheets integrations: the QA Dashboard's read-only workbook connection
  * (moved here verbatim from OwnerControlsPage.tsx, which used to host it
- * alongside page visibility) and the Product Playbook's (KnowledgeBasePlaybook,
- * reused as-is — previously its own sub-tab on Knowledge Base Management).
- * Neither connection's underlying functionality changed, only where it's
- * surfaced — both are "backend plumbing, not a permission" settings, which
- * is exactly what this page is for.
+ * alongside page visibility), the Product Playbook's (KnowledgeBasePlaybook,
+ * reused as-is — previously its own sub-tab on Knowledge Base Management),
+ * and the Ditto FAQ's (KnowledgeBaseFaqConnection, added 2026-08 — same
+ * pattern, own OAuth grant/table). None of these connections' underlying
+ * functionality changed, only where it's surfaced — all are "backend
+ * plumbing, not a permission" settings, which is exactly what this page is
+ * for.
  */
 export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) {
   const dark = theme === "dark";
@@ -348,6 +351,11 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
           reused verbatim; previously its own sub-tab on Knowledge Base
           Management). */}
       <KnowledgeBasePlaybook theme={theme} effectiveTier={effectiveTier} />
+
+      {/* Ditto FAQ — Google Sheets connection (2026-08 integration). Own
+          OAuth grant/table/resource, same card pattern as the Product
+          Playbook above — see KnowledgeBaseFaqConnection.tsx. */}
+      <KnowledgeBaseFaqConnection theme={theme} effectiveTier={effectiveTier} />
     </div>
   );
 }

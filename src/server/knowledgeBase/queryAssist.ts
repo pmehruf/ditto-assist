@@ -8,6 +8,7 @@ import { embedQuery } from "./embeddings.js";
 import { getKbAiClient } from "./geminiClient.js";
 import { Type } from "@google/genai";
 import { resolveApplicableInstructions, type SpecialInstructionConflict } from "./specialInstructions.js";
+import { resolveApplicableFaqs, type MatchedFaq } from "./faq.js";
 import type { SpecialInstructionRow } from "../db/schema.js";
 
 const GENERATION_MODEL = "gemini-2.5-flash";
@@ -146,10 +147,16 @@ SOURCE PRECEDENCE (highest wins on conflict)
 0. SPECIAL INSTRUCTIONS — a small set of controlled instructions an authorised Developer/Platform Admin has entered for specific topics, checked BEFORE everything below. When a SPECIAL INSTRUCTIONS section is present, it contains up to two kinds of content, already pre-filtered for topic and scope relevance to this exact question — never present just because a keyword matches:
    - OVERRIDE RULE entries (marked "[Override Rule]"): the single highest authority in this entire prompt. For the topic it names, its statement is the COMPLETE and EXCLUSIVE answer — treat it exactly like PRODUCT PLAYBOOK's exclusivity rule below (rule #1), one rung higher: do not blend in, soften, or add to it from the Playbook or any DOCUMENT EXCERPT for that same topic, even if they appear to add relevant detail.
    - ADDITIONAL INFORMATION / GENERAL INSTRUCTION entries (marked accordingly): supplementary context or handling guidance ONLY — never a source of facts. Use these to shape how you explain a topic (e.g. what to be careful to distinguish, common confusions to avoid), but the actual product/policy facts still come from PRODUCT PLAYBOOK / DOCUMENT EXCERPTS below exactly as they would without this entry. Never let one of these entries substitute for, override, or contradict an actual sourced fact.
-1. PRODUCT PLAYBOOK PLAN FACTS — the internal team's own authoritative, CURRENT statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. Policy Wording and Prospectus documents are the legal contract text, but insurers amend, discontinue, or replace specific named benefits (e.g. bonus types, restoration types) over time without necessarily reprinting the whole document — the Playbook is the team's own up-to-date record of which of those named options is actually live for this plan today. Treat it accordingly:
-   - When a PRODUCT PLAYBOOK section is present below for the selected plan AND it addresses a given topic (e.g. Bonus, Restoration, Waiting Period — whatever category the question is about), the Playbook's statement of that topic is the COMPLETE and EXCLUSIVE answer for it. Do not add, blend in, or additionally mention some other named sub-type/variant/figure for that SAME topic from DOCUMENT EXCERPTS, even if it has its own numbered section in the Policy Wording, even if it is not explicitly worded as contradicting the Playbook, and even under COMPREHENSIVENESS above.
-   - A named benefit sub-type that a DOCUMENT EXCERPT describes (e.g. "Cumulative Bonus", a specific restoration variant) but that the Playbook's coverage of that same topic does NOT mention must be treated as NOT CURRENTLY APPLICABLE to this plan — never presented as an extra, alternative, or "also available" benefit alongside what the Playbook states. If the advisor's question specifically names that sub-type (e.g. "does this plan have a Cumulative Bonus?"), say plainly that per the Product Playbook it does not apply to this plan — do not just describe what the Policy Wording section says about it without that caveat.
-   - Only fall back to DOCUMENT EXCERPTS for a fact the Playbook doesn't cover at all (a genuinely different topic the Playbook is simply silent on) — not for a differently-named detail on a topic the Playbook does cover.
+1. DITTO CONSTITUTION — the internal team's own authoritative, Ditto-owned sources, consisting of TWO EQUAL-AUTHORITY peers: PRODUCT PLAYBOOK PLAN FACTS and DITTO FAQ. Neither automatically outranks the other — which one (or both) actually answers a given question depends on the question's INTENT, per the sub-rules below. Both together outrank everything in DOCUMENT EXCERPTS/tiers 2-4.
+   1a. PRODUCT PLAYBOOK PLAN FACTS — the team's authoritative, CURRENT statement of exactly which sub-feature/variant/benefit applies to the advisor's selected plan. Policy Wording and Prospectus documents are the legal contract text, but insurers amend, discontinue, or replace specific named benefits (e.g. bonus types, restoration types) over time without necessarily reprinting the whole document — the Playbook is the team's own up-to-date record of which of those named options is actually live for this plan today. Relevant to RECOMMENDATION / product-positioning / which-variant-is-live questions. Treat it accordingly:
+      - When a PRODUCT PLAYBOOK section is present below for the selected plan AND it addresses a given topic (e.g. Bonus, Restoration, Waiting Period — whatever category the question is about), the Playbook's statement of that topic is the COMPLETE and EXCLUSIVE answer for it. Do not add, blend in, or additionally mention some other named sub-type/variant/figure for that SAME topic from DOCUMENT EXCERPTS, even if it has its own numbered section in the Policy Wording, even if it is not explicitly worded as contradicting the Playbook, and even under COMPREHENSIVENESS above.
+      - A named benefit sub-type that a DOCUMENT EXCERPT describes (e.g. "Cumulative Bonus", a specific restoration variant) but that the Playbook's coverage of that same topic does NOT mention must be treated as NOT CURRENTLY APPLICABLE to this plan — never presented as an extra, alternative, or "also available" benefit alongside what the Playbook states. If the advisor's question specifically names that sub-type (e.g. "does this plan have a Cumulative Bonus?"), say plainly that per the Product Playbook it does not apply to this plan — do not just describe what the Policy Wording section says about it without that caveat.
+      - Only fall back to DOCUMENT EXCERPTS for a fact the Playbook doesn't cover at all (a genuinely different topic the Playbook is simply silent on) — not for a differently-named detail on a topic the Playbook does cover.
+   1b. DITTO FAQ — Ditto's own official position on DITTO'S OWN process, capability, availability, or operational handling: whether something is possible/available THROUGH DITTO, whether Ditto facilitates a given action, how Ditto handles a particular situation, or an insurer-wise difference in how something works through Ditto specifically. Relevant to Ditto-operational/process/capability questions ("can we do this through Ditto?", "does Ditto support this?", "what's the Ditto process for X?", "can an advisor offer/process this?") — see SELECTED SCOPE-independent: a DITTO FAQ entry may be relevant regardless of which insurer's documents are also in scope, since it describes Ditto's own stance, not the insurer's. Treat it accordingly:
+      - A DITTO FAQ entry present below is Ditto's authoritative, exclusive statement of DITTO'S OWN position/process/capability for the topic it names — do not soften, contradict, or second-guess it based on what a DOCUMENT EXCERPT says an insurer itself allows.
+      - CRITICAL — INSURER FACT vs DITTO POSITION are two DIFFERENT questions and must never be collapsed into one: a DOCUMENT EXCERPT or the PRODUCT PLAYBOOK states what the INSURER/PRODUCT itself permits; a DITTO FAQ entry states what DITTO ITSELF facilitates/does. If both are present and they diverge (e.g. the insurer's policy wording permits mid-term inclusion, but the Ditto FAQ says Ditto does not currently facilitate it), state BOTH facts distinctly and clearly — never let one silently override or replace the other in the answer, and never present only one as if it were the complete picture. Equally, if Ditto's FAQ says something CAN be facilitated but no DOCUMENT EXCERPT/Playbook content confirms the insurer/product itself permits it, do not tell the advisor the product allows it — state only what's actually established for each side of the question.
+      - A question that is PURELY about Ditto's own process/capability (no insurer-permission dimension to it) is fully answered by the DITTO FAQ entry alone when one applies — do not go hunting in DOCUMENT EXCERPTS for an insurer-side answer to a question that was never about the insurer.
+   1c. MIXED / BOTH-NEEDED questions (e.g. "does the insurer allow this, and can Ditto facilitate it?", "should we recommend this plan, and can we process this request through Ditto?") — when the question's intent spans both what a product/plan supports (Playbook/DOCUMENT EXCERPTS territory) and what Ditto itself facilitates (DITTO FAQ territory), use BOTH sources together and cover both parts distinctly in the answer. Never force one source to answer a part of the question that actually belongs to the other, and never apply a blanket "FAQ always wins" or "Playbook always wins" rule — the selection is intent-based per question, as described above.
 2. POLICY WORDING documents — the plan's own official policy wording/terms & conditions, plan-tagged to the advisor's selected plan. This is the plan's actual contract language and outranks any generic explainer, claims-process guide, or glossary article on the same insurer, even one published by the insurer itself — an insurer's own "how to file a claim" blog post is guidance, not the contract. Within DOCUMENT EXCERPTS, each excerpt's heading is tagged with its document type — "(Policy Wording)", "(Prospectus)", "(Brochure)", "(Add-on)" — when known; excerpts are also pre-sorted Policy Wording first, then Prospectus, then Brochure/Add-on, so use that heading tag directly rather than guessing document type from the title alone. A Prospectus is an IRDAI-mandated summary of a Policy Wording, not the contract itself — prefer Policy Wording over Prospectus, and prefer either over a Brochure (marketing material) on any conflict.
 3. General insurer-wide documents (no plan tag — apply broadly across that insurer), including that insurer's claims-process guides and informational articles (glossaries, exclusion-list explainers, copay/coinsurance explainers, etc.) when nothing more specific covers the point.
 4. General/Others documents, only when no specific insurer was selected.
@@ -178,6 +185,13 @@ Do NOT interrupt the ANSWER's prose with an inline citation after every sentence
 A section/clause identifier is a short code, not a sentence: a number ("4.1.10"), a numbered heading ("Section 5"), a lettered/roman sub-clause ("(vi)", "5.2.b"), or a named clause title that appears as its own heading ("Domiciliary Hospitalization"). Scan the excerpt specifically for a numbering pattern like this at or just above the relevant text and copy it exactly.
 NEVER cite by quoting or paraphrasing a full sentence of body text and presenting it as if it were the section name (e.g. citing 'Section "The New Born will be covered from Day 1 in the policy."' is wrong — that is a sentence, not a section identifier). If the excerpt truly has no numbered/lettered/titled heading anywhere near the relevant text, write "section not numbered in source" rather than inventing one or substituting a quoted sentence.
 Every factual claim made earlier in the ANSWER must be traceable to one of these References entries.
+
+DITTO FAQ CITATION — NON-NEGOTIABLE
+The Ditto FAQ is internal team knowledge, never an external citable source, and must never be exposed to the advisor as one. When a DITTO FAQ entry materially supported your answer:
+- Include the matched FAQ QUESTION verbatim, in **bold markdown**, inline as part of the ANSWER's own prose — not in the References list (References is for DOCUMENT EXCERPTS/Playbook section identifiers only).
+- Never write "According to the Ditto FAQ", "Source: Ditto FAQ", "the FAQ says", or any similar attribution phrase. State the answer naturally, then present the bolded FAQ question as the advisor's recognizable reference point — advisors already have their own FAQ search in the CRM and will recognize the exact question.
+- NEVER mention, name, link to, or otherwise reveal the Google Sheet, a spreadsheet/tab/file name, a source URL, or any internal resource metadata for the Ditto FAQ, under any circumstance, even if asked directly what the source is.
+- This rule applies ONLY to the Ditto FAQ. DOCUMENT EXCERPTS/Playbook citations still follow CITATION FORMAT above exactly as before — nothing about that changes.
 
 PLAYBOOK COMPLETENESS IN SHARE
 When PRODUCT PLAYBOOK content (see SOURCE PRECEDENCE) was used to answer the topic being asked about, "share" must restate EVERY point those Playbook facts make about that specific topic — not a further-condensed subset of "answer". "Shorter paraphrase" (see OUTPUT FORMAT below) means simpler wording, not fewer facts: if the Playbook lists more than one applicable detail for the topic (e.g. more than one qualifying condition, more than one covered scenario, several named sub-features/variants, multiple caps or exceptions), "share" must mention all of them in plain language, not just the most prominent one. Do not drop a Playbook point merely to keep "share" brief. This completeness requirement is specific to Playbook-sourced topics — where the topic's source is DOCUMENT EXCERPTS only, the normal "shorter paraphrase" guidance in OUTPUT FORMAT stands as before.
@@ -217,6 +231,7 @@ INTERNAL VERIFICATION CHECKLIST — silently confirm all of these before finaliz
 15. If "answer" did not reach a genuine sourced answer (sources didn't cover it, "answer" is itself a clarifying question, or ESCALATION applies), "share" is JSON null — never a fabricated customer-facing paraphrase (see NO DRAFT RULE below).
 16. Genuine unresolved uncertainty — not simple "not specified" — was flagged per ESCALATION with a note to confirm with Ditto's complex queries team, rather than silently answered as if settled.
 17. Any SPECIAL INSTRUCTIONS section was checked first (SOURCE PRECEDENCE #0): an Override Rule entry for this topic was treated as complete and exclusive, never blended with lower-ranked sources; Additional Information/General Instruction entries were used only to shape explanation, never as a substitute for an actual sourced fact.
+18. If a DITTO FAQ entry was present (SOURCE PRECEDENCE #1b): source selection between it and PRODUCT PLAYBOOK was based on the question's actual intent, never a blanket "FAQ always wins"/"Playbook always wins" rule; if both an insurer/product fact and a Ditto FAQ position were relevant, both were stated distinctly (what the insurer/product allows vs. what Ditto itself facilitates) rather than one silently overriding the other; if the FAQ materially supported the answer, its matched question appears in **bold** inline per DITTO FAQ CITATION, with no source/spreadsheet ever named.
 
 OUTPUT FORMAT
 Respond with a single JSON object matching the response schema, with exactly two fields: "answer" and "share". Do NOT write your own "ANSWER"/"MESSAGE FOR SHARING" heading, or "Part 1"/"Part 2" label, inside either field's text — the app already labels both for you on screen, so including either yourself duplicates it and is a formatting error.
@@ -282,21 +297,50 @@ function buildConflictAnswer(conflicts: SpecialInstructionConflict[], historyTur
   };
 }
 
+/** Renders matched Ditto FAQ entries for the DITTO CONSTITUTION block —
+ * "Q:"/"A:" pairs, no internal metadata (id, category, score, sheet
+ * identity) ever included, since none of that belongs in a prompt whose
+ * content the model may end up echoing. See DITTO FAQ CITATION in
+ * SYSTEM_INSTRUCTION for how the model is told to present these (bold
+ * question inline, never "Source: Ditto FAQ"). */
+function buildDittoFaqEntries(faqs: MatchedFaq[]): string[] {
+  return faqs.map(f => `[Ditto FAQ Q: ${f.question}]\nA: ${f.answer}`);
+}
+
 function buildSourceBlock(
   chunks: { resourceTitle: string; documentType: QueryAssistSource["documentType"]; content: string }[],
   playbookFacts: { planName: string; content: string }[],
+  faqs: MatchedFaq[],
   specialInstructionsBlock: string
 ): string {
   const parts: string[] = [];
   if (specialInstructionsBlock) {
     parts.push(specialInstructionsBlock);
   }
-  if (playbookFacts.length > 0) {
+  if (playbookFacts.length > 0 || faqs.length > 0) {
+    // Both sub-sections share ONE parent header so the model reads them as
+    // the equal-authority peer pair SOURCE PRECEDENCE #1 describes, rather
+    // than two independently-ranked sources — see spec's Ditto Constitution
+    // hierarchy. Either sub-section is simply omitted when that source
+    // didn't apply to this question (e.g. a purely operational question has
+    // no Playbook facts to show, and that's fine — the model isn't told a
+    // sub-section exists when it doesn't).
     parts.push(
-      "=== PRODUCT PLAYBOOK (authoritative and COMPLETE for the selected plan on any topic it covers — see SOURCE PRECEDENCE #1. For a topic covered here, DOCUMENT EXCERPTS below must not be used to add another named sub-type/benefit/figure — only to cover a genuinely different topic this section is silent on.) ==="
+      "=== DITTO CONSTITUTION (Ditto's own authoritative, EQUAL-AUTHORITY sources — see SOURCE PRECEDENCE #1. Outranks DOCUMENT EXCERPTS below on any topic either sub-section covers; select Product Playbook and/or Ditto FAQ based on the question's actual intent, per #1a/#1b/#1c — never a blanket priority between them.) ==="
     );
-    for (const f of playbookFacts) {
-      parts.push(`[Product Playbook: ${f.planName}]\n${f.content}`);
+    if (playbookFacts.length > 0) {
+      parts.push(
+        "--- Product Playbook (recommendation/product-positioning — SOURCE PRECEDENCE #1a. For a topic covered here, DOCUMENT EXCERPTS below must not be used to add another named sub-type/benefit/figure — only to cover a genuinely different topic this section is silent on.) ---"
+      );
+      for (const f of playbookFacts) {
+        parts.push(`[Product Playbook: ${f.planName}]\n${f.content}`);
+      }
+    }
+    if (faqs.length > 0) {
+      parts.push(
+        "--- Ditto FAQ (Ditto's own operational process/capability/position — SOURCE PRECEDENCE #1b. Governs what DITTO facilitates, never what the insurer/product itself allows — see the INSURER FACT vs DITTO POSITION rule. Cite per DITTO FAQ CITATION — never name this source to the advisor.) ---"
+      );
+      parts.push(...buildDittoFaqEntries(faqs));
     }
   }
   if (chunks.length > 0) {
@@ -505,13 +549,23 @@ export async function answerQuery(
       ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", effectivePlanTags)
       : [];
 
+  // Ditto FAQ — the Ditto Constitution's other equal-authority peer (see
+  // SOURCE PRECEDENCE #1b). Deliberately NOT gated by scope.categoryId or
+  // effectivePlanTags the way playbookFacts is above: Ditto's own
+  // operational/process position is orthogonal to which insurer happens to
+  // also be in scope (spec §10), so every question checks the FAQ, reusing
+  // the same queryEmbedding already computed for Special Instructions/chunk
+  // retrieval above — zero extra embedding calls.
+  const faqMatches = await resolveApplicableFaqs(repos, queryEmbedding);
+
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, documentType: s.documentType, content: s.chunk.content }));
   const playbookInputs = playbookFacts.map(f => ({ planName: f.planName, content: f.content }));
 
-  const hadNoMatches = similar.length === 0 && playbookFacts.length === 0 && overrideRules.length === 0 && advisory.length === 0;
+  const hadNoMatches =
+    similar.length === 0 && playbookFacts.length === 0 && faqMatches.length === 0 && overrideRules.length === 0 && advisory.length === 0;
   const sourceBlock = hadNoMatches
-    ? "(No matching Playbook facts or document excerpts were found for this question within the selected scope.)"
-    : buildSourceBlock(chunkInputs, playbookInputs, specialInstructionsBlock);
+    ? "(No matching Playbook facts, Ditto FAQ entries, or document excerpts were found for this question within the selected scope.)"
+    : buildSourceBlock(chunkInputs, playbookInputs, faqMatches, specialInstructionsBlock);
 
   const historyBlock = buildHistoryBlock(history);
   const scopeLine = buildScopeLine(scope, scopeCategoryName, detectedPlanNames);

@@ -38,6 +38,8 @@ import {
   exchangeCodeForQaDashboardSheetsGrant,
   getKbPlaybookSheetsAuthUrl,
   exchangeCodeForKbPlaybookSheetsGrant,
+  getKbFaqSheetsAuthUrl,
+  exchangeCodeForKbFaqSheetsGrant,
   getQueryAssistLogExportSheetsAuthUrl,
   exchangeCodeForQueryAssistLogExportGrant,
 } from "./src/server/auth/googleOAuth.js";
@@ -62,17 +64,21 @@ import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClie
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
-import { kbDocumentTypeEnum, specialInstructionTypeEnum } from "./src/server/db/schema.js";
+import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
 
 // Valid kb_resources.document_type values, for request-body validation on
 // the upload/add-url/PATCH routes below — kept as a plain string[] (not the
 // Drizzle enum object itself) so it's cheap to .includes() against.
 const KB_DOCUMENT_TYPES: string[] = [...kbDocumentTypeEnum.enumValues];
 const SPECIAL_INSTRUCTION_TYPES: string[] = [...specialInstructionTypeEnum.enumValues];
+const FAQ_CATEGORIES: string[] = [...faqCategoryEnum.enumValues];
 import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
 import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
+import { encryptFaqRefreshToken } from "./src/server/knowledgeBase/faqTokenCrypto.js";
+import { invalidateFaqSheetsAuthCache } from "./src/server/knowledgeBase/faqSheetsClient.js";
 import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
+import { syncFaq, maybeRefreshFaqIfStale } from "./src/server/knowledgeBase/faqIngest.js";
 import { encryptQueryAssistLogRefreshToken } from "./src/server/knowledgeBase/queryAssistLogTokenCrypto.js";
 import { invalidateQueryAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/queryAssistLogSheetsClient.js";
 import { runQueryAssistLogExport } from "./src/server/knowledgeBase/queryAssistLogExport.js";
@@ -923,6 +929,10 @@ const QA_SHEETS_OAUTH_STATE_COOKIE = "ditto_qa_sheets_oauth_state";
 // Google Sheets" grant (Knowledge Base Management, not Developer
 // Controls) — see src/server/auth/googleOAuth.ts's Playbook section.
 const KB_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_kb_playbook_oauth_state";
+// Same idea, for the Ditto FAQ Sheet's own independent "Connect Google
+// Sheets" grant (Knowledge Base Management) — see
+// src/server/auth/googleOAuth.ts's Ditto FAQ Sheet section.
+const KB_FAQ_OAUTH_STATE_COOKIE = "ditto_kb_faq_oauth_state";
 // Same idea, for the Product Assist Log Export's own independent "Connect
 // Google Sheets" grant (Connections page) — see src/server/auth/googleOAuth.ts's
 // Query Assist Log Export section. This is the only one of the three
@@ -1001,6 +1011,31 @@ app.get("/api/auth/google/callback", async (req, res) => {
       res.redirect("/?kb_playbook_connected=1");
     } catch (err: any) {
       console.error("Product Playbook Google Sheets connection failed:", err);
+      res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Knowledge Base Management.`);
+    }
+    return;
+  }
+
+  const faqExpectedState = req.cookies?.[KB_FAQ_OAUTH_STATE_COOKIE];
+  if (faqExpectedState) {
+    res.clearCookie(KB_FAQ_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== faqExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Knowledge Base Management.");
+        return;
+      }
+      const grant = await exchangeCodeForKbFaqSheetsGrant(code);
+      const { kbFaqConnection } = createRepositories(getDb());
+      await kbFaqConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptFaqRefreshToken(grant.refreshToken),
+        connectedBy: req.user?.email || grant.email,
+      });
+      invalidateFaqSheetsAuthCache();
+      res.redirect("/?kb_faq_connected=1");
+    } catch (err: any) {
+      console.error("Ditto FAQ Google Sheets connection failed:", err);
       res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Knowledge Base Management.`);
     }
     return;
@@ -4920,6 +4955,144 @@ app.post("/api/kb/playbook/resync", requireAuth, expensiveActionLimiter, async (
   }
 });
 
+// --- Ditto FAQ: "Connect Google Sheets" + Resync (see
+// src/server/knowledgeBase/faqIngest.ts / faqSheetsClient.ts) — same shape
+// as the Product Playbook routes above, own OAuth grant/table/resource. ---
+
+app.get("/api/kb/faq/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(KB_FAQ_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getKbFaqSheetsAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start Ditto FAQ Google Sheets connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+app.get("/api/kb/faq/connection-status", requireAuth, async (req, res) => {
+  try {
+    const { kbFaqConnection, kbResources, faqRecords } = createRepositories(getDb());
+    const row = await kbFaqConnection.get();
+    const resource = (await kbResources.list({})).find(r => r.type === "sheet" && r.title === "Ditto FAQ");
+    const records = resource ? await faqRecords.list({ resourceId: resource.id }) : [];
+    return res.json({
+      connected: !!row,
+      connectedEmail: row?.connectedEmail ?? null,
+      connectedAt: row?.connectedAt ?? null,
+      resource: resource
+        ? {
+            status: resource.status,
+            lastFetchedAt: resource.lastFetchedAt,
+            errorMessage: resource.errorMessage,
+            totalRecords: records.length,
+            answerableCount: records.filter(r => r.isAnswerable && !r.hasConflict).length,
+            incompleteCount: records.filter(r => !r.isAnswerable && !r.hasConflict).length,
+            conflictingCount: records.filter(r => r.hasConflict).length,
+            healthProductCount: records.filter(r => r.category === "health_product").length,
+            operationsHealthCount: records.filter(r => r.category === "operations_health").length,
+          }
+        : null,
+    });
+  } catch (err: any) {
+    console.error("Ditto FAQ: failed to load connection status:", err);
+    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/faq/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    const { kbFaqConnection } = createRepositories(getDb());
+    await kbFaqConnection.clear();
+    invalidateFaqSheetsAuthCache();
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Ditto FAQ: failed to disconnect Google Sheets:", err);
+    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/faq/resync", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Resyncing the Ditto FAQ"))) return;
+    const repos = createRepositories(getDb());
+    const result = await syncFaq(repos, req.user!.email);
+    if (result.resource.status === "error") {
+      return res.status(500).json({ error: result.resource.errorMessage || "Sync failed.", resource: result.resource });
+    }
+    return res.json({
+      ok: true,
+      skipped: result.skipped,
+      totalRecords: result.totalRecords,
+      answerableCount: result.answerableCount,
+      incompleteCount: result.incompleteCount,
+      conflictingCount: result.conflictingCount,
+      duplicatesCollapsed: result.duplicatesCollapsed,
+      resource: result.resource,
+    });
+  } catch (err: any) {
+    console.error("Ditto FAQ: resync failed:", err);
+    return res.status(500).json({ error: `Resync failed: ${err.message}` });
+  }
+});
+
+// Admin review listing — every record (including incomplete/conflicting,
+// per spec §17/§18: "may remain visible to authorized Knowledge Hub users
+// for administrative review"), never exposed to advisors outside this
+// Admin/Developer-gated route.
+app.get("/api/kb/faq/records", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Ditto FAQ"))) return;
+    const { faqRecords } = createRepositories(getDb());
+    const category = typeof req.query.category === "string" && FAQ_CATEGORIES.includes(req.query.category) ? (req.query.category as any) : undefined;
+    const entries = await faqRecords.list({ category });
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list Ditto FAQ records:", err);
+    return res.status(500).json({ error: `Failed to load FAQ records: ${err.message}` });
+  }
+});
+
+// The only write this table supports outside a full resync — retiring a
+// bad/outdated record (e.g. one side of a resolved conflict) without
+// waiting for the next sheet edit. Never edits question/answer text itself:
+// the Sheet remains the sole authoring source (spec §19).
+app.patch("/api/kb/faq/records/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a Ditto FAQ record"))) return;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id." });
+    if (typeof req.body.isActive !== "boolean") return res.status(400).json({ error: "isActive (boolean) is required." });
+    const { faqRecords, changeLogs, users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const updated = await faqRecords.setActive(id, req.body.isActive);
+    if (!updated) return res.status(404).json({ error: "FAQ record not found." });
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: req.body.isActive ? "Ditto FAQ Record Activated" : "Ditto FAQ Record Deactivated",
+        planName: null,
+        description: `${req.body.isActive ? "Activated" : "Deactivated"} Ditto FAQ record #${id}: "${updated.question}"`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Ditto FAQ record update:", logErr);
+    }
+    return res.json({ record: updated });
+  } catch (err: any) {
+    console.error("Failed to update Ditto FAQ record:", err);
+    return res.status(500).json({ error: `Failed to update: ${err.message}` });
+  }
+});
+
 // --- Categories ---
 
 app.get("/api/kb/categories", requireAuth, async (req, res) => {
@@ -5510,6 +5683,9 @@ app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (re
     // the last sync is stale (see maybeRefreshPlaybookIfStale) — never
     // awaited, so a slow or failed refresh can never delay this answer.
     void maybeRefreshPlaybookIfStale(repos);
+    // Same lazy staleness check for the Ditto FAQ (see maybeRefreshFaqIfStale) —
+    // also fire-and-forget, independent of the Playbook's own refresh.
+    void maybeRefreshFaqIfStale(repos);
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
     const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
 

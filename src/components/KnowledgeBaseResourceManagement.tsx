@@ -16,6 +16,7 @@ import { CustomSelect } from "./CustomSelect";
 import { INSURER_LOGOS } from "../constants/insurerLogos";
 import { getPlanInsurerColor, hexToRgba } from "../utils/planInsurerColors";
 import { realPlanNames } from "../utils/kbPlanNames";
+import { DittoWordmark } from "./mascots/DittoWordmark";
 
 // Insurer-level accent color, reusing the exact same muted brand colors
 // Coverage Projection Studio and the PED result cards already use (see
@@ -936,6 +937,12 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                   <div className="w-9 h-6 shrink-0 flex items-center justify-center">
                     {logoSrc ? (
                       <img src={logoSrc} alt={category.name} className="max-w-full max-h-full object-contain" />
+                    ) : category.type === "general" ? (
+                      // "Ditto Constitution" (the renamed "General / Others"
+                      // section, spec §3/§4): same visual ROLE insurer logos
+                      // occupy for insurer rows, using the app's existing
+                      // Ditto wordmark asset rather than a generic folder icon.
+                      <DittoWordmark className="max-w-full max-h-full" imgStyle={{ maxHeight: "20px" }} isWhite={dark} />
                     ) : (
                       <Folder className="w-4 h-4 text-content-muted" />
                     )}
@@ -1366,6 +1373,22 @@ function ResourceListTab({
             <span className={`text-xs font-semibold truncate ${dark ? "text-stone-200" : "text-stone-800"}`} title={resource.title}>{resource.title}</span>
             {statusBadge(resource.status, dark)}
             {showDocTypeBadge && documentTypeBadge(resource.documentType, dark)}
+            {/* Ditto FAQ (2026-08): identifies the two supported FAQ
+                categories directly on the resource row (spec §5/§21) — a
+                live per-category breakdown lives on the Connections page's
+                sync-status card (KnowledgeBaseFaqConnection.tsx); these are
+                static presence badges, reusing the same badge visual
+                language rather than a new UI pattern. */}
+            {resource.title === "Ditto FAQ" && (
+              <>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${dark ? "bg-sky-500/10 text-sky-300 border-sky-500/25" : "bg-sky-50 text-sky-700 border-sky-200"}`}>
+                  Health Product FAQs
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${dark ? "bg-violet-500/10 text-violet-300 border-violet-500/25" : "bg-violet-50 text-violet-700 border-violet-200"}`}>
+                  Operations Health FAQs
+                </span>
+              </>
+            )}
             {showPlanCount && (
               <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">
                 {resource.planTags.length === 0 ? "All plans" : `${resource.planTags.length} plan${resource.planTags.length === 1 ? "" : "s"}`}
@@ -1382,7 +1405,11 @@ function ResourceListTab({
                 Open
               </a>
             )}
-            {resource.status === "active" && <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{resource.chunkCount} chunks</span>}
+            {resource.status === "active" && (
+              <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">
+                {resource.chunkCount} {resource.title === "Ditto FAQ" ? "FAQ records" : "chunks"}
+              </span>
+            )}
             {resource.status === "error" && resource.errorMessage && (
               <span className="text-[10px] font-semibold text-red-400 truncate" title={resource.errorMessage}>{resource.errorMessage}</span>
             )}
