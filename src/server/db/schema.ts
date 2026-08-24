@@ -505,6 +505,63 @@ export type PlanOverrideRow = typeof planOverrides.$inferSelect;
 export type NewPlanOverrideRow = typeof planOverrides.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// plan_restrictions — admin-authored, deterministic Plan-Specific
+// Restrictions (2026-08), replacing the 3 hardcoded booleans on
+// plan_configs.overrides (requiresInsulinForDiabetes / excludePrediabetes /
+// bypassBenignTumors — PlanOverrides in types.ts) with a real Create/Edit/
+// Delete/Enable-disable UI. No AI involved anywhere in evaluating these:
+// `mode` + `keywords` below is read by a small, pure, plain-text
+// word-boundary matcher in engine.ts (isCategoryRestrictedForPed) — the
+// exact same mechanism the old hardcoded regex checks already used, just
+// table-driven instead of code-hardcoded.
+//
+// One row narrows ONE category's question, on ONE plan:
+//   - "require_keywords": the category's normal question only applies when
+//     the advisor's PED text also matches at least one of `keywords` (e.g.
+//     diabetes restricted to "type 1"/"insulin"/"blindness"/"foot ulcer").
+//     A PED that DOESN'T match is diverted to the plan's catch-all.
+//   - "exclude_keywords": the inverse — the category's normal question is
+//     diverted to the catch-all whenever the PED text DOES match one of
+//     `keywords` (e.g. "prediabetes"/"borderline diabetes" excluded from a
+//     diabetes question that otherwise applies normally).
+//   - "block_category": the category's question is always diverted to the
+//     catch-all on this plan, regardless of PED text (e.g. benign tumors
+//     never route to this plan's cancer/neoplasm question) — `keywords` is
+//     ignored/empty for this mode.
+// `categoryKey` is a CATEGORY_LABELS key (types.ts), same identifier space
+// plan_configs.categoryMap already uses — not a new vocabulary.
+// ─────────────────────────────────────────────────────────────────────────
+export const planRestrictionModeEnum = pgEnum("plan_restriction_mode", ["require_keywords", "exclude_keywords", "block_category"]);
+
+export const planRestrictions = pgTable(
+  "plan_restrictions",
+  {
+    id: serial("id").primaryKey(),
+    planName: text("plan_name").notNull(),
+    categoryKey: text("category_key").notNull(),
+    mode: planRestrictionModeEnum("mode").notNull(),
+    // string[] — word-boundary, case-insensitive OR match against the PED's
+    // own text. Empty/unused for "block_category".
+    keywords: jsonb("keywords").notNull().default([]),
+    // Shown to the advisor (in place of the old hardcoded per-site prose)
+    // when this restriction diverts a PED to the plan's catch-all question.
+    explanation: text("explanation").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    updatedBy: text("updated_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("plan_restrictions_plan_name_idx").on(table.planName),
+    index("plan_restrictions_is_active_idx").on(table.isActive),
+  ]
+);
+
+export type PlanRestrictionRow = typeof planRestrictions.$inferSelect;
+export type NewPlanRestrictionRow = typeof planRestrictions.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // mapping_history — structured, queryable audit trail for PED/category/
 // mapping changes specifically (distinct from change_logs above, which
 // stays for plan/announcement/user admin actions). Stores structured
@@ -1526,7 +1583,7 @@ export type NewSpecialInstructionRow = typeof specialInstructions.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // kb_acronyms — the Acronym Dictionary: shorthand advisors habitually type
-// (e.g. "OS" for "Optima Secure", "CBB" for "Cumulative Bonus Super")
+// (e.g. "OS" for "Optima Secure", "CBB" for "Cumulative Bonus Booster") is explicitly
 // mapped to its full expansion, so Product Assist can recognize it instead
 // of treating the question as ambiguous or under-retrieving for it. Small,
 // admin-curated, in-app CRUD (same convention as Special Instructions

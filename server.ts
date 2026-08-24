@@ -30,7 +30,7 @@ import {
   deleteAliasRow,
 } from "./src/server/pedRepositoryLive.js";
 import type { Repositories } from "./src/server/db/repositories/index.js";
-import { dbRowToPlanConfig } from "./src/server/planConfigUtils.js";
+import { dbRowToPlanConfig, toPlanRestrictions } from "./src/server/planConfigUtils.js";
 import {
   getGoogleAuthUrl,
   exchangeCodeForIdentity,
@@ -249,6 +249,7 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       planConfigs: planConfigsRepo,
       pedMappingOverrides: pedOverridesRepo,
       aiMemory: aiMemoryRepo,
+      planRestrictions: planRestrictionsRepo,
     } = repos;
     await ensurePedOverridesLoaded(pedOverridesRepo);
     const dbSource = await getDbSource(repos);
@@ -266,6 +267,20 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       if (dbPlan) config = dbRowToPlanConfig(dbPlan);
     } catch (err) {
       console.error("Failed to load DB plan config (falling back to hardcoded defaults if any exist):", err);
+    }
+
+    // Plan-Specific Restrictions (2026-08) — DB-driven, applies uniformly
+    // whether `config` above resolved from a DB row or the hardcoded seed.
+    // Attached before any classifyDeterministic/applyPostGuards call below
+    // (both the L1 deterministic path and the L3 Gemini fallback path
+    // further down reuse this same `config`) so isCategoryRestrictedForPed/
+    // hasActiveRestriction see live restriction data either way.
+    if (config) {
+      try {
+        config.restrictions = toPlanRestrictions(await planRestrictionsRepo.listActiveForPlan(planName));
+      } catch (err) {
+        console.error("Failed to load plan restrictions (continuing with none active):", err);
+      }
     }
 
     // Server-side enforcement of the Declaration Assistant Control page's
@@ -3919,7 +3934,7 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     }
 
     const smokeTestRepos = createRepositories(getDb());
-    const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo } = smokeTestRepos;
+    const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo, planRestrictions: planRestrictionsRepo } = smokeTestRepos;
     await ensurePedOverridesLoaded(pedOverridesRepo);
     const dbSource = await getDbSource(smokeTestRepos);
 
@@ -3934,6 +3949,14 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
 
     if (!config) {
       return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
+    }
+
+    // Plan-Specific Restrictions — see /api/match's identical attachment for
+    // why this must be applied uniformly regardless of `config`'s source.
+    try {
+      config.restrictions = toPlanRestrictions(await planRestrictionsRepo.listActiveForPlan(planName));
+    } catch (err) {
+      console.error("Failed to load plan restrictions for smoke test (continuing with none active):", err);
     }
 
     const results = peds.map((ped: string) => {
@@ -4152,11 +4175,18 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
       update.removed = removed;
     }
 
-    const { planConfigs } = createRepositories(getDb());
+    const { planConfigs, planRestrictions } = createRepositories(getDb());
     const row = newPlanName
       ? await planConfigs.rename(planName, newPlanName, update)
       : await planConfigs.update(planName, update);
     if (!row) return res.status(404).json({ error: "Plan not found." });
+    if (newPlanName) {
+      try {
+        await planRestrictions.renamePlan(planName, newPlanName);
+      } catch (err) {
+        console.error("Failed to carry plan restrictions over to the renamed plan:", err);
+      }
+    }
     return res.json({ entry: row });
   } catch (err: any) {
     if (err?.code === "23505" || err?.cause?.code === "23505") {
@@ -4177,6 +4207,189 @@ app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete plan config:", err);
     return res.status(500).json({ error: `Failed to delete this plan: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Plan-Specific Restrictions (2026-08) — the deterministic, admin-authored
+// replacement for the old hardcoded plan_configs.overrides booleans
+// (requiresInsulinForDiabetes / excludePrediabetes / bypassBenignTumors).
+// See schema.ts's doc comment on `plan_restrictions` and engine.ts's
+// isCategoryRestrictedForPed for how these are evaluated at match time — no
+// AI is ever involved, purely a plain-text keyword check. Same permission
+// model as the rest of Plan Management: Admin or Developer can view/manage
+// (not gated to Developer-only, since this is an ordinary part of
+// configuring a plan, same as its questions/categoryMap above).
+// ─────────────────────────────────────────────────────────────────────────
+
+// Every active restriction, across every plan — readable by every signed-in
+// user (requireAuth only, no admin gate), unlike the per-plan editor route
+// below. Needed so App.tsx's client-side deterministic path
+// (executeLookupAll's classifyDeterministic call) sees the same live
+// restriction data /api/match applies server-side for EVERY plan, including
+// one that's still 100% on the hardcoded getPlanConfig() seed and has no
+// plan_configs row at all — GET /api/plan-configs only lists rows from that
+// table, so it can't be relied on alone to surface restrictions for such a
+// plan. Mirrors why /api/plan-configs itself is requireAuth-only: matching
+// must work identically for General tier, not just Admin/Developer.
+app.get("/api/plan-restrictions", requireAuth, async (req, res) => {
+  try {
+    const { planRestrictions } = createRepositories(getDb());
+    const rows = await planRestrictions.listAllActive();
+    const byPlan: Record<string, ReturnType<typeof toPlanRestrictions>> = {};
+    for (const row of rows) {
+      byPlan[row.planName] = byPlan[row.planName] || [];
+      byPlan[row.planName].push(...toPlanRestrictions([row]));
+    }
+    return res.json({ restrictionsByPlan: byPlan });
+  } catch (err: any) {
+    console.error("Failed to list all plan restrictions:", err);
+    return res.status(500).json({ error: `Failed to load plan restrictions: ${err.message}` });
+  }
+});
+
+app.get("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing Plan-Specific Restrictions"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+    const { planRestrictions } = createRepositories(getDb());
+    const entries = await planRestrictions.listForPlan(planName);
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list plan restrictions:", err);
+    return res.status(500).json({ error: `Failed to load restrictions for this plan: ${err.message}` });
+  }
+});
+
+function validatePlanRestrictionBody(body: any): { categoryKey: string; mode: "require_keywords" | "exclude_keywords" | "block_category"; keywords: string[]; explanation: string } | null {
+  if (!body || typeof body.categoryKey !== "string" || !body.categoryKey.trim()) return null;
+  if (!["require_keywords", "exclude_keywords", "block_category"].includes(body.mode)) return null;
+  if (typeof body.explanation !== "string" || !body.explanation.trim()) return null;
+  const keywords = Array.isArray(body.keywords) ? body.keywords.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim()) : [];
+  if (body.mode !== "block_category" && keywords.length === 0) return null;
+  return { categoryKey: body.categoryKey.trim(), mode: body.mode, keywords, explanation: body.explanation.trim() };
+}
+
+app.post("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Adding a Plan-Specific Restriction"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+    const parsed = validatePlanRestrictionBody(req.body);
+    if (!parsed) {
+      return res.status(400).json({ error: "categoryKey, mode (require_keywords/exclude_keywords/block_category), and explanation are required; keywords is required unless mode is block_category." });
+    }
+    const { users: usersRepo, planRestrictions, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const entry = await planRestrictions.create({
+      planName,
+      categoryKey: parsed.categoryKey,
+      mode: parsed.mode,
+      keywords: parsed.keywords,
+      explanation: parsed.explanation,
+      isActive: true,
+      createdBy: `${req.user!.name} (${callerTier})`,
+      updatedBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Plan Restriction Created",
+        planName,
+        description: `Added a "${parsed.mode}" restriction on the "${parsed.categoryKey}" category for ${planName}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for plan restriction creation:", logErr);
+    }
+
+    return res.json({ entry });
+  } catch (err: any) {
+    console.error("Failed to create plan restriction:", err);
+    return res.status(500).json({ error: `Failed to add this restriction: ${err.message}` });
+  }
+});
+
+app.patch("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Editing a Plan-Specific Restriction"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid restriction id." });
+    const { users: usersRepo, planRestrictions, changeLogs } = createRepositories(getDb());
+    const existing = await planRestrictions.get(id);
+    if (!existing) return res.status(404).json({ error: "Restriction not found." });
+
+    const { categoryKey, mode, keywords, explanation, isActive } = req.body;
+    const validModes = ["require_keywords", "exclude_keywords", "block_category"] as const;
+    if (mode !== undefined && !validModes.includes(mode)) {
+      return res.status(400).json({ error: "mode must be require_keywords, exclude_keywords, or block_category." });
+    }
+    const callerTier = await getCallerTier(req, usersRepo);
+    const entry = await planRestrictions.update(id, {
+      ...(typeof categoryKey === "string" && categoryKey.trim() ? { categoryKey: categoryKey.trim() } : {}),
+      ...(typeof mode === "string" ? { mode: mode as (typeof validModes)[number] } : {}),
+      ...(Array.isArray(keywords) ? { keywords: keywords.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim()) } : {}),
+      ...(typeof explanation === "string" && explanation.trim() ? { explanation: explanation.trim() } : {}),
+      ...(typeof isActive === "boolean" ? { isActive } : {}),
+      updatedBy: `${req.user!.name} (${callerTier})`,
+    });
+    if (!entry) return res.status(404).json({ error: "Restriction not found." });
+
+    try {
+      const actionType =
+        typeof isActive === "boolean" && Object.keys(req.body).length === 1
+          ? isActive
+            ? "Plan Restriction Enabled"
+            : "Plan Restriction Disabled"
+          : "Plan Restriction Edited";
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType,
+        planName: entry.planName,
+        description: `Updated the "${entry.categoryKey}" restriction on ${entry.planName}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for plan restriction edit:", logErr);
+    }
+
+    return res.json({ entry });
+  } catch (err: any) {
+    console.error("Failed to update plan restriction:", err);
+    return res.status(500).json({ error: `Failed to update this restriction: ${err.message}` });
+  }
+});
+
+app.delete("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Plan-Specific Restriction"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid restriction id." });
+    const { users: usersRepo, planRestrictions, changeLogs } = createRepositories(getDb());
+    const existing = await planRestrictions.get(id);
+    if (!existing) return res.status(404).json({ error: "Restriction not found." });
+    await planRestrictions.delete(id);
+
+    try {
+      const callerTier = await getCallerTier(req, usersRepo);
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Plan Restriction Deleted",
+        planName: existing.planName,
+        description: `Deleted the "${existing.categoryKey}" restriction on ${existing.planName}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for plan restriction deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete plan restriction:", err);
+    return res.status(500).json({ error: `Failed to delete this restriction: ${err.message}` });
   }
 });
 
@@ -5568,7 +5781,7 @@ app.delete("/api/kb/special-instructions/:id", requireAuth, async (req, res) => 
 
 // ─────────────────────────────────────────────────────────────────────────
 // Acronym Dictionary — shorthand advisors habitually type (e.g. "OS" for
-// "Optima Secure", "CBB" for "Cumulative Bonus Super") mapped to its full
+// "Optima Secure", "CBB" for "Cumulative Bonus Booster") mapped to its full
 // expansion, so Product Assist can recognize it instead of retrieving
 // poorly or treating the question as ambiguous. See schema.ts's doc comment
 // on `kbAcronyms` and src/server/knowledgeBase/acronyms.ts for how these

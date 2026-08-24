@@ -61,6 +61,7 @@ import {
   getPlanConfig,
   TOP_PED_DICTIONARY,
   MatchOutput,
+  PlanRestriction,
   guessCategoryMap
 } from "./types.js";
 
@@ -511,6 +512,31 @@ export default function App() {
   // the real list has actually loaded.
   const [dbPlanConfigsLoaded, setDbPlanConfigsLoaded] = useState(false);
 
+  // Plan-Specific Restrictions (2026-08), keyed by plan name — fetched
+  // separately from dbPlanConfigs because a plan can have active
+  // restrictions without ever having a plan_configs row (e.g. one of the 6
+  // hardcoded getPlanConfig() plans that's never been edited via Plan
+  // Management). See GET /api/plan-restrictions's doc comment in server.ts.
+  // Applied onto every plan in the `planConfigs` useMemo below, not just
+  // ones present in dbPlanConfigs, so App.tsx's client-side deterministic
+  // path (executeLookupAll) always matches what /api/match would return.
+  const [restrictionsByPlan, setRestrictionsByPlan] = useState<Record<string, PlanRestriction[]>>({});
+
+  const fetchPlanRestrictions = async () => {
+    try {
+      const res = await fetch("/api/plan-restrictions");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to load plan restrictions (HTTP ${res.status}).`);
+      setRestrictionsByPlan(body.restrictionsByPlan || {});
+    } catch (err: unknown) {
+      // Non-fatal: a failed fetch here just means the client-side fast path
+      // won't apply restrictions locally — /api/match still applies them
+      // server-side (its own authoritative fetch), so no lookup can ever
+      // ship an unrestricted answer purely because of this failing.
+      console.error("Failed to load plan restrictions from the server — client-side fast path may lag behind /api/match:", err);
+    }
+  };
+
   const mapPlanConfigRow = (row: any): DbPlanConfigEntry => ({
     planName: row.planName,
     insurerName: row.insurerName,
@@ -528,6 +554,7 @@ export default function App() {
     // ever looked broken after a reload/refetch, not right after saving.
     specificIllnesses: row.specificIllnesses || [],
     overrides: row.overrides || undefined,
+    restrictions: row.restrictions || [],
     // Same class of bug as specificIllnesses above, just discovered later:
     // omitting these here meant every fetch of the plan list (page load,
     // manual refresh) silently reset a disabled plan back to "enabled" in
@@ -921,6 +948,7 @@ export default function App() {
       fetchUnackedAnnouncements();
       fetchExternalResources();
       fetchPlanConfigs();
+      fetchPlanRestrictions();
       fetchPedSuggestions();
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
@@ -1466,8 +1494,20 @@ export default function App() {
       };
     });
 
+    // Plan-Specific Restrictions (2026-08) — applied last, onto EVERY plan
+    // name present in `base` (not just ones that came from dbPlanConfigs
+    // above), since a plan can have active restrictions without ever having
+    // a plan_configs row — e.g. one of the 6 hardcoded getPlanConfig()
+    // plans that's never been edited via Plan Management. See
+    // restrictionsByPlan's declaration and GET /api/plan-restrictions in
+    // server.ts for why this is fetched as its own map instead of being
+    // embedded per-row above.
+    Object.keys(base).forEach(name => {
+      base[name] = { ...base[name], restrictions: restrictionsByPlan[name] || [] };
+    });
+
     return base;
-  }, [draftPlans, productionPlans, planQuestionsState, dbPlanConfigs]);
+  }, [draftPlans, productionPlans, planQuestionsState, dbPlanConfigs, restrictionsByPlan]);
 
   // Theme support — dark default, toggleable dark mode, persistently saved
   const [theme, setTheme] = usePersistentState<"light" | "dark">(

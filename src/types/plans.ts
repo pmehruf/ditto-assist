@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { PlanRestriction } from "../types";
+
 export interface DraftPlan {
   name: string;
   submittedBy: string;
@@ -46,7 +48,17 @@ export interface DbPlanConfigEntry {
    * defaults to [] since it postdates plan_configs (migration 0011) —
    * older rows fetched before a re-save won't have it set client-side. */
   specificIllnesses?: SpecificIllnessEntry[];
+  /** @deprecated superseded by `restrictions` below (Plan-Specific
+   * Restrictions, 2026-08) — see types.ts's PlanConfig doc comment. */
   overrides?: { excludePrediabetes?: boolean; requiresInsulinForDiabetes?: boolean; bypassBenignTumors?: boolean };
+  /** This plan's active Plan-Specific Restrictions, embedded server-side by
+   * GET /api/plan-configs (server.ts) from the plan_restrictions table —
+   * merged into planConfigs[planName].restrictions in App.tsx so the
+   * client-side deterministic path (executeLookupAll) sees the same live
+   * restriction data /api/match applies server-side. Optional/defaults to
+   * [] since it postdates plan_configs — older cached responses won't have
+   * it set. */
+  restrictions?: PlanRestriction[];
   /** Takes this plan out of service for advisors — see schema.ts's
    * plan_configs.disabled comment. Optional/defaults to false since it
    * postdates plan_configs (migration 0036) — older rows fetched before a

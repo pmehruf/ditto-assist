@@ -13,6 +13,7 @@ import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "../components/ClippedButton";
 import { SpecificIllnessLedger } from "../components/SpecificIllnessLedger";
 import { CustomSelect } from "../components/CustomSelect";
+import { PlanRestrictionsEditor } from "../components/PlanRestrictionsEditor";
 
 interface PlanManagementPageProps {
   theme: "light" | "dark";
@@ -1466,65 +1467,17 @@ export function PlanManagementPage({
           {/* Plan-Specific Restrictions — narrows which PEDs route to a
               question beyond its plain text, e.g. "this plan's diabetes
               question only covers Type 1 / insulin-dependent / diabetes
-              with blindness or a chronic foot ulcer". Backed by the same
-              plan_configs.overrides column the Declaration Engine already
-              reads (engine.ts) — this is just the missing UI to see/edit
-              it, instead of it only ever being silently carried through
-              from a built-in plan's hardcoded default the first time that
-              plan is customized here. Leave every box unchecked for a plan
-              with no special restrictions (the normal case). */}
+              with blindness or a chronic foot ulcer". Live database/UI-
+              controlled (2026-08) — Create/Edit/Delete/Enable-disable,
+              evaluated by engine.ts's isCategoryRestrictedForPed /
+              hasActiveRestriction with deterministic keyword logic, no AI
+              involved. Replaces the old 3-checkbox PlanOverrides block
+              (plan_configs.overrides — now deprecated, see types.ts). */}
           <div>
             <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
               Plan-Specific Restrictions
             </label>
-            {formMode === "view" ? (
-              overrides && (overrides.requiresInsulinForDiabetes || overrides.excludePrediabetes || overrides.bypassBenignTumors) ? (
-                <ul className="space-y-1">
-                  {overrides.requiresInsulinForDiabetes && (
-                    <li className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
-                      Diabetes question restricted to Type 1 / insulin-dependent / diabetes with blindness or chronic foot ulcer
-                    </li>
-                  )}
-                  {overrides.excludePrediabetes && (
-                    <li className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
-                      Prediabetes / borderline diabetes excluded from the diabetes question
-                    </li>
-                  )}
-                  {overrides.bypassBenignTumors && (
-                    <li className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
-                      Benign tumors bypass the cancer/neoplasm question
-                    </li>
-                  )}
-                </ul>
-              ) : (
-                <p className={`text-xs font-semibold px-2 py-2 ${dark ? "text-stone-400" : "text-stone-500"}`}>None — this plan's questions apply exactly as written above.</p>
-              )
-            ) : (
-              <div className="space-y-2">
-                {([
-                  ["requiresInsulinForDiabetes", "Restrict the diabetes question to Type 1 / insulin-dependent / diabetes with blindness or chronic foot ulcer"],
-                  ["excludePrediabetes", "Exclude prediabetes / borderline diabetes from the diabetes question"],
-                  ["bypassBenignTumors", "Bypass benign tumors from the cancer/neoplasm question"],
-                ] as const).map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={!!overrides?.[key]}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setOverrides(prev => {
-                          const next = { ...(prev || {}) };
-                          if (checked) next[key] = true; else delete next[key];
-                          return Object.keys(next).length > 0 ? next : undefined;
-                        });
-                      }}
-                      className="w-3.5 h-3.5 shrink-0 cursor-pointer accent-amber-500"
-                    />
-                    <span className={`text-xs font-semibold ${dark ? "text-stone-200" : "text-stone-800"}`}>{label}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+            <PlanRestrictionsEditor theme={theme} planName={planName || undefined} canEdit={canEdit} mode={formMode === "view" ? "view" : "edit"} />
           </div>
 
           {/* Declaration Questions */}

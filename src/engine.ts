@@ -8,6 +8,7 @@ import {
   PED_BRIEFS,
   CATEGORY_LABELS,
   PlanConfig,
+  PlanRestriction,
   MatchOutput,
   SupportingFlags
 } from "./types.js";
@@ -64,6 +65,102 @@ export function normalizeText(text: string): string {
 // actually look up, so the override silently never fires.
 export function normalizeDictionaryKey(pedText: string): string {
   return String(pedText || "").toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function escapeRegExpForRestriction(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Plan-Specific Restrictions (2026-08) — deterministic, keyword-based, no
+ * AI involved. Generalizes the old hardcoded requiresInsulinForDiabetes /
+ * excludePrediabetes / bypassBenignTumors flags (PlanOverrides in types.ts,
+ * now deprecated) into admin-authored `plan_restrictions` DB rows, all
+ * evaluated by this one function instead of scattered code-hardcoded
+ * checks. See schema.ts's `plan_restrictions` doc comment for the full mode
+ * semantics.
+ *
+ * Returns the matching restriction (so callers can build an explanation
+ * from it) when this category's normal question should be DIVERTED to the
+ * plan's catch-all for this specific PED text — null when nothing applies
+ * and the PED should route to its normal question as usual. Only the
+ * FIRST matching active restriction for this categoryKey is applied (a
+ * plan is not expected to define more than one rule per category, but
+ * order is deterministic — insertion order — if it ever does). */
+export function isCategoryRestrictedForPed(
+  categoryKey: string,
+  pedTextLower: string,
+  restrictions: PlanRestriction[] | undefined
+): PlanRestriction | null {
+  if (!restrictions || restrictions.length === 0) return null;
+  for (const r of restrictions) {
+    if (!r.isActive || r.categoryKey !== categoryKey) continue;
+    if (r.mode === "block_category") return r;
+    const matchesAnyKeyword = r.keywords.some((kw) => {
+      const needle = kw.trim();
+      if (!needle) return false;
+      return new RegExp(`\\b${escapeRegExpForRestriction(needle)}\\b`, "i").test(pedTextLower);
+    });
+    if (r.mode === "require_keywords" && !matchesAnyKeyword) return r;
+    if (r.mode === "exclude_keywords" && matchesAnyKeyword) return r;
+  }
+  return null;
+}
+
+/** Plan-level "is this restriction switched on at all" check — the
+ * replacement for the old boolean flags (config.overrides.
+ * requiresInsulinForDiabetes → ("diabetes","require_keywords"),
+ * excludePrediabetes → ("diabetes","exclude_keywords"), bypassBenignTumors →
+ * ("benign_growth","block_category")) at call sites that gate their OWN
+ * bespoke PED-text regex logic on "does this plan have this restriction
+ * enabled" rather than delegating the text match to
+ * isCategoryRestrictedForPed itself. Kept deliberately separate from that
+ * function (which answers "is THIS PED restricted") so those call sites'
+ * existing, already-verified regex logic can stay byte-for-byte unchanged —
+ * only the flag's data source moves from the hardcoded PlanOverrides to
+ * these DB-driven plan_restrictions rows.
+ *
+ * DB-only — no legacy fallback here. See the three named wrappers below
+ * (diabetesRequiresInsulinQualifier / diabetesExcludesPrediabetes /
+ * benignGrowthBypassed) for the actual call-site-facing checks, which DO
+ * fall back to config.overrides. */
+function hasActiveRestriction(
+  restrictions: PlanRestriction[] | undefined,
+  categoryKey: string,
+  mode: PlanRestriction["mode"]
+): boolean {
+  return !!restrictions?.some((r) => r.isActive && r.categoryKey === categoryKey && r.mode === mode);
+}
+
+/** Every one of the 8 call sites below checks BOTH the new DB-driven
+ * `plan_restrictions` rows (via hasActiveRestriction) AND the old hardcoded
+ * `config.overrides` flags, preferring the DB row but falling back to the
+ * legacy flag when no DB row exists for that plan/category/mode yet.
+ *
+ * This is deliberate, not a half-finished migration: scripts/
+ * migratePlanRestrictions.ts (the one-time data migration for the 3
+ * existing flags) has to be run against each environment's live database by
+ * a human with DB access — it can't run itself as part of this code change.
+ * Until it has, EVERY plan still relying on the old flags — and every
+ * PlanConfig built directly from getPlanConfig() without going through
+ * server.ts's live-restrictions attachment (unit tests, scripts, any future
+ * call site that forgets to attach `.restrictions`) — would otherwise
+ * silently lose its restriction behaviour the moment engine.ts stopped
+ * reading config.overrides. The fallback keeps behaviour byte-identical to
+ * before this refactor in either case: once a plan_restrictions row exists
+ * for a plan+category+mode, it takes over (config.overrides is otherwise
+ * unread from that point on); until then, the legacy flag still works
+ * exactly as it always did. Safe to delete this fallback (and config.
+ * overrides itself) only once every environment's migration has actually
+ * been run and confirmed — see task tracking for "remove hardcoded
+ * restriction blocks" as the explicit follow-up. */
+function diabetesRequiresInsulinQualifier(config: PlanConfig): boolean {
+  return hasActiveRestriction(config.restrictions, "diabetes", "require_keywords") || !!config.overrides?.requiresInsulinForDiabetes;
+}
+function diabetesExcludesPrediabetes(config: PlanConfig): boolean {
+  return hasActiveRestriction(config.restrictions, "diabetes", "exclude_keywords") || !!config.overrides?.excludePrediabetes;
+}
+function benignGrowthBypassed(config: PlanConfig): boolean {
+  return hasActiveRestriction(config.restrictions, "benign_growth", "block_category") || !!config.overrides?.bypassBenignTumors;
 }
 
 // Snapshot of TOP_PED_DICTIONARY's compiled values, captured at module load
@@ -360,18 +457,45 @@ export function applyPostGuards(output: MatchOutput, ped: string, planName: stri
   const matchedQ = normalizeText(output.matched_question || "");
   const fallbackQ = config.anyOther;
 
-  // Care Supreme Diabetes Type 1 Restriction Post-guard
-  if (config.overrides && config.overrides.requiresInsulinForDiabetes) {
-    const isGestationalOrType2 = /\b(gestational|gdm|pregnancy[- ]diabetes|pregnancy induced|maternal|type 2|type-2|typeii|type ii|t2dm|t2d)\b/i.test(pedLower);
-    const hasInsulinOrType1 = /\b(type\s*1|type-1|typei|type i|t1dm|t1d|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(pedLower);
-    
-    if (isGestationalOrType2 && !hasInsulinOrType1) {
-      const diabetesQuestion = questionForCategory(config, "diabetes");
-      if (diabetesQuestion && normalizeText(output.matched_question) === normalizeText(diabetesQuestion)) {
+  // Diabetes Restriction Post-guard — defense-in-depth for outputs that
+  // reached a diabetes-question match without passing through
+  // classifyDeterministic's own diabetes-category restriction checks (e.g.
+  // an AI Memory-approved answer, or a dictionary-routed match that never
+  // hit the regex-gated shields). See isCategoryRestrictedForPed's doc
+  // comment for the DB-driven, keyword-based (no AI) mechanism used once a
+  // plan_restrictions row actually exists for this plan's diabetes
+  // category. Until then (today, pre-migration, for every plan), this
+  // deliberately falls back to the EXACT original pre-migration condition
+  // below — narrowly scoped to gestational/Type-2 wording specifically,
+  // NOT "any diabetes match lacking a severe keyword" (that broader check
+  // was tried and reverted: it also caught legitimate diabetes
+  // COMPLICATIONS like "diabetic retinopathy"/"diabetic foot", which
+  // classifyDeterministic's own dictionary-routed path always correctly
+  // resolved to the diabetes question even on Care Supreme, since a
+  // complication is not itself the "non-severe lineage" this post-guard
+  // exists to catch).
+  {
+    const diabetesQuestion = questionForCategory(config, "diabetes");
+    if (diabetesQuestion && normalizeText(output.matched_question) === normalizeText(diabetesQuestion)) {
+      const restriction = isCategoryRestrictedForPed("diabetes", pedLower, config.restrictions);
+      if (restriction) {
         output.match_type = "FALLBACK";
         output.matched_question = fallbackQ;
-        output.explanation = `*${ped}* is a non-severe diabetes lineage (Gestational or Type-2 Diabetes without insulin requirement).\n\nBecause this plan ("${planName}") strictly restricts its primary diabetes question to confirmed Type 1, insulin-dependent, or severe diabetes complications, this condition is routed under the general section: "${config.anyOther}".`;
+        output.explanation = restriction.explanation;
         return output;
+      }
+      // Legacy fallback — byte-identical to this post-guard's pre-migration
+      // logic — only reached when no plan_restrictions row exists for this
+      // plan's diabetes category yet.
+      if (config.overrides?.requiresInsulinForDiabetes) {
+        const isGestationalOrType2 = /\b(gestational|gdm|pregnancy[- ]diabetes|pregnancy induced|maternal|type 2|type-2|typeii|type ii|t2dm|t2d)\b/i.test(pedLower);
+        const hasInsulinOrType1 = /\b(type\s*1|type-1|typei|type i|t1dm|t1d|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(pedLower);
+        if (isGestationalOrType2 && !hasInsulinOrType1) {
+          output.match_type = "FALLBACK";
+          output.matched_question = fallbackQ;
+          output.explanation = `*${ped}* is a non-severe diabetes lineage (Gestational or Type-2 Diabetes without insulin requirement).\n\nBecause this plan ("${planName}") strictly restricts its primary diabetes question to confirmed Type 1, insulin-dependent, or severe diabetes complications, this condition is routed under the general section: "${config.anyOther}".`;
+          return output;
+        }
       }
     }
   }
@@ -847,7 +971,7 @@ export function classifyDeterministic(
   }
 
   // G. GESTATIONAL & TYPE 2 DIABETES INTERCEPT COUPLING
-  if (config.overrides && config.overrides.requiresInsulinForDiabetes) {
+  if (diabetesRequiresInsulinQualifier(config)) {
     const isGestationalOrType2 = /\b(gestational|gdm|pregnancy[- ]diabetes|pregnancy induced|maternal|type 2|type-2|typeii|type ii|t2dm|t2d)\b/i.test(text);
     const hasInsulinOrType1 = /\b(type\s*1|type-1|typei|type i|t1dm|t1d|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(text);
     // "gestational hypertension" / "pregnancy induced hypertension" are named
@@ -869,7 +993,7 @@ export function classifyDeterministic(
 
   // H. PREDIABETES PLAN-AWARE INTERCEPT
   if (/\b(pre[- ]?diabet\w*|borderline diabetes|impaired fasting glucose|impaired glucose tolerance)\b/i.test(text)) {
-    if (config.overrides && (config.overrides.excludePrediabetes || config.overrides.requiresInsulinForDiabetes)) {
+    if (diabetesExcludesPrediabetes(config) || diabetesRequiresInsulinQualifier(config)) {
       return makeOutput(pedText, "FALLBACK", config.anyOther,
         `*${pedText} is an elevated blood sugar finding.*\n\n` +
         `*However, this plan's diabetes question applies only to confirmed diagnoses or specified severe conditions:* ` +
@@ -1097,7 +1221,7 @@ export function classifyDeterministic(
       );
     }
     if (categoryKey === "benign_growth") {
-      if (config.overrides && config.overrides.bypassBenignTumors) {
+      if (benignGrowthBypassed(config)) {
         return makeOutput(pedText, "FALLBACK", config.anyOther, `*${pedText} is a benign condition.* This plan's primary question strictly targets malignant cancers. Benign growths map to the 'Others' section.`);
       }
       const neoplasmQ = questionForCategory(config, "neoplasm");
@@ -1120,7 +1244,7 @@ export function classifyDeterministic(
       // AFTER the Plan Decision Engine's own outcome, since it isn't about
       // whether a mapping exists, but whether THIS specific condition
       // qualifies for the mapping that does.
-      if (categoryKey === "diabetes" && config.overrides && config.overrides.requiresInsulinForDiabetes) {
+      if (categoryKey === "diabetes" && diabetesRequiresInsulinQualifier(config)) {
         if (!/\b(type\s*1|type1|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(pedText)) {
           return makeOutput(pedText, "FALLBACK", config.anyOther,
             `${pedText} does not meet the specific Type 1/Insulin-dependent qualifier for this plan's primary question.`);
@@ -1196,7 +1320,7 @@ export function classifyDeterministic(
 
   // 5a. PREDIABETES — PLAN-AWARE ROUTING
   if (/\b(pre[- ]?diabet\w*|borderline diabetes|impaired fasting glucose|impaired glucose tolerance)\b/i.test(text)) {
-    if (config.overrides && (config.overrides.excludePrediabetes || config.overrides.requiresInsulinForDiabetes)) {
+    if (diabetesExcludesPrediabetes(config) || diabetesRequiresInsulinQualifier(config)) {
       return makeOutput(pedText, "FALLBACK", config.anyOther,
         `*${pedText} is an elevated blood sugar finding.*\n\n` +
         `*However, this plan's diabetes question applies only to confirmed diagnoses or specified severe conditions:* ` +
@@ -1226,7 +1350,7 @@ export function classifyDeterministic(
     const diabetesDescription = diabetesComplicationHit
       ? `${pedText} is ${diabetesComplicationHit[1]} complication caused by diabetes — not an independent ${diabetesComplicationHit[1].replace(/^an?\s+/, "")} condition`
       : `${pedText} is a diabetes or high blood sugar condition`;
-    if (config.overrides && config.overrides.requiresInsulinForDiabetes) {
+    if (diabetesRequiresInsulinQualifier(config)) {
       if (/\b(type\s*1|type1|insulin|blindness|blind|foot ulcer|chronic foot ulcer)\b/i.test(text)) {
         q = questionForCategory(config, "diabetes");
         if (q) return makeOutput(pedText, "P1", q, `${diabetesDescription} and meets the high-severity diabetes qualifiers for this plan.`);
@@ -1551,7 +1675,7 @@ export function classifyDeterministic(
   // 22. GENERIC SHIELDS
   // 22A. GENERIC BENIGN GROWTHS
   if (/\b(tumou?r|neoplasm|polyp|cyst|lump|growth|lipoma|adenoma|benign|papilloma)\b/i.test(text)) {
-    if (config.overrides && config.overrides.bypassBenignTumors) {
+    if (benignGrowthBypassed(config)) {
       return makeOutput(pedText, "FALLBACK", config.anyOther, `*${pedText} is a benign condition.* This plan's primary question strictly targets malignant cancers. Benign growths map to the 'Others' section.`);
     }
     q = questionForCategory(config, "neoplasm");

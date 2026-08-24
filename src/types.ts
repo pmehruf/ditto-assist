@@ -26,13 +26,30 @@ export interface PlanOverrides {
   bypassBenignTumors?: boolean;
 }
 
+/** One admin-authored Plan-Specific Restriction (Plan Management, 2026-08) —
+ * the deterministic, DB-driven replacement for PlanOverrides above. See
+ * schema.ts's `plan_restrictions` doc comment for the full design and
+ * engine.ts's isCategoryRestrictedForPed for how these are evaluated. */
+export interface PlanRestriction {
+  categoryKey: string;
+  mode: "require_keywords" | "exclude_keywords" | "block_category";
+  keywords: string[];
+  explanation: string;
+  isActive: boolean;
+}
+
 export interface PlanConfig {
   questions: string[];
   anyOther: string;
   hasUmbrella: boolean;
   umbrellaQuestions: string[];
   categoryMap: Record<string, string | number>;
+  /** @deprecated superseded by `restrictions` below (Plan-Specific
+   * Restrictions, 2026-08) — kept only on the hardcoded getPlanConfig()
+   * bootstrap seed below for plans never customized in the DB; engine.ts no
+   * longer reads it. See scripts/migratePlanRestrictions.ts. */
   overrides?: PlanOverrides;
+  restrictions?: PlanRestriction[];
 }
 
 export const TOP_PED_DICTIONARY: Record<string, string> = {
