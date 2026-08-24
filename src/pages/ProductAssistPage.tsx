@@ -11,6 +11,24 @@ import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkd
 import { realPlanNames } from "../utils/kbPlanNames";
 import { HEALTH_FAQ_LIBRARY_URL } from "../constants/productAssistLibrary";
 
+/** Mirrors QuotaStatus in src/server/knowledgeBase/productAssistQuota.ts —
+ * the caller's own live credit status, returned by GET /api/product-assist/
+ * quota and echoed back in every /api/product-assist/ask response. */
+interface ProductAssistQuotaStatus {
+  bucket: "developer_unlimited" | "health_advisor" | "trial";
+  unlimited: boolean;
+  dailyLimit: number | null;
+  monthlyLimit: number | null;
+  dailyUsed: number;
+  monthlyUsed: number;
+  dailyRemaining: number | null;
+  monthlyRemaining: number | null;
+  extraCredits: number;
+  warningThresholdPercent: number;
+  monthlyUtilizationPercent: number | null;
+  state: "unlimited" | "ok" | "warning" | "at_limit";
+}
+
 interface ProductAssistPageProps {
   theme: "light" | "dark";
 }
@@ -258,6 +276,63 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
   );
 }
 
+/**
+ * The compact "utilization bar" required by the Credit & Usage Management
+ * spec (2026-08) — monthly-primary, daily as smaller supporting text,
+ * warning/at-limit/unlimited states, deliberately plain (no progress-ring
+ * gamification, no color gradients beyond the app's own status palette).
+ * Renders nothing while quota hasn't loaded yet, so it never shifts layout
+ * on first paint.
+ */
+function ProductAssistUtilizationBar({ quota, dark }: { quota: ProductAssistQuotaStatus | null; dark: boolean }) {
+  if (!quota) return null;
+
+  if (quota.unlimited) {
+    return (
+      <div className={`text-[10.5px] font-bold shrink-0 ${dark ? "text-stone-400" : "text-stone-500"}`}>Unlimited Product Assist access</div>
+    );
+  }
+
+  const monthlyLimit = quota.monthlyLimit;
+  const monthlyUsed = Math.round(quota.monthlyUsed * 100) / 100;
+  const pct = quota.monthlyUtilizationPercent === null ? 0 : Math.min(100, Math.max(0, quota.monthlyUtilizationPercent));
+
+  const stateColor =
+    quota.state === "at_limit"
+      ? dark
+        ? "text-rose-300"
+        : "text-rose-600"
+      : quota.state === "warning"
+      ? dark
+        ? "text-amber-300"
+        : "text-amber-600"
+      : dark
+      ? "text-stone-300"
+      : "text-stone-600";
+  const barColor = quota.state === "at_limit" ? "#f43f5e" : quota.state === "warning" ? "#f59e0b" : dark ? "#00D3F3" : "#4673a9";
+
+  return (
+    <div className="flex flex-col items-start sm:items-end gap-1 shrink-0 min-w-[160px]">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-[10.5px] font-bold ${stateColor}`}>
+          {monthlyUsed}/{monthlyLimit ?? "—"} monthly credits
+        </span>
+        {quota.dailyLimit !== null && (
+          <span className={`text-[10px] font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
+            (Today: {Math.round(quota.dailyUsed * 100) / 100}/{quota.dailyLimit})
+          </span>
+        )}
+      </div>
+      <div className={`w-40 h-1.5 rounded-full overflow-hidden ${dark ? "bg-white/10" : "bg-stone-200"}`}>
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: barColor }} />
+      </div>
+      {quota.state === "at_limit" && (
+        <span className={`text-[10px] font-bold ${dark ? "text-rose-300" : "text-rose-600"}`}>Limit reached — contact a Developer for more credits.</span>
+      )}
+    </div>
+  );
+}
+
 /** LEGACY ONLY — productAssist.ts now returns "answer"/"share" as separate
  * structured JSON fields (see LocalChatMessage's `content`/`share`), so a
  * freshly-received message no longer needs this parsed out of one combined
@@ -343,6 +418,12 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
+  // Credit & Usage Management (2026-08) — the caller's own live quota
+  // status, fetched once on load and refreshed from the /ask response's
+  // `quota` field after every question (see productAssistQuota.ts on the
+  // server). Never blocks rendering the chat itself if this fetch fails.
+  const [quota, setQuota] = useState<ProductAssistQuotaStatus | null>(null);
+
   const threadEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -391,6 +472,16 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
         if (libRes.ok) {
           setLibrary({ playbook: libBody.playbook ?? { sourceUrl: null }, insurers: libBody.insurers ?? [] });
         }
+      } catch {
+        // Non-fatal — see comment above.
+      }
+
+      // Same non-fatal pattern for the utilization bar's initial state —
+      // shown before the advisor asks their first question.
+      try {
+        const quotaRes = await fetch("/api/product-assist/quota");
+        const quotaBody = await quotaRes.json().catch(() => ({}));
+        if (quotaRes.ok) setQuota(quotaBody.quota ?? null);
       } catch {
         // Non-fatal — see comment above.
       }
@@ -498,6 +589,11 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
         body: JSON.stringify({ categoryId, planTags, question, history }),
       });
       const body = await res.json().catch(() => ({}));
+      // Refresh the utilization bar from whatever the server computed —
+      // present on a normal answer AND on a 429 quota-exceeded response
+      // (see server.ts's /api/product-assist/ask), so a blocked question
+      // still updates the bar to reflect the true current state.
+      if (body.quota) setQuota(body.quota);
       if (!res.ok) throw new Error(body.error || `Failed to get an answer (HTTP ${res.status}).`);
 
       const assistantMsg: LocalChatMessage = {
@@ -550,14 +646,17 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
           it out of the header frees a full row of width/height for the
           workspace, and matches "New Chat" reading as the sidebar's own
           primary action rather than a page-level one. */}
-      <div className="shrink-0 pb-3 border-b border-stone-200 dark:border-stone-800">
-        <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
-          <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-          <span>Product Assist</span>
-        </h1>
-        <p className="text-xs mt-1 font-semibold text-content-muted">
-          Ask. Verify. Understand. Get answers to your product queries, backed by references you can verify.
-        </p>
+      <div className="shrink-0 pb-3 border-b border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+        <div>
+          <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
+            <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
+            <span>Product Assist</span>
+          </h1>
+          <p className="text-xs mt-1 font-semibold text-content-muted">
+            Ask. Verify. Understand. Get answers to your product queries, backed by references you can verify.
+          </p>
+        </div>
+        <ProductAssistUtilizationBar quota={quota} dark={dark} />
       </div>
 
       {loadError && (

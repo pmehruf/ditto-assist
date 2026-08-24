@@ -34,6 +34,7 @@ import {
   jsonb,
   varchar,
   date,
+  numeric,
   pgEnum,
   uniqueIndex,
   index,
@@ -1524,6 +1525,123 @@ export const productAssistLogExportConnection = pgTable("product_assist_log_expo
 
 export type ProductAssistLogExportConnectionRow = typeof productAssistLogExportConnection.$inferSelect;
 export type NewProductAssistLogExportConnectionRow = typeof productAssistLogExportConnection.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Product Assist Credit & Usage Management (2026-08). A NEW administrative
+// quota layer sitting entirely around the existing Product Assist AI call —
+// it does not read from or write to product_assist_logs above (that table
+// is explicitly temporary/disableable and written fire-and-forget, so it
+// cannot be trusted as quota's source of truth). Four tables:
+//
+//   - product_assist_quota_settings: single global settings row (default
+//     daily/monthly credit limits, the "everyone else" trial allotment,
+//     the token->credit conversion rate, warning threshold, company
+//     monthly budget, and API pricing) — every knob a Developer/Platform
+//     Admin can tune from the "AI Usage & Limits" Settings tab without a
+//     code change or redeploy.
+//   - product_assist_user_quota_overrides: sparse, one row per user who has
+//     ANY override set (custom daily/monthly limit, limits disabled
+//     entirely, or explicit unlimited access). No row = "use the computed
+//     default for this user's eligibility bucket" — see
+//     resolveQuotaBucket() in productAssistQuota.ts for how tier/tags/role
+//     decide that bucket.
+//   - product_assist_extra_credit_grants: append-only ledger of admin
+//     top-ups (and removals/reductions, recorded as a negative-amount
+//     entry rather than mutating a past row). Grants never expire — the
+//     current extra-credit balance for a user is simply SUM(amount) across
+//     their rows, and it's added on top of their MONTHLY limit only (a
+//     grant never raises the daily cap).
+//   - product_assist_usage_ledger: the actual credit-consumption record
+//     used for enforcement. Deliberately separate from product_assist_logs
+//     above — this table is written SYNCHRONOUSLY (awaited) immediately
+//     after every successful Product Assist AI call, always on regardless
+//     of PRODUCT_ASSIST_LOG_ENABLED, and exists solely to answer "how many
+//     credits has this user used today / this calendar month."
+// ─────────────────────────────────────────────────────────────────────────
+export const productAssistQuotaSettings = pgTable("product_assist_quota_settings", {
+  id: text("id").primaryKey().default("default"),
+  defaultDailyCredits: integer("default_daily_credits").notNull().default(30),
+  defaultMonthlyCredits: integer("default_monthly_credits").notNull().default(250),
+  // The small monthly-only allotment for every user NOT in the eligible
+  // Health-Advisor bucket and not a Developer — see resolveQuotaBucket().
+  trialMonthlyCredits: integer("trial_monthly_credits").notNull().default(10),
+  // 1 credit = this many actual AI tokens (input + output combined) —
+  // configurable rather than hardcoded anywhere in the enforcement code.
+  tokensPerCredit: integer("tokens_per_credit").notNull().default(1000),
+  warningThresholdPercent: integer("warning_threshold_percent").notNull().default(80),
+  monthlyBudget: numeric("monthly_budget", { precision: 12, scale: 2 }).notNull().default("2000"),
+  budgetWarningThresholdPercent: integer("budget_warning_threshold_percent").notNull().default(80),
+  currency: text("currency").notNull().default("INR"),
+  // Cost-estimation config only (never affects enforcement, which is
+  // credit-based) — mirrors productAssist.ts's GENERATION_MODEL constant so
+  // pricing can be corrected/updated without touching code.
+  modelName: text("model_name").notNull().default("gemini-2.5-flash"),
+  inputPricePerMillionTokens: numeric("input_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
+  outputPricePerMillionTokens: numeric("output_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ProductAssistQuotaSettingsRow = typeof productAssistQuotaSettings.$inferSelect;
+export type NewProductAssistQuotaSettingsRow = typeof productAssistQuotaSettings.$inferInsert;
+
+export const productAssistUserQuotaOverrides = pgTable("product_assist_user_quota_overrides", {
+  userEmail: varchar("user_email", { length: 320 })
+    .primaryKey()
+    .references(() => users.email, { onDelete: "cascade" }),
+  // Null = fall through to this user's computed bucket default.
+  customDailyCredits: integer("custom_daily_credits"),
+  customMonthlyCredits: integer("custom_monthly_credits"),
+  // false = quota enforcement is fully switched off for this user
+  // (distinct from unlimitedAccess below so the admin UI/audit trail can
+  // record which specific toggle was used — both produce the same
+  // practical effect of never blocking this user).
+  limitsEnabled: boolean("limits_enabled").notNull().default(true),
+  unlimitedAccess: boolean("unlimited_access").notNull().default(false),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ProductAssistUserQuotaOverrideRow = typeof productAssistUserQuotaOverrides.$inferSelect;
+export type NewProductAssistUserQuotaOverrideRow = typeof productAssistUserQuotaOverrides.$inferInsert;
+
+export const productAssistExtraCreditGrants = pgTable(
+  "product_assist_extra_credit_grants",
+  {
+    id: serial("id").primaryKey(),
+    userEmail: varchar("user_email", { length: 320 })
+      .notNull()
+      .references(() => users.email, { onDelete: "cascade" }),
+    // Positive = grant, negative = an admin removal/reduction entry. Never
+    // mutate a past row — a removal is always a new, negative-amount row,
+    // so the full grant/removal history stays intact for audit.
+    amount: integer("amount").notNull(),
+    reason: text("reason"),
+    grantedBy: text("granted_by").notNull(),
+    grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("product_assist_extra_credit_grants_user_email_idx").on(table.userEmail)]
+);
+
+export type ProductAssistExtraCreditGrantRow = typeof productAssistExtraCreditGrants.$inferSelect;
+export type NewProductAssistExtraCreditGrantRow = typeof productAssistExtraCreditGrants.$inferInsert;
+
+export const productAssistUsageLedger = pgTable(
+  "product_assist_usage_ledger",
+  {
+    id: serial("id").primaryKey(),
+    userEmail: varchar("user_email", { length: 320 }).notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    totalTokens: integer("total_tokens").notNull(),
+    credits: numeric("credits", { precision: 10, scale: 3 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("product_assist_usage_ledger_user_created_idx").on(table.userEmail, table.createdAt)]
+);
+
+export type ProductAssistUsageLedgerRow = typeof productAssistUsageLedger.$inferSelect;
+export type NewProductAssistUsageLedgerRow = typeof productAssistUsageLedger.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // special_instructions — Product Assist's "Special Instructions" layer

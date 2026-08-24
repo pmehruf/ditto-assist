@@ -48,6 +48,10 @@ import { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
 import { FaqRecordsRepository } from "./faqRecordsRepository.js";
 import { KbAcronymsRepository } from "./kbAcronymsRepository.js";
 import { PlanRestrictionsRepository } from "./planRestrictionsRepository.js";
+import { ProductAssistQuotaSettingsRepository } from "./productAssistQuotaSettingsRepository.js";
+import { ProductAssistUserQuotaOverridesRepository } from "./productAssistUserQuotaOverridesRepository.js";
+import { ProductAssistExtraCreditGrantsRepository } from "./productAssistExtraCreditGrantsRepository.js";
+import { ProductAssistUsageLedgerRepository } from "./productAssistUsageLedgerRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -181,6 +185,22 @@ export type { CreateKbAcronymEntry, UpdateKbAcronymEntry, KbAcronymFilter } from
 export { PlanRestrictionsRepository } from "./planRestrictionsRepository.js";
 export type { CreatePlanRestrictionEntry, UpdatePlanRestrictionEntry } from "./planRestrictionsRepository.js";
 
+export { ProductAssistQuotaSettingsRepository } from "./productAssistQuotaSettingsRepository.js";
+export type { UpdateQuotaSettingsEntry } from "./productAssistQuotaSettingsRepository.js";
+
+export { ProductAssistUserQuotaOverridesRepository } from "./productAssistUserQuotaOverridesRepository.js";
+export type { UpsertUserQuotaOverrideEntry } from "./productAssistUserQuotaOverridesRepository.js";
+
+export { ProductAssistExtraCreditGrantsRepository } from "./productAssistExtraCreditGrantsRepository.js";
+export type { CreateExtraCreditGrantEntry } from "./productAssistExtraCreditGrantsRepository.js";
+
+export { ProductAssistUsageLedgerRepository } from "./productAssistUsageLedgerRepository.js";
+export type {
+  RecordUsageEntry,
+  UsageLedgerListFilter,
+  CompanyUsageTotals,
+} from "./productAssistUsageLedgerRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -232,6 +252,10 @@ export interface Repositories {
   faqRecords: FaqRecordsRepository;
   kbAcronyms: KbAcronymsRepository;
   planRestrictions: PlanRestrictionsRepository;
+  productAssistQuotaSettings: ProductAssistQuotaSettingsRepository;
+  productAssistUserQuotaOverrides: ProductAssistUserQuotaOverridesRepository;
+  productAssistExtraCreditGrants: ProductAssistExtraCreditGrantsRepository;
+  productAssistUsageLedger: ProductAssistUsageLedgerRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -280,5 +304,9 @@ export function createRepositories(db: AnyDb): Repositories {
     faqRecords: new FaqRecordsRepository(db),
     kbAcronyms: new KbAcronymsRepository(db),
     planRestrictions: new PlanRestrictionsRepository(db),
+    productAssistQuotaSettings: new ProductAssistQuotaSettingsRepository(db),
+    productAssistUserQuotaOverrides: new ProductAssistUserQuotaOverridesRepository(db),
+    productAssistExtraCreditGrants: new ProductAssistExtraCreditGrantsRepository(db),
+    productAssistUsageLedger: new ProductAssistUsageLedgerRepository(db),
   };
 }

@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink, ExternalLink } from "lucide-react";
 
 interface KnowledgeBaseFaqConnectionProps {
   theme: "light" | "dark";
@@ -15,6 +15,7 @@ interface FaqConnectionStatus {
   connected: boolean;
   connectedEmail: string | null;
   connectedAt: string | null;
+  sheetUrl?: string | null;
   resource: {
     status: "processing" | "active" | "error" | "archived";
     lastFetchedAt: string | null;
@@ -162,27 +163,42 @@ export function KnowledgeBaseFaqConnection({ theme, effectiveTier }: KnowledgeBa
             )}
           </div>
 
-          {canManage &&
-            (status?.connected ? (
-              <button
-                type="button"
-                onClick={disconnect}
-                disabled={disconnecting}
-                className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                  dark ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"
+          <div className="flex items-center gap-2 shrink-0">
+            {status?.sheetUrl && (
+              <a
+                href={status.sheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer ${
+                  dark ? "border-white/[0.12] text-stone-200 hover:bg-white/[0.06]" : "border-stone-300 text-stone-700 hover:bg-stone-50"
                 }`}
               >
-                {disconnecting ? "Disconnecting…" : "Disconnect"}
-              </button>
-            ) : (
-              <a
-                href="/api/kb/faq/connect-google"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
-              >
-                <Link2 className="w-3 h-3" />
-                Connect Google Sheets
+                <ExternalLink className="w-3 h-3" />
+                Open Sheet
               </a>
-            ))}
+            )}
+            {canManage &&
+              (status?.connected ? (
+                <button
+                  type="button"
+                  onClick={disconnect}
+                  disabled={disconnecting}
+                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                    dark ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"
+                  }`}
+                >
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
+                </button>
+              ) : (
+                <a
+                  href="/api/kb/faq/connect-google"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
+                >
+                  <Link2 className="w-3 h-3" />
+                  Connect Google Sheets
+                </a>
+              ))}
+          </div>
         </div>
 
         {status?.connected && (

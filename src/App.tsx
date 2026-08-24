@@ -150,6 +150,9 @@ const OwnerControlsPage = lazy(() =>
 const ConnectionsPage = lazy(() =>
   import("./pages/ConnectionsPage").then((m) => ({ default: m.ConnectionsPage }))
 );
+const ProductAssistQuotaPage = lazy(() =>
+  import("./pages/ProductAssistQuotaPage").then((m) => ({ default: m.ProductAssistQuotaPage }))
+);
 const AnnouncementLogPage = lazy(() =>
   import("./pages/AnnouncementLogPage").then((m) => ({ default: m.AnnouncementLogPage }))
 );
@@ -258,7 +261,7 @@ const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -3147,6 +3150,7 @@ export default function App() {
                 ) : undefined,
             }),
             navPage("connections", "Connections", Link2, "Viewer"),
+            navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
             navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
               iconColorClass: isActive => (isActive ? "#E08D4B" : RAIL_ICON_REST),
             }),
@@ -4679,6 +4683,26 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Connections">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <ConnectionsPage theme={theme} effectiveTier={effectiveTier} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* AI USAGE & LIMITS — Product Assist Credit & Usage Management
+              (2026-08). Developer-only, same as Feature Visibility/
+              Connections above (see DEVELOPER_ONLY_FEATURES). */}
+          {activeTab === "product_assist_quota" && (
+            <motion.div
+              key="product_assist_quota"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6 text-left"
+            >
+              <ErrorBoundary theme={theme} label="AI Usage & Limits">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <ProductAssistQuotaPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

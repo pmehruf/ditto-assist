@@ -14,7 +14,7 @@ import { FeaturePermission } from "../types/permissions";
  * Center's Permissions tab (FeatureAccessManagement.tsx) can render these
  * three rows as visibly locked instead of silently omitting them.
  */
-export const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections", "smoke_test"]);
+export const DEVELOPER_ONLY_FEATURES = new Set(["owner_controls", "connections", "smoke_test", "product_assist_quota"]);
 
 export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
   {
@@ -91,7 +91,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // Interactive (asks questions, creates conversation history), so
     // Editor like lookup/resources above rather than the Viewer-only
     // read-only tools — every tier including General can use it.
-    id: "query_assist",
+    id: "product_assist",
     name: "Product Assist",
     description: "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements",
     defaultTier: "General",

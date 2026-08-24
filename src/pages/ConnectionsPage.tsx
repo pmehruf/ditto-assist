@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink, Download } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink, Download, ExternalLink } from "lucide-react";
 import { KnowledgeBasePlaybook } from "../components/KnowledgeBasePlaybook";
 import { KnowledgeBaseFaqConnection } from "../components/KnowledgeBaseFaqConnection";
 
@@ -30,7 +30,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
 
   // QA Dashboard "Connect Google Sheets" status (see server.ts
   // /api/qa-dashboard/* and src/server/qaDashboard/sheetsClient.ts).
-  const [qaConnection, setQaConnection] = useState<{ connected: boolean; connectedEmail?: string } | null>(null);
+  const [qaConnection, setQaConnection] = useState<{ connected: boolean; connectedEmail?: string; sheetUrl?: string | null } | null>(null);
   const [qaConnectionLoading, setQaConnectionLoading] = useState(false);
   const [qaConnectionError, setQaConnectionError] = useState<string | null>(null);
   const [qaDisconnecting, setQaDisconnecting] = useState(false);
@@ -72,7 +72,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
   // see product_assist_logs's schema comment in schema.ts). Same shape as the
   // QA Dashboard connection above, plus pendingCount (rows waiting to be
   // exported) and a manual "Export & Clear Now" action.
-  const [qalConnection, setQalConnection] = useState<{ connected: boolean; connectedEmail?: string; pendingCount: number } | null>(null);
+  const [qalConnection, setQalConnection] = useState<{ connected: boolean; connectedEmail?: string; pendingCount: number; sheetUrl?: string | null } | null>(null);
   const [qalConnectionLoading, setQalConnectionLoading] = useState(false);
   const [qalConnectionError, setQalConnectionError] = useState<string | null>(null);
   const [qalDisconnecting, setQalDisconnecting] = useState(false);
@@ -208,26 +208,41 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
             )}
           </div>
 
-          {qaConnection?.connected ? (
-            <button
-              type="button"
-              onClick={disconnectQaSheets}
-              disabled={qaDisconnecting}
-              className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                dark ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"
-              }`}
-            >
-              {qaDisconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
-          ) : (
-            <a
-              href="/api/qa-dashboard/connect-google"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
-            >
-              <Link2 className="w-3 h-3" />
-              Connect Google Sheets
-            </a>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {qaConnection?.sheetUrl && (
+              <a
+                href={qaConnection.sheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer ${
+                  dark ? "border-white/[0.12] text-stone-200 hover:bg-white/[0.06]" : "border-stone-300 text-stone-700 hover:bg-stone-50"
+                }`}
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open Sheet
+              </a>
+            )}
+            {qaConnection?.connected ? (
+              <button
+                type="button"
+                onClick={disconnectQaSheets}
+                disabled={qaDisconnecting}
+                className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  dark ? "border-rose-500/40 text-rose-300 hover:bg-rose-500/10" : "border-rose-300 text-rose-600 hover:bg-rose-50"
+                }`}
+              >
+                {qaDisconnecting ? "Disconnecting…" : "Disconnect"}
+              </button>
+            ) : (
+              <a
+                href="/api/qa-dashboard/connect-google"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
+              >
+                <Link2 className="w-3 h-3" />
+                Connect Google Sheets
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
@@ -310,6 +325,19 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
           </div>
 
           <div className="flex items-center gap-2">
+            {qalConnection?.sheetUrl && (
+              <a
+                href={qalConnection.sheetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer ${
+                  dark ? "border-white/[0.12] text-stone-200 hover:bg-white/[0.06]" : "border-stone-300 text-stone-700 hover:bg-stone-50"
+                }`}
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open Sheet
+              </a>
+            )}
             {qalConnection?.connected && (
               <button
                 type="button"

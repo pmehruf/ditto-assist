@@ -60,7 +60,7 @@ import {
 } from "./src/server/qaDashboard/qaDashboardService.js";
 import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDataEngine.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
-import { invalidateQaSheetsAuthCache } from "./src/server/qaDashboard/sheetsClient.js";
+import { invalidateQaSheetsAuthCache, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
@@ -76,15 +76,24 @@ const SPECIAL_INSTRUCTION_TYPES: string[] = [...specialInstructionTypeEnum.enumV
 const FAQ_CATEGORIES: string[] = [...faqCategoryEnum.enumValues];
 import { answerQuery } from "./src/server/knowledgeBase/productAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
-import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
+import { invalidatePlaybookSheetsAuthCache, PLAYBOOK_SPREADSHEET_ID } from "./src/server/knowledgeBase/playbookSheetsClient.js";
 import { encryptFaqRefreshToken } from "./src/server/knowledgeBase/faqTokenCrypto.js";
-import { invalidateFaqSheetsAuthCache } from "./src/server/knowledgeBase/faqSheetsClient.js";
+import { invalidateFaqSheetsAuthCache, FAQ_SPREADSHEET_ID } from "./src/server/knowledgeBase/faqSheetsClient.js";
 import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
 import { syncFaq, maybeRefreshFaqIfStale } from "./src/server/knowledgeBase/faqIngest.js";
 import { encryptProductAssistLogRefreshToken } from "./src/server/knowledgeBase/productAssistLogTokenCrypto.js";
 import { invalidateProductAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/productAssistLogSheetsClient.js";
 import { runProductAssistLogExport } from "./src/server/knowledgeBase/productAssistLogExport.js";
 import { embedDocumentChunks } from "./src/server/knowledgeBase/embeddings.js";
+import {
+  checkQuota,
+  getQuotaStatus,
+  recordUsage,
+  listAllUserQuotaStatuses,
+  estimateCost,
+  startOfDayIST,
+  startOfMonthIST,
+} from "./src/server/knowledgeBase/productAssistQuota.js";
 
 dotenv.config();
 
@@ -4868,7 +4877,8 @@ app.get("/api/qa-dashboard/connection-status", requireAuth, async (req, res) => 
   try {
     const { qaDashboardConnection } = createRepositories(getDb());
     const row = await qaDashboardConnection.get();
-    return res.json(row ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt } : { connected: false });
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${QA_MASTER_SPREADSHEET_ID}/edit`;
+    return res.json(row ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, sheetUrl } : { connected: false, sheetUrl });
   } catch (err: any) {
     console.error("QA Dashboard: failed to load connection status:", err);
     return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
@@ -4938,10 +4948,15 @@ app.get("/api/product-assist-logs/connection-status", requireAuth, async (req, r
   try {
     const { productAssistLogExportConnection, productAssistLogs } = createRepositories(getDb());
     const [row, pendingCount] = await Promise.all([productAssistLogExportConnection.get(), productAssistLogs.count()]);
+    // User-provided destination sheet (not a fixed workbook this app owns —
+    // see productAssistLogSheetsClient.ts's doc comment), so there's no URL
+    // to offer until the env var is actually set.
+    const logSheetId = process.env.PRODUCT_ASSIST_LOG_SHEET_ID;
+    const sheetUrl = logSheetId ? `https://docs.google.com/spreadsheets/d/${logSheetId}/edit` : null;
     return res.json(
       row
-        ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, pendingCount }
-        : { connected: false, pendingCount }
+        ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, pendingCount, sheetUrl }
+        : { connected: false, pendingCount, sheetUrl }
     );
   } catch (err: any) {
     console.error("Product Assist Log Export: failed to load connection status:", err);
@@ -5159,6 +5174,7 @@ app.get("/api/kb/playbook/connection-status", requireAuth, async (req, res) => {
       connected: !!row,
       connectedEmail: row?.connectedEmail ?? null,
       connectedAt: row?.connectedAt ?? null,
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${PLAYBOOK_SPREADSHEET_ID}/edit`,
       resource: resource
         ? {
             status: resource.status,
@@ -5240,6 +5256,7 @@ app.get("/api/kb/faq/connection-status", requireAuth, async (req, res) => {
       connected: !!row,
       connectedEmail: row?.connectedEmail ?? null,
       connectedAt: row?.connectedAt ?? null,
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${FAQ_SPREADSHEET_ID}/edit`,
       resource: resource
         ? {
             status: resource.status,
@@ -6239,6 +6256,22 @@ app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (
     }
 
     const repos = createRepositories(getDb());
+
+    // Credit & Usage Management (2026-08) — checked BEFORE the AI call, per
+    // productAssistQuota.ts's doc comment. Blocks only when a real cap is
+    // already exhausted; never touches retrieval/prompt/answer logic below.
+    const callerEmail = req.user!.email;
+    const { allowed, status: quotaStatus } = await checkQuota(repos, callerEmail);
+    if (!allowed) {
+      return res.status(429).json({
+        error:
+          quotaStatus.dailyRemaining !== null && quotaStatus.dailyRemaining <= 0
+            ? "Daily Product Assist credit limit reached. It resets at midnight (IST)."
+            : "Monthly Product Assist credit limit reached. Contact a Developer/Platform Admin for extra credits.",
+        quota: quotaStatus,
+      });
+    }
+
     // Fire-and-forget: refreshes the Product Playbook in the background if
     // the last sync is stale (see maybeRefreshPlaybookIfStale) — never
     // awaited, so a slow or failed refresh can never delay this answer.
@@ -6248,6 +6281,17 @@ app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (
     void maybeRefreshFaqIfStale(repos);
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
     const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
+
+    // Record actual consumption SYNCHRONOUSLY (awaited, unlike the
+    // temporary product_assist_logs write below) — this is the quota
+    // system's real source of truth. Null tokens means no AI call actually
+    // happened (e.g. a deterministic Special-Instruction-conflict answer),
+    // so there's nothing to charge for.
+    let quotaAfter = quotaStatus;
+    if (result.meta.inputTokens !== null && result.meta.outputTokens !== null) {
+      await recordUsage(repos, callerEmail, result.meta.inputTokens, result.meta.outputTokens);
+      quotaAfter = await getQuotaStatus(repos, callerEmail);
+    }
 
     // TEMPORARY (see product_assist_logs's schema comment): fire-and-forget,
     // never awaited — a logging failure must never affect the advisor's
@@ -6286,10 +6330,389 @@ app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (
       })();
     }
 
-    return res.json({ answer: result.answer, share: result.share, sources: result.sources, hadNoMatches: result.hadNoMatches });
+    return res.json({
+      answer: result.answer,
+      share: result.share,
+      sources: result.sources,
+      hadNoMatches: result.hadNoMatches,
+      quota: quotaAfter,
+    });
   } catch (err: any) {
     console.error("Product Assist: failed to answer question:", err);
     return res.status(500).json({ error: `Failed to get an answer: ${err.message}` });
+  }
+});
+
+// GET /api/product-assist/quota — the caller's own current credit status,
+// used by ProductAssistPage.tsx to render the utilization bar on load
+// (before the first question is asked) and to refresh it independent of
+// asking a question (e.g. after an admin grants extra credits).
+app.get("/api/product-assist/quota", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    const status = await getQuotaStatus(repos, req.user!.email);
+    return res.json({ quota: status });
+  } catch (err: any) {
+    console.error("Product Assist: failed to load quota status:", err);
+    return res.status(500).json({ error: `Failed to load quota status: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Product Assist Credit & Usage Management — admin routes. Every route
+// below is restricted to Developer + Platform Admin ONLY (isDeveloperPower)
+// server-side, deliberately narrower than the typical Admin-Zone gate
+// (isAdminPower) per the user's explicit access-control decision — a plain
+// Admin cannot view or change anyone's quota. The "AI Usage & Limits" page
+// additionally gates itself client-side via DEVELOPER_ONLY_FEATURES.
+// ─────────────────────────────────────────────────────────────────────────
+
+async function requireQuotaAdmin(req: any, res: any, usersRepo: UsersRepository): Promise<string | null> {
+  const callerTier = await getCallerTier(req, usersRepo);
+  if (!isDeveloperPower(callerTier)) {
+    res.status(403).json({ error: "Product Assist usage & limits are restricted to the Developer or Platform Admin." });
+    return null;
+  }
+  return callerTier;
+}
+
+// GET /api/product-assist/quota/settings — the global defaults/conversion/
+// budget/pricing row (Settings tab).
+app.get("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistQuotaSettings } = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, usersRepo))) return;
+    const settings = await productAssistQuotaSettings.get();
+    return res.json({ settings });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load settings:", err);
+    return res.status(500).json({ error: `Failed to load settings: ${err.message}` });
+  }
+});
+
+// PUT /api/product-assist/quota/settings — update the global defaults.
+// Every field is optional (partial update); numeric fields are validated
+// as positive numbers/integers so a typo can't silently zero out quotas.
+app.put("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistQuotaSettings, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const b = req.body ?? {};
+    const intFields = [
+      "defaultDailyCredits",
+      "defaultMonthlyCredits",
+      "trialMonthlyCredits",
+      "tokensPerCredit",
+      "warningThresholdPercent",
+      "budgetWarningThresholdPercent",
+    ] as const;
+    const numFields = ["monthlyBudget", "inputPricePerMillionTokens", "outputPricePerMillionTokens"] as const;
+    const patch: Record<string, unknown> = {};
+    for (const f of intFields) {
+      if (b[f] === undefined) continue;
+      const n = Number(b[f]);
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+        return res.status(400).json({ error: `${f} must be a non-negative whole number.` });
+      }
+      patch[f] = n;
+    }
+    for (const f of numFields) {
+      if (b[f] === undefined) continue;
+      const n = Number(b[f]);
+      if (!Number.isFinite(n) || n < 0) {
+        return res.status(400).json({ error: `${f} must be a non-negative number.` });
+      }
+      patch[f] = n.toString();
+    }
+    if (b.currency !== undefined) {
+      if (typeof b.currency !== "string" || !b.currency.trim()) {
+        return res.status(400).json({ error: "currency must be a non-empty string." });
+      }
+      patch.currency = b.currency.trim();
+    }
+    if (b.modelName !== undefined) {
+      if (typeof b.modelName !== "string" || !b.modelName.trim()) {
+        return res.status(400).json({ error: "modelName must be a non-empty string." });
+      }
+      patch.modelName = b.modelName.trim();
+    }
+    if ((patch.warningThresholdPercent as number | undefined) !== undefined && (patch.warningThresholdPercent as number) > 100) {
+      return res.status(400).json({ error: "warningThresholdPercent must be between 0 and 100." });
+    }
+    if (
+      (patch.budgetWarningThresholdPercent as number | undefined) !== undefined &&
+      (patch.budgetWarningThresholdPercent as number) > 100
+    ) {
+      return res.status(400).json({ error: "budgetWarningThresholdPercent must be between 0 and 100." });
+    }
+
+    const before = await productAssistQuotaSettings.get();
+    const updated = await productAssistQuotaSettings.update(patch as any, req.user!.email);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Product Assist Quota Settings Changed",
+        planName: null,
+        description: `Updated Product Assist quota settings (${Object.keys(patch).join(", ") || "no fields"}).`,
+        snapshot: { before, after: updated },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for quota settings update:", logErr);
+    }
+
+    return res.json({ settings: updated });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to update settings:", err);
+    return res.status(500).json({ error: `Failed to update settings: ${err.message}` });
+  }
+});
+
+// GET /api/product-assist/quota/overview — company-wide totals for the
+// Overview tab (this-IST-month credits/tokens used, request count, and a
+// budget estimate from the configured pricing — visibility only, never an
+// auto-stop, per product decision).
+app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistQuotaSettings, productAssistUsageLedger } = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, usersRepo))) return;
+
+    const settings = await productAssistQuotaSettings.get();
+    const now = new Date();
+    const monthStart = startOfMonthIST(now);
+    const dayStart = startOfDayIST(now);
+    const [monthTotals, todayTotals] = await Promise.all([
+      productAssistUsageLedger.companyTotals(monthStart),
+      productAssistUsageLedger.companyTotals(dayStart),
+    ]);
+    const estimatedCostThisMonth = estimateCost(monthTotals.totalInputTokens, monthTotals.totalOutputTokens, {
+      inputPricePerMillionTokens: Number(settings.inputPricePerMillionTokens),
+      outputPricePerMillionTokens: Number(settings.outputPricePerMillionTokens),
+    });
+    const monthlyBudget = Number(settings.monthlyBudget);
+    const budgetUtilizationPercent = monthlyBudget > 0 ? Math.round((estimatedCostThisMonth / monthlyBudget) * 100) : null;
+
+    return res.json({
+      settings,
+      today: todayTotals,
+      month: monthTotals,
+      budget: {
+        currency: settings.currency,
+        monthlyBudget,
+        estimatedCostThisMonth: Math.round(estimatedCostThisMonth * 100) / 100,
+        budgetUtilizationPercent,
+        warningThresholdPercent: settings.budgetWarningThresholdPercent,
+      },
+    });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load overview:", err);
+    return res.status(500).json({ error: `Failed to load overview: ${err.message}` });
+  }
+});
+
+// GET /api/product-assist/quota/users — every user's computed quota status
+// (Users tab).
+app.get("/api/product-assist/quota/users", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, repos.users))) return;
+    const summaries = await listAllUserQuotaStatuses(repos);
+    return res.json({ users: summaries });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load user summaries:", err);
+    return res.status(500).json({ error: `Failed to load user summaries: ${err.message}` });
+  }
+});
+
+// GET /api/product-assist/quota/users/:email — one user's full status plus
+// their override row and extra-credit grant history (User detail panel).
+app.get("/api/product-assist/quota/users/:email", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, repos.users))) return;
+    const email = String(req.params.email).toLowerCase();
+    const [status, override, grants] = await Promise.all([
+      getQuotaStatus(repos, email),
+      repos.productAssistUserQuotaOverrides.get(email),
+      repos.productAssistExtraCreditGrants.listForUser(email),
+    ]);
+    return res.json({ status, override: override ?? null, grants });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load user detail:", err);
+    return res.status(500).json({ error: `Failed to load user detail: ${err.message}` });
+  }
+});
+
+// PUT /api/product-assist/quota/users/:email/override — set a custom
+// daily/monthly limit, disable enforcement, or grant unlimited access for
+// one user. Every field required so the admin UI always sends a complete,
+// unambiguous state (no partial-update surprises on a per-user override).
+app.put("/api/product-assist/quota/users/:email/override", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistUserQuotaOverrides, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const email = String(req.params.email).toLowerCase();
+    const targetUser = await usersRepo.findByEmail(email);
+    if (!targetUser) return res.status(404).json({ error: "No user found with that email." });
+
+    const { customDailyCredits, customMonthlyCredits, limitsEnabled, unlimitedAccess } = req.body ?? {};
+    if (customDailyCredits !== null && customDailyCredits !== undefined && !Number.isInteger(customDailyCredits)) {
+      return res.status(400).json({ error: "customDailyCredits must be a whole number or null." });
+    }
+    if (customMonthlyCredits !== null && customMonthlyCredits !== undefined && !Number.isInteger(customMonthlyCredits)) {
+      return res.status(400).json({ error: "customMonthlyCredits must be a whole number or null." });
+    }
+    if (typeof limitsEnabled !== "boolean" || typeof unlimitedAccess !== "boolean") {
+      return res.status(400).json({ error: "limitsEnabled and unlimitedAccess must be booleans." });
+    }
+
+    const before = await productAssistUserQuotaOverrides.get(email);
+    const updated = await productAssistUserQuotaOverrides.upsert(email, {
+      customDailyCredits: customDailyCredits ?? null,
+      customMonthlyCredits: customMonthlyCredits ?? null,
+      limitsEnabled,
+      unlimitedAccess,
+      updatedBy: req.user!.email,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Product Assist Quota Override Changed",
+        planName: null,
+        description: `Set a custom Product Assist quota override for ${email}.`,
+        snapshot: { before: before ?? null, after: updated },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for quota override:", logErr);
+    }
+
+    return res.json({ override: updated });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to set override:", err);
+    return res.status(500).json({ error: `Failed to set override: ${err.message}` });
+  }
+});
+
+// DELETE /api/product-assist/quota/users/:email/override — revert a user
+// back to their computed eligibility-bucket default.
+app.delete("/api/product-assist/quota/users/:email/override", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistUserQuotaOverrides, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const email = String(req.params.email).toLowerCase();
+    const before = await productAssistUserQuotaOverrides.get(email);
+    await productAssistUserQuotaOverrides.remove(email);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Product Assist Quota Override Removed",
+        planName: null,
+        description: `Reverted ${email} to their default Product Assist quota bucket.`,
+        snapshot: { before: before ?? null, after: null },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for quota override removal:", logErr);
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to remove override:", err);
+    return res.status(500).json({ error: `Failed to remove override: ${err.message}` });
+  }
+});
+
+// POST /api/product-assist/quota/users/:email/extra-credits — grant
+// (positive amount) or remove/reduce (negative amount) extra credits.
+// Never mutates a past grant — always inserts a new ledger row, per
+// schema.ts's doc comment. Extra credits never expire.
+app.post("/api/product-assist/quota/users/:email/extra-credits", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistExtraCreditGrants, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const email = String(req.params.email).toLowerCase();
+    const targetUser = await usersRepo.findByEmail(email);
+    if (!targetUser) return res.status(404).json({ error: "No user found with that email." });
+
+    const { amount, reason } = req.body ?? {};
+    if (!Number.isInteger(amount) || amount === 0) {
+      return res.status(400).json({ error: "amount must be a non-zero whole number (negative to remove/reduce credits)." });
+    }
+    if (reason !== undefined && reason !== null && typeof reason !== "string") {
+      return res.status(400).json({ error: "reason must be a string." });
+    }
+
+    const grant = await productAssistExtraCreditGrants.create({
+      userEmail: email,
+      amount,
+      reason: reason ?? null,
+      grantedBy: req.user!.email,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: amount > 0 ? "Product Assist Extra Credits Granted" : "Product Assist Extra Credits Removed",
+        planName: null,
+        description: `${amount > 0 ? "Granted" : "Removed"} ${Math.abs(amount)} extra Product Assist credit(s) ${
+          amount > 0 ? "to" : "from"
+        } ${email}${reason ? ` — ${reason}` : ""}.`,
+        snapshot: { grant },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for extra credit grant:", logErr);
+    }
+
+    return res.json({ grant });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to record extra credit grant:", err);
+    return res.status(500).json({ error: `Failed to record extra credit grant: ${err.message}` });
+  }
+});
+
+// GET /api/product-assist/quota/usage — raw usage-ledger rows for the
+// Usage History tab (Today / 7-day / month / custom range — the client
+// computes the from/to boundaries and sends them as ISO strings; omitting
+// both returns the most recent rows across all users).
+app.get("/api/product-assist/quota/usage", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, repos.users))) return;
+
+    const { userEmail, from, to, limit, offset } = req.query;
+    const filter: Parameters<typeof repos.productAssistUsageLedger.list>[0] = {};
+    if (typeof userEmail === "string" && userEmail.trim()) filter.userEmail = userEmail.trim();
+    if (typeof from === "string" && from.trim()) {
+      const d = new Date(from);
+      if (!Number.isNaN(d.getTime())) filter.from = d;
+    }
+    if (typeof to === "string" && to.trim()) {
+      const d = new Date(to);
+      if (!Number.isNaN(d.getTime())) filter.to = d;
+    }
+    const parsedLimit = typeof limit === "string" ? parseInt(limit, 10) : NaN;
+    if (Number.isFinite(parsedLimit) && parsedLimit > 0) filter.limit = Math.min(parsedLimit, 1000);
+    const parsedOffset = typeof offset === "string" ? parseInt(offset, 10) : NaN;
+    if (Number.isFinite(parsedOffset) && parsedOffset >= 0) filter.offset = parsedOffset;
+
+    const rows = await repos.productAssistUsageLedger.list(filter);
+    return res.json({ rows });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load usage history:", err);
+    return res.status(500).json({ error: `Failed to load usage history: ${err.message}` });
   }
 });
 
