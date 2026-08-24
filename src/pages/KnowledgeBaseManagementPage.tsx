@@ -8,6 +8,7 @@ import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { KnowledgeBaseResourceManagement } from "../components/KnowledgeBaseResourceManagement";
 import { SpecialInstructions } from "../components/SpecialInstructions";
+import { AcronymDictionary } from "../components/AcronymDictionary";
 
 interface KnowledgeBaseManagementPageProps {
   theme: "light" | "dark";
@@ -16,7 +17,7 @@ interface KnowledgeBaseManagementPageProps {
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
 }
 
-type SectionKey = "documents" | "special_instructions";
+type SectionKey = "documents" | "special_instructions" | "acronyms";
 
 /**
  * "Knowledge Base" tab content — thin wrapper page, same pattern as
@@ -47,6 +48,12 @@ type SectionKey = "documents" | "special_instructions";
  * case this is revisited later — see queryAssist.ts's SOURCE PRECEDENCE
  * comment for the current precedence order (now starting at #0 Special
  * Instructions, still announcement-free).
+ *
+ * "Acronym Dictionary" (added 2026-08): shorthand advisors habitually type
+ * (e.g. "OS" for Optima Secure, "CBB" for Cumulative Bonus Super) mapped to
+ * its full expansion — see src/components/AcronymDictionary.tsx and
+ * src/server/knowledgeBase/acronyms.ts. Purely additive: its own section,
+ * its own tab, same permission split as Special Instructions.
  */
 export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseManagementPageProps) {
   const dark = theme === "dark";
@@ -55,6 +62,7 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
   const tabs: { key: SectionKey; label: string }[] = [
     { key: "documents", label: "Documents" },
     { key: "special_instructions", label: "Special Instructions" },
+    { key: "acronyms", label: "Acronym Dictionary" },
   ];
 
   return (
@@ -68,7 +76,9 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {section === "documents"
               ? "Manage the documents \"Ask the Playbook\" answers advisor questions from, organized per-insurer plus a General/Others bucket."
-              : "Controlled instructions Product Assist checks before consulting the Product Playbook, Policy Wording, or other resources."}
+              : section === "special_instructions"
+                ? "Controlled instructions Product Assist checks before consulting the Product Playbook, Policy Wording, or other resources."
+                : "Shorthand advisors habitually type, mapped to its full meaning, so Product Assist recognizes it."}
             {effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer" ? "" : " Read-only — Admin clearance is required to make changes."}
           </p>
         </div>
@@ -93,8 +103,10 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
 
       {section === "documents" ? (
         <KnowledgeBaseResourceManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
-      ) : (
+      ) : section === "special_instructions" ? (
         <SpecialInstructions theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+      ) : (
+        <AcronymDictionary theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
       )}
     </div>
   );

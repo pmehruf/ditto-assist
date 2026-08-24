@@ -9,6 +9,7 @@ import { getKbAiClient } from "./geminiClient.js";
 import { Type } from "@google/genai";
 import { resolveApplicableInstructions, type SpecialInstructionConflict } from "./specialInstructions.js";
 import { resolveApplicableFaqs, type MatchedFaq } from "./faq.js";
+import { resolveMatchedAcronyms, acronymPlanNameMatches, buildAcronymReferenceBlock } from "./acronyms.js";
 import type { SpecialInstructionRow } from "../db/schema.js";
 
 const GENERATION_MODEL = "gemini-2.5-flash";
@@ -132,6 +133,9 @@ export const SYSTEM_INSTRUCTION = `You are Product Assist, a rigorous Health Ins
 
 CORE RULE
 Never state a fact unless it is explicitly written in the "SOURCE CONTENT" section of this request. Do not infer, extrapolate, or fill gaps with plausible-sounding general knowledge. If the provided sources don't answer the question, say so plainly — do not guess.
+
+ACRONYM REFERENCE
+An ACRONYM REFERENCE block, when present above SOURCE CONTENT, is Ditto's own admin-curated glossary of shorthand this specific advisor's question used (e.g. "OS" = "Optima Secure", "CBB" = "Cumulative Bonus Super") — authoritative reference data, not general knowledge, so using it does not violate CORE RULE. Read the advisor's question as if every listed acronym were written out in full, and answer accordingly — never call out, define, or explain the acronym back to the advisor (they already know what their own shorthand means), and never treat an acronym you don't recognize and that isn't listed there as a typo or error — if it's genuinely unclear what an unlisted acronym refers to, ask per AMBIGUITY rather than guessing.
 
 COMPREHENSIVENESS
 Before writing the ANSWER, read EVERY excerpt in SOURCE CONTENT — not just the first one that looks relevant. Insurance documents scatter the pieces of a single benefit across multiple non-adjacent sections: eligibility criteria in one place, monetary caps or restrictions (e.g. an Aggregate Deductible clause, sub-limits, waiting periods) in another, and the claim process or required documents in a third. An answer built from only the closest-matching excerpt is incomplete and will be treated as WRONG even if what it says is technically accurate — you must actively check every excerpt for anything that adds a condition, exception, restriction, or step to the benefit being asked about, and fold all of it into one coherent answer.
@@ -517,24 +521,48 @@ export async function answerQuery(
   const scopeCategoryName = scope.categoryId !== null ? categoryById.get(scope.categoryId)?.name ?? null : null;
   const scopeCategory = scope.categoryId !== null ? categoryById.get(scope.categoryId) : undefined;
 
+  // Acronym Dictionary — resolved once, up front, since it feeds three
+  // separate things below: plan detection (a plan-name acronym like "OS"
+  // should be treated the same as the advisor typing "Optima Secure" in
+  // full), retrieval (expansions folded into the embedded query text so a
+  // habitual acronym doesn't under-retrieve), and the prompt itself (a
+  // small reference block so the model recognizes the advisor's own
+  // shorthand instead of treating it as unfamiliar). See acronyms.ts.
+  const matchedAcronyms = await resolveMatchedAcronyms(repos, question);
+
   // The advisor may not have picked a plan chip at all — plan selection is
   // no longer required before asking (see QueryAssistPage.tsx). If they
   // named a real plan directly in the question text instead, detect it
   // here (see detectMentionedPlanNames's comment) and treat it as if it
   // were selected for BOTH resource retrieval and the Product Playbook
   // lookup below, so a question like "what's the bonus in Optima Secure?"
-  // still gets plan-specific grounding without a manual chip click. When
-  // neither a selection nor a detection is available, effectivePlanTags
-  // stays empty and the model itself decides (per SYSTEM_INSTRUCTION's
-  // SELECTED SCOPE / AMBIGUITY) whether to answer generally or ask for
-  // clarification — see buildScopeLine.
+  // (or its acronym, e.g. "what's the bonus in OS?" — see
+  // acronymPlanNameMatches) still gets plan-specific grounding without a
+  // manual chip click. When neither a selection nor a detection is
+  // available, effectivePlanTags stays empty and the model itself decides
+  // (per SYSTEM_INSTRUCTION's SELECTED SCOPE / AMBIGUITY) whether to answer
+  // generally or ask for clarification — see buildScopeLine.
   const detectedPlanNames =
-    scope.planTags.length === 0 && scopeCategory ? detectMentionedPlanNames(question, scopeCategory.planNames) : [];
+    scope.planTags.length === 0 && scopeCategory
+      ? Array.from(
+          new Set([
+            ...detectMentionedPlanNames(question, scopeCategory.planNames),
+            ...acronymPlanNameMatches(matchedAcronyms, scopeCategory.planNames),
+          ])
+        )
+      : [];
   const effectivePlanTags = scope.planTags.length > 0 ? scope.planTags : detectedPlanNames;
 
   const { categoryIds, resourceIds } = await resolveEligibleResourceIds(repos, scope, effectivePlanTags);
 
-  const retrievalQueryText = buildRetrievalQueryText(question, history);
+  // Fold matched acronym expansions into the text that gets embedded, so
+  // e.g. "CBB" retrieves what "Cumulative Bonus Super" would — the original
+  // question is kept first (still the dominant signal), expansions appended
+  // as extra context rather than replacing the advisor's own wording.
+  const retrievalQueryText = [
+    buildRetrievalQueryText(question, history),
+    ...matchedAcronyms.map(m => m.expansion),
+  ].join("\n");
   const queryEmbedding = await embedQuery(retrievalQueryText);
 
   // SOURCE PRECEDENCE #0 — checked before any normal retrieval below, per
@@ -593,6 +621,7 @@ export async function answerQuery(
 
   const historyBlock = buildHistoryBlock(history);
   const scopeLine = buildScopeLine(scope, scopeCategoryName, detectedPlanNames);
+  const acronymBlock = buildAcronymReferenceBlock(matchedAcronyms);
 
   const ai = getKbAiClient();
   const generationStartedAt = Date.now();
@@ -601,7 +630,11 @@ export async function answerQuery(
     contents: [
       {
         role: "user",
-        parts: [{ text: `${historyBlock}${scopeLine}SOURCE CONTENT:\n${sourceBlock}\n\nADVISOR'S QUESTION:\n${question}` }],
+        parts: [
+          {
+            text: `${historyBlock}${scopeLine}${acronymBlock ? `${acronymBlock}\n\n` : ""}SOURCE CONTENT:\n${sourceBlock}\n\nADVISOR'S QUESTION:\n${question}`,
+          },
+        ],
       },
     ],
     config: {

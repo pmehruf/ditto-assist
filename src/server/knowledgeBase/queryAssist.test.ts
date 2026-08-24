@@ -34,7 +34,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Repositories } from "../db/repositories/index.js";
-import type { KbCategoryRow, SpecialInstructionRow, FaqRecordRow, KbPlaybookPlanFactRow } from "../db/schema.js";
+import type { KbCategoryRow, SpecialInstructionRow, FaqRecordRow, KbPlaybookPlanFactRow, KbAcronymRow } from "../db/schema.js";
 import type { SimilarKbChunk } from "../db/repositories/kbChunksRepository.js";
 
 const FIXED_QUERY_EMBEDDING = [1, 0, 0];
@@ -141,12 +141,28 @@ function specialInstructionRow(overrides: Partial<SpecialInstructionRow> = {}): 
   } as SpecialInstructionRow;
 }
 
+function acronymRow(overrides: Partial<KbAcronymRow> = {}): KbAcronymRow {
+  return {
+    id: 1,
+    acronym: "OS",
+    expansion: "Activ One Max",
+    notes: null,
+    isActive: true,
+    createdBy: "test",
+    updatedBy: "test",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
 interface FakeReposConfig {
   categories?: KbCategoryRow[];
   chunks?: SimilarKbChunk[];
   playbookFacts?: KbPlaybookPlanFactRow[];
   faqs?: FaqRecordRow[];
   specialInstructions?: SpecialInstructionRow[];
+  acronyms?: KbAcronymRow[];
 }
 
 function fakeRepos(cfg: FakeReposConfig = {}): Repositories {
@@ -157,6 +173,7 @@ function fakeRepos(cfg: FakeReposConfig = {}): Repositories {
     kbPlaybookPlanFacts: { findMatching: async () => cfg.playbookFacts ?? [] },
     faqRecords: { listAnswerableActive: async () => cfg.faqs ?? [] },
     specialInstructions: { listActive: async () => cfg.specialInstructions ?? [] },
+    kbAcronyms: { listActive: async () => cfg.acronyms ?? [] },
   } as unknown as Repositories;
 }
 
@@ -216,6 +233,63 @@ describe("Product Assist synthesis — schema & prompt wiring (regression guard)
       "INSUFFICIENT_INFORMATION",
       "NO_REQUIREMENT_FOUND",
     ]);
+  });
+});
+
+describe("Acronym Dictionary integration", () => {
+  it("a plan-name acronym in the question drives plan detection the same as the full name would — Playbook facts get looked up for it", async () => {
+    mockModelResponse({ answer: "The bonus for Activ One Max is 50% per claim-free year.", share: "The bonus is 50% for every year without a claim." });
+    await answerQuery(
+      fakeRepos({
+        categories: [categoryRow()],
+        acronyms: [acronymRow()], // "OS" -> "Activ One Max", which IS in categoryRow()'s planNames roster
+        playbookFacts: [playbookFact()],
+      }),
+      { categoryId: 1, planTags: [] }, // no plan chip selected — only the acronym names one
+      "What's the bonus in OS?",
+      []
+    );
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    // buildScopeLine renders the detected plan name into SELECTED SCOPE when
+    // no chip was picked — confirms the acronym was resolved to the plan.
+    expect(promptText).toContain("Activ One Max");
+  });
+
+  it("an acronym whose expansion is NOT a plan name (e.g. a benefit/term acronym) does not affect plan detection, only retrieval/context", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    await answerQuery(
+      fakeRepos({
+        categories: [categoryRow()],
+        acronyms: [acronymRow({ acronym: "CBB", expansion: "Cumulative Bonus Super" })],
+      }),
+      { categoryId: 1, planTags: [] },
+      "Does CBB apply after two claim-free years?",
+      []
+    );
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).toContain("No plan was selected via the UI or detected in the question");
+  });
+
+  it("matched acronyms are rendered as an ACRONYM REFERENCE block in the prompt, and expand the retrieval query text", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    await answerQuery(
+      fakeRepos({ acronyms: [acronymRow({ acronym: "CBB", expansion: "Cumulative Bonus Super", notes: "HDFC ERGO only" })] }),
+      SCOPE,
+      "Does CBB apply after two claim-free years?",
+      []
+    );
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).toContain("ACRONYM REFERENCE");
+    expect(promptText).toContain('- "CBB" = Cumulative Bonus Super (HDFC ERGO only)');
+    const embeddedTexts = embedContentMock.mock.calls[0][0].contents as string[];
+    expect(embeddedTexts[0]).toContain("Cumulative Bonus Super");
+  });
+
+  it("a question using no known acronym produces no ACRONYM REFERENCE block — byte-identical prompt for the unaffected case", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    await answerQuery(fakeRepos({ acronyms: [acronymRow()] }), SCOPE, "What is the room rent limit?", []);
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).not.toContain("ACRONYM REFERENCE");
   });
 });
 

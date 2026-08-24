@@ -5567,6 +5567,155 @@ app.delete("/api/kb/special-instructions/:id", requireAuth, async (req, res) => 
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// Acronym Dictionary — shorthand advisors habitually type (e.g. "OS" for
+// "Optima Secure", "CBB" for "Cumulative Bonus Super") mapped to its full
+// expansion, so Product Assist can recognize it instead of retrieving
+// poorly or treating the question as ambiguous. See schema.ts's doc comment
+// on `kbAcronyms` and src/server/knowledgeBase/acronyms.ts for how these
+// are matched and applied at query time. Same permission model as Special
+// Instructions above: Admin/Platform Admin/Developer can view; only
+// Developer or Platform Admin can create/edit/delete, since these directly
+// steer Product Assist's retrieval and plan detection.
+// ─────────────────────────────────────────────────────────────────────────
+
+app.get("/api/kb/acronyms", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Acronym Dictionary"))) return;
+    const { search, isActive } = req.query;
+    const { kbAcronyms } = createRepositories(getDb());
+    const entries = await kbAcronyms.list({
+      ...(typeof search === "string" && search.trim() ? { search: search.trim() } : {}),
+      ...(isActive === "true" ? { isActive: true } : isActive === "false" ? { isActive: false } : {}),
+    });
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list Acronym Dictionary entries:", err);
+    return res.status(500).json({ error: `Failed to load the Acronym Dictionary: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/acronyms", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, kbAcronyms, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can add Acronym Dictionary entries." });
+    }
+    const { acronym, expansion, notes } = req.body;
+    if (typeof acronym !== "string" || !acronym.trim()) return res.status(400).json({ error: "acronym is required." });
+    if (typeof expansion !== "string" || !expansion.trim()) return res.status(400).json({ error: "expansion is required." });
+
+    const entry = await kbAcronyms.create({
+      acronym: acronym.trim(),
+      expansion: expansion.trim(),
+      notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
+      isActive: true,
+      createdBy: `${req.user!.name} (${req.user!.email})`,
+      updatedBy: `${req.user!.name} (${req.user!.email})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Acronym Dictionary Entry Created",
+        planName: null,
+        description: `Added "${entry.acronym}" -> "${entry.expansion}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Acronym Dictionary creation:", logErr);
+    }
+
+    return res.json({ entry });
+  } catch (err: any) {
+    console.error("Failed to create Acronym Dictionary entry:", err);
+    return res.status(500).json({ error: `Failed to add this acronym: ${err.message}` });
+  }
+});
+
+app.patch("/api/kb/acronyms/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, kbAcronyms, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can edit Acronym Dictionary entries." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid Acronym Dictionary entry id." });
+    const existing = await kbAcronyms.get(id);
+    if (!existing) return res.status(404).json({ error: "Acronym Dictionary entry not found." });
+
+    const { acronym, expansion, notes, isActive } = req.body;
+    const entry = await kbAcronyms.update(id, {
+      ...(typeof acronym === "string" && acronym.trim() ? { acronym: acronym.trim() } : {}),
+      ...(typeof expansion === "string" && expansion.trim() ? { expansion: expansion.trim() } : {}),
+      ...(notes !== undefined ? { notes: typeof notes === "string" && notes.trim() ? notes.trim() : null } : {}),
+      ...(typeof isActive === "boolean" ? { isActive } : {}),
+      updatedBy: `${req.user!.name} (${req.user!.email})`,
+    });
+    if (!entry) return res.status(404).json({ error: "Acronym Dictionary entry not found." });
+
+    try {
+      const actionType =
+        typeof isActive === "boolean" && Object.keys(req.body).length === 1
+          ? isActive
+            ? "Acronym Dictionary Entry Activated"
+            : "Acronym Dictionary Entry Deactivated"
+          : "Acronym Dictionary Entry Edited";
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType,
+        planName: null,
+        description: `Updated "${entry.acronym}" -> "${entry.expansion}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Acronym Dictionary edit:", logErr);
+    }
+
+    return res.json({ entry });
+  } catch (err: any) {
+    console.error("Failed to update Acronym Dictionary entry:", err);
+    return res.status(500).json({ error: `Failed to update this acronym: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/acronyms/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, kbAcronyms, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can delete Acronym Dictionary entries." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid Acronym Dictionary entry id." });
+    const existing = await kbAcronyms.get(id);
+    if (!existing) return res.status(404).json({ error: "Acronym Dictionary entry not found." });
+    await kbAcronyms.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Acronym Dictionary Entry Deleted",
+        planName: null,
+        description: `Deleted "${existing.acronym}" -> "${existing.expansion}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Acronym Dictionary deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete Acronym Dictionary entry:", err);
+    return res.status(500).json({ error: `Failed to delete this acronym: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Query Assist — the advisor-facing chat over the Knowledge Base built
 // above. Open to every tier (General included), unlike the Admin Zone KB
 // management routes: an advisor picks an insurer (or "General") and

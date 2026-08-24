@@ -46,6 +46,7 @@ import { QueryAssistLogExportConnectionRepository } from "./queryAssistLogExport
 import { SpecialInstructionsRepository } from "./specialInstructionsRepository.js";
 import { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
 import { FaqRecordsRepository } from "./faqRecordsRepository.js";
+import { KbAcronymsRepository } from "./kbAcronymsRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -173,6 +174,9 @@ export { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
 export { FaqRecordsRepository } from "./faqRecordsRepository.js";
 export type { CreateFaqRecordEntry, FaqRecordFilter } from "./faqRecordsRepository.js";
 
+export { KbAcronymsRepository } from "./kbAcronymsRepository.js";
+export type { CreateKbAcronymEntry, UpdateKbAcronymEntry, KbAcronymFilter } from "./kbAcronymsRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -222,6 +226,7 @@ export interface Repositories {
   specialInstructions: SpecialInstructionsRepository;
   kbFaqConnection: KbFaqConnectionRepository;
   faqRecords: FaqRecordsRepository;
+  kbAcronyms: KbAcronymsRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -268,5 +273,6 @@ export function createRepositories(db: AnyDb): Repositories {
     specialInstructions: new SpecialInstructionsRepository(db),
     kbFaqConnection: new KbFaqConnectionRepository(db),
     faqRecords: new FaqRecordsRepository(db),
+    kbAcronyms: new KbAcronymsRepository(db),
   };
 }

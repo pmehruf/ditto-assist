@@ -1525,6 +1525,50 @@ export type SpecialInstructionRow = typeof specialInstructions.$inferSelect;
 export type NewSpecialInstructionRow = typeof specialInstructions.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// kb_acronyms — the Acronym Dictionary: shorthand advisors habitually type
+// (e.g. "OS" for "Optima Secure", "CBB" for "Cumulative Bonus Super")
+// mapped to its full expansion, so Product Assist can recognize it instead
+// of treating the question as ambiguous or under-retrieving for it. Small,
+// admin-curated, in-app CRUD (same convention as Special Instructions
+// above) — deliberately NOT embedding-matched like Special Instructions'
+// topic or the Ditto FAQ's question: an acronym is a short, exact token
+// (not a phrase with room for semantic drift), so a plain word-boundary,
+// case-insensitive string match against the question text is both simpler
+// and more precise than a similarity threshold would be here. See
+// src/server/knowledgeBase/acronyms.ts for how this is matched and applied
+// at query time (retrieval-query expansion, plan-name detection, and a
+// small reference block in the prompt).
+// ─────────────────────────────────────────────────────────────────────────
+export const kbAcronyms = pgTable(
+  "kb_acronyms",
+  {
+    id: serial("id").primaryKey(),
+    // Stored as the admin typed it (e.g. "OS") — matching lowercases both
+    // sides, so case doesn't matter at query time, only for display here.
+    acronym: text("acronym").notNull(),
+    // The full term/phrase the acronym stands for, e.g. "Optima Secure",
+    // "Cumulative Bonus Super". When this exactly matches (case-
+    // insensitively) a plan name in the scoped insurer's roster
+    // (kb_categories.planNames), the acronym is also treated as naming that
+    // plan for retrieval/Playbook scoping — see acronyms.ts.
+    expansion: text("expansion").notNull(),
+    // Optional admin-facing disambiguation note (e.g. "HDFC Ergo only — ICICI
+    // uses OS for a different plan"), never shown to the advisor directly;
+    // folded into the prompt's reference block only if present.
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: text("created_by").notNull(),
+    updatedBy: text("updated_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("kb_acronyms_is_active_idx").on(table.isActive)]
+);
+
+export type KbAcronymRow = typeof kbAcronyms.$inferSelect;
+export type NewKbAcronymRow = typeof kbAcronyms.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // kb_faq_connection — the Ditto FAQ Google Sheet's stored OAuth grant, same
 // shape/purpose as kbPlaybookConnection above but its own table since the
 // FAQ workbook has its own owner/account, separate from the Playbook's (see
