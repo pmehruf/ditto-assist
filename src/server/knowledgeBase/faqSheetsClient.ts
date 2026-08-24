@@ -107,7 +107,7 @@ async function getActiveAuthClient(): Promise<{ request<T>(opts: { url: string }
   if (serviceAccountAuth) return await serviceAccountAuth.getClient();
 
   throw new Error(
-    'Ditto FAQ Sheets access is not configured. Click "Connect Google Sheets" in Knowledge Base Management ' +
+    'Health FAQ Sheets access is not configured. Click "Connect Google Sheets" in Knowledge Base Management ' +
       "(recommended — no admin needed), or set KB_FAQ_GOOGLE_SERVICE_ACCOUNT_KEY / " +
       "KB_FAQ_GOOGLE_SERVICE_ACCOUNT_KEY_PATH for a service account instead."
   );

@@ -877,13 +877,16 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
         </div>
       )}
 
-      {/* Compact "Add Insurer" action, replacing the old always-open, mostly
+      {/* Compact "Add new KB" action, replacing the old always-open, mostly
           empty "Add Category" card — right-aligned directly under the page
-          title so it reads as the page's one primary action. */}
+          title so it reads as the page's one primary action. Labeled
+          generically ("KB", not "Insurer") since this same action also
+          creates a "general"-type category (Org Constitution), not just
+          insurer categories — see AddInsurerModal's type selector below. */}
       {canManage && (
         <div className="flex justify-end">
           <ClippedButton size="md" onClick={() => setAddInsurerOpen(true)} className="bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] px-4 py-2 text-[11px] font-black uppercase tracking-wider flex items-center gap-2">
-            <Plus className="w-3.5 h-3.5" /> Add Insurer
+            <Plus className="w-3.5 h-3.5" /> Add new KB
           </ClippedButton>
         </div>
       )}
@@ -1495,13 +1498,16 @@ function ResourceListTab({
             <span className={`text-xs font-semibold truncate ${dark ? "text-stone-200" : "text-stone-800"}`} title={resource.title}>{resource.title}</span>
             {statusBadge(resource.status, dark)}
             {showDocTypeBadge && documentTypeBadge(resource.documentType, dark)}
-            {/* Ditto FAQ (2026-08): identifies the two supported FAQ
-                categories directly on the resource row (spec §5/§21) — a
-                live per-category breakdown lives on the Connections page's
-                sync-status card (KnowledgeBaseFaqConnection.tsx); these are
-                static presence badges, reusing the same badge visual
-                language rather than a new UI pattern. */}
-            {resource.title === "Ditto FAQ" && (
+            {/* Health FAQ (2026-08, renamed from "Ditto FAQ"): identifies the
+                two supported FAQ categories directly on the resource row
+                (spec §5/§21) — a live per-category breakdown lives on the
+                Connections page's sync-status card
+                (KnowledgeBaseFaqConnection.tsx); these are static presence
+                badges, reusing the same badge visual language rather than a
+                new UI pattern. Matches the legacy "Ditto FAQ" title too, so
+                an existing resource still gets these badges until its next
+                resync self-heals the title (see faqIngest.ts). */}
+            {(resource.title === "Health FAQ" || resource.title === "Ditto FAQ") && (
               <>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${dark ? "bg-sky-500/10 text-sky-300 border-sky-500/25" : "bg-sky-50 text-sky-700 border-sky-200"}`}>
                   Health Product FAQs
@@ -1529,7 +1535,7 @@ function ResourceListTab({
             )}
             {resource.status === "active" && (
               <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">
-                {resource.chunkCount} {resource.title === "Ditto FAQ" ? "FAQ records" : "chunks"}
+                {resource.chunkCount} {(resource.title === "Health FAQ" || resource.title === "Ditto FAQ") ? "FAQ records" : "chunks"}
               </span>
             )}
             {resource.status === "error" && resource.errorMessage && (
@@ -1588,7 +1594,7 @@ function AddInsurerModal({
   return (
     <ModalShell theme={theme} onClose={onClose}>
       <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between ${dark ? "border-stone-800" : "border-stone-200"}`}>
-        <h2 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>Add Insurer</h2>
+        <h2 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>Add new KB</h2>
         <button type="button" onClick={onClose} className={dark ? "text-stone-400 hover:text-white cursor-pointer" : "text-stone-400 hover:text-stone-800 cursor-pointer"}>
           <X className="w-4 h-4" />
         </button>

@@ -19,7 +19,7 @@ const KEY_SALT = "kb-faq-refresh-token-v1";
 function getKey(): Buffer {
   const secret = process.env.SESSION_SECRET;
   if (!secret) {
-    throw new Error("SESSION_SECRET is required to encrypt/decrypt the Ditto FAQ's stored Google refresh token.");
+    throw new Error("SESSION_SECRET is required to encrypt/decrypt the Health FAQ's stored Google refresh token.");
   }
   return scryptSync(secret, KEY_SALT, 32);
 }

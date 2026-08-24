@@ -29,7 +29,7 @@ interface FaqConnectionStatus {
 }
 
 /**
- * "Ditto FAQ" connection panel — Connections page, alongside the Product
+ * "Health FAQ" connection panel — Connections page, alongside the Product
  * Playbook's own card (KnowledgeBasePlaybook.tsx). Connect/disconnect the
  * FAQ Sheet's own Google OAuth grant (separate from the Playbook's — see
  * server.ts's /api/kb/faq/* routes and
@@ -56,7 +56,7 @@ export function KnowledgeBaseFaqConnection({ theme, effectiveTier }: KnowledgeBa
       setStatus(body);
       setStatusError(null);
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : "Could not load the Ditto FAQ's connection status.");
+      setStatusError(err instanceof Error ? err.message : "Could not load the Health FAQ's connection status.");
     } finally {
       setStatusLoading(false);
     }
@@ -111,7 +111,7 @@ export function KnowledgeBaseFaqConnection({ theme, effectiveTier }: KnowledgeBa
       <div className={`p-5 ${cardClass}`}>
         <div className="flex items-center justify-between pb-2 mb-3 border-b border-light-stone/5 dark:border-stone-800">
           <h3 className={`text-sm font-black uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
-            Ditto FAQ — Google Sheets
+            Health FAQ — Google Sheets
           </h3>
           <button
             type="button"

@@ -4,7 +4,7 @@
  */
 
 /**
- * DITTO FAQ — INGESTION (sync from the Ditto FAQ Google Sheet into
+ * HEALTH FAQ — INGESTION (sync from the Health FAQ Google Sheet into
  * faq_records). Modeled on playbookIngest.ts's syncPlaybook, but a much
  * narrower parse: only two tabs, only columns A (question) and B (answer)
  * are ever read — everything else in the sheet (extra columns, formatting,
@@ -21,7 +21,12 @@ import { embedDocumentChunks } from "./embeddings.js";
 import { contentHash } from "./pdfIngest.js";
 import { fetchFaqSheetValues, FAQ_SPREADSHEET_ID } from "./faqSheetsClient.js";
 
-export const FAQ_DITTO_RESOURCE_TITLE = "Ditto FAQ";
+export const FAQ_DITTO_RESOURCE_TITLE = "Health FAQ";
+// Pre-rename title (2026-08: "Ditto FAQ" -> "Health FAQ"). Kept only so the
+// lookups below still find an already-existing resource row instead of
+// creating a duplicate — see syncFaq's `existing` lookup, which self-heals
+// the row's title to FAQ_DITTO_RESOURCE_TITLE on the very next sync.
+const FAQ_DITTO_RESOURCE_TITLE_LEGACY = "Ditto FAQ";
 
 // Only these two tabs, per spec §1 — every other tab in the workbook is
 // ignored entirely, not even fetched.
@@ -193,7 +198,7 @@ export interface SyncFaqResult {
  * time, storage is left untouched (no wasted embedding calls) unless the
  * resource was previously left in an "error" state.
  *
- * The Ditto FAQ resource is created inside the SAME "general" category the
+ * The Health FAQ resource is created inside the SAME "general" category the
  * Product Playbook already lives in (the "Org Constitution" section — see
  * 0041_ditto_faq.sql's data-only rename, later renamed again by
  * 0044_org_constitution_rename.sql) rather than a new category, so
@@ -205,11 +210,13 @@ export async function syncFaq(repos: Repositories, triggeredBy: string): Promise
   const generalCategory = categories.find(c => c.type === "general");
   if (!generalCategory) {
     throw new Error(
-      'No "General" Knowledge Base category exists yet — create one first in Knowledge Base Management, then resync the Ditto FAQ.'
+      'No "General" Knowledge Base category exists yet — create one first in Knowledge Base Management, then resync the Health FAQ.'
     );
   }
 
-  const existing = (await repos.kbResources.list({})).find(r => r.type === "sheet" && r.title === FAQ_DITTO_RESOURCE_TITLE);
+  const existing = (await repos.kbResources.list({})).find(
+    r => r.type === "sheet" && (r.title === FAQ_DITTO_RESOURCE_TITLE || r.title === FAQ_DITTO_RESOURCE_TITLE_LEGACY)
+  );
   const wasErrored = existing?.status === "error";
   let resource = existing;
   if (!resource) {
@@ -228,7 +235,14 @@ export async function syncFaq(repos: Repositories, triggeredBy: string): Promise
       addedBy: triggeredBy,
     });
   } else {
-    resource = (await repos.kbResources.update(resource.id, { status: "processing", errorMessage: null }))!;
+    // Also carries the title rename through for a row still on the legacy
+    // "Ditto FAQ" name — self-heals on this very sync, no separate
+    // migration/backfill needed.
+    resource = (await repos.kbResources.update(resource.id, {
+      status: "processing",
+      errorMessage: null,
+      title: FAQ_DITTO_RESOURCE_TITLE,
+    }))!;
   }
   const resourceId = resource!.id;
   const previousHash = existing?.contentHash ?? null;
@@ -319,12 +333,14 @@ export async function maybeRefreshFaqIfStale(repos: Repositories): Promise<void>
   try {
     const connection = await repos.kbFaqConnection.get();
     if (!connection) return;
-    const resource = (await repos.kbResources.list({})).find(r => r.type === "sheet" && r.title === FAQ_DITTO_RESOURCE_TITLE);
+    const resource = (await repos.kbResources.list({})).find(
+      r => r.type === "sheet" && (r.title === FAQ_DITTO_RESOURCE_TITLE || r.title === FAQ_DITTO_RESOURCE_TITLE_LEGACY)
+    );
     const lastFetchedMs = resource?.lastFetchedAt ? new Date(resource.lastFetchedAt).getTime() : null;
     const staleSinceMs = lastFetchedMs === null ? Infinity : Date.now() - lastFetchedMs;
     if (staleSinceMs < STALE_REFRESH_MS) return;
     await syncFaq(repos, "auto-refresh");
   } catch (err) {
-    console.warn("Ditto FAQ background refresh failed (will retry on next stale check):", err);
+    console.warn("Health FAQ background refresh failed (will retry on next stale check):", err);
   }
 }
