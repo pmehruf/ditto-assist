@@ -183,12 +183,31 @@ function LibraryResourceList({ resources }: { resources: LibraryResource[] }) {
   if (resources.length === 0) {
     return <p className="text-[10.5px] font-medium text-[#8CA0B3] italic px-2.5 py-1">No resources yet.</p>;
   }
+  // Labeled by document type (Policy Wording / Prospectus / Brochure /
+  // Add-on) rather than the resource's own title — the Plan/Insurer
+  // Resources heading above already gives the plan context, and a real
+  // title here is often "<Insurer> <Plan> ..." long enough that at this
+  // sidebar's width it truncates to an indistinguishable prefix with no
+  // real signal left (see the screenshot that prompted this). The full
+  // title is still available as a hover tooltip. A resource whose
+  // documentType is "other" (no label — see SOURCE_DOCUMENT_TYPE_LABEL)
+  // falls back to its title, since there's nothing else to show. When two+
+  // resources in the same list land on the same label (e.g. two Policy
+  // Wording docs for one plan), a " (2)"/" (3)" suffix is appended so they
+  // don't render as identical, indistinguishable rows.
+  const baseLabels = resources.map(r => SOURCE_DOCUMENT_TYPE_LABEL[r.documentType] || r.title);
+  const totalByLabel = new Map<string, number>();
+  for (const b of baseLabels) totalByLabel.set(b, (totalByLabel.get(b) ?? 0) + 1);
+  const seenSoFar = new Map<string, number>();
+
   return (
     <div className="flex flex-col gap-0.5">
-      {resources.map(r => {
-        const typeLabel = SOURCE_DOCUMENT_TYPE_LABEL[r.documentType];
+      {resources.map((r, i) => {
+        const base = baseLabels[i];
+        const occurrence = (seenSoFar.get(base) ?? 0) + 1;
+        seenSoFar.set(base, occurrence);
+        const label = totalByLabel.get(base)! > 1 ? `${base} (${occurrence})` : base;
         const isOpenable = !!r.sourceUrl && /^https?:\/\//i.test(r.sourceUrl);
-        const label = typeLabel ? `${r.title} · ${typeLabel}` : r.title;
         const rowClass = "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10.5px] font-medium min-w-0";
         return isOpenable ? (
           <a
@@ -196,7 +215,7 @@ function LibraryResourceList({ resources }: { resources: LibraryResource[] }) {
             href={r.sourceUrl!}
             target="_blank"
             rel="noopener noreferrer"
-            title="Open to verify"
+            title={r.title}
             className={`${rowClass} text-[#8CA0B3] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer`}
           >
             <FileText className="w-3 h-3 shrink-0 opacity-60" />
@@ -204,7 +223,7 @@ function LibraryResourceList({ resources }: { resources: LibraryResource[] }) {
             <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
           </a>
         ) : (
-          <div key={r.id} className={`${rowClass} text-[#8CA0B3]`}>
+          <div key={r.id} title={r.title} className={`${rowClass} text-[#8CA0B3]`}>
             <FileText className="w-3 h-3 shrink-0 opacity-60" />
             <span className="flex-1 truncate">{label}</span>
           </div>
