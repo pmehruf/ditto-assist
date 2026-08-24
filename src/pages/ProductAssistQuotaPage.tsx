@@ -5,9 +5,18 @@
 
 import { useEffect, useState } from "react";
 import { RefreshCw, AlertTriangle, Plus, Minus, X, Save } from "lucide-react";
+import { Department, OrgTeam, AppRole } from "../types/permissions";
+import { CustomSelect } from "../components/CustomSelect";
 
 interface ProductAssistQuotaPageProps {
   theme: "light" | "dark";
+  /** Department/Team/Role catalogs — same lifted-in-App.tsx lists the
+   * Directory tab uses (see ProfileAccessManagement), so the "Qualifying
+   * Department / Team / Role" selects below always match what a Developer
+   * can actually assign to a user. */
+  departments: Department[];
+  orgTeams: OrgTeam[];
+  roles: AppRole[];
 }
 
 type QuotaBucket = "developer_unlimited" | "health_advisor" | "trial";
@@ -60,6 +69,13 @@ interface QuotaSettings {
   modelName: string;
   inputPricePerMillionTokens: string;
   outputPricePerMillionTokens: string;
+  /** The Department/Team/Role a user must simultaneously hold (alongside
+   * the Health tag) to land in the health_advisor bucket — see
+   * productAssistQuota.ts's resolveQuotaBucket(). Null = unset (nobody
+   * qualifies via this rule until a Developer picks all three below). */
+  eligibleDepartmentId: number | null;
+  eligibleOrgTeamId: number | null;
+  eligibleRoleId: number | null;
 }
 
 interface OverrideRow {
@@ -79,6 +95,10 @@ interface GrantRow {
   reason: string | null;
   grantedBy: string;
   grantedAt: string;
+  /** Null = never expires (the default). Set = this grant stops counting
+   * toward the balance once this date passes — see
+   * productAssistExtraCreditGrantsRepository.ts's notExpired(). */
+  expiresAt: string | null;
 }
 
 interface UsageRow {
@@ -132,7 +152,7 @@ type Tab = "overview" | "users" | "usage" | "settings";
  * (Developer tier -> automatic unlimited; Health-tagged Advisors -> the
  * configurable default; everyone else -> a small trial allotment).
  */
-export function ProductAssistQuotaPage({ theme }: ProductAssistQuotaPageProps) {
+export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles }: ProductAssistQuotaPageProps) {
   const dark = theme === "dark";
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
@@ -534,6 +554,51 @@ export function ProductAssistQuotaPage({ theme }: ProductAssistQuotaPageProps) {
           )}
 
           {settingsDraft && (
+            <div className={`p-4 mb-4 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.08]" : "bg-stone-50 border-stone-200"}`}>
+              <div className={`text-xs font-black uppercase tracking-wider mb-1 ${dark ? "text-white" : "text-stone-900"}`}>
+                Health Advisor Eligibility
+              </div>
+              <p className={`text-[10.5px] mb-3 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                A user gets the Health Advisor allowance only if they hold ALL THREE of this Department, Team, and Role — AND
+                have the Health tag. Leaving any of the three unset means nobody qualifies via this rule (falls back to the
+                Trial allotment).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className={labelClass}>Qualifying Department</label>
+                  <CustomSelect
+                    theme={theme}
+                    value={settingsDraft.eligibleDepartmentId != null ? String(settingsDraft.eligibleDepartmentId) : ""}
+                    onChange={(val) => setSettingsDraft({ ...settingsDraft, eligibleDepartmentId: val ? Number(val) : null })}
+                    triggerClassName={`${inputClass} mt-1`}
+                    options={[{ value: "", label: "Unset" }, ...departments.map((d) => ({ value: String(d.id), label: d.name }))]}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Qualifying Team</label>
+                  <CustomSelect
+                    theme={theme}
+                    value={settingsDraft.eligibleOrgTeamId != null ? String(settingsDraft.eligibleOrgTeamId) : ""}
+                    onChange={(val) => setSettingsDraft({ ...settingsDraft, eligibleOrgTeamId: val ? Number(val) : null })}
+                    triggerClassName={`${inputClass} mt-1`}
+                    options={[{ value: "", label: "Unset" }, ...orgTeams.map((t) => ({ value: String(t.id), label: t.name }))]}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Qualifying Role</label>
+                  <CustomSelect
+                    theme={theme}
+                    value={settingsDraft.eligibleRoleId != null ? String(settingsDraft.eligibleRoleId) : ""}
+                    onChange={(val) => setSettingsDraft({ ...settingsDraft, eligibleRoleId: val ? Number(val) : null })}
+                    triggerClassName={`${inputClass} mt-1`}
+                    options={[{ value: "", label: "Unset" }, ...roles.map((r) => ({ value: String(r.id), label: r.name }))]}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {settingsDraft && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
                 { key: "defaultDailyCredits", label: "Default Daily Credits (Health Advisor)" },
@@ -643,6 +708,11 @@ function UserQuotaDetailPanel({
   const [status, setStatus] = useState<QuotaStatus | null>(null);
   const [override, setOverride] = useState<OverrideRow | null>(null);
   const [grants, setGrants] = useState<GrantRow[]>([]);
+  // Which grant IDs are expired, computed once per load() (an event/effect
+  // context, not render) — Date.now() must never be called during render
+  // itself (React purity rule), so this precomputed lookup is what the
+  // JSX below reads instead of calling Date.now() inline.
+  const [expiredGrantIds, setExpiredGrantIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -654,6 +724,7 @@ function UserQuotaDetailPanel({
 
   const [grantAmount, setGrantAmount] = useState<string>("");
   const [grantReason, setGrantReason] = useState<string>("");
+  const [grantExpiresAt, setGrantExpiresAt] = useState<string>("");
   const [grantSaving, setGrantSaving] = useState(false);
 
   const load = async () => {
@@ -664,7 +735,10 @@ function UserQuotaDetailPanel({
       if (!res.ok) throw new Error(body.error || `Failed to load (HTTP ${res.status}).`);
       setStatus(body.status);
       setOverride(body.override);
-      setGrants(body.grants ?? []);
+      const loadedGrants: GrantRow[] = body.grants ?? [];
+      setGrants(loadedGrants);
+      const nowMs = Date.now();
+      setExpiredGrantIds(new Set(loadedGrants.filter((g) => g.expiresAt && new Date(g.expiresAt).getTime() <= nowMs).map((g) => g.id)));
       setCustomDaily(body.override?.customDailyCredits != null ? String(body.override.customDailyCredits) : "");
       setCustomMonthly(body.override?.customMonthlyCredits != null ? String(body.override.customMonthlyCredits) : "");
       setLimitsEnabled(body.override?.limitsEnabled ?? true);
@@ -729,15 +803,20 @@ function UserQuotaDetailPanel({
     }
     setGrantSaving(true);
     try {
+      // Expiry only makes sense on an actual grant (sign 1) — a removal
+      // (sign -1) is itself just a negative-amount ledger row, not
+      // something that "expires."
+      const expiresAtIso = sign === 1 && grantExpiresAt ? new Date(grantExpiresAt).toISOString() : null;
       const res = await fetch(`/api/product-assist/quota/users/${encodeURIComponent(userEmail)}/extra-credits`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: n * sign, reason: grantReason.trim() || null }),
+        body: JSON.stringify({ amount: n * sign, reason: grantReason.trim() || null, expiresAt: expiresAtIso }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed (HTTP ${res.status}).`);
       setGrantAmount("");
       setGrantReason("");
+      setGrantExpiresAt("");
       await load();
       onChanged();
     } catch (err) {
@@ -820,7 +899,7 @@ function UserQuotaDetailPanel({
             </div>
 
             <div>
-              <div className={`text-xs font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-stone-900"}`}>Extra Credits (never expire)</div>
+              <div className={`text-xs font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-stone-900"}`}>Extra Credits</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Amount</label>
@@ -829,6 +908,10 @@ function UserQuotaDetailPanel({
                 <div>
                   <label className={labelClass}>Reason (optional)</label>
                   <input type="text" className={`${inputClass} mt-1`} value={grantReason} onChange={(e) => setGrantReason(e.target.value)} />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelClass}>Expires (optional — leave blank for "Grant" to never expire)</label>
+                  <input type="date" className={`${inputClass} mt-1`} value={grantExpiresAt} onChange={(e) => setGrantExpiresAt(e.target.value)} />
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-3">
@@ -853,13 +936,21 @@ function UserQuotaDetailPanel({
               </div>
               {grants.length > 0 && (
                 <div className="mt-3 space-y-1 max-h-32 overflow-y-auto">
-                  {grants.map((g) => (
-                    <div key={g.id} className={`text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                      {g.amount > 0 ? "+" : ""}
-                      {g.amount} by {g.grantedBy} on {new Date(g.grantedAt).toLocaleDateString()}
-                      {g.reason ? ` — ${g.reason}` : ""}
-                    </div>
-                  ))}
+                  {grants.map((g) => {
+                    const isExpired = expiredGrantIds.has(g.id);
+                    return (
+                      <div key={g.id} className={`text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                        {g.amount > 0 ? "+" : ""}
+                        {g.amount} by {g.grantedBy} on {new Date(g.grantedAt).toLocaleDateString()}
+                        {g.reason ? ` — ${g.reason}` : ""}
+                        {g.expiresAt && (
+                          <span className={`ml-1.5 font-bold ${isExpired ? (dark ? "text-rose-400" : "text-rose-600") : ""}`}>
+                            {isExpired ? "· Expired" : `· Expires ${new Date(g.expiresAt).toLocaleDateString()}`}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

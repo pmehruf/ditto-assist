@@ -4702,7 +4702,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="AI Usage & Limits">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <ProductAssistQuotaPage theme={theme} />
+              <ProductAssistQuotaPage theme={theme} departments={departmentsList} orgTeams={orgTeamsList} roles={rolesList} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

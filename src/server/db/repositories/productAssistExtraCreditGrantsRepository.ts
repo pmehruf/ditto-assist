@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { productAssistExtraCreditGrants, type ProductAssistExtraCreditGrantRow } from "../schema.js";
 
@@ -13,6 +13,16 @@ export interface CreateExtraCreditGrantEntry {
   amount: number;
   reason: string | null;
   grantedBy: string;
+  /** Optional (migration 0049). Undefined/null = never expires, the
+   * original default behavior. */
+  expiresAt?: Date | null;
+}
+
+/** Matches a row that has NOT expired as of `now` — either it has no
+ * expiry at all, or its expiry is still in the future. Shared by both
+ * balance queries below so they can never drift apart. */
+function notExpired(now: Date) {
+  return or(isNull(productAssistExtraCreditGrants.expiresAt), gt(productAssistExtraCreditGrants.expiresAt, now));
 }
 
 /**
@@ -34,6 +44,7 @@ export class ProductAssistExtraCreditGrantsRepository {
         amount: entry.amount,
         reason: entry.reason,
         grantedBy: entry.grantedBy,
+        expiresAt: entry.expiresAt ?? null,
       })
       .returning();
     return row;
@@ -47,24 +58,27 @@ export class ProductAssistExtraCreditGrantsRepository {
       .orderBy(desc(productAssistExtraCreditGrants.grantedAt));
   }
 
-  /** Current extra-credit balance for one user (0 if they have no rows). */
-  async balanceForUser(userEmail: string): Promise<number> {
+  /** Current extra-credit balance for one user (0 if they have no rows).
+   * Excludes any row whose expiresAt has passed — see notExpired() above. */
+  async balanceForUser(userEmail: string, now: Date = new Date()): Promise<number> {
     const [row] = await this.db
       .select({ total: sql<string | null>`COALESCE(SUM(${productAssistExtraCreditGrants.amount}), 0)` })
       .from(productAssistExtraCreditGrants)
-      .where(eq(productAssistExtraCreditGrants.userEmail, userEmail.toLowerCase()));
+      .where(and(eq(productAssistExtraCreditGrants.userEmail, userEmail.toLowerCase()), notExpired(now)));
     return Number(row?.total ?? 0);
   }
 
-  /** Extra-credit balance for every user that has at least one grant row —
-   * used to build the admin Users table without an N+1 per-user query. */
-  async balancesByUser(): Promise<Map<string, number>> {
+  /** Extra-credit balance for every user that has at least one non-expired
+   * grant row — used to build the admin Users table without an N+1
+   * per-user query. */
+  async balancesByUser(now: Date = new Date()): Promise<Map<string, number>> {
     const rows: { userEmail: string; total: string | null }[] = await this.db
       .select({
         userEmail: productAssistExtraCreditGrants.userEmail,
         total: sql<string | null>`SUM(${productAssistExtraCreditGrants.amount})`,
       })
       .from(productAssistExtraCreditGrants)
+      .where(notExpired(now))
       .groupBy(productAssistExtraCreditGrants.userEmail);
     return new Map(rows.map((r) => [r.userEmail, Number(r.total ?? 0)]));
   }

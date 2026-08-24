@@ -94,6 +94,7 @@ import {
   startOfDayIST,
   startOfMonthIST,
 } from "./src/server/knowledgeBase/productAssistQuota.js";
+import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "./src/constants/featurePermissions.js";
 
 dotenv.config();
 
@@ -118,8 +119,15 @@ app.set("trust proxy", 1);
 // and every request passes straight through unaffected; on the old service
 // it 301-redirects the visitor straight to the equivalent path on the new
 // domain, before any other route/middleware runs.
-const LEGACY_HOST = "declaration-assistant-93120856554.asia-south1.run.app";
-const NEW_ORIGIN = "https://ditto-assist-93120856554.asia-south1.run.app";
+//
+// Both hostnames below were updated 2026-08-25 — `gcloud run services list`
+// showed Cloud Run's default URL format for this project changed at some
+// point since these were first set (the old ...-93120856554.asia-south1.
+// run.app form no longer matches either live service; see DEPLOYMENT.md's
+// own note), which meant this redirect had silently gone dead (req.hostname
+// could never match the stale LEGACY_HOST).
+const LEGACY_HOST = "declaration-assistant-y5biuzxgda-el.a.run.app";
+const NEW_ORIGIN = "https://ditto-assist-y5biuzxgda-el.a.run.app";
 app.use((req, res, next) => {
   if (req.hostname === LEGACY_HOST) {
     return res.redirect(301, `${NEW_ORIGIN}${req.originalUrl}`);
@@ -1771,6 +1779,86 @@ async function requireAdminOrDeveloper(req: any, res: any, action: string): Prom
   return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// requireFeatureAccess — the server-side mirror of App.tsx's hasAccess().
+// Closes the gap identified 2026-08-25 ("Wire the Access Control Center to
+// the Real Authorization System"): the Permissions tab's feature_access_
+// overrides and Custom Access Grants (grantType "feature_access") were
+// previously consulted ONLY by the client's hasAccess() — every server
+// route was gated purely by hardcoded tier checks (isAdminPower/
+// isDeveloperPower), so an admin's Permissions-tab edit or a Developer's
+// Custom Grant was cosmetic everywhere except which tabs rendered. This
+// function makes that configuration real for the content-management
+// routes it's applied to below (plan_scope, qa_announcement_log,
+// flagged_responses, ped_suggestions, knowledge_base, audit).
+//
+// Deliberately mirrors hasAccess()'s exact precedence — same DEVELOPER_ONLY_
+// FEATURES hard gate, same Developer/Platform Admin bypass, same
+// registry-then-default resolution, same max-of/grant-only Custom Grant
+// rule — so a feature behaves identically whether a person is looking at
+// the UI or hitting the API directly.
+//
+// NOT applied to the Access Control Center's own routes (users,
+// departments, org-teams, roles, relationship-types, user-relationships,
+// custom-access-grants, feature-access, page-visibility) or the Product
+// Assist quota settings routes — those stay on their existing hardcoded
+// Developer/Platform-Admin-only gates, exactly like DEVELOPER_ONLY_FEATURES
+// already treats owner_controls/connections/smoke_test/product_assist_quota.
+// Reasoning: those routes configure the authorization system itself, so
+// letting a Custom Grant or Permissions-tab edit ever raise access to THEM
+// would be a privilege-escalation path (a careless or malicious grant on
+// "profile_access" could hand a General user the ability to grant further
+// access to themselves). This is a deliberate scope boundary, not an
+// oversight — see the final report.
+const ACCESS_LEVEL_RANK: Record<string, number> = { None: 0, Viewer: 1, Editor: 2 };
+
+async function requireFeatureAccess(
+  req: any,
+  res: any,
+  featureId: string,
+  actionType: "Viewer" | "Editor",
+  action: string
+): Promise<boolean> {
+  const { users: usersRepo, featureAccess, customAccessGrants } = createRepositories(getDb());
+  const callerTier = await getCallerTier(req, usersRepo);
+
+  if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
+    if (!isDeveloperPower(callerTier)) {
+      res.status(403).json({ error: `${action} requires Developer or Platform Admin tier.` });
+      return false;
+    }
+    return true;
+  }
+
+  if (isDeveloperPower(callerTier)) return true; // mirrors hasAccess()'s Developer/Platform Admin bypass
+
+  const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId);
+  if (!perm) return true; // unknown feature id — kept open, mirrors hasAccess()
+
+  const overrides = await featureAccess.list();
+  const override = overrides.find((o) => o.featureId === featureId);
+  const generalAccess = override?.generalAccess ?? perm.generalAccess;
+  const adminAccess = override?.adminAccess ?? perm.adminAccess;
+  const shippedLevel = callerTier === "Admin" ? adminAccess : generalAccess;
+
+  const email = (req.user?.email as string | undefined)?.toLowerCase();
+  let level = shippedLevel;
+  if (email) {
+    const grants = await customAccessGrants.listActiveForEmail(email);
+    const grant = grants.find((g) => g.grantType === "feature_access" && g.targetId === featureId);
+    if (grant?.level && ACCESS_LEVEL_RANK[grant.level] > ACCESS_LEVEL_RANK[shippedLevel]) {
+      level = grant.level;
+    }
+  }
+
+  const allowed = level === "Editor" ? true : level === "Viewer" ? actionType === "Viewer" : false;
+  if (!allowed) {
+    res.status(403).json({ error: `${action} requires access to this feature.` });
+    return false;
+  }
+  return true;
+}
+
 // --- Search History (powers the Audit tab's full list and My Activity's self-filtered view) ---
 
 app.get("/api/search-history", requireAuth, async (req, res) => {
@@ -1959,7 +2047,7 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
 
 app.post("/api/announcements", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Creating announcements"))) return;
+    if (!(await requireFeatureAccess(req, res, "qa_announcement_log", "Editor", "Creating announcements"))) return;
     const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate, team } = req.body;
     if (typeof announcement !== "string" || !announcement.trim() || typeof category !== "string" || !category.trim()) {
       return res.status(400).json({ error: "announcement and category are required." });
@@ -2007,7 +2095,7 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
 
 app.put("/api/announcements/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing announcements"))) return;
+    if (!(await requireFeatureAccess(req, res, "qa_announcement_log", "Editor", "Editing announcements"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
 
@@ -2038,7 +2126,7 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/announcements/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting announcements"))) return;
+    if (!(await requireFeatureAccess(req, res, "qa_announcement_log", "Editor", "Deleting announcements"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
     const { announcements } = createRepositories(getDb());
@@ -3182,7 +3270,7 @@ app.get("/api/ai-memory", requireAuth, async (req, res) => {
 // instead of leaving a wrong override behind.
 app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Reviewing AI mapping recommendations"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Reviewing AI mapping recommendations"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid entry id." });
 
@@ -3274,7 +3362,7 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
 // the cache key fields are immutable.
 app.patch("/api/ai-memory/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing AI mapping recommendations"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing AI mapping recommendations"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid entry id." });
 
@@ -3328,7 +3416,7 @@ async function logPedRepositoryChange(
 
 app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding PED suggestions"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding PED suggestions"))) return;
     const { term, category } = req.body;
     if (typeof term !== "string" || !term.trim()) {
       return res.status(400).json({ error: "term is required." });
@@ -3388,7 +3476,7 @@ app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
 
 app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing PED suggestions"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing PED suggestions"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
     const { term, category } = req.body;
@@ -3457,7 +3545,7 @@ app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting PED suggestions"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting PED suggestions"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
     const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
@@ -3594,7 +3682,7 @@ app.get("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
 
 app.post("/api/ped-repository", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding a PED"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding a PED"))) return;
     const { canonicalName, categoryKey, status, notes } = req.body;
     if (typeof canonicalName !== "string" || !canonicalName.trim()) {
       return res.status(400).json({ error: "canonicalName is required." });
@@ -3635,7 +3723,7 @@ app.post("/api/ped-repository", requireAuth, async (req, res) => {
 
 app.patch("/api/ped-repository/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a PED"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing a PED"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
 
@@ -3700,7 +3788,7 @@ app.patch("/api/ped-repository/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/ped-repository/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting a PED"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting a PED"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
 
@@ -3728,7 +3816,7 @@ app.delete("/api/ped-repository/:id", requireAuth, async (req, res) => {
 
 app.post("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding a PED alias"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding a PED alias"))) return;
     const pedId = Number(req.params.id);
     if (!Number.isInteger(pedId)) return res.status(400).json({ error: "Invalid PED id." });
     const { aliasText, isVisible } = req.body;
@@ -3790,7 +3878,7 @@ app.post("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
 
 app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a PED alias"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing a PED alias"))) return;
     const aliasId = Number(req.params.aliasId);
     if (!Number.isInteger(aliasId)) return res.status(400).json({ error: "Invalid alias id." });
     const { aliasText, isVisible, isPrimary } = req.body;
@@ -3838,7 +3926,7 @@ app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) 
 
 app.delete("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting a PED alias"))) return;
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting a PED alias"))) return;
     const aliasId = Number(req.params.aliasId);
     if (!Number.isInteger(aliasId)) return res.status(400).json({ error: "Invalid alias id." });
 
@@ -3890,7 +3978,7 @@ app.get("/api/smoke-test-peds", requireAuth, async (req, res) => {
 
 app.post("/api/smoke-test-peds", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding custom smoke-test PEDs"))) return;
+    if (!(await requireFeatureAccess(req, res, "smoke_test", "Editor", "Adding custom smoke-test PEDs"))) return;
     const { term } = req.body;
     if (typeof term !== "string" || !term.trim()) {
       return res.status(400).json({ error: "term is required." });
@@ -3910,7 +3998,7 @@ app.post("/api/smoke-test-peds", requireAuth, async (req, res) => {
 
 app.delete("/api/smoke-test-peds/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting custom smoke-test PEDs"))) return;
+    if (!(await requireFeatureAccess(req, res, "smoke_test", "Editor", "Deleting custom smoke-test PEDs"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid smoke-test PED id." });
     const { smokeTestPeds } = createRepositories(getDb());
@@ -4062,7 +4150,7 @@ app.get("/api/plan-configs", requireAuth, async (req, res) => {
 
 app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding a plan"))) return;
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Adding a plan"))) return;
 
     const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote, removed } = req.body;
 
@@ -4119,7 +4207,7 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
 
 app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a plan"))) return;
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Editing a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
 
     const { planName: newPlanNameRaw, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote, removed } = req.body;
@@ -4210,7 +4298,7 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
 
 app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting a plan"))) return;
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Deleting a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
     const { planConfigs } = createRepositories(getDb());
     await planConfigs.delete(planName);
@@ -4283,7 +4371,7 @@ function validatePlanRestrictionBody(body: any): { categoryKey: string; mode: "r
 
 app.post("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding a Plan-Specific Restriction"))) return;
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Adding a Plan-Specific Restriction"))) return;
     const planName = decodeURIComponent(req.params.planName);
     const parsed = validatePlanRestrictionBody(req.body);
     if (!parsed) {
@@ -4324,7 +4412,7 @@ app.post("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
 
 app.patch("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a Plan-Specific Restriction"))) return;
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Editing a Plan-Specific Restriction"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid restriction id." });
     const { users: usersRepo, planRestrictions, changeLogs } = createRepositories(getDb());
@@ -4375,7 +4463,7 @@ app.patch("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Plan-Specific Restriction"))) return;
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Deleting a Plan-Specific Restriction"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid restriction id." });
     const { users: usersRepo, planRestrictions, changeLogs } = createRepositories(getDb());
@@ -4622,7 +4710,7 @@ app.put("/api/flagged-issues/:id", requireAuth, async (req, res) => {
   try {
     // Resolve/Ignore + notes are Admin+Developer actions in the UI (only
     // permanent delete is Developer-only — see the DELETE route below).
-    if (!(await requireAdminOrDeveloper(req, res, "Resolving flagged responses"))) return;
+    if (!(await requireFeatureAccess(req, res, "flagged_responses", "Editor", "Resolving flagged responses"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid flagged issue id." });
 
@@ -5337,7 +5425,7 @@ app.get("/api/kb/faq/records", requireAuth, async (req, res) => {
 // the Sheet remains the sole authoring source (spec §19).
 app.patch("/api/kb/faq/records/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a Ditto FAQ record"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Editing a Ditto FAQ record"))) return;
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id." });
     if (typeof req.body.isActive !== "boolean") return res.status(400).json({ error: "isActive (boolean) is required." });
@@ -5380,7 +5468,7 @@ app.get("/api/kb/categories", requireAuth, async (req, res) => {
 
 app.post("/api/kb/categories", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding a Knowledge Base category"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Adding a Knowledge Base category"))) return;
     const { name, type, sortOrder } = req.body;
     if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "name is required." });
     if (type !== "insurer" && type !== "general") return res.status(400).json({ error: 'type must be "insurer" or "general".' });
@@ -5395,7 +5483,7 @@ app.post("/api/kb/categories", requireAuth, async (req, res) => {
 
 app.patch("/api/kb/categories/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base category"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Editing a Knowledge Base category"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
     const { name, type, sortOrder, planNames, disabledPlanNames } = req.body;
@@ -5432,7 +5520,7 @@ app.patch("/api/kb/categories/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/kb/categories/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Knowledge Base category"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Deleting a Knowledge Base category"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
     const { kbCategories, kbResources } = createRepositories(getDb());
@@ -5461,7 +5549,7 @@ app.delete("/api/kb/categories/:id", requireAuth, async (req, res) => {
 // Workstream A's plan CRUD rules forbid).
 app.post("/api/kb/categories/:id/rename-plan", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Renaming a Knowledge Base plan"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Renaming a Knowledge Base plan"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
     const oldName = typeof req.body.oldName === "string" ? req.body.oldName.trim() : "";
@@ -5535,7 +5623,7 @@ app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
   });
 }, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Uploading a Knowledge Base document"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Uploading a Knowledge Base document"))) return;
     const file = (req as any).file;
     if (!file) return res.status(400).json({ error: "No file uploaded (expected multipart field \"file\")." });
 
@@ -5579,7 +5667,7 @@ app.post("/api/kb/resources/upload", requireAuth, (req, res, next) => {
 // changed.
 app.post("/api/kb/resources/add-url", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding a Knowledge Base document"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Adding a Knowledge Base document"))) return;
     const { url, categoryId: rawCategoryId, title: rawTitle, documentType } = req.body;
     if (typeof url !== "string" || !url.trim()) return res.status(400).json({ error: "url is required." });
     let parsedUrl: URL;
@@ -5624,7 +5712,7 @@ app.post("/api/kb/resources/add-url", requireAuth, expensiveActionLimiter, async
 
 app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base resource"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Editing a Knowledge Base resource"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
     const { title, categoryId, status, planTags, documentType, isInsurerLevel } = req.body;
@@ -5663,7 +5751,7 @@ app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/kb/resources/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting a Knowledge Base resource"))) return;
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Deleting a Knowledge Base resource"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
     const { kbResources } = createRepositories(getDb());
@@ -6395,7 +6483,7 @@ app.get("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
 // as positive numbers/integers so a typo can't silently zero out quotas.
 app.put("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, productAssistQuotaSettings, changeLogs } = createRepositories(getDb());
+    const { users: usersRepo, productAssistQuotaSettings, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
     const callerTier = await requireQuotaAdmin(req, res, usersRepo);
     if (!callerTier) return;
 
@@ -6438,6 +6526,35 @@ app.put("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
       }
       patch.modelName = b.modelName.trim();
     }
+
+    // Eligibility catalog IDs (migration 0049) — Department/Team/Role a
+    // user must simultaneously hold (alongside the Health tag) to land in
+    // the health_advisor bucket. Each is nullable (null = un-configure
+    // that piece, which makes the rule un-satisfiable overall — see
+    // resolveQuotaBucket()) but if provided as a number must reference a
+    // real, existing catalog row so a typo can't silently no-op.
+    const eligibilityIdFields = [
+      { field: "eligibleDepartmentId", repo: departments, label: "eligibleDepartmentId", noun: "department" },
+      { field: "eligibleOrgTeamId", repo: orgTeams, label: "eligibleOrgTeamId", noun: "team" },
+      { field: "eligibleRoleId", repo: roles, label: "eligibleRoleId", noun: "role" },
+    ] as const;
+    for (const { field, repo, noun } of eligibilityIdFields) {
+      if (b[field] === undefined) continue;
+      if (b[field] === null) {
+        patch[field] = null;
+        continue;
+      }
+      const id = Number(b[field]);
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: `${field} must be a whole number ID or null.` });
+      }
+      const row = await repo.get(id);
+      if (!row) {
+        return res.status(400).json({ error: `${field} does not reference an existing ${noun}.` });
+      }
+      patch[field] = id;
+    }
+
     if ((patch.warningThresholdPercent as number | undefined) !== undefined && (patch.warningThresholdPercent as number) > 100) {
       return res.status(400).json({ error: "warningThresholdPercent must be between 0 and 100." });
     }
@@ -6635,7 +6752,9 @@ app.delete("/api/product-assist/quota/users/:email/override", requireAuth, async
 // POST /api/product-assist/quota/users/:email/extra-credits — grant
 // (positive amount) or remove/reduce (negative amount) extra credits.
 // Never mutates a past grant — always inserts a new ledger row, per
-// schema.ts's doc comment. Extra credits never expire.
+// schema.ts's doc comment. Extra credits never expire UNLESS the admin
+// supplies an optional expiresAt (migration 0049) — omitting it preserves
+// the original never-expires default.
 app.post("/api/product-assist/quota/users/:email/extra-credits", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, productAssistExtraCreditGrants, changeLogs } = createRepositories(getDb());
@@ -6646,12 +6765,27 @@ app.post("/api/product-assist/quota/users/:email/extra-credits", requireAuth, as
     const targetUser = await usersRepo.findByEmail(email);
     if (!targetUser) return res.status(404).json({ error: "No user found with that email." });
 
-    const { amount, reason } = req.body ?? {};
+    const { amount, reason, expiresAt } = req.body ?? {};
     if (!Number.isInteger(amount) || amount === 0) {
       return res.status(400).json({ error: "amount must be a non-zero whole number (negative to remove/reduce credits)." });
     }
     if (reason !== undefined && reason !== null && typeof reason !== "string") {
       return res.status(400).json({ error: "reason must be a string." });
+    }
+    // Optional (migration 0049). Undefined/null = never expires — the
+    // original, still-default behavior. When provided, must be a valid,
+    // future ISO date string; a past date would create a grant that's
+    // already expired on arrival, which is never a legitimate admin intent.
+    let parsedExpiresAt: Date | null = null;
+    if (expiresAt !== undefined && expiresAt !== null && expiresAt !== "") {
+      const d = new Date(expiresAt);
+      if (Number.isNaN(d.getTime())) {
+        return res.status(400).json({ error: "expiresAt must be a valid date." });
+      }
+      if (d.getTime() <= Date.now()) {
+        return res.status(400).json({ error: "expiresAt must be in the future." });
+      }
+      parsedExpiresAt = d;
     }
 
     const grant = await productAssistExtraCreditGrants.create({
@@ -6659,6 +6793,7 @@ app.post("/api/product-assist/quota/users/:email/extra-credits", requireAuth, as
       amount,
       reason: reason ?? null,
       grantedBy: req.user!.email,
+      expiresAt: parsedExpiresAt,
     });
 
     try {

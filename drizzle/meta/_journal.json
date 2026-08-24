@@ -344,6 +344,13 @@
       "when": 1788300000000,
       "tag": "0048_product_assist_credit_system",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0049_product_assist_eligibility_and_grant_expiry",
+      "breakpoints": true
     }
   ]
 }

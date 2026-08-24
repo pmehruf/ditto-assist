@@ -11,26 +11,48 @@
  * route. Nothing in this file touches retrieval, prompts, or the AI call
  * itself.
  *
- * ELIGIBILITY MODEL (product decision, 2026-08, given verbatim by the
- * user — not inferred):
+ * ELIGIBILITY MODEL (revised 2026-08-25 — "Wire the Access Control Center
+ * to the Real Authorization System + Correct Product Assist Eligibility").
+ * This is the ONE deterministic, reusable evaluator for Product Assist
+ * advisor eligibility — nothing else in the codebase re-implements this
+ * check; every caller (the enforcement gate, the admin Users table, tests)
+ * goes through resolveQuotaBucket()/resolveBucketForUser() below:
  *   - tier === "Developer" (NOT Platform Admin) -> automatic, permanent,
  *     unrevocable unlimited access. "He is the top most authority of this
- *     whole setup."
- *   - tags includes "Health" AND the user's roleId resolves to a role
- *     named "Advisor" (case-insensitive; see the `roles` table) -> the
+ *     whole setup." (Platform Admin is deliberately NOT auto-unlimited —
+ *     administrative access alone never implies entitlement; see the
+ *     schema-level tier docs.)
+ *   - Department = the configured "eligible" department (Advisory, by
+ *     convenience seed) AND Team = the configured "eligible" team (Bliss,
+ *     by convenience seed) AND Role = the configured "eligible" role
+ *     (Advisor, by convenience seed) AND tags includes "Health" -> the
  *     configurable default daily+monthly credit allowance
  *     (product_assist_quota_settings.defaultDailyCredits/
- *     defaultMonthlyCredits).
+ *     defaultMonthlyCredits). All three catalog IDs are admin-configured
+ *     via product_assist_quota_settings.eligibleDepartmentId/
+ *     eligibleOrgTeamId/eligibleRoleId (set from the "AI Usage & Limits"
+ *     Settings tab) rather than hardcoded name strings, so renaming a
+ *     department/team/role in Access Control Center never silently breaks
+ *     eligibility. If any of the three is unset (no admin has configured
+ *     it yet), NO user can qualify via this rule — matches the pre-existing
+ *     "Health tag + Advisor role only" rule's spirit of requiring an
+ *     explicit, narrow match, just extended to require Department+Team too.
+ *   - Additional tags (e.g. Health + Term together) don't disqualify — the
+ *     rule only requires Health to be PRESENT among the user's tags, not
+ *     that it be the only one.
  *   - everyone else (including Platform Admin, Admin, and any General-tier
- *     or non-Advisor/non-Health user) -> a small monthly-only trial
- *     allotment (product_assist_quota_settings.trialMonthlyCredits), no
- *     daily cap needed at that size.
+ *     or non-matching user) -> a small monthly-only trial allotment
+ *     (product_assist_quota_settings.trialMonthlyCredits), no daily cap
+ *     needed at that size.
  * A Developer or Platform Admin can still individually override ANY
  * user's limits (custom daily/monthly, disable enforcement, or grant
  * explicit unlimited access) via product_assist_user_quota_overrides,
  * regardless of which bucket they fall into above — that's the "Developer
  * will decide user specific allocation as well above health advisors
- * group" part of the same product decision.
+ * group" part of the same product decision. This override mechanism, the
+ * credit calculation, the usage ledger, and the general/trial treatment
+ * are UNCHANGED by this revision — only which users land in the
+ * health_advisor bucket has been corrected.
  *
  * RESET BOUNDARIES: daily/monthly windows reset on the IST (Asia/Kolkata,
  * UTC+5:30, no DST) calendar day/month, not UTC midnight — the whole
@@ -59,10 +81,43 @@ function startOfMonthIST(now: Date): Date {
 
 export type QuotaBucket = "developer_unlimited" | "health_advisor" | "trial";
 
-/** Pure function — no DB access — so it's independently testable. */
-export function resolveQuotaBucket(user: { tier: string; tags: string[] }, roleName: string | null | undefined): QuotaBucket {
+/** The three admin-configured catalog IDs that jointly define "eligible"
+ * for the health_advisor bucket — see product_assist_quota_settings'
+ * eligibleDepartmentId/eligibleOrgTeamId/eligibleRoleId columns. Any of the
+ * three being null means the rule can never match (nothing is configured
+ * yet), never "wildcard matches everything." */
+export interface ProductAssistEligibilityConfig {
+  eligibleDepartmentId: number | null;
+  eligibleOrgTeamId: number | null;
+  eligibleRoleId: number | null;
+}
+
+/**
+ * THE single, reusable Product Assist advisor-eligibility evaluator — pure
+ * function, no DB access, so it's independently testable and so every
+ * caller (enforcement, the admin Users table, tests) can never drift from
+ * this exact rule: Department = configured eligible department AND Team =
+ * configured eligible team AND Role = configured eligible role AND tags
+ * includes "Health". Do not duplicate this check anywhere else — route
+ * every eligibility decision through this function (or resolveBucketForUser
+ * below, which resolves a user's raw IDs against it).
+ */
+export function resolveQuotaBucket(
+  user: { tier: string; tags: string[]; departmentId?: number | null; orgTeamId?: number | null; roleId?: number | null },
+  eligibility: ProductAssistEligibilityConfig
+): QuotaBucket {
   if (user.tier === "Developer") return "developer_unlimited";
-  const isHealthAdvisor = user.tags.includes("Health") && (roleName ?? "").trim().toLowerCase() === "advisor";
+
+  const { eligibleDepartmentId, eligibleOrgTeamId, eligibleRoleId } = eligibility;
+  const eligibilityConfigured = eligibleDepartmentId !== null && eligibleOrgTeamId !== null && eligibleRoleId !== null;
+
+  const isHealthAdvisor =
+    eligibilityConfigured &&
+    user.tags.includes("Health") &&
+    (user.departmentId ?? null) === eligibleDepartmentId &&
+    (user.orgTeamId ?? null) === eligibleOrgTeamId &&
+    (user.roleId ?? null) === eligibleRoleId;
+
   return isHealthAdvisor ? "health_advisor" : "trial";
 }
 
@@ -140,23 +195,25 @@ function deriveState(
   return "ok";
 }
 
-async function resolveBucketForUser(
-  repos: Repositories,
-  user: { tier: string; tags: string[]; roleId: number | null } | undefined,
-  roleById?: Map<number, { name: string }>
-): Promise<QuotaBucket> {
-  const tags = user?.tags ?? [];
-  const tier = user?.tier ?? "General";
-  let roleName: string | null = null;
-  if (user?.roleId) {
-    if (roleById) {
-      roleName = roleById.get(user.roleId)?.name ?? null;
-    } else {
-      const role = await repos.roles.get(user.roleId);
-      roleName = role?.name ?? null;
-    }
-  }
-  return resolveQuotaBucket({ tier, tags }, roleName);
+/** Resolves a directory user's raw tier/tags/Department/Team/Role IDs
+ * against the admin-configured eligibility settings via the single
+ * evaluator above. `eligibility` is passed in (rather than fetched here)
+ * so listAllUserQuotaStatuses can fetch settings once and reuse it across
+ * the whole directory instead of once per user. */
+function resolveBucketForUser(
+  user: { tier: string; tags: string[]; departmentId: number | null; orgTeamId: number | null; roleId: number | null } | undefined,
+  eligibility: ProductAssistEligibilityConfig
+): QuotaBucket {
+  return resolveQuotaBucket(
+    {
+      tier: user?.tier ?? "General",
+      tags: user?.tags ?? [],
+      departmentId: user?.departmentId ?? null,
+      orgTeamId: user?.orgTeamId ?? null,
+      roleId: user?.roleId ?? null,
+    },
+    eligibility
+  );
 }
 
 /**
@@ -175,7 +232,11 @@ export async function getQuotaStatus(repos: Repositories, userEmail: string, now
     repos.productAssistExtraCreditGrants.balanceForUser(email),
   ]);
 
-  const bucket = await resolveBucketForUser(repos, user);
+  const bucket = resolveBucketForUser(user, {
+    eligibleDepartmentId: settings.eligibleDepartmentId,
+    eligibleOrgTeamId: settings.eligibleOrgTeamId,
+    eligibleRoleId: settings.eligibleRoleId,
+  });
   const { unlimited, dailyLimit, monthlyLimit } = deriveEffectiveLimits(bucket, override, settings, extraCredits);
 
   const dayStart = startOfDayIST(now);
@@ -251,42 +312,48 @@ export async function listAllUserQuotaStatuses(repos: Repositories, now: Date = 
   ]);
 
   const overrideByEmail = new Map(overrides.map(o => [o.userEmail, o]));
+  // roleById is used purely for the display-only roleName field below — the
+  // eligibility decision itself compares raw roleId to
+  // settings.eligibleRoleId (see resolveBucketForUser), never a role name.
   const roleById = new Map(roles.map(r => [r.id, r]));
+  const eligibility: ProductAssistEligibilityConfig = {
+    eligibleDepartmentId: settings.eligibleDepartmentId,
+    eligibleOrgTeamId: settings.eligibleOrgTeamId,
+    eligibleRoleId: settings.eligibleRoleId,
+  };
 
-  return Promise.all(
-    users.map(async u => {
-      const email = u.email.toLowerCase();
-      const override = overrideByEmail.get(email);
-      const bucket = await resolveBucketForUser(repos, u, roleById);
-      const extraCredits = extraBalances.get(email) ?? 0;
-      const { unlimited, dailyLimit, monthlyLimit } = deriveEffectiveLimits(bucket, override, settings, extraCredits);
-      const dailyUsed = dailyByUser.get(email) ?? 0;
-      const monthlyUsed = monthlyByUser.get(email) ?? 0;
-      const dailyRemaining = unlimited || dailyLimit === null ? null : dailyLimit - dailyUsed;
-      const monthlyRemaining = unlimited || monthlyLimit === null ? null : monthlyLimit - monthlyUsed;
-      const monthlyUtilizationPercent =
-        unlimited || monthlyLimit === null || monthlyLimit <= 0 ? null : Math.round((monthlyUsed / monthlyLimit) * 100);
-      const state = deriveState(unlimited, dailyRemaining, monthlyRemaining, monthlyUtilizationPercent, settings.warningThresholdPercent);
-      const roleName = u.roleId ? roleById.get(u.roleId)?.name ?? null : null;
+  return users.map(u => {
+    const email = u.email.toLowerCase();
+    const override = overrideByEmail.get(email);
+    const bucket = resolveBucketForUser(u, eligibility);
+    const extraCredits = extraBalances.get(email) ?? 0;
+    const { unlimited, dailyLimit, monthlyLimit } = deriveEffectiveLimits(bucket, override, settings, extraCredits);
+    const dailyUsed = dailyByUser.get(email) ?? 0;
+    const monthlyUsed = monthlyByUser.get(email) ?? 0;
+    const dailyRemaining = unlimited || dailyLimit === null ? null : dailyLimit - dailyUsed;
+    const monthlyRemaining = unlimited || monthlyLimit === null ? null : monthlyLimit - monthlyUsed;
+    const monthlyUtilizationPercent =
+      unlimited || monthlyLimit === null || monthlyLimit <= 0 ? null : Math.round((monthlyUsed / monthlyLimit) * 100);
+    const state = deriveState(unlimited, dailyRemaining, monthlyRemaining, monthlyUtilizationPercent, settings.warningThresholdPercent);
+    const roleName = u.roleId ? roleById.get(u.roleId)?.name ?? null : null;
 
-      return {
-        userEmail: email,
-        name: u.name,
-        tier: u.tier,
-        tags: u.tags,
-        roleName,
-        bucket,
-        unlimited,
-        dailyLimit,
-        monthlyLimit,
-        dailyUsed,
-        monthlyUsed,
-        extraCredits,
-        hasOverride: !!override,
-        state,
-      };
-    })
-  );
+    return {
+      userEmail: email,
+      name: u.name,
+      tier: u.tier,
+      tags: u.tags,
+      roleName,
+      bucket,
+      unlimited,
+      dailyLimit,
+      monthlyLimit,
+      dailyUsed,
+      monthlyUsed,
+      extraCredits,
+      hasOverride: !!override,
+      state,
+    };
+  });
 }
 
 export interface QuotaCheckResult {

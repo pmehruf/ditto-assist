@@ -1547,10 +1547,13 @@ export type NewProductAssistLogExportConnectionRow = typeof productAssistLogExpo
 //     decide that bucket.
 //   - product_assist_extra_credit_grants: append-only ledger of admin
 //     top-ups (and removals/reductions, recorded as a negative-amount
-//     entry rather than mutating a past row). Grants never expire — the
-//     current extra-credit balance for a user is simply SUM(amount) across
-//     their rows, and it's added on top of their MONTHLY limit only (a
-//     grant never raises the daily cap).
+//     entry rather than mutating a past row). Grants never expire BY
+//     DEFAULT — the current extra-credit balance for a user is SUM(amount)
+//     across their non-expired rows (expiresAt null OR in the future),
+//     added on top of their MONTHLY limit only (a grant never raises the
+//     daily cap). expiresAt (added migration 0049) is optional, set by the
+//     granting admin at grant time; leaving it unset preserves the
+//     original "never expires" behavior exactly.
 //   - product_assist_usage_ledger: the actual credit-consumption record
 //     used for enforcement. Deliberately separate from product_assist_logs
 //     above — this table is written SYNCHRONOUSLY (awaited) immediately
@@ -1578,6 +1581,19 @@ export const productAssistQuotaSettings = pgTable("product_assist_quota_settings
   modelName: text("model_name").notNull().default("gemini-2.5-flash"),
   inputPricePerMillionTokens: numeric("input_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
   outputPricePerMillionTokens: numeric("output_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
+  // The Department/Team/Role a user must simultaneously hold (alongside the
+  // "Health" tag, checked separately) to fall into the health_advisor
+  // bucket — see resolveQuotaBucket() in productAssistQuota.ts. Added
+  // migration 0049. Null = unset, meaning no user currently qualifies via
+  // this rule (falls through to Developer-unlimited or trial exactly as
+  // before this migration existed) until a Developer/Platform Admin picks
+  // all three from "AI Usage & Limits". onDelete: "set null" so deleting
+  // (deactivating doesn't delete) the referenced catalog row can't leave a
+  // dangling reference — it just quietly un-configures eligibility rather
+  // than erroring.
+  eligibleDepartmentId: integer("eligible_department_id").references(() => departments.id, { onDelete: "set null" }),
+  eligibleOrgTeamId: integer("eligible_org_team_id").references(() => orgTeams.id, { onDelete: "set null" }),
+  eligibleRoleId: integer("eligible_role_id").references(() => roles.id, { onDelete: "set null" }),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1619,6 +1635,12 @@ export const productAssistExtraCreditGrants = pgTable(
     reason: text("reason"),
     grantedBy: text("granted_by").notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+    // Optional, added migration 0049. Null = never expires (the original,
+    // still-default behavior). When set, this grant is excluded from
+    // balanceForUser/balancesByUser once expiresAt is in the past — the row
+    // itself is never deleted or mutated, so grant/removal history stays
+    // intact for audit exactly as before.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
   },
   (table) => [index("product_assist_extra_credit_grants_user_email_idx").on(table.userEmail)]
 );

@@ -8,9 +8,16 @@ Never paste real secret values into this file; it's a normal tracked doc, not a 
 Production
 ----------
 Branch:      main
-Cloud Run:   ditto-assist                 (pending — currently still "declaration-assistant")
+Cloud Run:   ditto-assist                 (a separate "declaration-assistant" service also
+                                            still exists in this project/region — unclear as
+                                            of 2026-08-25 whether it's still live or a leftover
+                                            pending decommission; not touched here)
 Database:    Neon "production" branch     (the original/root branch — untouched)
-APP_URL:     https://ditto-assist-93120856554.asia-south1.run.app   (assigned on first deploy)
+APP_URL:     https://ditto-assist-y5biuzxgda-el.a.run.app   (confirmed via `gcloud run services
+                                            list` 2026-08-25 — Cloud Run's default URL format
+                                            changed at some point since this doc was last
+                                            updated; the old ...-93120856554.asia-south1.run.app
+                                            form is stale)
 Env file:    .env.production.yaml (local, git-ignored)
 
 Staging
@@ -18,7 +25,7 @@ Staging
 Branch:      develop
 Cloud Run:   ditto-assist-staging
 Database:    Neon "ditto-assist-staging" branch (branched from production, isolated)
-APP_URL:     https://ditto-assist-staging-93120856554.asia-south1.run.app
+APP_URL:     https://ditto-assist-staging-y5biuzxgda-el.a.run.app   (confirmed 2026-08-25, see note above)
 Env file:    .env.staging.yaml (local, git-ignored)
 ```
 

@@ -23,6 +23,9 @@ export type UpdateQuotaSettingsEntry = Partial<
     | "modelName"
     | "inputPricePerMillionTokens"
     | "outputPricePerMillionTokens"
+    | "eligibleDepartmentId"
+    | "eligibleOrgTeamId"
+    | "eligibleRoleId"
   >
 >;
 
