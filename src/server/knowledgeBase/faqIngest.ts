@@ -194,8 +194,9 @@ export interface SyncFaqResult {
  * resource was previously left in an "error" state.
  *
  * The Ditto FAQ resource is created inside the SAME "general" category the
- * Product Playbook already lives in (the "Ditto Constitution" section —
- * see 0041_ditto_faq.sql's data-only rename) rather than a new category, so
+ * Product Playbook already lives in (the "Org Constitution" section — see
+ * 0041_ditto_faq.sql's data-only rename, later renamed again by
+ * 0044_org_constitution_rename.sql) rather than a new category, so
  * it appears as a peer resource in the existing accordion/card UI with zero
  * new UI components.
  */

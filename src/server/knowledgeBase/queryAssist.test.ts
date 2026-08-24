@@ -29,7 +29,7 @@
  *      advisor — no code-level softening, truncation, or override — and the
  *      internal "synthesis" reasoning never leaks into the client-facing
  *      answer/share/sources/meta.
- *   3. Source-hierarchy ordering (Special Instructions > Ditto Constitution
+ *   3. Source-hierarchy ordering (Special Instructions > Org Constitution
  *      > Document Excerpts) is unchanged by adding the synthesis field.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -399,7 +399,7 @@ describe("Product Assist synthesis — multi-source & authority hierarchy (valid
     expect(promptText).toContain("Restoration benefit: confirmed live for this plan");
   });
 
-  it("case 6 — DITTO CONSTITUTION (FAQ/Playbook) content precedes DOCUMENT EXCERPTS content in the prompt, per source hierarchy", async () => {
+  it("case 6 — ORG CONSTITUTION (FAQ/Playbook) content precedes DOCUMENT EXCERPTS content in the prompt, per source hierarchy", async () => {
     mockModelResponse({ answer: "Not specified in available sources.", share: null });
     await answerQuery(
       fakeRepos({
@@ -412,7 +412,7 @@ describe("Product Assist synthesis — multi-source & authority hierarchy (valid
       []
     );
     const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
-    const constitutionIndex = promptText.indexOf("DITTO CONSTITUTION");
+    const constitutionIndex = promptText.indexOf("ORG CONSTITUTION");
     const excerptsIndex = promptText.indexOf("DOCUMENT EXCERPTS");
     expect(constitutionIndex).toBeGreaterThan(-1);
     expect(excerptsIndex).toBeGreaterThan(-1);
@@ -454,7 +454,7 @@ describe("Product Assist synthesis — uncertainty & overrides (validation cases
     );
     const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
     const overrideIndex = promptText.indexOf("SPECIAL INSTRUCTIONS");
-    const constitutionIndex = promptText.indexOf("DITTO CONSTITUTION");
+    const constitutionIndex = promptText.indexOf("ORG CONSTITUTION");
     expect(overrideIndex).toBeGreaterThan(-1);
     expect(overrideIndex).toBeLessThan(constitutionIndex === -1 ? Infinity : constitutionIndex);
     expect(promptText).toContain("The Chronic Care Rider may never be back-dated");

@@ -75,7 +75,7 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {section === "documents"
-              ? "Manage the documents \"Ask the Playbook\" answers advisor questions from, organized per-insurer plus a General/Others bucket."
+              ? "Manage Product Assist resources, rules, and reference material."
               : section === "special_instructions"
                 ? "Controlled instructions Product Assist checks before consulting the Product Playbook, Policy Wording, or other resources."
                 : "Shorthand advisors habitually type, mapped to its full meaning, so Product Assist recognizes it."}

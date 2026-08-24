@@ -309,6 +309,13 @@
       "when": 1787800000000,
       "tag": "0043_kb_acronyms",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0044_org_constitution_rename",
+      "breakpoints": true
     }
   ]
 }

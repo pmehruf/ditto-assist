@@ -905,15 +905,14 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           const accentColor = accent ? (dark ? accent.dark : accent.light) : undefined;
           const planNames = category.type === "insurer" ? planNamesForCategory(category, catResources) : [];
           const families = category.type === "insurer" ? buildPlanFamilies(planNames, catResources) : [];
-          const addonResources = catResources.filter(r => r.documentType === "addon");
           const docTypeCounts = countByDocType(catResources);
           const activeTab: TabKey = activeTabByCategory[category.id] ?? (category.type === "insurer" ? "plans" : "all");
           const setActiveTab = (tab: TabKey) => setActiveTabByCategory(prev => ({ ...prev, [category.id]: tab }));
           const expandedPlan = expandedPlanByCategory[category.id] ?? null;
           const tabs: { key: TabKey; label: string }[] = [
             ...(category.type === "insurer" ? [{ key: "plans" as TabKey, label: "Plans" }] : []),
-            { key: "all", label: "All Resources" },
             ...DOC_TYPE_TABS.map(t => ({ key: t.value as TabKey, label: t.tabLabel })),
+            { key: "all", label: "All Resources" },
           ];
 
           return (
@@ -938,7 +937,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                     {logoSrc ? (
                       <img src={logoSrc} alt={category.name} className="max-w-full max-h-full object-contain" />
                     ) : category.type === "general" ? (
-                      // "Ditto Constitution" (the renamed "General / Others"
+                      // "Org Constitution" (the renamed "General / Others"
                       // section, spec §3/§4): same visual ROLE insurer logos
                       // occupy for insurer rows, using the app's existing
                       // Ditto wordmark asset rather than a generic folder icon.
@@ -1043,26 +1042,6 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                           })}
                         </div>
                       </div>
-
-                      {addonResources.length > 0 && (
-                        <div>
-                          <SectionLabel dark={dark} tone="addon">Add-ons</SectionLabel>
-                          <p className="text-[10px] font-semibold text-content-muted mt-1 mb-2">
-                            Rider documents shown independently of any one plan — an add-on can apply to several plans, so it isn't nested under one.
-                          </p>
-                          <div className={`rounded-lg border p-2.5 ${dark ? "bg-orange-500/[0.05] border-orange-500/[0.15]" : "bg-orange-50/70 border-orange-200"}`}>
-                            <ResourceListTab
-                              resources={addonResources.filter(resourceMatchesSearch)}
-                              dark={dark}
-                              canManage={canManage}
-                              showDocTypeBadge={false}
-                              showPlanCount={false}
-                              onEdit={r => setEditingResourceId(r.id)}
-                              compact
-                            />
-                          </div>
-                        </div>
-                      )}
 
                       {canManage && (
                         <div className={`flex flex-wrap items-center gap-1.5 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>

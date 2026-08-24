@@ -427,7 +427,9 @@ export function SpecialInstructions({ theme, effectiveTier, currentUser, setChan
                       {e.insurerCategoryId !== null ? categoryById.get(e.insurerCategoryId)?.name ?? "—" : <span className={dark ? "text-stone-500" : "text-stone-400"}>Any</span>}
                     </td>
                     <td className={`px-3 py-2.5 font-semibold whitespace-nowrap ${dark ? "text-stone-300" : "text-stone-700"}`}>
-                      {e.productPlanName || <span className={dark ? "text-stone-500" : "text-stone-400"}>Any</span>}
+                      {e.productPlanName || (
+                        <span className={dark ? "text-stone-500" : "text-stone-400"}>{e.insurerCategoryId !== null ? "Generic" : "Any"}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">{statusBadge(e.isActive, dark)}</td>
                     <td className={`px-3 py-2.5 whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
@@ -514,26 +516,43 @@ export function SpecialInstructions({ theme, effectiveTier, currentUser, setChan
                 <CustomSelect
                   theme={theme}
                   value={form.insurerCategoryId}
-                  onChange={v => setForm(f => ({ ...f, insurerCategoryId: v }))}
+                  onChange={v => setForm(f => ({ ...f, insurerCategoryId: v, productPlanName: "" }))}
                   options={[{ value: "", label: "Any insurer" }, ...insurerCategories.map(c => ({ value: String(c.id), label: c.name }))]}
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Product / Plan (optional)</label>
-                <input
-                  className={inputClass}
-                  list="special-instruction-plan-suggestions"
-                  value={form.productPlanName}
-                  onChange={e => setForm(f => ({ ...f, productPlanName: e.target.value }))}
-                  placeholder="e.g. Optima Super Secure"
-                />
-                <datalist id="special-instruction-plan-suggestions">
-                  {planSuggestions.map(p => <option key={p} value={p} />)}
-                </datalist>
+                {form.insurerCategoryId ? (
+                  // An insurer is selected — constrain to that insurer's own
+                  // plan roster rather than free text, so this can't drift
+                  // out of sync with what's actually configured for it.
+                  // "Generic" (empty productPlanName) is a first-class,
+                  // explicitly labeled choice for an insurer-level
+                  // instruction — not merely an empty field left blank.
+                  <CustomSelect
+                    theme={theme}
+                    value={form.productPlanName}
+                    onChange={v => setForm(f => ({ ...f, productPlanName: v }))}
+                    options={[{ value: "", label: "Generic (whole insurer, not plan-specific)" }, ...planSuggestions.map(p => ({ value: p, label: p }))]}
+                  />
+                ) : (
+                  <>
+                    <input
+                      className={inputClass}
+                      list="special-instruction-plan-suggestions"
+                      value={form.productPlanName}
+                      onChange={e => setForm(f => ({ ...f, productPlanName: e.target.value }))}
+                      placeholder="e.g. Optima Super Secure"
+                    />
+                    <datalist id="special-instruction-plan-suggestions">
+                      {planSuggestions.map(p => <option key={p} value={p} />)}
+                    </datalist>
+                  </>
+                )}
               </div>
             </div>
             <p className={`text-[10.5px] font-medium ${dark ? "text-stone-500" : "text-stone-400"}`}>
-              Topic only, Topic+Insurer, Topic+Product, or Topic+Insurer+Product are all supported — the most specific combination present wins when more than one instruction matches the same question.
+              Topic only, Topic+Insurer, Topic+Product, or Topic+Insurer+Product are all supported — the most specific combination present wins when more than one instruction matches the same question. Pick "Generic" for an insurer selected without a specific plan.
             </p>
           </div>
           <div className={`px-5 py-3 border-t flex items-center justify-end gap-2 ${dark ? "border-stone-800" : "border-stone-200"}`}>

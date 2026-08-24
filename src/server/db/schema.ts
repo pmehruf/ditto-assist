@@ -1595,12 +1595,12 @@ export type NewKbFaqConnectionRow = typeof kbFaqConnection.$inferInsert;
 // folded into kb_chunks like a normal document: an FAQ record is always a
 // whole (question, answer) pair, never chunked, and needs question-weighted
 // retrieval (see faqRelevanceThreshold in faq.ts) rather than generic
-// passage similarity — see queryAssist.ts's SOURCE PRECEDENCE #1 ("DITTO
+// passage similarity — see queryAssist.ts's SOURCE PRECEDENCE #1 ("ORG
 // CONSTITUTION"), where this is an equal-authority peer to
 // kb_playbook_plan_facts, never a subordinate DOCUMENT EXCERPT.
 //
 // One kb_resources row (type="sheet", title="Ditto FAQ", in the "general"/
-// "Ditto Constitution" category) owns every faq_records row the same way
+// "Org Constitution" category) owns every faq_records row the same way
 // the Playbook Sheet owns kb_playbook_plan_facts — see faqIngest.ts's
 // syncFaq.
 // ─────────────────────────────────────────────────────────────────────────
