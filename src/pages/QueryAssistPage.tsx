@@ -782,21 +782,6 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                       <div className={proseClass}>{renderSimpleMarkdown(body)}</div>
                     </div>
 
-                    {/* References — the advisor's verification path. A
-                        hairline top divider + quieter/smaller type marks it
-                        as nested-inside-the-answer content, without a second
-                        filled background box competing with the answer's
-                        own surface. Content is untouched — this only
-                        changes how it's presented. */}
-                    {references && (
-                      <div className={`pt-2.5 border-t ${dark ? "border-white/[0.08]" : "border-stone-900/[0.08]"}`}>
-                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted opacity-70 mb-1">References</span>
-                        <div className={`text-[11px] leading-relaxed [&_ul]:space-y-1 [&_li]:pl-0.5 ${dark ? "text-stone-400" : "text-stone-600"}`}>
-                          {renderSimpleMarkdown(references)}
-                        </div>
-                      </div>
-                    )}
-
                     {/* Draft Message — a ready-to-use customer-facing
                         paraphrase, not the final/only appropriate wording. */}
                     {share && (
@@ -806,6 +791,23 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                           <CopyButton text={stripMarkdownForCopy(share)} dark={dark} />
                         </div>
                         <div className={`${proseClass} ${dark ? "text-emerald-200" : "text-emerald-900"}`}>{renderSimpleMarkdown(share)}</div>
+                      </div>
+                    )}
+
+                    {/* References — the advisor's verification path. Placed
+                        below the Draft Message so the customer-facing draft
+                        reads as the primary takeaway and References as
+                        supporting detail beneath it. A hairline top divider
+                        + quieter/smaller type marks it as nested-inside-the-
+                        answer content, without a second filled background
+                        box competing with the answer's own surface. Content
+                        is untouched — this only changes how it's presented. */}
+                    {references && (
+                      <div className={`pt-2.5 border-t ${dark ? "border-white/[0.08]" : "border-stone-900/[0.08]"}`}>
+                        <span className="block text-[9.5px] font-bold uppercase tracking-wider text-content-muted opacity-70 mb-1">References</span>
+                        <div className={`text-[11px] leading-relaxed [&_ul]:space-y-1 [&_li]:pl-0.5 ${dark ? "text-stone-400" : "text-stone-600"}`}>
+                          {renderSimpleMarkdown(references)}
+                        </div>
                       </div>
                     )}
                     {m.sources && m.sources.length > 0 && (

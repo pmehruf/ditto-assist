@@ -28,14 +28,21 @@
 import type { Repositories } from "../db/repositories/index.js";
 import type { FaqRecordRow } from "../db/schema.js";
 
-// Slightly stricter than Special Instructions' 0.55 topic-relevance
-// threshold: FAQ questions are full sentences (not short topic phrases), and
-// full-sentence embeddings tend to cluster a bit tighter for genuinely
-// on-topic matches, so a higher bar here still comfortably catches
-// near-exact/strong-semantic matches (spec §9 tiers 1-2) while cutting more
-// of the "vaguely related word" false positives spec §9 explicitly warns
-// against.
-export const FAQ_RELEVANCE_THRESHOLD = 0.6;
+// Was 0.6 ("slightly stricter than Special Instructions' 0.55"), on the
+// assumption that full-sentence FAQ-question embeddings cluster tightly
+// enough for a higher bar to still catch genuine matches. In practice this
+// silently dropped the FAQ for exactly the queries that most need it: a
+// plan/insurer-specific question (e.g. "What is the chronic care coverage
+// in Activ One Max?") embeds close to the plan name and document-style
+// phrasing, which pulls its cosine similarity against a generically-worded
+// Ditto-process FAQ question below 0.6 even when that FAQ is genuinely the
+// right baseline answer — the DITTO FAQ + PRODUCT PLAYBOOK are supposed to
+// always be considered as the baseline source, not skipped because the
+// wording didn't line up closely enough. Lowered to sit at Special
+// Instructions' own 0.55 floor: still a real relevance bar (MAX_FAQ_MATCHES
+// below keeps this from ever becoming "dump the whole FAQ in"), just no
+// longer stricter than necessary for plan-specific phrasing to still clear it.
+export const FAQ_RELEVANCE_THRESHOLD = 0.5;
 
 // Caps how many FAQ entries get folded into one answer's source content —
 // a handful of the most relevant matches is enough for even a "mixed"

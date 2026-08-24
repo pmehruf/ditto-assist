@@ -60,8 +60,31 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     );
   }
 
-  private handleReset = () => {
-    this.setState({ hasError: false, error: null });
+  // A plain setState reset just re-renders the same crashed subtree with
+  // the same in-memory app state and the same already-loaded JS module
+  // graph — if the error was caused by anything other than a one-off
+  // transient render glitch (a stale cached bundle after a deploy, corrupt
+  // persisted state, a bad module load), clicking "Try Again" immediately
+  // re-triggers the identical crash, which is exactly what was reported.
+  // This instead forces the same outcome as the user manually hard-
+  // refreshing (Ctrl+Shift+R): drop any Cache Storage entries (defensive —
+  // this app has no service worker today, but keeps this correct if one is
+  // ever added) and navigate to a URL the browser has never seen before, so
+  // it must issue a genuine network request for the document rather than
+  // serving anything out of disk/memory cache. A plain location.reload()
+  // was NOT used — browsers no longer honor its old force-bypass-cache
+  // argument, so it does not reliably differ from a normal refresh.
+  private handleHardRefresh = () => {
+    if (typeof window === "undefined") return;
+    if ("caches" in window) {
+      caches
+        .keys()
+        .then(keys => Promise.all(keys.map(key => caches.delete(key))))
+        .catch(() => {});
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("_hardReload", Date.now().toString());
+    window.location.replace(url.toString());
   };
 
   render() {
@@ -96,7 +119,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div className="pt-2">
             <button
               type="button"
-              onClick={this.handleReset}
+              onClick={this.handleHardRefresh}
               className="inline-flex items-center gap-1.5 px-5 py-2 text-[10px] bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white rounded-xl font-extrabold uppercase tracking-widest cursor-pointer transition-all active:scale-95"
             >
               <RefreshCw className="w-3.5 h-3.5" />
