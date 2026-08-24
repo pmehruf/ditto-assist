@@ -38,6 +38,7 @@ interface KbCategory {
   type: "insurer" | "general";
   sortOrder: number;
   planNames: string[];
+  disabledPlanNames: string[];
 }
 
 type KbDocumentType = "brochure" | "policy_wording" | "prospectus" | "addon" | "other";
@@ -54,6 +55,7 @@ interface KbResource {
   chunkCount: number;
   errorMessage: string | null;
   planTags: string[];
+  isInsurerLevel: boolean;
   updatedAt: string;
 }
 
@@ -86,7 +88,7 @@ const DOC_TYPE_TABS: { value: KbDocumentType; tabLabel: string; shortLabel: stri
   { value: "addon", tabLabel: "Add-ons", shortLabel: "Add-on" },
 ];
 
-type TabKey = "plans" | "all" | KbDocumentType;
+type TabKey = "plans" | "all" | KbDocumentType | "insurer_resources";
 
 const STATUS_VALUES: KbResourceStatus[] = ["active", "processing", "error", "archived"];
 
@@ -148,36 +150,18 @@ function dedupeCaseInsensitive(names: string[]): string[] {
  * resources never count here regardless of tags — per the KB's design an
  * add-on can genuinely apply to several unrelated plans, so tying it to
  * whichever plan it happens to be tagged with would be misleading; add-ons
- * get their own section instead (see the Add-ons block in the Plans tab). */
+ * get their own section instead (see the Add-ons block in the Plans tab).
+ * Insurer-level resources (isInsurerLevel) never count here either — they're
+ * explicitly not plan-specific and live only in the Insurer Resources tab,
+ * so an untagged insurer-level doc must NOT fall into the "applies broadly to
+ * every plan" bucket the way a genuinely untagged plan doc does. */
 function resourcesForPlanKey(resources: KbResource[], key: string): KbResource[] {
   return resources.filter(
-    r => r.documentType !== "addon" && (r.planTags.length === 0 || r.planTags.some(t => normalizePlanKey(t) === key))
+    r =>
+      r.documentType !== "addon" &&
+      !r.isInsurerLevel &&
+      (r.planTags.length === 0 || r.planTags.some(t => normalizePlanKey(t) === key))
   );
-}
-
-// A shorter roster entry only anchors a plan "family" (base -> variants) if
-// it's substantial enough that sharing its prefix is actually meaningful —
-// otherwise a short generic word that happens to start several unrelated
-// plan names (e.g. Care Health's "Care" prefixing "Care Supreme", "Care
-// Heart", "Care Plus" — three unrelated products, not variants of a plan
-// literally called "Care") would wrongly swallow them into one umbrella.
-const FAMILY_ROOT_MIN_LEN = 8;
-// The character right after the shared prefix has to be a real word/variant
-// boundary, not a continuation of the same word — so a plan literally named
-// "Foo2" is never folded into a shorter roster entry "Foo" (no boundary
-// before "2"), but "Optima Secure+" is folded into "Optima Secure" (a "+"
-// boundary), and "ReAssure 3.0" folds into "ReAssure" (a space boundary),
-// same as "ReAssure 2.0" already does.
-const FAMILY_VARIANT_BOUNDARY = /^[\s+\-(]/;
-
-function qualifiesAsFamilyRoot(name: string): boolean {
-  return name.includes(" ") || name.length >= FAMILY_ROOT_MIN_LEN;
-}
-
-function isVariantOf(candidate: string, base: string): boolean {
-  if (candidate.length <= base.length) return false;
-  if (candidate.slice(0, base.length).toLowerCase() !== base.toLowerCase()) return false;
-  return FAMILY_VARIANT_BOUNDARY.test(candidate.slice(base.length));
 }
 
 interface PlanVariant {
@@ -190,80 +174,33 @@ interface PlanFamily {
   variants: PlanVariant[];
 }
 
-/** True when two roster entries' matched-resource sets are exactly the same
- * documents (same resource ids, nothing more/less either way) — meaning
- * neither name actually has its own distinct content, they're just two
- * labels pointing at one identical shared document pool. Used by
- * buildPlanFamilies to tell a genuine base -> variant relationship (e.g.
- * "Optima Secure" has its own Brochure that "Optima Secure+" doesn't share,
- * alongside PW/Prospectus both do share) apart from same-length siblings
- * that only *look* related by name (e.g. Aditya Birla's "Activ One MAX" and
- * "Activ One MAX+" — 7 equally dedicated variants that all draw from the
- * exact same 3 shared documents with zero per-variant differentiation, not
- * a MAX -> MAX+ upgrade). */
-function sameResourceSet(a: KbResource[], b: KbResource[]): boolean {
-  if (a.length !== b.length) return false;
-  const idsA = new Set(a.map(r => r.id));
-  return b.every(r => idsA.has(r.id));
-}
-
-/** Groups a category's deduplicated plan-name roster into families purely
- * from the existing name strings — never invents a relationship the roster
- * data doesn't already spell out. A name only becomes another name's
- * variant when it's literally that name plus a real word boundary (see
- * isVariantOf), that shorter name is itself both a real roster entry and
- * substantial enough to anchor a family (see qualifiesAsFamilyRoot), AND the
- * two names' matched resources aren't byte-identical (see sameResourceSet —
- * without this, any set of same-length sibling plans that happen to share
- * literally every document, with no base plan actually differentiated from
- * its "variant", would wrongly nest one under the other). Chains more than
- * one level deep (e.g. "ReAssure 2.0 Bronze Plus" -> "ReAssure 2.0" ->
- * "ReAssure") flatten to their top root, so the UI stays a clean two-level
- * Base -> Variants rather than a deeper tree. Resources are matched into
- * each bucket via resourcesForPlanKey (case-insensitive, add-ons excluded);
- * the root's own bucket is the "base plan" — resources tagged to the
- * un-varianted name itself, if any. */
+/** One family per roster entry — deliberately flat, no name-based inference.
+ *
+ * This used to auto-nest a roster entry under another (e.g. "Optima
+ * Secure+" under "Optima Secure") whenever one name was literally the other
+ * plus a trailing "+"/space/"-" and their tagged resources weren't byte-
+ * identical. That heuristic produced a real, confirmed-wrong grouping for
+ * HDFC ERGO specifically: "Optima Secure", "Optima Secure+" and "Optima
+ * Super Secure" are three independent products, not a base plan with
+ * upgrade tiers, and prefix-matching alone can't tell that apart from a
+ * genuine "ReAssure 2.0" -> "ReAssure 2.0 Bronze Plus" style variant — the
+ * name shape looks identical in both cases; only real product knowledge
+ * distinguishes them. Per Workstream A's own rule ("do not assume similar
+ * names = variants... use the actual product/plan identity") and its
+ * "database/UI as source of truth, no hidden grouping rules" rule, that
+ * inference has been removed rather than special-cased for one insurer —
+ * every roster entry now renders as its own independent plan, exactly
+ * matching what's actually in the database. If a genuine base -> variant
+ * relationship needs its own grouped display again later, it should be an
+ * explicit, admin-set relationship (a real, persisted fact), not a name
+ * pattern guessed at render time. */
 function buildPlanFamilies(planNames: string[], catResources: KbResource[]): PlanFamily[] {
   const dedupedNames = dedupeCaseInsensitive(planNames);
-  const resourcesByName = new Map<string, KbResource[]>(
-    dedupedNames.map(name => [name, resourcesForPlanKey(catResources, normalizePlanKey(name))])
-  );
-  const parentOf = new Map<string, string>();
-  for (const name of dedupedNames) {
-    let bestParent: string | null = null;
-    for (const other of dedupedNames) {
-      if (other === name || !qualifiesAsFamilyRoot(other)) continue;
-      if (!isVariantOf(name, other)) continue;
-      if (sameResourceSet(resourcesByName.get(name)!, resourcesByName.get(other)!)) continue;
-      if (!bestParent || other.length > bestParent.length) bestParent = other;
-    }
-    if (bestParent) parentOf.set(name, bestParent);
-  }
-  const rootOf = new Map<string, string>();
-  for (const name of dedupedNames) {
-    let cur = name;
-    const visited = new Set<string>();
-    while (parentOf.has(cur) && !visited.has(cur)) {
-      visited.add(cur);
-      cur = parentOf.get(cur)!;
-    }
-    rootOf.set(name, cur);
-  }
-
-  const order: string[] = [];
-  const familyMap = new Map<string, PlanFamily>();
-  for (const name of dedupedNames) {
-    const rootName = rootOf.get(name)!;
-    if (!familyMap.has(rootName)) {
-      familyMap.set(rootName, { rootName, baseResources: [], variants: [] });
-      order.push(rootName);
-    }
-    const family = familyMap.get(rootName)!;
-    const matched = resourcesByName.get(name)!;
-    if (normalizePlanKey(name) === normalizePlanKey(rootName)) family.baseResources = matched;
-    else family.variants.push({ name, resources: matched });
-  }
-  return order.map(r => familyMap.get(r)!);
+  return dedupedNames.map(name => ({
+    rootName: name,
+    baseResources: resourcesForPlanKey(catResources, normalizePlanKey(name)),
+    variants: [],
+  }));
 }
 
 /** De-duplicated (by resource id) resource count for a family — a shared
@@ -315,7 +252,18 @@ function isAddOnOnlyPlanName(planName: string, catResources: KbResource[]): bool
  * stat next to "N plans"/"M resources"). Also excludes any roster entry
  * that's really an individual add-on's own product name rather than a base
  * plan/variant (see isAddOnOnlyPlanName) — those stay visible only in the
- * Add-ons section below, not counted or listed as a plan. */
+ * Add-ons section below, not counted or listed as a plan.
+ *
+ * Also excludes a disabled plan name (category.disabledPlanNames) — a
+ * genuine, DB-backed enable/disable rather than the roster-removal-based
+ * "delete" this used to conflate: removing a name from planNames outright
+ * only ever half-worked when resources were still tagged with it (this
+ * function would immediately resynthesize it from those tags, making the
+ * admin's "delete" look like a no-op) — see removeCategoryPlanName below.
+ * A name in disabledPlanNames is intentionally still resolvable elsewhere
+ * (e.g. still valid on already-tagged resources) but hidden from this
+ * "active plans" list and from Product Assist's plan-scope picker
+ * (server.ts's /api/query-assist/categories applies the same filter). */
 function planNamesForCategory(category: KbCategory, catResources: KbResource[]): string[] {
   const names = [...category.planNames];
   for (const r of catResources) {
@@ -323,7 +271,17 @@ function planNamesForCategory(category: KbCategory, catResources: KbResource[]):
       if (!names.includes(tag)) names.push(tag);
     }
   }
-  return realPlanNames(names).filter(n => !isAddOnOnlyPlanName(n, catResources));
+  const disabledLower = new Set(category.disabledPlanNames.map(n => n.toLowerCase()));
+  return realPlanNames(names)
+    .filter(n => !isAddOnOnlyPlanName(n, catResources))
+    .filter(n => !disabledLower.has(n.toLowerCase()));
+}
+
+/** Resource count for a disabled plan name — shown in the collapsed
+ * "Disabled plans" list so an admin can see at a glance whether re-enabling
+ * (or genuinely deleting) makes sense, without expanding anything. */
+function disabledPlanResourceCount(name: string, catResources: KbResource[]): number {
+  return resourcesForPlanKey(catResources, normalizePlanKey(name)).length;
 }
 
 function countByDocType(list: KbResource[]): Record<KbDocumentType, number> {
@@ -502,14 +460,14 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   const [categoryPlanInputById, setCategoryPlanInputById] = useState<Record<number, string>>({});
   const [categoryPlanSavingId, setCategoryPlanSavingId] = useState<number | null>(null);
 
-  const saveCategoryPlanNames = async (category: KbCategory, nextNames: string[]) => {
+  const saveCategoryFields = async (category: KbCategory, patch: Partial<Pick<KbCategory, "planNames" | "disabledPlanNames">>) => {
     setCategoryPlanSavingId(category.id);
     setSaveError(null);
     try {
       const res = await fetch(`/api/kb/categories/${category.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planNames: nextNames }),
+        body: JSON.stringify(patch),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to update plan names (HTTP ${res.status}).`);
@@ -529,15 +487,81 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       return;
     }
     const nextNames = [...category.planNames, name];
+    // Adding a name that was previously disabled re-enables it in one step.
+    const nextDisabled = category.disabledPlanNames.filter(n => n.toLowerCase() !== name.toLowerCase());
     logAction("Knowledge Base Plan Added", `Added plan "${name}" under "${category.name}".`);
     setCategoryPlanInputById(prev => ({ ...prev, [category.id]: "" }));
-    saveCategoryPlanNames(category, nextNames);
+    saveCategoryFields(category, { planNames: nextNames, disabledPlanNames: nextDisabled });
   };
 
-  const removeCategoryPlanName = (category: KbCategory, name: string) => {
-    const nextNames = category.planNames.filter(n => n !== name);
-    logAction("Knowledge Base Plan Removed", `Removed plan "${name}" from "${category.name}".`);
-    saveCategoryPlanNames(category, nextNames);
+  /** True delete vs disable, decided by whether any resource in this
+   * category is still tagged with this plan name — never a silent no-op
+   * either way (see planNamesForCategory's doc comment for why the old
+   * behavior looked broken/"can't delete this plan"). Zero resources
+   * tagged: genuinely removes the roster entry. One or more tagged:
+   * disables the plan instead of a destructive removal — hides it from
+   * counts/pickers/Product Assist's scope selector, keeps every resource's
+   * tag exactly as-is, fully reversible via "Enable". */
+  const removeCategoryPlanName = (category: KbCategory, name: string, catResources: KbResource[]) => {
+    const nextNames = category.planNames.filter(n => n.toLowerCase() !== name.toLowerCase());
+    const taggedCount = disabledPlanResourceCount(name, catResources);
+    if (taggedCount > 0) {
+      const nextDisabled = category.disabledPlanNames.some(n => n.toLowerCase() === name.toLowerCase())
+        ? category.disabledPlanNames
+        : [...category.disabledPlanNames, name];
+      logAction(
+        "Knowledge Base Plan Disabled",
+        `Disabled plan "${name}" under "${category.name}" — ${taggedCount} resource(s) are still tagged with it, so it wasn't deleted.`
+      );
+      saveCategoryFields(category, { planNames: nextNames, disabledPlanNames: nextDisabled });
+      return;
+    }
+    logAction("Knowledge Base Plan Deleted", `Deleted plan "${name}" from "${category.name}".`);
+    saveCategoryFields(category, { planNames: nextNames });
+  };
+
+  const enableCategoryPlanName = (category: KbCategory, name: string) => {
+    const nextDisabled = category.disabledPlanNames.filter(n => n.toLowerCase() !== name.toLowerCase());
+    const nextNames = category.planNames.some(n => n.toLowerCase() === name.toLowerCase())
+      ? category.planNames
+      : [...category.planNames, name];
+    logAction("Knowledge Base Plan Enabled", `Re-enabled plan "${name}" under "${category.name}".`);
+    saveCategoryFields(category, { planNames: nextNames, disabledPlanNames: nextDisabled });
+  };
+
+  // ── Rename a plan — atomic on the server (roster entry + every tagged
+  //    resource's planTags together, see /api/kb/categories/:id/rename-plan)
+  //    since a client-only "remove old, add new" would strand every already-
+  //    tagged resource under the now-gone old name. ─────────────────────────
+  const [renamingPlan, setRenamingPlan] = useState<{ categoryId: number; oldName: string; value: string } | null>(null);
+  const [renameSavingId, setRenameSavingId] = useState<number | null>(null);
+
+  const submitRenamePlan = async () => {
+    if (!renamingPlan) return;
+    const newName = renamingPlan.value.trim();
+    if (!newName || newName.toLowerCase() === renamingPlan.oldName.toLowerCase()) {
+      setRenamingPlan(null);
+      return;
+    }
+    setRenameSavingId(renamingPlan.categoryId);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/kb/categories/${renamingPlan.categoryId}/rename-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oldName: renamingPlan.oldName, newName }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to rename plan (HTTP ${res.status}).`);
+      logAction("Knowledge Base Plan Renamed", `Renamed plan "${renamingPlan.oldName}" to "${newName}".`);
+      if (body.warning) setSaveError(body.warning);
+      await load(); // rename touches both categories and resources — simplest correct refresh
+      setRenamingPlan(null);
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to rename plan. Please try again.");
+    } finally {
+      setRenameSavingId(null);
+    }
   };
 
   // ── Add Document (upload PDF or add by URL — a hosted policy-wording PDF,
@@ -732,6 +756,34 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     saveTags(resource, nextTags);
   };
 
+  // ── Insurer Resources — a document that isn't tied to any one plan (claim
+  //    process, general claim guidelines, insurer-wide processes). Setting
+  //    this also clears any existing plan tags server-side (see the PATCH
+  //    /api/kb/resources/:id route) so a resource is never simultaneously
+  //    "insurer-level" and "tagged to plan X" — an incoherent state. ───────
+  const toggleInsurerLevel = async (resource: KbResource, next: boolean) => {
+    setTagSavingResourceId(resource.id);
+    setSaveError(null);
+    try {
+      const res = await fetch(`/api/kb/resources/${resource.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isInsurerLevel: next }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to update resource (HTTP ${res.status}).`);
+      logAction(
+        next ? "Knowledge Base Resource Marked Insurer-Level" : "Knowledge Base Resource Unmarked Insurer-Level",
+        `"${resource.title}" ${next ? "moved to" : "removed from"} ${categories.find(c => c.id === resource.categoryId)?.name || "its insurer"}'s Insurer Resources.`
+      );
+      setResources(prev => prev.map(r => (r.id === resource.id ? body.resource : r)));
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to update resource. Please try again.");
+    } finally {
+      setTagSavingResourceId(null);
+    }
+  };
+
   const deleteResource = async (resource: KbResource) => {
     if (!window.confirm(`Delete "${resource.title}" from the Knowledge Base? This cannot be undone.`)) return;
     setSaving(true);
@@ -909,10 +961,14 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           const activeTab: TabKey = activeTabByCategory[category.id] ?? (category.type === "insurer" ? "plans" : "all");
           const setActiveTab = (tab: TabKey) => setActiveTabByCategory(prev => ({ ...prev, [category.id]: tab }));
           const expandedPlan = expandedPlanByCategory[category.id] ?? null;
+          const insurerLevelResources = catResources.filter(r => r.isInsurerLevel);
           const tabs: { key: TabKey; label: string }[] = [
             ...(category.type === "insurer" ? [{ key: "plans" as TabKey, label: "Plans" }] : []),
             ...DOC_TYPE_TABS.map(t => ({ key: t.value as TabKey, label: t.tabLabel })),
             { key: "all", label: "All Resources" },
+            ...(category.type === "insurer"
+              ? [{ key: "insurer_resources" as TabKey, label: `Insurer Resources${insurerLevelResources.length > 0 ? ` (${insurerLevelResources.length})` : ""}` }]
+              : []),
           ];
 
           return (
@@ -1022,26 +1078,91 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                               variants: family.variants.map(v => ({ name: v.name, resources: v.resources.filter(resourceMatchesSearch) })),
                             };
                             const familyExpanded = expandedPlan === family.rootName;
+                            const isRenamingThis = renamingPlan?.categoryId === category.id && renamingPlan.oldName === family.rootName;
                             return (
                               <div key={family.rootName} className="contents">
-                                <PlanFamilyRow
-                                  family={familyResourcesSearched}
-                                  dark={dark}
-                                  expanded={familyExpanded}
-                                  onToggle={() => setExpandedPlanByCategory(prev => ({ ...prev, [category.id]: familyExpanded ? null : family.rootName }))}
-                                  canManage={canManage}
-                                  onEditResource={r => setEditingResourceId(r.id)}
-                                  onRemovePlanName={canManage ? (name: string) => {
-                                    if (window.confirm(`Remove "${name}" from ${category.name}'s plan list? Documents already tagged with it keep the tag.`)) {
-                                      removeCategoryPlanName(category, name);
-                                    }
-                                  } : undefined}
-                                />
+                                {isRenamingThis ? (
+                                  <div className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border ${dark ? "bg-white/[0.04] border-white/[0.1]" : "bg-white border-stone-300"}`}>
+                                    <input
+                                      autoFocus
+                                      value={renamingPlan.value}
+                                      onChange={e => setRenamingPlan(prev => (prev ? { ...prev, value: e.target.value } : prev))}
+                                      onKeyDown={e => {
+                                        if (e.key === "Enter") { e.preventDefault(); submitRenamePlan(); }
+                                        if (e.key === "Escape") setRenamingPlan(null);
+                                      }}
+                                      disabled={renameSavingId === category.id}
+                                      className={`flex-1 min-w-0 px-2 py-1 rounded text-[11px] font-bold border outline-none ${
+                                        dark ? "bg-white/[0.04] border-white/[0.1] text-white" : "bg-white border-stone-300 text-stone-900"
+                                      }`}
+                                    />
+                                    <ClippedButton size="sm" onClick={submitRenamePlan} disabled={renameSavingId === category.id} className={dark ? "bg-sky-500/15 text-sky-300 px-2 py-1" : "bg-sky-50 text-sky-700 px-2 py-1"}>
+                                      Save
+                                    </ClippedButton>
+                                    <ClippedButton size="sm" onClick={() => setRenamingPlan(null)} disabled={renameSavingId === category.id} className={dark ? "bg-white/[0.06] text-stone-300 px-2 py-1" : "bg-stone-100 text-stone-600 px-2 py-1"}>
+                                      Cancel
+                                    </ClippedButton>
+                                  </div>
+                                ) : (
+                                  <PlanFamilyRow
+                                    family={familyResourcesSearched}
+                                    dark={dark}
+                                    expanded={familyExpanded}
+                                    onToggle={() => setExpandedPlanByCategory(prev => ({ ...prev, [category.id]: familyExpanded ? null : family.rootName }))}
+                                    canManage={canManage}
+                                    onEditResource={r => setEditingResourceId(r.id)}
+                                    onRenamePlanName={canManage ? (name: string) => setRenamingPlan({ categoryId: category.id, oldName: name, value: name }) : undefined}
+                                    onRemovePlanName={canManage ? (name: string) => {
+                                      const taggedCount = disabledPlanResourceCount(name, catResources);
+                                      const message = taggedCount > 0
+                                        ? `"${name}" still has ${taggedCount} resource(s) tagged to it, so it can't be deleted outright. Disable it instead? It'll disappear from the plan list and Product Assist's plan picker, but its tagged resources keep their tag and you can re-enable it any time.`
+                                        : `Delete "${name}" from ${category.name}'s plan list? It has no resources tagged to it, so this fully removes the roster entry.`;
+                                      if (window.confirm(message)) {
+                                        removeCategoryPlanName(category, name, catResources);
+                                      }
+                                    } : undefined}
+                                  />
+                                )}
                               </div>
                             );
                           })}
                         </div>
                       </div>
+
+                      {category.disabledPlanNames.length > 0 && (
+                        <div>
+                          <SectionLabel dark={dark}>Disabled Plans</SectionLabel>
+                          <div className="flex flex-col gap-1.5 mt-2">
+                            {category.disabledPlanNames.map(name => {
+                              const taggedCount = disabledPlanResourceCount(name, catResources);
+                              return (
+                                <div
+                                  key={name}
+                                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50 border-stone-200"}`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className={`text-[11px] font-bold truncate ${dark ? "text-stone-400" : "text-stone-500"}`}>{name}</span>
+                                    <span className={`text-[9.5px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${dark ? "bg-white/[0.06] text-stone-400 border-white/[0.1]" : "bg-stone-100 text-stone-500 border-stone-200"}`}>
+                                      Disabled
+                                    </span>
+                                    <span className="text-[9.5px] font-semibold text-content-muted whitespace-nowrap">{taggedCount} resource{taggedCount === 1 ? "" : "s"}</span>
+                                  </div>
+                                  {canManage && (
+                                    <ClippedButton
+                                      size="sm"
+                                      onClick={() => enableCategoryPlanName(category, name)}
+                                      disabled={categoryPlanSavingId === category.id}
+                                      className={dark ? "bg-emerald-500/15 text-emerald-300 px-2 py-1" : "bg-emerald-50 text-emerald-700 px-2 py-1"}
+                                    >
+                                      Enable
+                                    </ClippedButton>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {canManage && (
                         <div className={`flex flex-wrap items-center gap-1.5 pt-3 border-t ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>
@@ -1085,6 +1206,16 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                         </div>
                       )}
                     </div>
+                  ) : activeTab === "insurer_resources" ? (
+                    <ResourceListTab
+                      resources={catResources.filter(r => r.isInsurerLevel && resourceMatchesSearch(r))}
+                      dark={dark}
+                      canManage={canManage}
+                      showDocTypeBadge
+                      showPlanCount={false}
+                      onEdit={r => setEditingResourceId(r.id)}
+                      emptyLabel="No insurer-level documents yet — mark a document as an Insurer Resource from its edit panel (claim process, general claim guidelines, or any other document that isn't tied to one plan)."
+                    />
                   ) : (
                     <ResourceListTab
                       resources={catResources.filter(r => (activeTab === "all" ? true : r.documentType === activeTab) && resourceMatchesSearch(r))}
@@ -1153,6 +1284,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           onAddTag={t => addPlanTag(editingResource, t)}
           onRemoveTag={t => removePlanTag(editingResource, t)}
           tagSaving={tagSavingResourceId === editingResource.id}
+          onToggleInsurerLevel={next => toggleInsurerLevel(editingResource, next)}
           onDelete={() => deleteResource(editingResource)}
         />
       )}
@@ -1187,7 +1319,7 @@ function SectionLabel({ dark, tone, children }: { dark: boolean; tone?: "addon";
  * VariantGroup blocks instead of listing every variant as if it were an
  * unrelated plan. */
 function PlanFamilyRow({
-  family, dark, expanded, onToggle, canManage, onEditResource, onRemovePlanName,
+  family, dark, expanded, onToggle, canManage, onEditResource, onRemovePlanName, onRenamePlanName,
 }: {
   family: PlanFamily;
   dark: boolean;
@@ -1196,6 +1328,7 @@ function PlanFamilyRow({
   canManage: boolean;
   onEditResource: (r: KbResource) => void;
   onRemovePlanName?: (name: string) => void;
+  onRenamePlanName?: (name: string) => void;
 }) {
   const hasVariants = family.variants.length > 0;
   const totalCount = familyResourceCount(family);
@@ -1222,12 +1355,22 @@ function PlanFamilyRow({
               {t.shortLabel} {counts[t.value]}
             </span>
           ))}
+          {canManage && onRenamePlanName && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onRenamePlanName(family.rootName); }}
+              title={`Rename "${family.rootName}"`}
+              className={`ml-1 p-1 rounded cursor-pointer ${dark ? "text-stone-500 hover:text-sky-400 hover:bg-sky-500/10" : "text-stone-400 hover:text-sky-600 hover:bg-sky-50"}`}
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
           {canManage && onRemovePlanName && (
             <button
               type="button"
               onClick={e => { e.stopPropagation(); onRemovePlanName(family.rootName); }}
               title={`Remove "${family.rootName}" from the plan list`}
-              className={`ml-1 p-1 rounded cursor-pointer ${dark ? "text-stone-500 hover:text-red-400 hover:bg-red-500/10" : "text-stone-400 hover:text-red-600 hover:bg-red-50"}`}
+              className={`p-1 rounded cursor-pointer ${dark ? "text-stone-500 hover:text-red-400 hover:bg-red-500/10" : "text-stone-400 hover:text-red-600 hover:bg-red-50"}`}
             >
               <X className="w-3 h-3" />
             </button>
@@ -1578,7 +1721,7 @@ function AddDocumentModal({
 function ResourceEditModal({
   theme, resource, category, categories, canManage, onClose,
   onChangeDocumentType, changingDocType, onMove, moving,
-  tagInput, onChangeTagInput, onAddTag, onRemoveTag, tagSaving, onDelete,
+  tagInput, onChangeTagInput, onAddTag, onRemoveTag, tagSaving, onToggleInsurerLevel, onDelete,
 }: {
   theme: "light" | "dark";
   resource: KbResource;
@@ -1595,10 +1738,17 @@ function ResourceEditModal({
   onAddTag: (tag: string) => void;
   onRemoveTag: (tag: string) => void;
   tagSaving: boolean;
+  onToggleInsurerLevel: (next: boolean) => void;
   onDelete: () => void;
 }) {
   const dark = theme === "dark";
-  const suggestions = category.planNames.filter(p => !resource.planTags.some(t => t.toLowerCase() === p.toLowerCase()));
+  // Disabled plans aren't offered as a quick-add suggestion — tagging a
+  // resource with a plan an admin just disabled would immediately undo the
+  // point of disabling it (Plans-tab counts would resynthesize it again).
+  const disabledLower = new Set(category.disabledPlanNames.map(n => n.toLowerCase()));
+  const suggestions = category.planNames
+    .filter(p => !resource.planTags.some(t => t.toLowerCase() === p.toLowerCase()))
+    .filter(p => !disabledLower.has(p.toLowerCase()));
   return (
     <ModalShell theme={theme} onClose={onClose} widthClassName="max-w-lg">
       <div className={`px-5 pt-4 pb-3 border-b flex items-center justify-between gap-3 ${dark ? "border-stone-800" : "border-stone-200"}`}>
@@ -1642,6 +1792,21 @@ function ResourceEditModal({
         </div>
 
         {category.type === "insurer" && (
+          <div>
+            <label className={`flex items-center gap-2 text-[10.5px] font-semibold cursor-pointer ${dark ? "text-stone-300" : "text-stone-700"} ${!canManage ? "opacity-60 cursor-not-allowed" : ""}`}>
+              <input
+                type="checkbox"
+                checked={resource.isInsurerLevel}
+                onChange={e => onToggleInsurerLevel(e.target.checked)}
+                disabled={!canManage || tagSaving}
+                className="w-3.5 h-3.5 cursor-pointer"
+              />
+              Insurer Resource (not tied to any one plan — claim process, general guidelines, company-wide docs)
+            </label>
+          </div>
+        )}
+
+        {category.type === "insurer" && !resource.isInsurerLevel && (
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1.5 flex items-center gap-1"><Tag className="w-3 h-3" /> Plans</label>
             <div className="flex flex-wrap items-center gap-1.5">

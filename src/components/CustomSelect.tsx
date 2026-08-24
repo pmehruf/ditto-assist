@@ -128,7 +128,22 @@ export function CustomSelect({
     // keep the portaled panel's fixed-position coordinates in sync with a
     // moving trigger — simplest way to avoid the panel visually detaching
     // from its trigger.
-    const handleReposition = () => setOpen(false);
+    //
+    // Scroll events don't bubble, so this capturing window listener is what
+    // catches scroll on any ancestor in the first place — but that also
+    // means it catches scroll events dispatched on the panel's OWN internal
+    // options list (`.overflow-y-auto` below), which is a descendant of
+    // `window` too. Without excluding that case, using a mouse wheel or
+    // trackpad to scroll a long option list closes the dropdown on the very
+    // first scroll tick instead of scrolling it — the panel's coordinates
+    // aren't moving in that case (it's the list content scrolling inside a
+    // fixed-position panel), so there's nothing to reposition for and
+    // nothing to close for.
+    const handleReposition = (e: Event) => {
+      const target = e.target as Node | null;
+      if (target && panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     window.addEventListener("scroll", handleReposition, true);

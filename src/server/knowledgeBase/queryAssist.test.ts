@@ -73,6 +73,7 @@ function categoryRow(overrides: Partial<KbCategoryRow> = {}): KbCategoryRow {
     type: "insurer",
     sortOrder: 0,
     planNames: ["Activ One Max"],
+    disabledPlanNames: [],
     createdAt: new Date(),
     ...overrides,
   };

@@ -9,7 +9,7 @@ import { kbResources, type KbResourceRow, type NewKbResourceRow } from "../schem
 
 export type CreateKbResourceEntry = Omit<NewKbResourceRow, "id" | "createdAt" | "updatedAt">;
 export type UpdateKbResourceEntry = Partial<
-  Pick<NewKbResourceRow, "title" | "sourceUrl" | "status" | "contentHash" | "lastFetchedAt" | "chunkCount" | "errorMessage" | "categoryId" | "planTags">
+  Pick<NewKbResourceRow, "title" | "sourceUrl" | "status" | "contentHash" | "lastFetchedAt" | "chunkCount" | "errorMessage" | "categoryId" | "planTags" | "documentType" | "isInsurerLevel">
 >;
 
 export interface KbResourceFilter {

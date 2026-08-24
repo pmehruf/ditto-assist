@@ -1230,6 +1230,19 @@ export const kbCategories = pgTable("kb_categories", {
   // from real options instead of free-typing every time. Only meaningful
   // for type="insurer" categories. See 0030_kb_category_plan_names.sql.
   planNames: text("plan_names").array().notNull().default([]),
+  // A plan name that's been disabled rather than deleted — hidden from the
+  // "N plans" count, the quick-add suggestions, and Product Assist's plan
+  // scope picker (QueryAssistPage.tsx's selectablePlanNames), but its
+  // resources keep their planTags untouched (see kb_resources.planTags) so
+  // nothing is orphaned and the plan can be re-enabled by clearing its entry
+  // here. A separate array (not a removal from planNames itself) because a
+  // resource can still be legitimately tagged with a disabled plan's name —
+  // deleting the roster entry outright would make planNamesForCategory
+  // silently resynthesize it from those tags anyway (by design, so tagged
+  // resources are never orphaned), which is exactly the "can't actually
+  // delete/disable a plan with resources" bug this column fixes. See
+  // 0046_kb_plan_disable_insurer_resources.sql.
+  disabledPlanNames: text("disabled_plan_names").array().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1280,6 +1293,17 @@ export const kbResources = pgTable(
     // plan-specific — applies broadly within its category; see
     // 0029_kb_resource_plan_tags.sql.
     planTags: text("plan_tags").array().notNull().default([]),
+    // True for an insurer/company-level document (claim process, general
+    // claim guidelines, insurer-wide processes) that isn't tied to any plan
+    // and shouldn't be — distinct from planTags=[] (which means "applies
+    // broadly to every plan under this insurer", the existing untagged-
+    // resource semantics used throughout the Plans tab and retrieval). An
+    // insurer-level resource is deliberately excluded from every plan's
+    // resource count/bucket (see resourcesForPlanKey in
+    // KnowledgeBaseResourceManagement.tsx) and surfaced only in its
+    // category's separate "Insurer Resources" section. See
+    // 0046_kb_plan_disable_insurer_resources.sql.
+    isInsurerLevel: boolean("is_insurer_level").notNull().default(false),
     addedBy: text("added_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

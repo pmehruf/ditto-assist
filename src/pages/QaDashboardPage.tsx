@@ -633,7 +633,7 @@ function SheetTableView({
               <th
                 key={h}
                 className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
-                  dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-stone-100 border-stone-200 text-stone-700"
+                  dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
                 }`}
               >
                 {h}
@@ -1204,7 +1204,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                             <th
                               key={`${h}-${i}`}
                               className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
-                                dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-stone-100 border-stone-200 text-stone-700"
+                                dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
                               }`}
                             >
                               {h}
@@ -1250,7 +1250,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                     <th
                       key={`${h}-${i}`}
                       className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
-                        dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-stone-100 border-stone-200 text-stone-700"
+                        dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
                       }`}
                     >
                       {h}

@@ -5379,7 +5379,7 @@ app.patch("/api/kb/categories/:id", requireAuth, async (req, res) => {
     if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base category"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
-    const { name, type, sortOrder, planNames } = req.body;
+    const { name, type, sortOrder, planNames, disabledPlanNames } = req.body;
     if (type !== undefined && type !== "insurer" && type !== "general") {
       return res.status(400).json({ error: 'type must be "insurer" or "general".' });
     }
@@ -5388,12 +5388,20 @@ app.patch("/api/kb/categories/:id", requireAuth, async (req, res) => {
         return res.status(400).json({ error: "planNames must be an array of strings." });
       }
     }
+    if (disabledPlanNames !== undefined) {
+      if (!Array.isArray(disabledPlanNames) || !disabledPlanNames.every((t: unknown) => typeof t === "string")) {
+        return res.status(400).json({ error: "disabledPlanNames must be an array of strings." });
+      }
+    }
     const { kbCategories } = createRepositories(getDb());
     const category = await kbCategories.update(id, {
       ...(name !== undefined ? { name: String(name).trim() } : {}),
       ...(type !== undefined ? { type } : {}),
       ...(sortOrder !== undefined ? { sortOrder: Number(sortOrder) } : {}),
       ...(planNames !== undefined ? { planNames: (planNames as string[]).map(t => t.trim()).filter(Boolean) } : {}),
+      ...(disabledPlanNames !== undefined
+        ? { disabledPlanNames: (disabledPlanNames as string[]).map(t => t.trim()).filter(Boolean) }
+        : {}),
     });
     if (!category) return res.status(404).json({ error: "Category not found." });
     return res.json({ category });
@@ -5420,6 +5428,65 @@ app.delete("/api/kb/categories/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete KB category:", err);
     return res.status(500).json({ error: `Failed to delete category: ${err.message}` });
+  }
+});
+
+// Renames a plan-roster entry within one insurer category — atomically (as
+// atomic as this app's non-transactional DAL gets, see below) updates BOTH
+// kb_categories.planNames AND every kb_resources.planTags entry that
+// referenced the old name, so a rename never silently strands resources
+// under a name that no longer exists in the roster. A plain client-side
+// "remove old name, add new name" would NOT do this — it only ever touches
+// category.planNames, leaving every already-tagged resource's planTags
+// pointing at the now-gone old name (exactly the kind of orphaned reference
+// Workstream A's plan CRUD rules forbid).
+app.post("/api/kb/categories/:id/rename-plan", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Renaming a Knowledge Base plan"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
+    const oldName = typeof req.body.oldName === "string" ? req.body.oldName.trim() : "";
+    const newName = typeof req.body.newName === "string" ? req.body.newName.trim() : "";
+    if (!oldName || !newName) return res.status(400).json({ error: "oldName and newName are required." });
+    if (oldName.toLowerCase() === newName.toLowerCase()) {
+      return res.status(400).json({ error: "New name is the same as the current name." });
+    }
+
+    const { kbCategories, kbResources } = createRepositories(getDb());
+    const category = await kbCategories.get(id);
+    if (!category) return res.status(404).json({ error: "Category not found." });
+    if (category.planNames.some(n => n.toLowerCase() === newName.toLowerCase())) {
+      return res.status(409).json({ error: `"${newName}" is already a plan on this insurer.` });
+    }
+
+    const nextPlanNames = category.planNames.map(n => (n.toLowerCase() === oldName.toLowerCase() ? newName : n));
+    const nextDisabled = category.disabledPlanNames.map(n => (n.toLowerCase() === oldName.toLowerCase() ? newName : n));
+    await kbCategories.update(id, { planNames: nextPlanNames, disabledPlanNames: nextDisabled });
+
+    const resourcesInCategory = await kbResources.list({ categoryId: id });
+    const affected = resourcesInCategory.filter(r => r.planTags.some(t => t.toLowerCase() === oldName.toLowerCase()));
+    const failedResourceIds: number[] = [];
+    for (const r of affected) {
+      const nextTags = r.planTags.map(t => (t.toLowerCase() === oldName.toLowerCase() ? newName : t));
+      const updated = await kbResources.update(r.id, { planTags: nextTags });
+      if (!updated) failedResourceIds.push(r.id);
+    }
+
+    if (failedResourceIds.length > 0) {
+      // The roster rename itself already succeeded, so this is reported as
+      // a partial-failure warning rather than an error — the admin can
+      // retag these specific resources by hand from the resource editor.
+      return res.status(207).json({
+        ok: true,
+        renamedResourceCount: affected.length - failedResourceIds.length,
+        failedResourceIds,
+        warning: `Renamed the plan, but ${failedResourceIds.length} tagged resource(s) could not be re-tagged automatically. Re-tag them manually via the resource editor.`,
+      });
+    }
+    return res.json({ ok: true, renamedResourceCount: affected.length });
+  } catch (err: any) {
+    console.error("Failed to rename KB plan:", err);
+    return res.status(500).json({ error: `Failed to rename plan: ${err.message}` });
   }
 });
 
@@ -5541,7 +5608,7 @@ app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
     if (!(await requireAdminOrDeveloper(req, res, "Editing a Knowledge Base resource"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
-    const { title, categoryId, status, planTags, documentType } = req.body;
+    const { title, categoryId, status, planTags, documentType, isInsurerLevel } = req.body;
     if (planTags !== undefined) {
       if (!Array.isArray(planTags) || !planTags.every((t: unknown) => typeof t === "string")) {
         return res.status(400).json({ error: "planTags must be an array of strings." });
@@ -5550,13 +5617,22 @@ app.patch("/api/kb/resources/:id", requireAuth, async (req, res) => {
     if (documentType !== undefined && !KB_DOCUMENT_TYPES.includes(documentType)) {
       return res.status(400).json({ error: `documentType must be one of: ${KB_DOCUMENT_TYPES.join(", ")}.` });
     }
+    if (isInsurerLevel !== undefined && typeof isInsurerLevel !== "boolean") {
+      return res.status(400).json({ error: "isInsurerLevel must be a boolean." });
+    }
     const { kbResources } = createRepositories(getDb());
     const resource = await kbResources.update(id, {
       ...(title !== undefined ? { title: String(title).trim() } : {}),
       ...(categoryId !== undefined ? { categoryId: Number(categoryId) } : {}),
       ...(status !== undefined ? { status } : {}),
+      // An insurer-level resource isn't tied to a plan, so setting it also
+      // clears planTags — reusing the same "not plan-specific" concept two
+      // different ways at once (isInsurerLevel=true AND non-empty planTags)
+      // would be an incoherent state no reader of this table should have to
+      // guard against downstream.
       ...(planTags !== undefined ? { planTags: (planTags as string[]).map(t => t.trim()).filter(Boolean) } : {}),
       ...(documentType !== undefined ? { documentType } : {}),
+      ...(isInsurerLevel !== undefined ? { isInsurerLevel, ...(isInsurerLevel ? { planTags: [] } : {}) } : {}),
     });
     if (!resource) return res.status(404).json({ error: "Resource not found." });
     return res.json({ resource });
@@ -5973,7 +6049,9 @@ app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
     // editor can still see/fix every entry, including a mistagged one.
     const filteredEntries = entries.map(c => ({
       ...c,
-      planNames: c.planNames.filter(name => !isAddOnOnlyPlanName(name, resourcesByCategory.get(c.id) ?? [])),
+      planNames: c.planNames
+        .filter(name => !c.disabledPlanNames.some(d => d.toLowerCase() === name.toLowerCase()))
+        .filter(name => !isAddOnOnlyPlanName(name, resourcesByCategory.get(c.id) ?? [])),
     }));
     return res.json({ entries: filteredEntries });
   } catch (err: any) {

@@ -8,7 +8,7 @@ import type { AnyDb } from "../client.js";
 import { kbCategories, type KbCategoryRow, type NewKbCategoryRow } from "../schema.js";
 
 export type CreateKbCategoryEntry = Omit<NewKbCategoryRow, "id" | "createdAt">;
-export type UpdateKbCategoryEntry = Partial<Pick<NewKbCategoryRow, "name" | "type" | "sortOrder" | "planNames">>;
+export type UpdateKbCategoryEntry = Partial<Pick<NewKbCategoryRow, "name" | "type" | "sortOrder" | "planNames" | "disabledPlanNames">>;
 
 /** Data Access Layer for `kb_categories` — the Knowledge Base's extensible
  * per-insurer + "general" category list (Ask the Playbook). */
