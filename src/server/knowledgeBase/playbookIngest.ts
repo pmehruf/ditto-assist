@@ -41,6 +41,14 @@ const NARRATIVE_TABS = ["Recommendation specifics", "Feature Description", "FAQs
 
 export const ALL_PLAYBOOK_TABS = [...Object.keys(MATRIX_TABS), ...NARRATIVE_TABS];
 
+// Extracted from syncPlaybook's inline literal so other call sites (the
+// Product Assist Library's Core Resources section — see server.ts's
+// /api/query-assist/library) can identify this exact resource row by title
+// rather than duplicating the string, or relying on type==="sheet" alone
+// (ambiguous now that faqIngest.ts's Health FAQ resource is also
+// type==="sheet" — see FAQ_DITTO_RESOURCE_TITLE there).
+export const PLAYBOOK_RESOURCE_TITLE = "Product Playbook - Health";
+
 // Known insurer brand prefixes a plan column header might start with, used
 // only for "Ditto's Recommended Policies" (the tab whose columns span
 // several insurers) — longest-first so e.g. "IndusInd General" is tried
@@ -246,14 +254,19 @@ export async function syncPlaybook(repos: Repositories, triggeredBy: string): Pr
     );
   }
 
-  const existing = (await repos.kbResources.list({})).find(r => r.type === "sheet");
+  // Matched by title, not merely type==="sheet" — faqIngest.ts's Health FAQ
+  // resource is also type==="sheet", so an unqualified match here could grab
+  // the FAQ's row instead and overwrite it with Playbook data. (No legacy-
+  // title concern here, unlike faqIngest.ts's rename — this title has never
+  // changed.)
+  const existing = (await repos.kbResources.list({})).find(r => r.type === "sheet" && r.title === PLAYBOOK_RESOURCE_TITLE);
   const wasErrored = existing?.status === "error";
   let resource = existing;
   if (!resource) {
     resource = await repos.kbResources.create({
       categoryId: generalCategory.id,
       type: "sheet",
-      title: "Product Playbook - Health",
+      title: PLAYBOOK_RESOURCE_TITLE,
       sourceUrl: `https://docs.google.com/spreadsheets/d/${PLAYBOOK_SPREADSHEET_ID}/edit`,
       status: "processing",
       contentHash: null,
@@ -340,7 +353,7 @@ export async function maybeRefreshPlaybookIfStale(repos: Repositories): Promise<
   try {
     const connection = await repos.kbPlaybookConnection.get();
     if (!connection) return;
-    const resource = (await repos.kbResources.list({})).find(r => r.type === "sheet");
+    const resource = (await repos.kbResources.list({})).find(r => r.type === "sheet" && r.title === PLAYBOOK_RESOURCE_TITLE);
     const lastFetchedMs = resource?.lastFetchedAt ? new Date(resource.lastFetchedAt).getTime() : null;
     const staleSinceMs = lastFetchedMs === null ? Infinity : Date.now() - lastFetchedMs;
     if (staleSinceMs < STALE_REFRESH_MS) return;

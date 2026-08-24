@@ -4,11 +4,12 @@
  */
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, ExternalLink, Library, BookOpen, FileText, Bookmark, ChevronDown } from "lucide-react";
+import { Send, Plus, MessageSquare, Copy, Check, AlertTriangle, RefreshCw, Tag, Trash2, ExternalLink, Library, BookOpen, FileText, Building2, ChevronDown } from "lucide-react";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkdown";
 import { realPlanNames } from "../utils/kbPlanNames";
+import { HEALTH_FAQ_LIBRARY_URL } from "../constants/productAssistLibrary";
 
 interface QueryAssistPageProps {
   theme: "light" | "dark";
@@ -40,6 +41,32 @@ const SOURCE_DOCUMENT_TYPE_LABEL: Record<ChatSource["documentType"], string> = {
   addon: "Add-on",
   other: "",
 };
+
+// ── Product Assist Library — read-only navigator over the same Knowledge
+// Base data /api/query-assist/categories draws its plan selector from (see
+// server.ts's /api/query-assist/library). Never a second resource store —
+// just a nested view of insurer -> plan -> resources / insurer resources. */
+interface LibraryResource {
+  id: number;
+  title: string;
+  documentType: ChatSource["documentType"];
+  sourceUrl: string | null;
+  type: "pdf" | "web" | "sheet";
+}
+interface LibraryPlan {
+  name: string;
+  resources: LibraryResource[];
+}
+interface LibraryInsurer {
+  id: number;
+  name: string;
+  plans: LibraryPlan[];
+  insurerResources: LibraryResource[];
+}
+interface LibraryData {
+  playbook: { sourceUrl: string | null };
+  insurers: LibraryInsurer[];
+}
 
 interface LocalChatMessage {
   id: string;
@@ -79,27 +106,6 @@ const SESSIONS_STORAGE_KEY = "queryAssist.sessions.v1";
 // queryAssist.ts's own MAX_HISTORY_TURNS cap, sent generously here since the
 // server does its own trimming.
 const HISTORY_TURNS_TO_SEND = 8;
-
-// Shown as one-tap starter chips on the empty state, once an insurer is
-// chosen — generic enough to apply across insurers/plans rather than
-// hardcoding any one product's terms. Purely a composer shortcut (fills the
-// input, doesn't auto-send) so the advisor can still edit before asking.
-const EXAMPLE_QUESTIONS = [
-  "What are the waiting periods for pre-existing conditions?",
-  "What's excluded from this plan's coverage?",
-  "How does the claims process work for this plan?",
-];
-
-// The sidebar's collapsible Library section — illustrative category rows
-// only for now (no dedicated content/route behind them yet), shown with a
-// muted "Soon" tag rather than pretending they're live links. Structural
-// placeholder for where insurer-agnostic reference material (as opposed to
-// Recent Conversations' per-chat history) will live once it exists.
-const LIBRARY_CATEGORIES: { label: string; Icon: typeof BookOpen }[] = [
-  { label: "Product Playbook", Icon: BookOpen },
-  { label: "Policy Documents", Icon: FileText },
-  { label: "Reference Guides", Icon: Bookmark },
-];
 
 function genId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -163,6 +169,47 @@ function AdvisorAvatar() {
         draggable={false}
         className="w-full h-full object-contain select-none"
       />
+    </div>
+  );
+}
+
+/** One resource row inside the Library's Plans / Insurer Resources lists —
+ * deliberately the SAME openable-vs-plain-pill rule already used for a chat
+ * answer's Sources (see the m.sources rendering below): a real http(s)
+ * sourceUrl (a "web" resource) opens in a new tab, everything else (a "pdf"
+ * resource never persists its raw file — see schema.ts's sourceUrl comment)
+ * renders as a plain, unclickable row with just its title/doc-type label. */
+function LibraryResourceList({ resources }: { resources: LibraryResource[] }) {
+  if (resources.length === 0) {
+    return <p className="text-[10.5px] font-medium text-[#8CA0B3] italic px-2.5 py-1">No resources yet.</p>;
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      {resources.map(r => {
+        const typeLabel = SOURCE_DOCUMENT_TYPE_LABEL[r.documentType];
+        const isOpenable = !!r.sourceUrl && /^https?:\/\//i.test(r.sourceUrl);
+        const label = typeLabel ? `${r.title} · ${typeLabel}` : r.title;
+        const rowClass = "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10.5px] font-medium min-w-0";
+        return isOpenable ? (
+          <a
+            key={r.id}
+            href={r.sourceUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open to verify"
+            className={`${rowClass} text-[#8CA0B3] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer`}
+          >
+            <FileText className="w-3 h-3 shrink-0 opacity-60" />
+            <span className="flex-1 truncate">{label}</span>
+            <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
+          </a>
+        ) : (
+          <div key={r.id} className={`${rowClass} text-[#8CA0B3]`}>
+            <FileText className="w-3 h-3 shrink-0 opacity-60" />
+            <span className="flex-1 truncate">{label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -260,6 +307,13 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   // sidebar below); expanding it pushes Recent Conversations down inline,
   // it never floats/overlays.
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [library, setLibrary] = useState<LibraryData | null>(null);
+  // Library nesting: "Insurance Resources" itself + each expanded insurer +
+  // each expanded plan — three independent collapse levels, all collapsed
+  // by default so opening Library never dumps the whole KB tree at once.
+  const [insuranceResourcesOpen, setInsuranceResourcesOpen] = useState(false);
+  const [expandedInsurerIds, setExpandedInsurerIds] = useState<Set<number>>(new Set());
+  const [expandedPlanKeys, setExpandedPlanKeys] = useState<Set<string>>(new Set());
 
   const [questionInput, setQuestionInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -299,6 +353,22 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
         setLoadError(err.message || "Failed to load Product Assist.");
       } finally {
         setLoading(false);
+      }
+
+      // Library load is independent of (and never blocks) the categories/
+      // chat load above — a failed or slow Library fetch must never stop an
+      // advisor from asking a question, since chat itself doesn't depend on
+      // it. Silently leaves the Library showing just Core Resources on
+      // failure rather than surfacing a second error banner for a purely
+      // supplementary nav feature.
+      try {
+        const libRes = await fetch("/api/query-assist/library");
+        const libBody = await libRes.json().catch(() => ({}));
+        if (libRes.ok) {
+          setLibrary({ playbook: libBody.playbook ?? { sourceUrl: null }, insurers: libBody.insurers ?? [] });
+        }
+      } catch {
+        // Non-fatal — see comment above.
       }
     })();
   }, []);
@@ -355,6 +425,26 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
   const togglePlanTag = (plan: string) => {
     setSelectedPlanTags(prev => (prev.includes(plan) ? prev.filter(p => p !== plan) : [...prev, plan]));
+  };
+
+  // Library tree toggles — purely local expand/collapse UI state, never
+  // touches the chat scope selector (see the Library's own doc comment:
+  // navigation here is read-only and independent of it).
+  const toggleLibraryInsurer = (id: number) => {
+    setExpandedInsurerIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleLibraryPlan = (key: string) => {
+    setExpandedPlanKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const sendQuestion = async () => {
@@ -422,7 +512,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   const proseClass = `text-xs leading-relaxed space-y-2 [&_ol]:mt-1 [&_ul]:mt-1 [&_li]:pl-0.5 ${dark ? "text-stone-200" : "text-stone-800"}`;
 
   const categoryOptions = [
-    { value: GENERAL_VALUE, label: "General (not tied to one insurer)" },
+    { value: GENERAL_VALUE, label: "General (Playbook+FAQ)" },
     ...categories.filter(c => c.type === "insurer").map(c => ({ value: String(c.id), label: c.name })),
   ];
 
@@ -510,17 +600,127 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${libraryOpen ? "rotate-180" : ""}`} />
             </button>
             {libraryOpen && (
-              <div className="flex flex-col gap-0.5 pl-2 pb-1">
-                {LIBRARY_CATEGORIES.map(({ label, Icon }) => (
-                  <div
-                    key={label}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-[#8CA0B3]"
-                  >
-                    <Icon className="w-3 h-3 shrink-0 opacity-70" />
-                    <span className="flex-1 truncate">{label}</span>
-                    <span className="shrink-0 text-[8.5px] font-bold uppercase tracking-wide opacity-50">Soon</span>
+              <div className="flex flex-col gap-0.5 pl-1.5 pb-1">
+                {/* Core Resources — always the top two rows once Library is
+                    open, no further expand/collapse of their own. Product
+                    Playbook opens its existing kb_resources sourceUrl
+                    directly (same Google Sheet link Knowledge Base
+                    Management already exposes to admins — nothing new is
+                    revealed); Health FAQ deliberately does NOT resolve to
+                    its own resource/sourceUrl — its Sheet stays internal —
+                    and instead opens the configured external destination
+                    (see HEALTH_FAQ_LIBRARY_URL's own comment). */}
+                <span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-[#8CA0B3] opacity-70 px-2.5 pt-1 pb-0.5">
+                  Core Resources
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (library?.playbook.sourceUrl) window.open(library.playbook.sourceUrl, "_blank", "noopener,noreferrer");
+                  }}
+                  disabled={!library?.playbook.sourceUrl}
+                  title={library?.playbook.sourceUrl ? "Open Product Playbook" : "Not yet connected"}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-[#C4CDD8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-[#C4CDD8]"
+                >
+                  <BookOpen className="w-3 h-3 shrink-0 opacity-70" />
+                  <span className="flex-1 text-left truncate">Product Playbook</span>
+                  {library?.playbook.sourceUrl && <ExternalLink className="w-3 h-3 shrink-0 opacity-50" />}
+                </button>
+                <a
+                  href={HEALTH_FAQ_LIBRARY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open Health FAQ"
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-[#C4CDD8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                >
+                  <FileText className="w-3 h-3 shrink-0 opacity-70" />
+                  <span className="flex-1 text-left truncate">Health FAQ</span>
+                  <ExternalLink className="w-3 h-3 shrink-0 opacity-50" />
+                </a>
+
+                {/* Insurance Resources — built entirely from the same KB
+                    categories/resources /api/query-assist/library reads live
+                    off the database, so a plan rename/delete/disable or a
+                    new insurer resource shows up here automatically, no
+                    hardcoded list. Omits an insurer branch with nothing to
+                    show (see the endpoint's own filter). */}
+                {library && library.insurers.length > 0 && (
+                  <div className="flex flex-col gap-0.5 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setInsuranceResourcesOpen(v => !v)}
+                      aria-expanded={insuranceResourcesOpen}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[9px] font-bold uppercase tracking-[0.1em] text-[#8CA0B3] opacity-70 hover:opacity-100 hover:bg-white/[0.06] transition-colors cursor-pointer"
+                    >
+                      <span className="flex-1 text-left">Insurance Resources</span>
+                      <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${insuranceResourcesOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {insuranceResourcesOpen && (
+                      <div className="flex flex-col gap-0.5">
+                        {library.insurers.map(insurer => {
+                          const isInsurerOpen = expandedInsurerIds.has(insurer.id);
+                          return (
+                            <div key={insurer.id} className="flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleLibraryInsurer(insurer.id)}
+                                aria-expanded={isInsurerOpen}
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-bold text-[#C4CDD8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                              >
+                                <Building2 className="w-3 h-3 shrink-0 opacity-70" />
+                                <span className="flex-1 text-left truncate">{insurer.name}</span>
+                                <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${isInsurerOpen ? "rotate-180" : ""}`} />
+                              </button>
+                              {isInsurerOpen && (
+                                <div className="flex flex-col gap-0.5 pl-4 pb-0.5">
+                                  {insurer.plans.length > 0 && (
+                                    <>
+                                      <span className="block text-[9px] font-bold uppercase tracking-wide text-[#8CA0B3] opacity-60 px-2.5 pt-0.5 pb-0.5">
+                                        Plans
+                                      </span>
+                                      {insurer.plans.map(plan => {
+                                        const planKey = `${insurer.id}:${plan.name}`;
+                                        const isPlanOpen = expandedPlanKeys.has(planKey);
+                                        return (
+                                          <div key={planKey} className="flex flex-col gap-0.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleLibraryPlan(planKey)}
+                                              aria-expanded={isPlanOpen}
+                                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-[#C4CDD8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
+                                            >
+                                              <span className="flex-1 text-left truncate">{plan.name}</span>
+                                              <ChevronDown className={`w-3 h-3 shrink-0 opacity-60 transition-transform ${isPlanOpen ? "rotate-180" : ""}`} />
+                                            </button>
+                                            {isPlanOpen && (
+                                              <div className="pl-4 pb-1">
+                                                <LibraryResourceList resources={plan.resources} />
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </>
+                                  )}
+                                  {insurer.insurerResources.length > 0 && (
+                                    <>
+                                      <span className="block text-[9px] font-bold uppercase tracking-wide text-[#8CA0B3] opacity-60 px-2.5 pt-1 pb-0.5">
+                                        Insurer Resources
+                                      </span>
+                                      <div className="pl-2.5 pb-0.5">
+                                        <LibraryResourceList resources={insurer.insurerResources} />
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                ))}
+                )}
               </div>
             )}
 
@@ -621,8 +821,8 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                     // Lighter than the band behind it (dark container ->
                     // lighter control), full width of its own responsive
                     // wrapper rather than a fixed px width — wide enough
-                    // that a long selected label (e.g. "General (not tied
-                    // to one insurer)") is never clipped, and never wider
+                    // that a long selected label (e.g. "General
+                    // (Playbook+FAQ)") is never clipped, and never wider
                     // than its wrapper's cap, so it can't force horizontal
                     // overflow at any zoom level.
                     triggerClassName="w-full flex items-center justify-between gap-2 text-xs font-bold pl-3 pr-8 py-2 rounded-lg border outline-none transition-colors relative cursor-pointer bg-white/[0.08] border-white/[0.16] text-white hover:bg-white/[0.12]"
@@ -690,30 +890,28 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                     className="w-full h-auto select-none mix-blend-screen"
                   />
                 </div>
-                <div className="space-y-1 max-w-sm">
-                  <p className={`text-xs font-bold ${dark ? "text-white" : "text-stone-800"}`}>
-                    {selectedCategoryValue ? "Ask your first question." : "Choose an insurer above and ask your first question."}
+                {/* Instruction copy — always the same regardless of whether
+                    an insurer/plan is picked yet (no more of a "choose an
+                    insurer first" variant), since it now explains the
+                    selectors themselves rather than just nudging toward
+                    them. Purely informational text — changes nothing about
+                    how the selectors above or query handling below work. */}
+                <div className="space-y-1.5 max-w-sm">
+                  <p className={`text-xs font-black ${dark ? "text-white" : "text-stone-800"}`}>
+                    Ask smarter. Get better answers.
+                  </p>
+                  <p className="text-[11px] font-medium text-content-muted leading-relaxed">
+                    Choose the right context first — select an <span className="font-bold">insurer and plan</span> for
+                    product-specific questions, or <span className="font-bold">General (Playbook + FAQ)</span> for
+                    broader insurance and Ditto-related queries.
                   </p>
                   <p className="text-[11px] font-medium text-content-muted">
-                    Ask about coverage, exclusions, waiting periods, add-ons, claims or plan benefits.
+                    <span className="font-bold">Best format:</span> Context + Situation + Specific Question
+                  </p>
+                  <p className="text-[11px] font-medium text-content-muted">
+                    Need more clarity? <span className="font-bold">Ask a follow-up in the same chat.</span>
                   </p>
                 </div>
-                {selectedCategoryValue && (
-                  <div className="flex flex-wrap justify-center gap-1.5 max-w-md">
-                    {EXAMPLE_QUESTIONS.map(q => (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => setQuestionInput(q)}
-                        className={`text-[10.5px] font-semibold px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
-                          dark ? "bg-white/[0.04] border-white/[0.1] text-stone-300 hover:bg-white/[0.08]" : "bg-white border-stone-300 text-stone-600 hover:bg-stone-50"
-                        }`}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
             {messages.map(m => {
@@ -935,11 +1133,19 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 onClick={sendQuestion}
                 disabled={sending || !questionInput.trim()}
                 title="Send"
-                // Must stay visibly distinct from the card's #1E2C3C fill
-                // it sits on (both themes) — reuses the same #01334F/
-                // #AEDCF4 pairing already defined for the selected-plan
-                // accent, rather than introducing a fifth color.
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 bg-[#01334F] text-[#AEDCF4]"
+                // Must stay visibly distinct from the card's #1E2C3C fill it
+                // sits on. Light theme: the #01334F/#AEDCF4 pairing already
+                // used for the selected-plan accent — contrasts fine against
+                // the pale #E3E8EF light-theme composer. Dark theme: that
+                // same #01334F is itself a dark navy, nearly indistinguishable
+                // from the #1E2C3C composer it sits on — swapped for the
+                // app's own bright cyan accent (#00D3F3, the same token the
+                // "Product Assist" header bar already uses in dark theme)
+                // with a dark icon, so the button reads clearly in both
+                // themes without inventing a new color family.
+                className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  dark ? "bg-[#00D3F3] text-[#020D18]" : "bg-[#01334F] text-[#AEDCF4]"
+                }`}
               >
                 <Send className="w-3.5 h-3.5" />
               </button>

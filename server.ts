@@ -65,6 +65,8 @@ import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
+import { PLAYBOOK_RESOURCE_TITLE } from "./src/server/knowledgeBase/playbookIngest.js";
+import { realPlanNames } from "./src/utils/kbPlanNames.js";
 
 // Valid kb_resources.document_type values, for request-body validation on
 // the upload/add-url/PATCH routes below — kept as a plain string[] (not the
@@ -6057,6 +6059,85 @@ app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Query Assist: failed to list categories:", err);
     return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
+  }
+});
+
+/** One resource as exposed to the read-only Library nav — deliberately a
+ * narrow projection (no status/errorMessage/addedBy/contentHash/etc.), same
+ * spirit as ChatSource in queryAssist.ts. `sourceUrl` is only ever rendered
+ * as an openable link client-side when it's a real http(s) URL (a "pdf"
+ * resource's sourceUrl is just its original filename, not a link — see
+ * schema.ts's sourceUrl column comment); the client applies the same
+ * isOpenable check already used for chat answer Sources, so no extra field
+ * is needed here to signal that. */
+function toLibraryResource(r: { id: number; title: string; documentType: string; sourceUrl: string | null; type: string }) {
+  return { id: r.id, title: r.title, documentType: r.documentType, sourceUrl: r.sourceUrl, type: r.type };
+}
+
+// Product Assist Library — a read-only navigator over the SAME Knowledge
+// Base data /api/query-assist/categories and /api/kb/* already manage, never
+// a second store: Core Resources (Product Playbook, resolved to its existing
+// kb_resources row; Health FAQ is intentionally NOT resolved from the DB
+// here — see HEALTH_FAQ_LIBRARY_URL's comment, its Sheet must stay hidden)
+// plus, per insurer, its selectable plans (identical filtering to
+// /api/query-assist/categories: realPlanNames + disabled + add-on-only) each
+// with their tagged resources, and its separate insurer-level resources
+// (kb_resources.isInsurerLevel). Open to every tier, same reasoning as
+// /api/query-assist/categories above.
+app.get("/api/query-assist/library", requireAuth, async (req, res) => {
+  try {
+    const { kbCategories, kbResources } = createRepositories(getDb());
+    const [categories, resources] = await Promise.all([kbCategories.list(), kbResources.list({ status: "active" })]);
+
+    const resourcesByCategory = new Map<number, typeof resources>();
+    for (const r of resources) {
+      const list = resourcesByCategory.get(r.categoryId);
+      if (list) list.push(r);
+      else resourcesByCategory.set(r.categoryId, [r]);
+    }
+
+    const playbookResource = resources.find(r => r.type === "sheet" && r.title === PLAYBOOK_RESOURCE_TITLE);
+
+    const insurers = categories
+      .filter(c => c.type === "insurer")
+      .map(c => {
+        const catResources = resourcesByCategory.get(c.id) ?? [];
+        const planNames = realPlanNames(c.planNames)
+          .filter(name => !c.disabledPlanNames.some(d => d.toLowerCase() === name.toLowerCase()))
+          .filter(name => !isAddOnOnlyPlanName(name, catResources));
+
+        // Same association rule as KnowledgeBaseResourceManagement.tsx's
+        // resourcesForPlanKey: tagged to this plan (case/whitespace-
+        // insensitively) OR untagged (applies broadly to every plan under
+        // this insurer) — Add-ons and insurer-level resources never count
+        // toward a specific plan.
+        const plans = planNames.map(name => {
+          const key = name.trim().toLowerCase();
+          const planResources = catResources.filter(
+            r =>
+              r.documentType !== "addon" &&
+              !r.isInsurerLevel &&
+              (r.planTags.length === 0 || r.planTags.some(t => t.trim().toLowerCase() === key))
+          );
+          return { name, resources: planResources.map(toLibraryResource) };
+        });
+
+        const insurerResources = catResources.filter(r => r.isInsurerLevel).map(toLibraryResource);
+
+        return { id: c.id, name: c.name, plans, insurerResources };
+      })
+      // Nothing to browse under this insurer yet — omit rather than show an
+      // empty branch. Purely a display filter; the category/plans/resources
+      // themselves are untouched.
+      .filter(insurer => insurer.plans.length > 0 || insurer.insurerResources.length > 0);
+
+    return res.json({
+      playbook: { sourceUrl: playbookResource?.sourceUrl ?? null },
+      insurers,
+    });
+  } catch (err: any) {
+    console.error("Query Assist: failed to load library:", err);
+    return res.status(500).json({ error: `Failed to load library: ${err.message}` });
   }
 });
 
