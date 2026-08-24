@@ -1305,11 +1305,16 @@ export default function App() {
   // Unified dynamic hasAccess governance function
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
     const isRealDeveloper = currentUser?.tier === "Developer";
-    // Platform Admin (Access Control system Phase 2): has every Developer
-    // capability EXCEPT the 4 protections carved out for real Developer
-    // accounts (see server.ts's isDeveloperPower/Developer-record-protection
-    // checks — the client-side bypasses below are a USABILITY mirror of
-    // that server-side truth, never the actual enforcement).
+    // isDeveloperPowerTier still governs the DEVELOPER_ONLY_FEATURES hard
+    // gate and the Feature Visibility kill-switch exemption below — those
+    // are unrelated to feature-LEVEL access evaluation and stay exactly as
+    // they were (Platform Admin keeps every Developer capability there).
+    // What changed (Platform Admin Feature Access, migration 0050): Platform
+    // Admin no longer unconditionally bypasses the registry/override
+    // resolution further down — it now resolves through its own
+    // platformAdminAccess override, same as General/Admin, defaulting to
+    // "Editor" when unconfigured so existing behavior is unchanged until a
+    // Developer/Platform Admin explicitly narrows it in the Permissions tab.
     const isDeveloperPowerTier = isRealDeveloper || currentUser?.tier === "Platform Admin";
 
     // ── OWNER-ONLY HARD GATE ────────────────────────────────────────────
@@ -1341,7 +1346,10 @@ export default function App() {
       return false;
     }
 
-    if (tier === "Developer" || tier === "Platform Admin") return true;
+    // Only a real Developer bypasses everything from here on. Platform
+    // Admin now falls through to the same registry/override resolution as
+    // every other tier (see platformAdminAccess handling below).
+    if (tier === "Developer") return true;
 
     // Resolve against the saved registry first, then fall back to the
     // shipped defaults.
@@ -1360,7 +1368,15 @@ export default function App() {
     // non-page permission checks don't hard-fail.
     if (!perm) return true;
 
-    const shippedLevel = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
+    // Platform Admin (migration 0050): no shipped per-feature default in
+    // DEFAULT_FEATURE_PERMISSIONS (unlike General/Admin) — resolved
+    // directly from the raw override row, defaulting to "Editor" when
+    // unset. That default exactly reproduces the old unconditional bypass
+    // until a Developer/Platform Admin explicitly narrows it.
+    const shippedLevel =
+      tier === "Platform Admin"
+        ? featureAccessOverrides.find(o => o.featureId === featureId)?.platformAdminAccess ?? "Editor"
+        : tier === "Admin" ? perm.adminAccess : perm.generalAccess;
 
     // Custom Access Grants (max-of, grant-only — see schema.ts's doc
     // comment on `custom_access_grants`): a grant can only RAISE this
@@ -4058,14 +4074,20 @@ export default function App() {
 
                 {/* Resources — external link list (Payment SOP, QA Dashboard,
                     etc.). Visible/clickable for every signed-in user by
-                    default, same as everyone else. Admin/Developer get a
+                    default. Gated on hasAccess("resources", "Editor") — see
+                    featurePermissions.ts's "resources" entry (shipped
+                    generalAccess: "Viewer", adminAccess: "Editor") — so the
                     "Manage Resources" toggle that reveals add/edit/delete
-                    controls on demand instead of showing them by default. */}
+                    controls tracks the same registry/override/Custom-Grant
+                    resolution the matching server routes now enforce
+                    (requireFeatureAccess("resources", "Editor", ...) in
+                    server.ts), instead of a hardcoded tier check the two
+                    could silently drift out of sync on. */}
                 <div className="flex items-center justify-between px-2 mb-2">
                   <span className="block text-[10px] font-bold tracking-wider text-[#C4CDD8]">
                     Resources
                   </span>
-                  {(currentUser?.tier === "Developer" || currentUser?.tier === "Platform Admin" || currentUser?.tier === "Admin") && (
+                  {hasAccess("resources", "Editor") && (
                     <button
                       onClick={() => {
                         setIsManagingResources((prev) => !prev);
@@ -4160,7 +4182,7 @@ export default function App() {
                           <ResourceIcon className="w-4 h-4 shrink-0 text-blue-300" />
                           <span className="truncate">{resource.title}</span>
                         </a>
-                        {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Platform Admin" || currentUser?.tier === "Admin") && (
+                        {isManagingResources && hasAccess("resources", "Editor") && (
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               onClick={() => handleMoveResource(resource.id, "up")}
@@ -4200,7 +4222,7 @@ export default function App() {
                   );
                 })}
 
-                {isManagingResources && (currentUser?.tier === "Developer" || currentUser?.tier === "Platform Admin" || currentUser?.tier === "Admin") && (
+                {isManagingResources && hasAccess("resources", "Editor") && (
                   <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5 px-0.5">
                     {resourceFormError && (
                       <p className="text-[10px] font-semibold text-red-400">{resourceFormError}</p>

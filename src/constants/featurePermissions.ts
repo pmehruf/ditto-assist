@@ -62,7 +62,17 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     name: "Workspace Resources",
     description: "Helpful external documents, links, and training resources",
     defaultTier: "General",
-    generalAccess: "Editor",
+    // Registry/route mismatch fixed (2026-08): this was "Editor", but the
+    // actual mutation routes (add/edit/delete/reorder, in App.tsx's
+    // Workspace Controls drawer + /api/external-resources) have always been
+    // gated to Admin/Developer/Platform Admin only — see schema.ts's
+    // external_resources doc comment ("Read by everyone; writable by
+    // Admin/Developer only") and App.tsx's own comment on the
+    // externalResources state. General was never actually able to write
+    // here; "Editor" was a stale label with no matching route. Corrected to
+    // "Viewer" to match the real, unchanged behavior — General still reads
+    // and clicks resource links exactly as before.
+    generalAccess: "Viewer",
     adminAccess: "Editor"
   },
   {

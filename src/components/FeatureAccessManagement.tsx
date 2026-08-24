@@ -43,9 +43,15 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, { generalAccess: AccessLevel; adminAccess: AccessLevel }>>({});
+  const [drafts, setDrafts] = useState<Record<string, { generalAccess: AccessLevel; adminAccess: AccessLevel; platformAdminAccess: AccessLevel }>>({});
 
   const overrideById = new Map(overrides.map((o) => [o.featureId, o]));
+
+  // Platform Admin has no shipped per-feature default in
+  // DEFAULT_FEATURE_PERMISSIONS (unlike General/Admin) — a universal
+  // "Editor" fallback when unconfigured, matching the resolution in
+  // App.tsx's hasAccess() / server.ts's requireFeatureAccess().
+  const SHIPPED_PLATFORM_ADMIN: AccessLevel = "Editor";
 
   const rowValues = (featureId: string, shippedGeneral: AccessLevel, shippedAdmin: AccessLevel) => {
     if (drafts[featureId]) return drafts[featureId];
@@ -53,10 +59,17 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
     return {
       generalAccess: override?.generalAccess ?? shippedGeneral,
       adminAccess: override?.adminAccess ?? shippedAdmin,
+      platformAdminAccess: override?.platformAdminAccess ?? SHIPPED_PLATFORM_ADMIN,
     };
   };
 
-  const setDraftLevel = (featureId: string, field: "generalAccess" | "adminAccess", value: AccessLevel, shippedGeneral: AccessLevel, shippedAdmin: AccessLevel) => {
+  const setDraftLevel = (
+    featureId: string,
+    field: "generalAccess" | "adminAccess" | "platformAdminAccess",
+    value: AccessLevel,
+    shippedGeneral: AccessLevel,
+    shippedAdmin: AccessLevel
+  ) => {
     setDrafts((prev) => {
       const base = prev[featureId] ?? rowValues(featureId, shippedGeneral, shippedAdmin);
       return { ...prev, [featureId]: { ...base, [field]: value } };
@@ -67,7 +80,7 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
     const draft = drafts[featureId];
     if (!draft) return false;
     const current = rowValues(featureId, shippedGeneral, shippedAdmin);
-    return draft.generalAccess !== current.generalAccess || draft.adminAccess !== current.adminAccess;
+    return draft.generalAccess !== current.generalAccess || draft.adminAccess !== current.adminAccess || draft.platformAdminAccess !== current.platformAdminAccess;
   };
 
   const save = async (featureId: string, name: string, shippedGeneral: AccessLevel, shippedAdmin: AccessLevel) => {
@@ -77,13 +90,14 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
     // DEFAULT_FEATURE_PERMISSIONS.
     const generalAccess = draft.generalAccess === shippedGeneral ? null : draft.generalAccess;
     const adminAccess = draft.adminAccess === shippedAdmin ? null : draft.adminAccess;
+    const platformAdminAccess = draft.platformAdminAccess === SHIPPED_PLATFORM_ADMIN ? null : draft.platformAdminAccess;
     setSavingId(featureId);
     setActionError(null);
     try {
       const res = await fetch(`/api/feature-access/${encodeURIComponent(featureId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generalAccess, adminAccess }),
+        body: JSON.stringify({ generalAccess, adminAccess, platformAdminAccess }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save this change (HTTP ${res.status}).`);
@@ -92,7 +106,10 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
         delete next[featureId];
         return next;
       });
-      logAction("Feature Access Changed", `Set "${name}" access to General: ${generalAccess ?? "default"}, Admin: ${adminAccess ?? "default"}.`);
+      logAction(
+        "Feature Access Changed",
+        `Set "${name}" access to General: ${generalAccess ?? "default"}, Admin: ${adminAccess ?? "default"}, Platform Admin: ${platformAdminAccess ?? "default"}.`
+      );
       onChanged();
     } catch (err: any) {
       setActionError(err.message || "Failed to save this change.");
@@ -159,12 +176,13 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
         )}
 
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
-          <table className="w-full border-collapse min-w-[760px]">
+          <table className="w-full border-collapse min-w-[900px]">
             <thead>
               <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
                 <th className={`px-3 py-2.5 text-left text-[9.5px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Feature</th>
                 <th className={`px-3 py-2.5 text-left text-[9.5px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>General</th>
                 <th className={`px-3 py-2.5 text-left text-[9.5px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Admin</th>
+                <th className={`px-3 py-2.5 text-left text-[9.5px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Platform Admin</th>
                 {canEdit && <th className={`px-3 py-2.5 text-right text-[9.5px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Actions</th>}
               </tr>
             </thead>
@@ -186,7 +204,7 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
                       <p className={`text-[10.5px] mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>{perm.description}</p>
                     </td>
                     {locked ? (
-                      <td colSpan={canEdit ? 3 : 2} className="px-3 py-2.5">
+                      <td colSpan={canEdit ? 4 : 3} className="px-3 py-2.5">
                         <span className={`text-[10.5px] font-bold ${dark ? "text-amber-400" : "text-amber-600"}`}>
                           Always Developer-only — can't be reassigned here.
                         </span>
@@ -220,6 +238,21 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
                           ) : (
                             <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${levelBadgeClass(values.adminAccess)}`}>
                               {values.adminAccess}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {canEdit ? (
+                            <CustomSelect
+                              theme={theme}
+                              value={values.platformAdminAccess}
+                              onChange={(val) => setDraftLevel(perm.id, "platformAdminAccess", val as AccessLevel, perm.generalAccess, perm.adminAccess)}
+                              triggerClassName={selectTriggerClass}
+                              options={ACCESS_LEVELS.map((l) => ({ value: l, label: l }))}
+                            />
+                          ) : (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${levelBadgeClass(values.platformAdminAccess)}`}>
+                              {values.platformAdminAccess}
                             </span>
                           )}
                         </td>

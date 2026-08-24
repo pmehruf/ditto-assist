@@ -50,16 +50,30 @@ function resolveEffectiveAccess(
   if (hiddenPages.includes(featureId) && !isDeveloperPowerTier) {
     return { level: "None", source: "Hidden (Feature Visibility)" };
   }
-  if (isDeveloperPowerTier) return { level: "Editor", source: tier === "Developer" ? "Developer (full access)" : "Platform Admin (full access)" };
+  // Only a real Developer bypasses everything from here — Platform Admin
+  // (migration 0050) resolves through the registry/override path below,
+  // same as App.tsx's hasAccess() / server.ts's requireFeatureAccess().
+  if (tier === "Developer") return { level: "Editor", source: "Developer (full access)" };
 
   const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId);
   if (!perm) return { level: "Editor", source: "Not a governed feature" };
 
   const override = overrides.find((o) => o.featureId === featureId);
-  const shippedLevel = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
-  const overrideLevel = tier === "Admin" ? override?.adminAccess : override?.generalAccess;
-  const baseLevel = overrideLevel ?? shippedLevel;
-  const baseSource = overrideLevel != null ? "Override" : "Default";
+
+  let baseLevel: AccessLevel;
+  let baseSource: string;
+  if (tier === "Platform Admin") {
+    // No shipped per-feature default for Platform Admin — "Editor" is the
+    // universal fallback when unconfigured (see schema.ts's doc comment on
+    // platform_admin_access).
+    baseLevel = override?.platformAdminAccess ?? "Editor";
+    baseSource = override?.platformAdminAccess != null ? "Override" : "Default (Platform Admin)";
+  } else {
+    const shippedLevel = tier === "Admin" ? perm.adminAccess : perm.generalAccess;
+    const overrideLevel = tier === "Admin" ? override?.adminAccess : override?.generalAccess;
+    baseLevel = overrideLevel ?? shippedLevel;
+    baseSource = overrideLevel != null ? "Override" : "Default";
+  }
 
   // Custom Access Grants — same max-of, grant-only merge as App.tsx's
   // hasAccess(); mirrored here for display purposes only.

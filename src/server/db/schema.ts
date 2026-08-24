@@ -855,6 +855,14 @@ export const featureAccessOverrides = pgTable("feature_access_overrides", {
   featureId: text("feature_id").primaryKey(),
   generalAccess: featureAccessLevelEnum("general_access"),
   adminAccess: featureAccessLevelEnum("admin_access"),
+  // Platform Admin (migration 0050): before this column existed, Platform
+  // Admin unconditionally bypassed feature-level access evaluation — see
+  // hasAccess() in App.tsx / requireFeatureAccess() in server.ts. Null
+  // means "not yet configured for this feature", which both of those
+  // resolve to "Editor" (not to the shipped defaultTier), so every existing
+  // Platform Admin keeps identical access immediately after this column is
+  // added, until a Developer/Platform Admin explicitly narrows it here.
+  platformAdminAccess: featureAccessLevelEnum("platform_admin_access"),
   updatedBy: text("updated_by").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

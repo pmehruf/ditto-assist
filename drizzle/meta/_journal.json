@@ -351,6 +351,13 @@
       "when": 1788400000000,
       "tag": "0049_product_assist_eligibility_and_grant_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0050_platform_admin_feature_access",
+      "breakpoints": true
     }
   ]
 }

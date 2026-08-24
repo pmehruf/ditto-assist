@@ -15,11 +15,18 @@ export interface FeaturePermission {
 /** One row of the Developer-editable `feature_access_overrides` table — a
  * null level means "no override for this tier, use the shipped default
  * from DEFAULT_FEATURE_PERMISSIONS". See App.tsx's hasAccess() for how this
- * overlays the shipped defaults. */
+ * overlays the shipped defaults.
+ *
+ * platformAdminAccess has no shipped per-feature default in
+ * DEFAULT_FEATURE_PERMISSIONS (unlike general/admin) — a null value there
+ * resolves to "Editor" directly in hasAccess()/requireFeatureAccess(), not
+ * through a registry lookup, since Platform Admin previously had an
+ * unconditional bypass and this preserves that until explicitly narrowed. */
 export interface FeatureAccessOverride {
   featureId: string;
   generalAccess: "None" | "Viewer" | "Editor" | null;
   adminAccess: "None" | "Viewer" | "Editor" | null;
+  platformAdminAccess: "None" | "Viewer" | "Editor" | null;
 }
 
 /** One row of the `departments` table — pure organizational metadata, zero

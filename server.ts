@@ -1790,13 +1790,17 @@ async function requireAdminOrDeveloper(req: any, res: any, action: string): Prom
 // Custom Grant was cosmetic everywhere except which tabs rendered. This
 // function makes that configuration real for the content-management
 // routes it's applied to below (plan_scope, qa_announcement_log,
-// flagged_responses, ped_suggestions, knowledge_base, audit).
+// flagged_responses, ped_suggestions, knowledge_base, resources). "audit"
+// (Activity Log) has no write route at all — AuditPage.tsx is read-only
+// (search-history/change-logs) — so its "Editor" registry label has nothing
+// to enforce; not wired here for that reason.
 //
 // Deliberately mirrors hasAccess()'s exact precedence — same DEVELOPER_ONLY_
-// FEATURES hard gate, same Developer/Platform Admin bypass, same
-// registry-then-default resolution, same max-of/grant-only Custom Grant
-// rule — so a feature behaves identically whether a person is looking at
-// the UI or hitting the API directly.
+// FEATURES hard gate, same real-Developer bypass, same Platform Admin
+// registry/override resolution, same registry-then-default resolution for
+// General/Admin, same max-of/grant-only Custom Grant rule — so a feature
+// behaves identically whether a person is looking at the UI or hitting the
+// API directly.
 //
 // NOT applied to the Access Control Center's own routes (users,
 // departments, org-teams, roles, relationship-types, user-relationships,
@@ -1830,16 +1834,27 @@ async function requireFeatureAccess(
     return true;
   }
 
-  if (isDeveloperPower(callerTier)) return true; // mirrors hasAccess()'s Developer/Platform Admin bypass
+  // Only a real Developer bypasses everything from here on (mirrors
+  // hasAccess()). Platform Admin (migration 0050) now resolves through the
+  // same registry/override path as General/Admin, via its own
+  // platformAdminAccess column — see below.
+  if (callerTier === "Developer") return true;
 
   const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId);
   if (!perm) return true; // unknown feature id — kept open, mirrors hasAccess()
 
   const overrides = await featureAccess.list();
   const override = overrides.find((o) => o.featureId === featureId);
-  const generalAccess = override?.generalAccess ?? perm.generalAccess;
-  const adminAccess = override?.adminAccess ?? perm.adminAccess;
-  const shippedLevel = callerTier === "Admin" ? adminAccess : generalAccess;
+  // Platform Admin has no shipped per-feature default in
+  // DEFAULT_FEATURE_PERMISSIONS (unlike General/Admin) — defaults to
+  // "Editor" when unconfigured, exactly reproducing the old unconditional
+  // bypass until a Developer/Platform Admin explicitly narrows it.
+  const shippedLevel =
+    callerTier === "Platform Admin"
+      ? override?.platformAdminAccess ?? "Editor"
+      : callerTier === "Admin"
+        ? override?.adminAccess ?? perm.adminAccess
+        : override?.generalAccess ?? perm.generalAccess;
 
   const email = (req.user?.email as string | undefined)?.toLowerCase();
   let level = shippedLevel;
@@ -2185,7 +2200,15 @@ app.get("/api/external-resources", requireAuth, async (req, res) => {
 
 app.post("/api/external-resources", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Adding resource links"))) return;
+    // Was requireAdminOrDeveloper (a hardcoded tier check) — switched to the
+    // same requireFeatureAccess("resources", ...) path every other
+    // content-management route uses, so a Permissions-tab override or
+    // Custom Grant on "resources" actually takes effect here instead of
+    // being silently ignored. Shipped defaults are unchanged (General:
+    // Viewer, Admin: Editor — see featurePermissions.ts), so this changes
+    // no tier's access today; it only makes the existing configuration
+    // mechanism functional for this feature.
+    if (!(await requireFeatureAccess(req, res, "resources", "Editor", "Adding resource links"))) return;
     const { title, url, icon } = req.body;
     if (typeof title !== "string" || !title.trim() || typeof url !== "string" || !url.trim()) {
       return res.status(400).json({ error: "title and url are required." });
@@ -2213,7 +2236,7 @@ app.post("/api/external-resources", requireAuth, async (req, res) => {
 
 app.put("/api/external-resources/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Editing resource links"))) return;
+    if (!(await requireFeatureAccess(req, res, "resources", "Editor", "Editing resource links"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
 
@@ -2242,7 +2265,7 @@ app.put("/api/external-resources/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/external-resources/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Deleting resource links"))) return;
+    if (!(await requireFeatureAccess(req, res, "resources", "Editor", "Deleting resource links"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid resource id." });
     const { externalResources } = createRepositories(getDb());
@@ -2259,7 +2282,7 @@ app.delete("/api/external-resources/:id", requireAuth, async (req, res) => {
 // would otherwise be swallowed by the :id route with id="reorder".
 app.post("/api/external-resources/reorder", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Reordering resource links"))) return;
+    if (!(await requireFeatureAccess(req, res, "resources", "Editor", "Reordering resource links"))) return;
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds) || orderedIds.some((id: unknown) => !Number.isInteger(id))) {
       return res.status(400).json({ error: "orderedIds must be an array of integer ids." });
@@ -2441,15 +2464,16 @@ app.put("/api/feature-access/:featureId", requireAuth, async (req, res) => {
       return res.status(400).json({ error: `"${featureId}" is always Developer-only and can't be overridden.` });
     }
 
-    const { generalAccess, adminAccess } = req.body;
-    if (!isValidFeatureAccessLevel(generalAccess) || !isValidFeatureAccessLevel(adminAccess)) {
-      return res.status(400).json({ error: `generalAccess and adminAccess must each be one of: ${FEATURE_ACCESS_LEVELS.join(", ")}, or null to clear.` });
+    const { generalAccess, adminAccess, platformAdminAccess } = req.body;
+    if (!isValidFeatureAccessLevel(generalAccess) || !isValidFeatureAccessLevel(adminAccess) || !isValidFeatureAccessLevel(platformAdminAccess)) {
+      return res.status(400).json({ error: `generalAccess, adminAccess, and platformAdminAccess must each be one of: ${FEATURE_ACCESS_LEVELS.join(", ")}, or null to clear.` });
     }
 
     const row = await featureAccess.set({
       featureId,
       generalAccess,
       adminAccess,
+      platformAdminAccess,
       updatedBy: `${req.user!.name} (${callerTier})`,
     });
 
@@ -2459,7 +2483,7 @@ app.put("/api/feature-access/:featureId", requireAuth, async (req, res) => {
         role: callerTier,
         actionType: "Feature Access Changed",
         planName: null,
-        description: `Set "${featureId}" access to General: ${generalAccess ?? "default"}, Admin: ${adminAccess ?? "default"}.`,
+        description: `Set "${featureId}" access to General: ${generalAccess ?? "default"}, Admin: ${adminAccess ?? "default"}, Platform Admin: ${platformAdminAccess ?? "default"}.`,
         snapshot: null,
       });
     } catch (logErr) {

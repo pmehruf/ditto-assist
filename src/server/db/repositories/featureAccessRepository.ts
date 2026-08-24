@@ -14,6 +14,10 @@ export interface SetFeatureAccessEntry {
   /** null clears that tier's override (falls back to the shipped default). */
   generalAccess: FeatureAccessLevel | null;
   adminAccess: FeatureAccessLevel | null;
+  /** null falls back to "Editor" (see schema.ts's doc comment on this
+   * column) — not to a shipped defaultTier, since Platform Admin has no
+   * per-feature shipped default in DEFAULT_FEATURE_PERMISSIONS. */
+  platformAdminAccess: FeatureAccessLevel | null;
   updatedBy: string;
 }
 
@@ -42,6 +46,7 @@ export class FeatureAccessRepository {
         featureId: entry.featureId,
         generalAccess: entry.generalAccess,
         adminAccess: entry.adminAccess,
+        platformAdminAccess: entry.platformAdminAccess,
         updatedBy: entry.updatedBy,
         updatedAt: new Date(),
       })
@@ -50,6 +55,7 @@ export class FeatureAccessRepository {
         set: {
           generalAccess: entry.generalAccess,
           adminAccess: entry.adminAccess,
+          platformAdminAccess: entry.platformAdminAccess,
           updatedBy: entry.updatedBy,
           updatedAt: new Date(),
         },
