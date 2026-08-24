@@ -341,6 +341,18 @@ export const planConfigs = pgTable("plan_configs", {
   // in.
   disabled: boolean("disabled").notNull().default(false),
   disabledNote: text("disabled_note"),
+  // Genuine, permanent-looking removal — distinct from `disabled` above
+  // (which is temporary/visible: advisors still see the plan with a note).
+  // A "Delete" in Plan Management now always writes removed=true rather
+  // than DELETE-ing the row, and applies to a built-in plan (Optima
+  // Secure, Care Supreme, Activ One Max, Activ Fit Preferred) too — those
+  // previously had no DB row at all to delete, so there was no way to
+  // remove them short of a code change to types.ts's hardcoded
+  // getPlanConfig(). The row now exists purely to record the removal;
+  // every plan list (Plan Management, the Declaration Assistant picker,
+  // /api/match) filters it out, even though its content may still be
+  // sitting in the hardcoded bootstrap seed.
+  removed: boolean("removed").notNull().default(false),
   addedBy: text("added_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

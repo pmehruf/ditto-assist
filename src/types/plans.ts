@@ -52,6 +52,11 @@ export interface DbPlanConfigEntry {
    * postdates plan_configs (migration 0036) — older rows fetched before a
    * re-save won't have it set client-side. */
   disabled?: boolean;
+  /** Genuine, permanent-looking removal (Plan Management's Delete action) —
+   * see schema.ts's plan_configs.removed comment. Every consumer of
+   * dbPlanConfigs must filter these out; the row is kept only so a
+   * built-in plan's removal survives a page reload. */
+  removed?: boolean;
   /** Shown to the advisor in the declaration dropdown once they select a
    * disabled plan — why it's disabled and/or what to do instead. */
   disabledNote?: string | null;

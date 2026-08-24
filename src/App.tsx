@@ -521,6 +521,13 @@ export default function App() {
     // very next refresh looked like the disable had "reset itself".
     disabled: !!row.disabled,
     disabledNote: row.disabledNote ?? null,
+    // Genuine, permanent-looking removal (Plan Management's Delete action)
+    // — see schema.ts's plan_configs.removed comment. Every consumer of
+    // dbPlanConfigs below must filter rows with this set, since the row is
+    // deliberately kept (not hard-deleted) so a removed built-in plan's
+    // name doesn't keep reappearing from the hardcoded PLANS/getPlanConfig()
+    // bootstrap seed.
+    removed: !!row.removed,
     addedBy: row.addedBy,
   });
 
@@ -1038,8 +1045,13 @@ export default function App() {
     if (!dbPlanConfigsLoaded) return;
     setProductionPlans(prev => {
       const valid = new Set<string>(PLANS);
-      dbPlanConfigs.forEach(row => valid.add(row.planName));
+      dbPlanConfigs.forEach(row => { if (!row.removed) valid.add(row.planName); });
       draftPlans.forEach(draft => valid.add(draft.name));
+      // A "removed" row (Plan Management's Delete action) must win even for
+      // a hardcoded PLANS name — otherwise a deleted built-in plan (e.g.
+      // Care Supreme with no prior customization) would be added right back
+      // by the PLANS.forEach above.
+      dbPlanConfigs.forEach(row => { if (row.removed) valid.delete(row.planName); });
       const next = Array.from(valid);
       const same = prev.length === next.length && prev.every(name => valid.has(name));
       return same ? prev : next;
@@ -1424,6 +1436,11 @@ export default function App() {
     // server.ts), so what an advisor sees in the picker/lookup always
     // matches what the server will actually classify against.
     dbPlanConfigs.forEach(row => {
+      // Removed (Plan Management's Delete action) — strip it out of `base`
+      // entirely rather than merging its (possibly still-hardcoded) config
+      // in, so config = planConfigs[plan] resolves to undefined for a
+      // removed plan even if it were somehow still selected.
+      if (row.removed) { delete base[row.planName]; return; }
       const specifics = row.questions.filter(q => q.tag !== "Umbrella").map(q => q.text);
       base[row.planName] = {
         questions: specifics,

@@ -283,6 +283,16 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       });
     }
 
+    // A removed plan (Plan Management's Delete action — see schema.ts's
+    // plan_configs.removed comment) must be rejected outright, even though
+    // `config` above may still resolve from the hardcoded getPlanConfig()
+    // bootstrap seed for a built-in plan that was never customized before
+    // being removed. Without this check a "deleted" built-in plan would
+    // keep matching successfully off that hardcoded fallback forever.
+    if (dbPlan?.removed) {
+      return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
+    }
+
     if (!config) {
       return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
     }
@@ -4020,7 +4030,7 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Adding a plan"))) return;
 
-    const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote } = req.body;
+    const { planName, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote, removed } = req.body;
 
     if (typeof planName !== "string" || !planName.trim()) {
       return res.status(400).json({ error: "planName is required." });
@@ -4043,6 +4053,9 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
     if (disabledNote !== undefined && disabledNote !== null && typeof disabledNote !== "string") {
       return res.status(400).json({ error: "disabledNote must be a string or null." });
     }
+    if (removed !== undefined && typeof removed !== "boolean") {
+      return res.status(400).json({ error: "removed must be a boolean." });
+    }
 
     const { umbrellaQuestions, hasUmbrella, anyOther } = deriveQuestionFields(questions);
 
@@ -4060,6 +4073,7 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
       overrides: overrides && typeof overrides === "object" ? overrides : null,
       disabled: typeof disabled === "boolean" ? disabled : false,
       disabledNote: typeof disabledNote === "string" ? disabledNote.trim() || null : null,
+      removed: typeof removed === "boolean" ? removed : false,
       addedBy: `${req.user!.name} (${callerTier})`,
     });
     return res.json({ entry: row });
@@ -4074,7 +4088,7 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
     if (!(await requireAdminOrDeveloper(req, res, "Editing a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
 
-    const { planName: newPlanNameRaw, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote } = req.body;
+    const { planName: newPlanNameRaw, insurerName, questions, categoryMap, overrides, specificIllnesses, disabled, disabledNote, removed } = req.body;
 
     // A rename: the body's planName differs from the URL's current name.
     // Renames the canonical DB record in place (an actual PK update) rather
@@ -4130,6 +4144,12 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
         return res.status(400).json({ error: "disabledNote must be a string or null." });
       }
       update.disabledNote = typeof disabledNote === "string" ? disabledNote.trim() || null : null;
+    }
+    if (removed !== undefined) {
+      if (typeof removed !== "boolean") {
+        return res.status(400).json({ error: "removed must be a boolean." });
+      }
+      update.removed = removed;
     }
 
     const { planConfigs } = createRepositories(getDb());

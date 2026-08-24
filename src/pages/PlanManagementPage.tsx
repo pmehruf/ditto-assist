@@ -135,16 +135,28 @@ export function PlanManagementPage({
   }, []);
 
   const hardcodedConfigs = useMemo(() => getPlanConfig(), []);
+  // Excludes removed=true rows — a plan that's been "deleted" from Plan
+  // Management (including a built-in plan that never had a DB row before
+  // being deleted) has a row purely to record that removal; it must not
+  // resurface as a normal Custom plan here.
   const dbByName = useMemo(() => {
     const map: Record<string, DbPlanConfigEntry> = {};
-    dbPlanConfigs.forEach((row) => { map[row.planName] = row; });
+    dbPlanConfigs.forEach((row) => { if (!row.removed) map[row.planName] = row; });
     return map;
   }, [dbPlanConfigs]);
+  const removedNames = useMemo(
+    () => new Set(dbPlanConfigs.filter((row) => row.removed).map((row) => row.planName)),
+    [dbPlanConfigs]
+  );
 
   const allPlanNames = useMemo(() => {
     const names = new Set<string>([...Object.keys(hardcodedConfigs), ...Object.keys(dbByName)]);
+    // A removed row must win even over a hardcoded built-in name — without
+    // this, a deleted Care Supreme (no prior DB row) would reappear here
+    // since Object.keys(hardcodedConfigs) always includes it.
+    removedNames.forEach((name) => names.delete(name));
     return Array.from(names).sort();
-  }, [hardcodedConfigs, dbByName]);
+  }, [hardcodedConfigs, dbByName, removedNames]);
 
   // Top-level sub-tab: plan configuration (existing list/form wizard below)
   // vs. the Specific Illness Ledger (catalog + matching sandbox for the
@@ -600,6 +612,7 @@ export function PlanManagementPage({
         overrides: body.entry.overrides || undefined,
         disabled: !!body.entry.disabled,
         disabledNote: body.entry.disabledNote || null,
+        removed: !!body.entry.removed,
         addedBy: body.entry.addedBy,
       };
       setDbPlanConfigs(prev => {
@@ -623,16 +636,50 @@ export function PlanManagementPage({
     }
   };
 
+  // Marks a plan removed=true (see schema.ts's plan_configs.removed
+  // comment) rather than hard-deleting its row — same
+  // backfill-from-hardcoded-config pattern as setPlanDisabled below, so
+  // this now also works for a built-in plan (Optima Secure, Care Supreme,
+  // Activ One Max, Activ Fit Preferred) that's never been customized and
+  // therefore has no DB row yet. Previously the Delete button only
+  // rendered when a DB row already existed, so a built-in-only plan had no
+  // way to be removed at all short of a code change to types.ts.
   const handleDelete = (name: string) => {
-    confirmDestructiveAction(`Delete the custom plan "${name}" permanently`, async () => {
+    confirmDestructiveAction(`Remove "${name}" from Plan Management permanently — it will no longer appear in Plan Management or be selectable in the Declaration Assistant`, async () => {
       try {
-        const res = await fetch(`/api/plan-configs/${encodeURIComponent(name)}`, { method: "DELETE" });
+        const dbRow = dbByName[name];
+        const hasExistingDbRow = !!dbRow;
+        const url = hasExistingDbRow ? `/api/plan-configs/${encodeURIComponent(name)}` : "/api/plan-configs";
+        const method = hasExistingDbRow ? "PUT" : "POST";
+
+        let payload: Record<string, unknown> = { removed: true };
+        if (!hasExistingDbRow) {
+          const hardcoded = hardcodedConfigs[name];
+          if (!hardcoded) throw new Error(`"${name}" isn't a recognized plan.`);
+          const tagged = taggedQuestionsFromHardcoded(hardcoded);
+          payload = {
+            planName: name,
+            insurerName: "Not specified",
+            questions: tagged.map((q) => ({ text: q.text, tag: q.tag })),
+            categoryMap: normalizeCategoryMapToStrings(hardcoded.categoryMap, hardcoded.questions),
+            overrides: hardcoded.overrides,
+            specificIllnesses: [],
+            removed: true,
+          };
+        }
+
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || `Failed to delete this plan (HTTP ${res.status}).`);
-        setDbPlanConfigs(prev => prev.filter((r) => r.planName !== name));
-        logAction("Plan Deleted", `Deleted custom plan "${name}".`, name);
+        if (!res.ok) throw new Error(body.error || `Failed to remove this plan (HTTP ${res.status}).`);
+        setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== name), { ...body.entry, removed: true } as DbPlanConfigEntry]);
+        logAction("Plan Deleted", `Removed plan "${name}".`, name);
       } catch (err: unknown) {
-        console.error("Failed to delete plan:", err);
+        console.error("Failed to remove plan:", err);
+        window.alert(err instanceof Error ? err.message : "Failed to remove this plan.");
       }
     });
   };
@@ -698,6 +745,7 @@ export function PlanManagementPage({
         overrides: body.entry.overrides || undefined,
         disabled: !!body.entry.disabled,
         disabledNote: body.entry.disabledNote ?? null,
+        removed: !!body.entry.removed,
         addedBy: body.entry.addedBy,
       };
       setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
@@ -794,6 +842,7 @@ export function PlanManagementPage({
       // changed. Fixed at the same time since it's the same root cause.
       disabled: !!body.entry.disabled,
       disabledNote: body.entry.disabledNote ?? null,
+      removed: !!body.entry.removed,
       addedBy: body.entry.addedBy,
     };
     setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
@@ -857,6 +906,7 @@ export function PlanManagementPage({
       // Same latent bug as mapPlanConfigRow in App.tsx (see its comment).
       disabled: !!body.entry.disabled,
       disabledNote: body.entry.disabledNote ?? null,
+      removed: !!body.entry.removed,
       addedBy: body.entry.addedBy,
     };
     setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
@@ -1271,17 +1321,15 @@ export function PlanManagementPage({
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </ClippedButton>
-                        {dbRow && (
-                          <ClippedButton
-                            onClick={() => handleDelete(name)}
-                            disabled={!isDeveloper}
-                            cornerBg={dark ? "#0e2236" : "#ffffff"}
-                            className={`p-2 ${dark ? "hover:bg-red-500/15 text-stone-300 hover:text-red-400" : "hover:bg-red-50 text-stone-600 hover:text-red-600"}`}
-                            title={!isDeveloper ? "Developer clearance required to delete plans" : "Delete this custom plan"}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </ClippedButton>
-                        )}
+                        <ClippedButton
+                          onClick={() => handleDelete(name)}
+                          disabled={!isDeveloper}
+                          cornerBg={dark ? "#0e2236" : "#ffffff"}
+                          className={`p-2 ${dark ? "hover:bg-red-500/15 text-stone-300 hover:text-red-400" : "hover:bg-red-50 text-stone-600 hover:text-red-600"}`}
+                          title={!isDeveloper ? "Developer clearance required to delete plans" : dbRow ? "Delete this plan" : "Remove this built-in plan"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </ClippedButton>
                       </div>
                     )}
                   </div>
