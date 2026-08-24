@@ -51,7 +51,9 @@ import {
   Award,
   Library,
   ShieldUser,
-  Terminal
+  Terminal,
+  Settings2,
+  Waypoints
 } from "lucide-react";
 
 import {
@@ -84,7 +86,7 @@ import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole 
 import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon, QaDashboardIcon, OperationsControlIcon, DaMappingConfigIcon, ProductAssistIcon } from "./components/icons";
+import { DeclarationMapIcon, QaDashboardIcon, ProductAssistIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
@@ -231,16 +233,28 @@ function toLocalDateKey(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-// Sidebar rail active-state accent colors — two distinct shades so "this
-// group contains the active page" (RAIL_GROUP_ACTIVE) and "this is the
-// active page itself" (RAIL_PAGE_ACTIVE) never look identical. Both are
-// fixed hex values rather than theme-branched: the rail's own background
-// (App.tsx's <motion.aside>) is always a dark navy in both app themes
-// (bg-[#03101a] dark / var(--sidebar-bg) light, itself #16232F), so a single
-// pair of rail-tuned accents reads correctly regardless of the app's
-// light/dark theme setting.
-const RAIL_GROUP_ACTIVE = "#58A3FF";
-const RAIL_PAGE_ACTIVE = "#00D3F3";
+// Sidebar rail icon colors — one small, deliberate palette instead of the
+// scattered mix this used to be (Tailwind text-blue-300 on some icons,
+// var(--text-muted)/#90A6C4 on others, plus two custom SVGs that painted
+// themselves through a blur()+contrast(14) filter meant to "weight-match"
+// their linework to lucide's — that filter is what made those two icons
+// (Operations Control's group icon, DA Mapping Config's page icon) visibly
+// drift to a different color from every plain lucide icon next to them,
+// since it's operating on already-anti-aliased pixels, not the underlying
+// currentColor). Both of those were replaced with ordinary lucide icons
+// (Settings2 / Waypoints — see navZonesRaw below) specifically so every
+// sidebar icon now goes through the exact same rendering path: an SVG
+// stroke painted with currentColor, no per-icon filter, no per-icon
+// exception.
+//
+// All three fixed hex values below (not theme-branched): the rail's own
+// background (App.tsx's <motion.aside>) is always a dark navy in both app
+// themes (bg-[#03101a] dark / var(--sidebar-bg) light, itself #16232F), so
+// one rail-tuned palette reads correctly regardless of the app's light/dark
+// theme setting.
+const RAIL_ICON_REST = "#8FADD1"; // every icon at rest — group icons AND page icons alike
+const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
+const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "query_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections">("lookup");
@@ -2943,9 +2957,12 @@ export default function App() {
      * Map's faux-bold drop-shadow (its thin route-line SVG reads lighter
      * than the stroke-based icons at this size). */
     iconStyle?: React.CSSProperties;
-    /** Tailwind color class for the icon given whether this page is active.
-     * Every page is the same blue except Smoke Test, which turns orange
-     * when active (its sandbox/danger cue). */
+    /** Hex color for the icon given whether this page is active, applied
+     * via inline style (not a Tailwind class — a class built from a
+     * template literal like `text-[${hex}]` is invisible to Tailwind's
+     * static build-time scanner and silently generates no CSS). Every page
+     * uses RAIL_ICON_REST except Smoke Test, which turns ember-orange when
+     * active (its sandbox/danger cue). */
     iconColorClass: (isActive: boolean) => string;
     isActive: boolean;
     onSelect: () => void;
@@ -2996,7 +3013,7 @@ export default function App() {
     Icon,
     visible: hasAccess(tab, tier),
     iconStyle: extra.iconStyle,
-    iconColorClass: extra.iconColorClass ?? (() => "text-blue-300"),
+    iconColorClass: extra.iconColorClass ?? (() => RAIL_ICON_REST),
     isActive: extra.isActive ?? activeTab === tab,
     onSelect: extra.onSelect ?? (() => setActiveTab(tab)),
     badge: extra.badge,
@@ -3050,12 +3067,12 @@ export default function App() {
         {
           key: "appOpsControls",
           label: "Operations Control",
-          GroupIcon: OperationsControlIcon,
+          GroupIcon: Settings2,
           pages: [
             navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
             navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
             navPage("knowledge_base", "Knowledge Base", Database, "Viewer"),
-            navPage("plan_scope", "DA Mapping Config", DaMappingConfigIcon, "Viewer"),
+            navPage("plan_scope", "DA Mapping Config", Waypoints, "Viewer"),
           ],
         },
         {
@@ -3091,7 +3108,7 @@ export default function App() {
             }),
             navPage("connections", "Connections", Link2, "Viewer"),
             navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
-              iconColorClass: isActive => (isActive ? "text-[#E08D4B]" : "text-blue-300"),
+              iconColorClass: isActive => (isActive ? "#E08D4B" : RAIL_ICON_REST),
             }),
           ],
         },
@@ -3123,7 +3140,7 @@ export default function App() {
       } rounded-r-lg border-y-transparent border-r-transparent`}
     >
       <span className="relative shrink-0 flex items-center justify-center">
-        <page.Icon className={`w-4 h-4 shrink-0 ${page.iconColorClass(page.isActive)}`} style={page.iconStyle} />
+        <page.Icon className="w-4 h-4 shrink-0" style={{ color: page.iconColorClass(page.isActive), ...page.iconStyle }} />
         {page.hasAlertDot && (
           <span className="absolute -top-1 -right-1 flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
@@ -3404,7 +3421,7 @@ export default function App() {
                           // page" and "this is the exact active page" read as
                           // two distinguishable states rather than identical
                           // color repeated at both levels.
-                          style={{ color: isGroupActive ? RAIL_GROUP_ACTIVE : (theme === "dark" ? "var(--text-muted)" : "#90A6C4") }}
+                          style={{ color: isGroupActive ? RAIL_GROUP_ACTIVE : RAIL_ICON_REST }}
                           title={group.label}
                           aria-haspopup={!group.isDirectPage}
                           aria-expanded={isExpanded}
@@ -3437,7 +3454,7 @@ export default function App() {
                           {!group.isDirectPage && (
                             <ChevronDown
                               className={`absolute top-0.5 right-0.5 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
-                              style={{ width: "9px", height: "9px", color: isDark ? "var(--text-muted)" : "#90A6C4" }}
+                              style={{ width: "9px", height: "9px", color: RAIL_ICON_REST }}
                             />
                           )}
                         </button>
@@ -3492,7 +3509,7 @@ export default function App() {
                                     // the group it lives in.
                                     <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: RAIL_PAGE_ACTIVE }} />
                                   )}
-                                  <page.Icon className={`w-[15px] h-[15px] shrink-0 ${page.iconColorClass(page.isActive)}`} style={page.iconStyle} />
+                                  <page.Icon className="w-[15px] h-[15px] shrink-0" style={{ color: page.iconColorClass(page.isActive), ...page.iconStyle }} />
                                   {page.hasAlertDot && (
                                     <span className="absolute top-0.5 right-0.5 flex h-1.5 w-1.5">
                                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
@@ -3795,7 +3812,7 @@ export default function App() {
                 flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 profile_access: { label: "Access Control Center", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                plan_scope: { label: "DA Mapping Config", icon: <DaMappingConfigIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                plan_scope: { label: "DA Mapping Config", icon: <Waypoints className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },

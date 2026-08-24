@@ -24,9 +24,5 @@ export type { } from './DeclarationMapIcon';
 export { QaDashboardIcon } from './QaDashboardIcon';
 export type { } from './QaDashboardIcon';
 
-export { OperationsControlIcon } from './OperationsControlIcon';
-
-export { DaMappingConfigIcon } from './DaMappingConfigIcon';
-
 export { ProductAssistIcon } from './ProductAssistIcon';
 
