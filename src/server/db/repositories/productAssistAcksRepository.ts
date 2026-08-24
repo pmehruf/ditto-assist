@@ -62,7 +62,7 @@ export class ProductAssistAcksRepository {
 
   /**
    * Deletes the caller's own row, putting them back in "never acknowledged"
-   * state so the next visit to Query Assist replays the first-ever 10-second
+   * state so the next visit to Product Assist replays the first-ever 10-second
    * warning exactly as a brand-new user would see it. Self-service QA/demo
    * tool only — every caller can only reset their own row (the route this
    * backs takes the email from the authenticated session, never a body

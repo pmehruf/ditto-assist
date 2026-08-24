@@ -5,7 +5,7 @@
 
 /**
  * Regression tests for the "evidence -> rule -> condition -> conclusion"
- * synthesis fix (see queryAssist.ts's EVIDENCE -> RULE -> CONDITION ->
+ * synthesis fix (see productAssist.ts's EVIDENCE -> RULE -> CONDITION ->
  * CONCLUSION section and the "synthesis" response-schema field). Before this
  * fix, Product Assist would retrieve the right evidence but often just
  * restate it, leaving the advisor to work out the conclusion themselves —
@@ -54,7 +54,7 @@ vi.mock("./geminiClient.js", () => ({
 }));
 
 // Imported AFTER the mock is registered, per vitest hoisting convention.
-const { answerQuery, SYSTEM_INSTRUCTION } = await import("./queryAssist.js");
+const { answerQuery, SYSTEM_INSTRUCTION } = await import("./productAssist.js");
 
 function mockModelResponse(body: { synthesis?: unknown; answer: string; share: string | null }) {
   generateContentMock.mockResolvedValueOnce({

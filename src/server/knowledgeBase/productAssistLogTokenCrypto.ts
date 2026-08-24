@@ -7,7 +7,7 @@
  * QUERY ASSIST LOG EXPORT — REFRESH TOKEN ENCRYPTION AT REST
  * ---------------------------------------------------------------
  * The stored Google OAuth refresh token (see
- * queryAssistLogExportConnectionRepository) grants WRITE access to the
+ * productAssistLogExportConnectionRepository) grants WRITE access to the
  * export Google Sheet on behalf of whoever clicked "Connect Google Sheets"
  * for Product Assist Log Export in Connections. Same AES-256-GCM-keyed-from-
  * SESSION_SECRET approach as qaDashboard/tokenCrypto.ts and
@@ -23,19 +23,19 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypt
 // distinct from the QA Dashboard's and Playbook's own salts so the three
 // derived keys are independent even though they share the same underlying
 // secret.
-const KEY_SALT = "query-assist-log-export-refresh-token-v1";
+const KEY_SALT = "product-assist-log-export-refresh-token-v1";
 
 function getKey(): Buffer {
   const secret = process.env.SESSION_SECRET;
   if (!secret) {
-    throw new Error("SESSION_SECRET is required to encrypt/decrypt the Query Assist Log Export's stored Google refresh token.");
+    throw new Error("SESSION_SECRET is required to encrypt/decrypt the Product Assist Log Export's stored Google refresh token.");
   }
   return scryptSync(secret, KEY_SALT, 32);
 }
 
 /** Encrypts a plaintext refresh token to a single base64 string
  * (iv || authTag || ciphertext). */
-export function encryptQueryAssistLogRefreshToken(plain: string): string {
+export function encryptProductAssistLogRefreshToken(plain: string): string {
   const key = getKey();
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -44,10 +44,10 @@ export function encryptQueryAssistLogRefreshToken(plain: string): string {
   return Buffer.concat([iv, authTag, ciphertext]).toString("base64");
 }
 
-/** Reverses encryptQueryAssistLogRefreshToken. Throws if the value was
+/** Reverses encryptProductAssistLogRefreshToken. Throws if the value was
  * tampered with or SESSION_SECRET has changed since encryption (GCM
  * auth-tag mismatch). */
-export function decryptQueryAssistLogRefreshToken(encoded: string): string {
+export function decryptProductAssistLogRefreshToken(encoded: string): string {
   const key = getKey();
   const raw = Buffer.from(encoded, "base64");
   const iv = raw.subarray(0, 12);

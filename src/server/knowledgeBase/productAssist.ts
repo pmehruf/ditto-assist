@@ -28,7 +28,7 @@ const RETRIEVAL_LIMIT = 24;
 // waiting period for that?"), not re-verifying old answers.
 const MAX_HISTORY_TURNS = 4;
 
-export interface QueryAssistScope {
+export interface ProductAssistScope {
   /** null = a "General" question, not tied to any one insurer. */
   categoryId: number | null;
   /** Plan names to scope to within the chosen insurer. Empty = the whole
@@ -36,12 +36,12 @@ export interface QueryAssistScope {
   planTags: string[];
 }
 
-export interface QueryAssistHistoryTurn {
+export interface ProductAssistHistoryTurn {
   role: "user" | "assistant";
   content: string;
 }
 
-export interface QueryAssistSource {
+export interface ProductAssistSource {
   title: string;
   categoryName: string;
   /** brochure/policy_wording/prospectus/addon/other — see 0034's schema
@@ -54,7 +54,7 @@ export interface QueryAssistSource {
   sourceUrl: string | null;
 }
 
-const DOCUMENT_TYPE_LABEL: Record<QueryAssistSource["documentType"], string> = {
+const DOCUMENT_TYPE_LABEL: Record<ProductAssistSource["documentType"], string> = {
   policy_wording: "Policy Wording",
   prospectus: "Prospectus",
   brochure: "Brochure",
@@ -69,7 +69,7 @@ const DOCUMENT_TYPE_LABEL: Record<QueryAssistSource["documentType"], string> = {
 // this order before being handed to the model so the highest-authority
 // excerpts for a given topic are read first, reinforcing (not replacing)
 // the explicit precedence rule in the prompt.
-const DOCUMENT_TYPE_RANK: Record<QueryAssistSource["documentType"], number> = {
+const DOCUMENT_TYPE_RANK: Record<ProductAssistSource["documentType"], number> = {
   policy_wording: 0,
   prospectus: 1,
   brochure: 2,
@@ -77,7 +77,7 @@ const DOCUMENT_TYPE_RANK: Record<QueryAssistSource["documentType"], number> = {
   other: 4,
 };
 
-export interface QueryAssistAnswer {
+export interface ProductAssistAnswer {
   /** The verified, advisor-facing answer (with its trailing References
    * list). Structured output (see SYSTEM_INSTRUCTION's OUTPUT FORMAT) — the
    * model returns this as a distinct JSON field rather than a section the
@@ -95,16 +95,16 @@ export interface QueryAssistAnswer {
    * model has to remember to write, "no draft" can no longer be silently
    * lost the way a missing "---SHARE---" text delimiter used to be. */
   share: string | null;
-  sources: QueryAssistSource[];
+  sources: ProductAssistSource[];
   /** True if nothing usable was found in scope — the UI can show a softer
    * "try broadening your search" hint alongside the model's own answer. */
   hadNoMatches: boolean;
   /** Retrieval/cost metadata — never sent to the advisor's browser (the
    * /ask route only forwards answer/share/sources/hadNoMatches to the
    * client); consumed solely by server.ts's fire-and-forget
-   * QUERY_ASSIST_LOG_ENABLED logging so the temporary query_assist_logs
+   * PRODUCT_ASSIST_LOG_ENABLED logging so the temporary product_assist_logs
    * table can carry real per-query retrieval/token/latency figures instead
-   * of just the answer text. See queryAssistLogsRepository.ts. */
+   * of just the answer text. See productAssistLogsRepository.ts. */
   meta: {
     retrievedChunkCount: number;
     playbookFactCount: number;
@@ -116,7 +116,7 @@ export interface QueryAssistAnswer {
 }
 
 /**
- * Query Assist's system instruction. Adapted from the detailed Health
+ * Product Assist's system instruction. Adapted from the detailed Health
  * Insurance Product Expert prompt the user already runs against NotebookLM
  * over the same 14 policy-wording PDFs — same verification discipline and
  * dual-output format, generalized for this app rather than referencing
@@ -127,7 +127,7 @@ export interface QueryAssistAnswer {
  *   2. The customer-facing "share" must never overstate the verified
  *      "answer" (Conditional != Yes, Not specified != No).
  * Returned as structured JSON ({ answer, share }) rather than one combined
- * string split on a text delimiter — see QueryAssistAnswer's doc comment.
+ * string split on a text delimiter — see ProductAssistAnswer's doc comment.
  */
 export const SYSTEM_INSTRUCTION = `You are Product Assist, a rigorous Health Insurance Product Expert assistant for insurance advisors. You answer questions about specific insurance plans using ONLY the source content provided to you in each request — you never rely on general insurance knowledge, training data, or assumptions about how insurance "usually" works.
 
@@ -299,7 +299,7 @@ function buildSpecialInstructionsBlock(overrideRules: SpecialInstructionRow[], a
  * there's no risk of it leaning toward either side despite being told not
  * to. `share` is null per NO DRAFT RULE (nothing here is a sourced answer
  * an advisor could relay to a customer). */
-function buildConflictAnswer(conflicts: SpecialInstructionConflict[], historyTurnCount: number, latencyMs: number): QueryAssistAnswer {
+function buildConflictAnswer(conflicts: SpecialInstructionConflict[], historyTurnCount: number, latencyMs: number): ProductAssistAnswer {
   const lines = conflicts.map(
     c => `- **${c.topic}**: ${c.instructions.length} conflicting active Override Rules (IDs: ${c.instructions.map(i => i.id).join(", ")}).`
   );
@@ -336,7 +336,7 @@ function buildDittoFaqEntries(faqs: MatchedFaq[]): string[] {
 }
 
 function buildSourceBlock(
-  chunks: { resourceTitle: string; documentType: QueryAssistSource["documentType"]; content: string }[],
+  chunks: { resourceTitle: string; documentType: ProductAssistSource["documentType"]; content: string }[],
   playbookFacts: { planName: string; content: string }[],
   faqs: MatchedFaq[],
   specialInstructionsBlock: string
@@ -402,7 +402,7 @@ function buildSourceBlock(
  */
 async function resolveEligibleResourceIds(
   repos: Repositories,
-  scope: QueryAssistScope,
+  scope: ProductAssistScope,
   effectivePlanTags: string[]
 ): Promise<{ categoryIds: number[]; resourceIds?: number[] }> {
   if (scope.categoryId === null) {
@@ -423,11 +423,11 @@ async function resolveEligibleResourceIds(
 }
 
 /** Renders the client's local-memory conversation history (see
- * QueryAssistPage.tsx — nothing is persisted server-side) as a short
+ * ProductAssistPage.tsx — nothing is persisted server-side) as a short
  * transcript prefix so follow-up questions ("what about the waiting
  * period for that?") resolve correctly, without re-verifying prior turns
  * against SOURCE CONTENT again. */
-function buildHistoryBlock(history: QueryAssistHistoryTurn[]): string {
+function buildHistoryBlock(history: ProductAssistHistoryTurn[]): string {
   const recent = history.slice(-MAX_HISTORY_TURNS);
   if (recent.length === 0) return "";
   const transcript = recent.map(h => `${h.role === "user" ? "Advisor" : "Product Assist"}: ${h.content}`).join("\n\n");
@@ -442,7 +442,7 @@ function buildHistoryBlock(history: QueryAssistHistoryTurn[]): string {
  * producing "please specify which plan" answers even when the advisor HAD
  * selected one, and produced no clarification at all when neither a
  * selection nor a detection was possible. */
-function buildScopeLine(scope: QueryAssistScope, categoryName: string | null, detectedPlanNames: string[]): string {
+function buildScopeLine(scope: ProductAssistScope, categoryName: string | null, detectedPlanNames: string[]): string {
   if (scope.categoryId === null) return "SELECTED SCOPE: General question — not tied to one insurer.\n\n";
   let planPart: string;
   if (scope.planTags.length > 0) {
@@ -462,7 +462,7 @@ function buildScopeLine(scope: QueryAssistScope, categoryName: string | null, de
  * about Care Supreme in general — prefixing the original question keeps
  * retrieval anchored to what's actually being asked (e.g. domiciliary
  * coverage restrictions), not just the latest short reply. */
-function buildRetrievalQueryText(question: string, history: QueryAssistHistoryTurn[]): string {
+function buildRetrievalQueryText(question: string, history: ProductAssistHistoryTurn[]): string {
   const priorUserTurns = history
     .filter(h => h.role === "user")
     .slice(-3)
@@ -481,7 +481,7 @@ function isAddOnPlanName(name: string): boolean {
 }
 
 /** Fallback for when the advisor didn't pick a plan chip (or explicitly
- * chose "No specific plan" in QueryAssistPage.tsx) but named a real plan
+ * chose "No specific plan" in ProductAssistPage.tsx) but named a real plan
  * directly in their question text — e.g. "what's the bonus in Optima
  * Secure?" while scoped only to the insurer. Without this, that question
  * would silently skip the Product Playbook check entirely (see this file's
@@ -512,10 +512,10 @@ function detectMentionedPlanNames(question: string, rosterPlanNames: string[]): 
 
 export async function answerQuery(
   repos: Repositories,
-  scope: QueryAssistScope,
+  scope: ProductAssistScope,
   question: string,
-  history: QueryAssistHistoryTurn[] = []
-): Promise<QueryAssistAnswer> {
+  history: ProductAssistHistoryTurn[] = []
+): Promise<ProductAssistAnswer> {
   const categories = await repos.kbCategories.list();
   const categoryById = new Map(categories.map(c => [c.id, c]));
   const scopeCategoryName = scope.categoryId !== null ? categoryById.get(scope.categoryId)?.name ?? null : null;
@@ -531,7 +531,7 @@ export async function answerQuery(
   const matchedAcronyms = await resolveMatchedAcronyms(repos, question);
 
   // The advisor may not have picked a plan chip at all — plan selection is
-  // no longer required before asking (see QueryAssistPage.tsx). If they
+  // no longer required before asking (see ProductAssistPage.tsx). If they
   // named a real plan directly in the question text instead, detect it
   // here (see detectMentionedPlanNames's comment) and treat it as if it
   // were selected for BOTH resource retrieval and the Product Playbook
@@ -724,13 +724,13 @@ export async function answerQuery(
     // the raw text as the answer (better than surfacing nothing) and log it
     // so this stays visible rather than silently degrading, same spirit as
     // the old missing-separator warning this replaces.
-    console.warn("Query Assist: model response wasn't valid structured JSON, falling back to raw text as the answer:", err);
+    console.warn("Product Assist: model response wasn't valid structured JSON, falling back to raw text as the answer:", err);
     answer = rawText || "I wasn't able to generate a response. Please try rephrasing the question.";
     share = null;
   }
 
   const seenTitles = new Set<string>();
-  const sources: QueryAssistSource[] = [];
+  const sources: ProductAssistSource[] = [];
   for (const s of similar) {
     if (seenTitles.has(s.resourceTitle)) continue;
     seenTitles.add(s.resourceTitle);

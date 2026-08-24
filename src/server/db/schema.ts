@@ -1210,7 +1210,7 @@ export type NewFlaggedIssueRow = typeof flaggedIssues.$inferInsert;
 // (PDF/web/Playbook) conflicts with a dated product-team announcement, the
 // announcement wins. kbPlaybookPlanFacts sits one rung below announcements
 // and above generic PDF/web content in that same precedence — see
-// queryAssist.ts's SYSTEM_INSTRUCTION SOURCE PRECEDENCE list.
+// productAssist.ts's SYSTEM_INSTRUCTION SOURCE PRECEDENCE list.
 // ─────────────────────────────────────────────────────────────────────────
 export const kbCategoryTypeEnum = pgEnum("kb_category_type", ["insurer", "general"]);
 
@@ -1232,7 +1232,7 @@ export const kbCategories = pgTable("kb_categories", {
   planNames: text("plan_names").array().notNull().default([]),
   // A plan name that's been disabled rather than deleted — hidden from the
   // "N plans" count, the quick-add suggestions, and Product Assist's plan
-  // scope picker (QueryAssistPage.tsx's selectablePlanNames), but its
+  // scope picker (ProductAssistPage.tsx's selectablePlanNames), but its
   // resources keep their planTags untouched (see kb_resources.planTags) so
   // nothing is orphaned and the plan can be re-enabled by clearing its entry
   // here. A separate array (not a removal from planNames itself) because a
@@ -1257,7 +1257,7 @@ export const kbResourceStatusEnum = pgEnum("kb_resource_status", ["processing", 
 // category (insurer) — the "clean Knowledge Base" rebuild's single-purpose
 // resources are one Brochure, one Policy Wording, and one Prospectus PDF
 // per plan instead of a merged multi-document file, and this is what lets
-// queryAssist.ts apply the authority precedence Policy Wording > Prospectus
+// productAssist.ts apply the authority precedence Policy Wording > Prospectus
 // > Brochure across them at retrieval/citation time — see
 // 0034_kb_resource_document_type.sql. 'other' covers everything that isn't
 // one of those three (claim guides, glossaries, the Playbook resource, and
@@ -1350,7 +1350,7 @@ export const kbPlaybookPlanFacts = pgTable(
     id: serial("id").primaryKey(),
     resourceId: integer("resource_id").notNull().references(() => kbResources.id, { onDelete: "cascade" }),
     // Free text, matched case-insensitively against kb_categories.name at
-    // query time (see queryAssist.ts) — not a foreign key, since one
+    // query time (see productAssist.ts) — not a foreign key, since one
     // Playbook tab's plans can span category names that don't exist yet as
     // kb_categories rows.
     insurerName: text("insurer_name").notNull(),
@@ -1451,22 +1451,22 @@ export type KbChatMessageRow = typeof kbChatMessages.$inferSelect;
 export type NewKbChatMessageRow = typeof kbChatMessages.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
-// query_assist_logs — TEMPORARY server-side record of Product Assist
+// product_assist_logs — TEMPORARY server-side record of Product Assist
 // conversations, added 2026-08 specifically to build a real representative
 // test set for the optimization-review testing strategy (Product Assist
-// Quality-Preserving Optimization Review, Section 6) — Query Assist's
+// Quality-Preserving Optimization Review, Section 6) — Product Assist's
 // normal design deliberately keeps NO server-side record of conversations
-// (see queryAssist.ts / QueryAssistPage.tsx's doc comments: history lives
+// (see productAssist.ts / ProductAssistPage.tsx's doc comments: history lives
 // only in the advisor's own browser). This table is an explicit, knowingly
-// time-boxed exception to that, gated by the QUERY_ASSIST_LOG_ENABLED env
+// time-boxed exception to that, gated by the PRODUCT_ASSIST_LOG_ENABLED env
 // flag so it can be turned off once enough real data has been collected —
 // it is not meant to become a permanent record. Rows are periodically
 // pushed to a Google Sheet and deleted from here (see
-// src/server/knowledgeBase/queryAssistLogExport.ts), so this table isn't
+// src/server/knowledgeBase/productAssistLogExport.ts), so this table isn't
 // meant to grow indefinitely either.
 // ─────────────────────────────────────────────────────────────────────────
-export const queryAssistLogs = pgTable(
-  "query_assist_logs",
+export const productAssistLogs = pgTable(
+  "product_assist_logs",
   {
     id: serial("id").primaryKey(),
     userEmail: text("user_email").notNull(),
@@ -1477,12 +1477,12 @@ export const queryAssistLogs = pgTable(
     categoryName: text("category_name"),
     planTags: text("plan_tags").array().notNull().default([]),
     question: text("question").notNull(),
-    // The verified "answer" field (queryAssist.ts's structured output) —
+    // The verified "answer" field (productAssist.ts's structured output) —
     // never the customer-facing "share" paraphrase alone, since "answer" is
     // what test-set authors need to judge correctness/completeness against.
     answer: text("answer").notNull(),
     share: text("share"),
-    // QueryAssistSource[] as sent to the advisor — title/categoryName/
+    // ProductAssistSource[] as sent to the advisor — title/categoryName/
     // documentType/sourceUrl per distinct source, for judging citation and
     // source-fidelity accuracy against the real documents later.
     sources: jsonb("sources").notNull().default([]),
@@ -1497,24 +1497,24 @@ export const queryAssistLogs = pgTable(
     latencyMs: integer("latency_ms"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("query_assist_logs_created_at_idx").on(table.createdAt)]
+  (table) => [index("product_assist_logs_created_at_idx").on(table.createdAt)]
 );
 
-export type QueryAssistLogRow = typeof queryAssistLogs.$inferSelect;
-export type NewQueryAssistLogRow = typeof queryAssistLogs.$inferInsert;
+export type ProductAssistLogRow = typeof productAssistLogs.$inferSelect;
+export type NewProductAssistLogRow = typeof productAssistLogs.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
-// query_assist_log_export_connection — same single-row shape/purpose as
+// product_assist_log_export_connection — same single-row shape/purpose as
 // qaDashboardGoogleConnection above (see that table's comment), but this
 // grant requests the WRITE `spreadsheets` scope rather than
-// `spreadsheets.readonly`, since it's used to append query_assist_logs rows
-// to an export Sheet (see queryAssistLogSheetsClient.ts) rather than to
+// `spreadsheets.readonly`, since it's used to append product_assist_logs rows
+// to an export Sheet (see productAssistLogSheetsClient.ts) rather than to
 // read one. Kept as its own table/connection — deliberately never reuses
 // the QA Dashboard's or Playbook's stored grant — so this is the only place
 // in the app holding a credential capable of writing to a Google Sheet.
-// Encrypted at rest; see queryAssistLogTokenCrypto.ts.
+// Encrypted at rest; see productAssistLogTokenCrypto.ts.
 // ─────────────────────────────────────────────────────────────────────────
-export const queryAssistLogExportConnection = pgTable("query_assist_log_export_connection", {
+export const productAssistLogExportConnection = pgTable("product_assist_log_export_connection", {
   id: text("id").primaryKey().default("default"),
   connectedEmail: text("connected_email").notNull(),
   encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
@@ -1522,15 +1522,15 @@ export const queryAssistLogExportConnection = pgTable("query_assist_log_export_c
   connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export type QueryAssistLogExportConnectionRow = typeof queryAssistLogExportConnection.$inferSelect;
-export type NewQueryAssistLogExportConnectionRow = typeof queryAssistLogExportConnection.$inferInsert;
+export type ProductAssistLogExportConnectionRow = typeof productAssistLogExportConnection.$inferSelect;
+export type NewProductAssistLogExportConnectionRow = typeof productAssistLogExportConnection.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // special_instructions — Product Assist's "Special Instructions" layer
 // (Knowledge Base, 2026-08). A small, admin-curated set of controlled
 // instructions Product Assist checks BEFORE consulting the normal
 // knowledge-retrieval chain (Product Playbook -> Policy Wording -> other
-// resources; see queryAssist.ts's SOURCE PRECEDENCE). Purely additive: when
+// resources; see productAssist.ts's SOURCE PRECEDENCE). Purely additive: when
 // no active instruction matches a given question, retrieval and answer
 // behavior is byte-identical to before this table existed.
 //
@@ -1548,7 +1548,7 @@ export type NewQueryAssistLogExportConnectionRow = typeof queryAssistLogExportCo
 //     as additional_information.
 //
 // Scope is two independent optional fields, not a single enum — see
-// queryAssist.ts's SOURCE PRECEDENCE #8/#9 (spec) for the resulting 4-level
+// productAssist.ts's SOURCE PRECEDENCE #8/#9 (spec) for the resulting 4-level
 // specificity ladder this produces:
 //   insurerCategoryId + productPlanName both set -> Product+Insurer+Topic (most specific)
 //   productPlanName only                          -> Product+Topic
@@ -1558,7 +1558,7 @@ export type NewQueryAssistLogExportConnectionRow = typeof queryAssistLogExportCo
 // just same insurer/product) is established separately at query time via
 // embedding similarity against `topicEmbedding` — see
 // src/server/knowledgeBase/specialInstructions.ts. Deliberately reuses the
-// exact query embedding queryAssist.ts already computes for kbChunks
+// exact query embedding productAssist.ts already computes for kbChunks
 // retrieval (RETRIEVAL_QUERY task type) — zero extra embedding calls.
 // ─────────────────────────────────────────────────────────────────────────
 export const specialInstructionTypeEnum = pgEnum("special_instruction_type", [
@@ -1676,7 +1676,7 @@ export type NewKbFaqConnectionRow = typeof kbFaqConnection.$inferInsert;
 // folded into kb_chunks like a normal document: an FAQ record is always a
 // whole (question, answer) pair, never chunked, and needs question-weighted
 // retrieval (see faqRelevanceThreshold in faq.ts) rather than generic
-// passage similarity — see queryAssist.ts's SOURCE PRECEDENCE #1 ("ORG
+// passage similarity — see productAssist.ts's SOURCE PRECEDENCE #1 ("ORG
 // CONSTITUTION"), where this is an equal-authority peer to
 // kb_playbook_plan_facts, never a subordinate DOCUMENT EXCERPT.
 //

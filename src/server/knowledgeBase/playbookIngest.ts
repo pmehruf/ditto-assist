@@ -43,7 +43,7 @@ export const ALL_PLAYBOOK_TABS = [...Object.keys(MATRIX_TABS), ...NARRATIVE_TABS
 
 // Extracted from syncPlaybook's inline literal so other call sites (the
 // Product Assist Library's Core Resources section — see server.ts's
-// /api/query-assist/library) can identify this exact resource row by title
+// /api/product-assist/library) can identify this exact resource row by title
 // rather than duplicating the string, or relying on type==="sheet" alone
 // (ambiguous now that faqIngest.ts's Health FAQ resource is also
 // type==="sheet" — see FAQ_DITTO_RESOURCE_TITLE there).
@@ -334,7 +334,7 @@ export async function syncPlaybook(repos: Repositories, triggeredBy: string): Pr
   }
 }
 
-// How long a sync is trusted before the next Query Assist request kicks off
+// How long a sync is trusted before the next Product Assist request kicks off
 // a background refresh — a lazy "stale-while-revalidate" check rather than
 // a live Sheets read on every message (the workbook is too large for
 // that), and rather than an in-process setInterval (unreliable across Cloud
@@ -343,7 +343,7 @@ const STALE_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Best-effort, fire-and-forget staleness check — call (without awaiting)
- * from the Query Assist request path. Only actually re-fetches the sheet
+ * from the Product Assist request path. Only actually re-fetches the sheet
  * when the last successful sync is older than STALE_REFRESH_MS or none has
  * ever run; a no-op otherwise. Never throws — callers should not await
  * this in the request's critical path, so a failed background refresh

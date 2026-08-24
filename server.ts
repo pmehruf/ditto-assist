@@ -40,8 +40,8 @@ import {
   exchangeCodeForKbPlaybookSheetsGrant,
   getKbFaqSheetsAuthUrl,
   exchangeCodeForKbFaqSheetsGrant,
-  getQueryAssistLogExportSheetsAuthUrl,
-  exchangeCodeForQueryAssistLogExportGrant,
+  getProductAssistLogExportSheetsAuthUrl,
+  exchangeCodeForProductAssistLogExportGrant,
 } from "./src/server/auth/googleOAuth.js";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./src/server/auth/session.js";
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
@@ -74,16 +74,16 @@ import { realPlanNames } from "./src/utils/kbPlanNames.js";
 const KB_DOCUMENT_TYPES: string[] = [...kbDocumentTypeEnum.enumValues];
 const SPECIAL_INSTRUCTION_TYPES: string[] = [...specialInstructionTypeEnum.enumValues];
 const FAQ_CATEGORIES: string[] = [...faqCategoryEnum.enumValues];
-import { answerQuery } from "./src/server/knowledgeBase/queryAssist.js";
+import { answerQuery } from "./src/server/knowledgeBase/productAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
 import { invalidatePlaybookSheetsAuthCache } from "./src/server/knowledgeBase/playbookSheetsClient.js";
 import { encryptFaqRefreshToken } from "./src/server/knowledgeBase/faqTokenCrypto.js";
 import { invalidateFaqSheetsAuthCache } from "./src/server/knowledgeBase/faqSheetsClient.js";
 import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
 import { syncFaq, maybeRefreshFaqIfStale } from "./src/server/knowledgeBase/faqIngest.js";
-import { encryptQueryAssistLogRefreshToken } from "./src/server/knowledgeBase/queryAssistLogTokenCrypto.js";
-import { invalidateQueryAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/queryAssistLogSheetsClient.js";
-import { runQueryAssistLogExport } from "./src/server/knowledgeBase/queryAssistLogExport.js";
+import { encryptProductAssistLogRefreshToken } from "./src/server/knowledgeBase/productAssistLogTokenCrypto.js";
+import { invalidateProductAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/productAssistLogSheetsClient.js";
+import { runProductAssistLogExport } from "./src/server/knowledgeBase/productAssistLogExport.js";
 import { embedDocumentChunks } from "./src/server/knowledgeBase/embeddings.js";
 
 dotenv.config();
@@ -962,9 +962,9 @@ const KB_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_kb_playbook_oauth_state";
 const KB_FAQ_OAUTH_STATE_COOKIE = "ditto_kb_faq_oauth_state";
 // Same idea, for the Product Assist Log Export's own independent "Connect
 // Google Sheets" grant (Connections page) — see src/server/auth/googleOAuth.ts's
-// Query Assist Log Export section. This is the only one of the three
+// Product Assist Log Export section. This is the only one of the three
 // "Connect Google Sheets" grants that requests a WRITE scope.
-const QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE = "ditto_query_assist_log_oauth_state";
+const PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE = "ditto_product_assist_log_oauth_state";
 const isProdEnv = () => process.env.NODE_ENV === "production";
 
 app.get("/api/auth/google/login", (req, res) => {
@@ -1068,26 +1068,26 @@ app.get("/api/auth/google/callback", async (req, res) => {
     return;
   }
 
-  const queryAssistLogExpectedState = req.cookies?.[QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE];
-  if (queryAssistLogExpectedState) {
-    res.clearCookie(QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE);
+  const productAssistLogExpectedState = req.cookies?.[PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE];
+  if (productAssistLogExpectedState) {
+    res.clearCookie(PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE);
     try {
       const { code, state } = req.query;
-      if (!code || typeof code !== "string" || !state || state !== queryAssistLogExpectedState) {
+      if (!code || typeof code !== "string" || !state || state !== productAssistLogExpectedState) {
         res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Connections.");
         return;
       }
-      const grant = await exchangeCodeForQueryAssistLogExportGrant(code);
-      const { queryAssistLogExportConnection } = createRepositories(getDb());
-      await queryAssistLogExportConnection.upsert({
+      const grant = await exchangeCodeForProductAssistLogExportGrant(code);
+      const { productAssistLogExportConnection } = createRepositories(getDb());
+      await productAssistLogExportConnection.upsert({
         connectedEmail: grant.email,
-        encryptedRefreshToken: encryptQueryAssistLogRefreshToken(grant.refreshToken),
+        encryptedRefreshToken: encryptProductAssistLogRefreshToken(grant.refreshToken),
         connectedBy: req.user?.email || grant.email,
       });
-      invalidateQueryAssistLogSheetsAuthCache();
-      res.redirect("/?query_assist_log_connected=1");
+      invalidateProductAssistLogSheetsAuthCache();
+      res.redirect("/?product_assist_log_connected=1");
     } catch (err: any) {
-      console.error("Query Assist Log Export Google Sheets connection failed:", err);
+      console.error("Product Assist Log Export Google Sheets connection failed:", err);
       res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Connections.`);
     }
     return;
@@ -4888,12 +4888,12 @@ app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
   }
 });
 
-// --- Query Assist Log Export (TEMPORARY — see query_assist_logs's schema
+// --- Product Assist Log Export (TEMPORARY — see product_assist_logs's schema
 // comment in schema.ts). Same "Connect Google Sheets" pattern as the QA
 // Dashboard/Playbook connections above, but this grant is WRITE-scope and
 // the export-and-clear route additionally accepts a shared-secret header so
 // an external monthly scheduler (Cloud Scheduler) can trigger it without a
-// human session — see .env.example's QUERY_ASSIST_LOG_EXPORT_SECRET. ---
+// human session — see .env.example's PRODUCT_ASSIST_LOG_EXPORT_SECRET. ---
 
 /**
  * drizzle-orm's postgres-js driver wraps every failed query in a generic
@@ -4901,10 +4901,10 @@ app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
  * (e.g. "relation ... does not exist") lands on `err.cause`, not
  * `err.message`. Routes that only read `err.message` (as several below did)
  * surface that useless wrapper to the client instead of the real cause —
- * exactly what happened here when migration 0039 (query_assist_logs /
- * query_assist_log_export_connection) hadn't been applied yet against a
+ * exactly what happened here when migration 0039 (product_assist_logs /
+ * product_assist_log_export_connection) hadn't been applied yet against a
  * given database: the UI showed "Failed query: select count(*) from
- * \"query_assist_logs\" params:" with nothing after "params:", instead of
+ * \"product_assist_logs\" params:" with nothing after "params:", instead of
  * the actual "relation ... does not exist". Mirrors the same
  * missing-table detection server.ts's ai_memory routes already do inline,
  * generalized to any table and reusable across this block.
@@ -4917,59 +4917,59 @@ function describeDbError(err: any): string {
   return cause;
 }
 
-app.get("/api/query-assist-logs/connect-google", requireAuth, async (req, res) => {
+app.get("/api/product-assist-logs/connect-google", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
     const state = crypto.randomBytes(16).toString("hex");
-    res.cookie(QUERY_ASSIST_LOG_OAUTH_STATE_COOKIE, state, {
+    res.cookie(PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
       secure: isProdEnv(),
       sameSite: "lax",
       maxAge: 5 * 60 * 1000,
     });
-    res.redirect(getQueryAssistLogExportSheetsAuthUrl(state, req.user!.email));
+    res.redirect(getProductAssistLogExportSheetsAuthUrl(state, req.user!.email));
   } catch (err: any) {
-    console.error("Failed to start Query Assist Log Export Google Sheets connection:", err);
+    console.error("Failed to start Product Assist Log Export Google Sheets connection:", err);
     res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
   }
 });
 
-app.get("/api/query-assist-logs/connection-status", requireAuth, async (req, res) => {
+app.get("/api/product-assist-logs/connection-status", requireAuth, async (req, res) => {
   try {
-    const { queryAssistLogExportConnection, queryAssistLogs } = createRepositories(getDb());
-    const [row, pendingCount] = await Promise.all([queryAssistLogExportConnection.get(), queryAssistLogs.count()]);
+    const { productAssistLogExportConnection, productAssistLogs } = createRepositories(getDb());
+    const [row, pendingCount] = await Promise.all([productAssistLogExportConnection.get(), productAssistLogs.count()]);
     return res.json(
       row
         ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, pendingCount }
         : { connected: false, pendingCount }
     );
   } catch (err: any) {
-    console.error("Query Assist Log Export: failed to load connection status:", err);
+    console.error("Product Assist Log Export: failed to load connection status:", err);
     return res.status(500).json({ error: `Failed to load connection status: ${describeDbError(err)}` });
   }
 });
 
-app.delete("/api/query-assist-logs/connection", requireAuth, async (req, res) => {
+app.delete("/api/product-assist-logs/connection", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
-    const { queryAssistLogExportConnection } = createRepositories(getDb());
-    await queryAssistLogExportConnection.clear();
-    invalidateQueryAssistLogSheetsAuthCache();
+    const { productAssistLogExportConnection } = createRepositories(getDb());
+    await productAssistLogExportConnection.clear();
+    invalidateProductAssistLogSheetsAuthCache();
     return res.json({ ok: true });
   } catch (err: any) {
-    console.error("Query Assist Log Export: failed to disconnect Google Sheets:", err);
+    console.error("Product Assist Log Export: failed to disconnect Google Sheets:", err);
     return res.status(500).json({ error: `Failed to disconnect: ${describeDbError(err)}` });
   }
 });
 
 // Dual auth: a signed-in Admin/Developer clicking "Export & Clear Now" in
 // Connections, OR a matching X-Cron-Secret header (no session) for an
-// external monthly scheduler — see QUERY_ASSIST_LOG_EXPORT_SECRET in
+// external monthly scheduler — see PRODUCT_ASSIST_LOG_EXPORT_SECRET in
 // .env.example. Neither path is required if the other is missing/unset;
-// if QUERY_ASSIST_LOG_EXPORT_SECRET isn't set, only the session path works.
-app.post("/api/query-assist-logs/export-and-clear", async (req, res) => {
+// if PRODUCT_ASSIST_LOG_EXPORT_SECRET isn't set, only the session path works.
+app.post("/api/product-assist-logs/export-and-clear", async (req, res) => {
   try {
-    const cronSecret = process.env.QUERY_ASSIST_LOG_EXPORT_SECRET;
+    const cronSecret = process.env.PRODUCT_ASSIST_LOG_EXPORT_SECRET;
     const providedSecret = req.header("X-Cron-Secret");
     const viaCron = !!cronSecret && !!providedSecret && providedSecret === cronSecret;
 
@@ -4983,10 +4983,10 @@ app.post("/api/query-assist-logs/export-and-clear", async (req, res) => {
     }
 
     const repos = createRepositories(getDb());
-    const result = await runQueryAssistLogExport(repos);
+    const result = await runProductAssistLogExport(repos);
     return res.json(result);
   } catch (err: any) {
-    console.error("Query Assist Log Export: export-and-clear failed:", err);
+    console.error("Product Assist Log Export: export-and-clear failed:", err);
     return res.status(500).json({ error: `Export failed: ${describeDbError(err)}` });
   }
 });
@@ -6007,12 +6007,12 @@ app.delete("/api/kb/acronyms/:id", requireAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// Query Assist — the advisor-facing chat over the Knowledge Base built
+// Product Assist — the advisor-facing chat over the Knowledge Base built
 // above. Open to every tier (General included), unlike the Admin Zone KB
 // management routes: an advisor picks an insurer (or "General") and
 // optionally specific plan(s), asks a question, and gets a verified answer
 // grounded only in the matching documents/announcements — see
-// src/server/knowledgeBase/queryAssist.ts for the retrieval + prompt logic.
+// src/server/knowledgeBase/productAssist.ts for the retrieval + prompt logic.
 // ─────────────────────────────────────────────────────────────────────────
 
 /** True when every kb_resource actually tagged with this plan name is an
@@ -6036,7 +6036,7 @@ function isAddOnOnlyPlanName(planName: string, resources: { planTags: string[]; 
 // deliberately NOT behind requireAdminOrDeveloper like /api/kb/categories,
 // since every tier needs this to ask a question at all. No document
 // content or chunk data is exposed here, only category metadata.
-app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
+app.get("/api/product-assist/categories", requireAuth, async (req, res) => {
   try {
     const { kbCategories, kbResources } = createRepositories(getDb());
     const [entries, resources] = await Promise.all([kbCategories.list(), kbResources.list({ status: "active" })]);
@@ -6057,14 +6057,14 @@ app.get("/api/query-assist/categories", requireAuth, async (req, res) => {
     }));
     return res.json({ entries: filteredEntries });
   } catch (err: any) {
-    console.error("Query Assist: failed to list categories:", err);
+    console.error("Product Assist: failed to list categories:", err);
     return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
   }
 });
 
 /** One resource as exposed to the read-only Library nav — deliberately a
  * narrow projection (no status/errorMessage/addedBy/contentHash/etc.), same
- * spirit as ChatSource in queryAssist.ts. `sourceUrl` is only ever rendered
+ * spirit as ChatSource in productAssist.ts. `sourceUrl` is only ever rendered
  * as an openable link client-side when it's a real http(s) URL (a "pdf"
  * resource's sourceUrl is just its original filename, not a link — see
  * schema.ts's sourceUrl column comment); the client applies the same
@@ -6075,16 +6075,16 @@ function toLibraryResource(r: { id: number; title: string; documentType: string;
 }
 
 // Product Assist Library — a read-only navigator over the SAME Knowledge
-// Base data /api/query-assist/categories and /api/kb/* already manage, never
+// Base data /api/product-assist/categories and /api/kb/* already manage, never
 // a second store: Core Resources (Product Playbook, resolved to its existing
 // kb_resources row; Health FAQ is intentionally NOT resolved from the DB
 // here — see HEALTH_FAQ_LIBRARY_URL's comment, its Sheet must stay hidden)
 // plus, per insurer, its selectable plans (identical filtering to
-// /api/query-assist/categories: realPlanNames + disabled + add-on-only) each
+// /api/product-assist/categories: realPlanNames + disabled + add-on-only) each
 // with their tagged resources, and its separate insurer-level resources
 // (kb_resources.isInsurerLevel). Open to every tier, same reasoning as
-// /api/query-assist/categories above.
-app.get("/api/query-assist/library", requireAuth, async (req, res) => {
+// /api/product-assist/categories above.
+app.get("/api/product-assist/library", requireAuth, async (req, res) => {
   try {
     const { kbCategories, kbResources } = createRepositories(getDb());
     const [categories, resources] = await Promise.all([kbCategories.list(), kbResources.list({ status: "active" })]);
@@ -6136,7 +6136,7 @@ app.get("/api/query-assist/library", requireAuth, async (req, res) => {
       insurers,
     });
   } catch (err: any) {
-    console.error("Query Assist: failed to load library:", err);
+    console.error("Product Assist: failed to load library:", err);
     return res.status(500).json({ error: `Failed to load library: ${err.message}` });
   }
 });
@@ -6146,7 +6146,7 @@ app.get("/api/query-assist/library", requireAuth, async (req, res) => {
 // cleared browser cache or a new device, not just localStorage. GET returns
 // both facts in one call so the client can decide, before rendering
 // anything, which of first-ever-warning / daily-reminder / neither to show.
-app.get("/api/query-assist/warning-state", requireAuth, async (req, res) => {
+app.get("/api/product-assist/warning-state", requireAuth, async (req, res) => {
   try {
     const { productAssistAcks } = createRepositories(getDb());
     const row = await productAssistAcks.get(req.user!.email);
@@ -6164,7 +6164,7 @@ app.get("/api/query-assist/warning-state", requireAuth, async (req, res) => {
 // + Proceed). `localDate` is the advisor's own LOCAL calendar date
 // (YYYY-MM-DD — see toLocalDateKey in App.tsx), not the server's, and also
 // covers today's daily reminder so it doesn't fire again later the same day.
-app.post("/api/query-assist/warning-ack", requireAuth, async (req, res) => {
+app.post("/api/product-assist/warning-ack", requireAuth, async (req, res) => {
   try {
     const { localDate } = req.body;
     if (typeof localDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
@@ -6181,7 +6181,7 @@ app.post("/api/query-assist/warning-ack", requireAuth, async (req, res) => {
 
 // Records that today's lightweight daily reminder was shown (see comment
 // on warning-ack above re: why localDate is client-supplied).
-app.post("/api/query-assist/warning-reminder-shown", requireAuth, async (req, res) => {
+app.post("/api/product-assist/warning-reminder-shown", requireAuth, async (req, res) => {
   try {
     const { localDate } = req.body;
     if (typeof localDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) {
@@ -6197,10 +6197,10 @@ app.post("/api/query-assist/warning-reminder-shown", requireAuth, async (req, re
 });
 
 // Self-service reset for QA/demo purposes — deletes the caller's own row so
-// their next Query Assist visit replays the first-ever 10s warning as a
+// their next Product Assist visit replays the first-ever 10s warning as a
 // brand-new user would see it. Scoped to req.user!.email only (no target
 // email in the request), so it can only ever reset the caller's own state.
-app.post("/api/query-assist/warning-reset", requireAuth, async (req, res) => {
+app.post("/api/product-assist/warning-reset", requireAuth, async (req, res) => {
   try {
     const { productAssistAcks } = createRepositories(getDb());
     await productAssistAcks.reset(req.user!.email);
@@ -6211,14 +6211,14 @@ app.post("/api/query-assist/warning-reset", requireAuth, async (req, res) => {
   }
 });
 
-// Query Assist keeps NO server-side record of advisor conversations — per
+// Product Assist keeps NO server-side record of advisor conversations — per
 // explicit product decision, chat history is local-memory only, held in the
-// advisor's own browser (see QueryAssistPage.tsx's localStorage-backed
+// advisor's own browser (see ProductAssistPage.tsx's localStorage-backed
 // session list) and never written to the database. This route is therefore
 // fully stateless: each call re-sends the scope (categoryId/planTags) and
 // whatever prior turns the client already has locally as `history`, and
 // nothing here reads from or writes to kb_chat_sessions/kb_chat_messages.
-app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (req, res) => {
+app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
     const { categoryId, planTags, question, history } = req.body;
     if (typeof question !== "string" || !question.trim()) {
@@ -6249,21 +6249,21 @@ app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (re
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
     const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
 
-    // TEMPORARY (see query_assist_logs's schema comment): fire-and-forget,
+    // TEMPORARY (see product_assist_logs's schema comment): fire-and-forget,
     // never awaited — a logging failure must never affect the advisor's
     // actual answer, which has already been computed above regardless of
-    // what happens here. Gated by QUERY_ASSIST_LOG_ENABLED so this can be
+    // what happens here. Gated by PRODUCT_ASSIST_LOG_ENABLED so this can be
     // turned off (set to "false") once enough real data has been collected
     // for the Product Assist optimization review's test set; unset/anything
     // else defaults to enabled.
-    if (process.env.QUERY_ASSIST_LOG_ENABLED !== "false") {
+    if (process.env.PRODUCT_ASSIST_LOG_ENABLED !== "false") {
       void (async () => {
         try {
           const categoryName =
             scope.categoryId !== null
               ? (await repos.kbCategories.list()).find(c => c.id === scope.categoryId)?.name ?? null
               : null;
-          await repos.queryAssistLogs.create({
+          await repos.productAssistLogs.create({
             userEmail: req.user!.email,
             categoryId: scope.categoryId,
             categoryName,
@@ -6281,14 +6281,14 @@ app.post("/api/query-assist/ask", requireAuth, expensiveActionLimiter, async (re
             latencyMs: result.meta.latencyMs,
           });
         } catch (logErr) {
-          console.error("Query Assist: failed to write temporary analysis log row (non-fatal):", logErr);
+          console.error("Product Assist: failed to write temporary analysis log row (non-fatal):", logErr);
         }
       })();
     }
 
     return res.json({ answer: result.answer, share: result.share, sources: result.sources, hadNoMatches: result.hadNoMatches });
   } catch (err: any) {
-    console.error("Query Assist: failed to answer question:", err);
+    console.error("Product Assist: failed to answer question:", err);
     return res.status(500).json({ error: `Failed to get an answer: ${err.message}` });
   }
 });

@@ -5,33 +5,33 @@
 
 import { asc, count, inArray } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
-import { queryAssistLogs, type QueryAssistLogRow, type NewQueryAssistLogRow } from "../schema.js";
+import { productAssistLogs, type ProductAssistLogRow, type NewProductAssistLogRow } from "../schema.js";
 
-export type CreateQueryAssistLogEntry = Omit<NewQueryAssistLogRow, "id" | "createdAt">;
+export type CreateProductAssistLogEntry = Omit<NewProductAssistLogRow, "id" | "createdAt">;
 
 /**
- * Data Access Layer for `query_assist_logs` — see that table's schema
+ * Data Access Layer for `product_assist_logs` — see that table's schema
  * comment for why this exists and why it's meant to be temporary. Every
  * write here happens fire-and-forget from server.ts's POST
- * /api/query-assist/ask (never awaited by the response, and gated behind
- * QUERY_ASSIST_LOG_ENABLED) — a logging failure must never affect an
+ * /api/product-assist/ask (never awaited by the response, and gated behind
+ * PRODUCT_ASSIST_LOG_ENABLED) — a logging failure must never affect an
  * advisor's actual answer.
  */
-export class QueryAssistLogsRepository {
+export class ProductAssistLogsRepository {
   constructor(private readonly db: AnyDb) {}
 
-  async create(entry: CreateQueryAssistLogEntry): Promise<void> {
-    await this.db.insert(queryAssistLogs).values(entry);
+  async create(entry: CreateProductAssistLogEntry): Promise<void> {
+    await this.db.insert(productAssistLogs).values(entry);
   }
 
   /** Oldest first, so an export naturally processes rows in the order they
    * were asked. */
-  async listAll(): Promise<QueryAssistLogRow[]> {
-    return this.db.select().from(queryAssistLogs).orderBy(asc(queryAssistLogs.createdAt));
+  async listAll(): Promise<ProductAssistLogRow[]> {
+    return this.db.select().from(productAssistLogs).orderBy(asc(productAssistLogs.createdAt));
   }
 
   async count(): Promise<number> {
-    const [row] = await this.db.select({ value: count() }).from(queryAssistLogs);
+    const [row] = await this.db.select({ value: count() }).from(productAssistLogs);
     return row?.value ?? 0;
   }
 
@@ -41,6 +41,6 @@ export class QueryAssistLogsRepository {
    * still-in-flight write from a live advisor question. */
   async deleteByIds(ids: number[]): Promise<void> {
     if (ids.length === 0) return;
-    await this.db.delete(queryAssistLogs).where(inArray(queryAssistLogs.id, ids));
+    await this.db.delete(productAssistLogs).where(inArray(productAssistLogs.id, ids));
   }
 }

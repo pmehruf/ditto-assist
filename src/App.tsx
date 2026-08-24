@@ -168,8 +168,8 @@ const SmokeTestPage = lazy(() =>
 const KnowledgeBaseManagementPage = lazy(() =>
   import("./pages/KnowledgeBaseManagementPage").then((m) => ({ default: m.KnowledgeBaseManagementPage }))
 );
-const QueryAssistPage = lazy(() =>
-  import("./pages/QueryAssistPage").then((m) => ({ default: m.QueryAssistPage }))
+const ProductAssistPage = lazy(() =>
+  import("./pages/ProductAssistPage").then((m) => ({ default: m.ProductAssistPage }))
 );
 
 /** Picks a suitable icon for a Quick Access resource based on keywords in its
@@ -258,7 +258,7 @@ const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "query_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -828,7 +828,7 @@ export default function App() {
   // Management always lands with that section visibly open.
   type SidebarSectionKey = "advisorWorkspace" | "quality" | "reference" | "appOpsControls" | "administration" | "developer";
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
-    advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "query_assist"],
+    advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist"],
     quality: ["qa_dashboard"],
     reference: ["advisory_zone", "announcement_archive", "resources", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
@@ -2421,12 +2421,12 @@ export default function App() {
   // is guaranteed non-null.
   const [productAssistGateState, setProductAssistGateState] = useState<"checking" | "first" | "reminder" | "clear">("checking");
   useEffect(() => {
-    if (activeTab !== "query_assist" || !currentUser) return;
+    if (activeTab !== "product_assist" || !currentUser) return;
     if (productAssistGateState !== "checking") return; // already resolved this session
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/query-assist/warning-state");
+        const res = await fetch("/api/product-assist/warning-state");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = await res.json();
         if (cancelled) return;
@@ -2457,7 +2457,7 @@ export default function App() {
     // simply shows the same gate again, which is safe (re-doing an
     // acknowledgement/reminder is harmless; a lockout on a failed request
     // wouldn't be).
-    fetch(wasFirst ? "/api/query-assist/warning-ack" : "/api/query-assist/warning-reminder-shown", {
+    fetch(wasFirst ? "/api/product-assist/warning-ack" : "/api/product-assist/warning-reminder-shown", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ localDate: toLocalDateKey(new Date()) }),
@@ -2957,7 +2957,7 @@ export default function App() {
   // takeover, same "bypass the whole shell" pattern as the login screen
   // above (no sidebar/header/content behind it), while we're either still
   // checking server state or actively showing the warning.
-  if (productAssistGateState === "checking" && activeTab === "query_assist") {
+  if (productAssistGateState === "checking" && activeTab === "product_assist") {
     return (
       <div
         className={`h-screen w-full flex items-center justify-center ${
@@ -3074,7 +3074,7 @@ export default function App() {
               isActive: activeTab === "lookup" && !showIntro,
               onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
             }),
-            navPage("query_assist", "Product Assist", ProductAssistIcon, "Editor"),
+            navPage("product_assist", "Product Assist", ProductAssistIcon, "Editor"),
             navPage("coverage_projection", "Cover projection", FileSpreadsheet, "Viewer"),
             navPage("specific_illness_check", "Specific Illness Check", ClipboardCheck, "Viewer"),
           ],
@@ -3857,7 +3857,7 @@ export default function App() {
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 specific_illness_check: { label: "Specific Illness Check", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                query_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                product_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4262,7 +4262,7 @@ export default function App() {
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
           activeTab === "lookup" && showIntro
             ? "overflow-hidden min-h-0"
-            : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "query_assist"
+            : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "product_assist"
             ? "lg:overflow-hidden overflow-y-auto"
             : "overflow-y-auto"
         }`}
@@ -4275,7 +4275,7 @@ export default function App() {
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
               ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-start min-h-0"
-              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "query_assist"
+              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "product_assist"
               ? "lg:p-5 pt-1.5 sm:pt-2 lg:flex lg:flex-col lg:min-h-0"
               : "lg:p-5 pt-1.5 sm:pt-2"
           }`}
@@ -4284,7 +4284,7 @@ export default function App() {
           <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto ${
             showIntro && activeTab === "lookup"
               ? "flex-grow flex flex-col min-h-0"
-              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "query_assist"
+              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "product_assist"
               ? "lg:flex-grow lg:flex lg:flex-col lg:min-h-0"
               : ""
           }`}>
@@ -4601,11 +4601,11 @@ export default function App() {
 
           {/* QUERY ASSIST — advisor chat over the Knowledge Base's per-insurer
               documents and announcements, grounded answers only (see
-              QueryAssistPage.tsx / src/server/knowledgeBase/queryAssist.ts).
+              ProductAssistPage.tsx / src/server/knowledgeBase/productAssist.ts).
               Visible to every tier, same as lookup/resources above. */}
-          {activeTab === "query_assist" && (
+          {activeTab === "product_assist" && (
             <motion.div
-              key="query_assist"
+              key="product_assist"
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
@@ -4614,7 +4614,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Product Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <QueryAssistPage theme={theme} />
+              <ProductAssistPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

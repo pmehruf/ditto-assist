@@ -69,7 +69,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
   };
 
   // Product Assist Log Export "Connect Google Sheets" status (TEMPORARY —
-  // see query_assist_logs's schema comment in schema.ts). Same shape as the
+  // see product_assist_logs's schema comment in schema.ts). Same shape as the
   // QA Dashboard connection above, plus pendingCount (rows waiting to be
   // exported) and a manual "Export & Clear Now" action.
   const [qalConnection, setQalConnection] = useState<{ connected: boolean; connectedEmail?: string; pendingCount: number } | null>(null);
@@ -82,7 +82,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
   const refreshQalConnection = async () => {
     setQalConnectionLoading(true);
     try {
-      const res = await fetch("/api/query-assist-logs/connection-status");
+      const res = await fetch("/api/product-assist-logs/connection-status");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to load (HTTP ${res.status}).`);
       setQalConnection(body);
@@ -101,7 +101,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
   const disconnectQalSheets = async () => {
     setQalDisconnecting(true);
     try {
-      const res = await fetch("/api/query-assist-logs/connection", { method: "DELETE" });
+      const res = await fetch("/api/product-assist-logs/connection", { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to disconnect (HTTP ${res.status}).`);
       await refreshQalConnection();
@@ -116,7 +116,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
     setQalExporting(true);
     setQalExportMessage(null);
     try {
-      const res = await fetch("/api/query-assist-logs/export-and-clear", { method: "POST" });
+      const res = await fetch("/api/product-assist-logs/export-and-clear", { method: "POST" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Export failed (HTTP ${res.status}).`);
       setQalExportMessage(
@@ -232,7 +232,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
       </div>
 
       {/* Product Assist Log Export — Google Sheets connection. TEMPORARY (see
-          query_assist_logs's schema comment in schema.ts): Product Assist
+          product_assist_logs's schema comment in schema.ts): Product Assist
           normally keeps no server-side record of advisor conversations at
           all — this is a knowingly time-boxed exception, added to build a
           real representative test set for the optimization review. This is
@@ -258,7 +258,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
         <p className={`text-[10.5px] mb-3 ${dark ? "text-stone-400" : "text-stone-500"}`}>
           Temporary: appends logged Product Assist questions/answers to a Google Sheet you create, then clears them from the
           database — as whoever connects below, with write access to that one Sheet. Turn off entirely by setting
-          QUERY_ASSIST_LOG_ENABLED=false once you've collected enough data.
+          PRODUCT_ASSIST_LOG_ENABLED=false once you've collected enough data.
         </p>
 
         {qalConnectionError && (
@@ -336,7 +336,7 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
               </button>
             ) : (
               <a
-                href="/api/query-assist-logs/connect-google"
+                href="/api/product-assist-logs/connect-google"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 cursor-pointer"
               >
                 <Link2 className="w-3 h-3" />

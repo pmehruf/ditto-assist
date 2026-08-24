@@ -6,12 +6,12 @@
 /**
  * QUERY ASSIST LOG EXPORT — GOOGLE SHEETS WRITE CLIENT
  * ---------------------------------------------------------------
- * Appends query_assist_logs rows to a Google Sheet the user creates and
- * owns (its ID is set via QUERY_ASSIST_LOG_SHEET_ID — this is a
+ * Appends product_assist_logs rows to a Google Sheet the user creates and
+ * owns (its ID is set via PRODUCT_ASSIST_LOG_SHEET_ID — this is a
  * user-provided destination, not a fixed workbook this app owns the way
  * the QA Dashboard/Playbook IDs are). Auth is the single stored WRITE-scope
  * OAuth grant from "Connect Google Sheets" in Connections (see
- * queryAssistLogExportConnectionRepository.ts / queryAssistLogTokenCrypto.ts) —
+ * productAssistLogExportConnectionRepository.ts / productAssistLogTokenCrypto.ts) —
  * deliberately no service-account fallback path, unlike sheetsClient.ts /
  * playbookSheetsClient.ts, since this is a narrower, temporary, single-owner
  * tool rather than a shared team integration.
@@ -23,8 +23,8 @@
 import { OAuth2Client } from "google-auth-library";
 import { getDb } from "../db/client.js";
 import { createRepositories } from "../db/repositories/index.js";
-import { decryptQueryAssistLogRefreshToken } from "./queryAssistLogTokenCrypto.js";
-import type { QueryAssistLogRow } from "../db/schema.js";
+import { decryptProductAssistLogRefreshToken } from "./productAssistLogTokenCrypto.js";
+import type { ProductAssistLogRow } from "../db/schema.js";
 
 const DEFAULT_TAB_NAME = "Sheet1";
 
@@ -54,18 +54,18 @@ function requireEnv(name: string): string {
 }
 
 function getTargetSheetId(): string {
-  return requireEnv("QUERY_ASSIST_LOG_SHEET_ID");
+  return requireEnv("PRODUCT_ASSIST_LOG_SHEET_ID");
 }
 
 function getTargetTabName(): string {
-  return process.env.QUERY_ASSIST_LOG_SHEET_TAB_NAME?.trim() || DEFAULT_TAB_NAME;
+  return process.env.PRODUCT_ASSIST_LOG_SHEET_TAB_NAME?.trim() || DEFAULT_TAB_NAME;
 }
 
 let cachedOAuthClient: { client: OAuth2Client; email: string } | null = null;
 
 async function getStoredWriteGrantClient(): Promise<OAuth2Client | null> {
-  const { queryAssistLogExportConnection } = createRepositories(getDb());
-  const row = await queryAssistLogExportConnection.get();
+  const { productAssistLogExportConnection } = createRepositories(getDb());
+  const row = await productAssistLogExportConnection.get();
   if (!row) return null;
 
   if (!cachedOAuthClient || cachedOAuthClient.email !== row.connectedEmail) {
@@ -73,7 +73,7 @@ async function getStoredWriteGrantClient(): Promise<OAuth2Client | null> {
       clientId: requireEnv("GOOGLE_CLIENT_ID"),
       clientSecret: requireEnv("GOOGLE_CLIENT_SECRET"),
     });
-    client.setCredentials({ refresh_token: decryptQueryAssistLogRefreshToken(row.encryptedRefreshToken) });
+    client.setCredentials({ refresh_token: decryptProductAssistLogRefreshToken(row.encryptedRefreshToken) });
     cachedOAuthClient = { client, email: row.connectedEmail };
   }
   return cachedOAuthClient.client;
@@ -82,11 +82,11 @@ async function getStoredWriteGrantClient(): Promise<OAuth2Client | null> {
 /** Invalidates the cached OAuth client — call right after storing a new
  * grant (connect) or clearing one (disconnect) so the very next export
  * picks up the change without waiting for a server restart. */
-export function invalidateQueryAssistLogSheetsAuthCache(): void {
+export function invalidateProductAssistLogSheetsAuthCache(): void {
   cachedOAuthClient = null;
 }
 
-function rowToValues(row: QueryAssistLogRow): (string | number | boolean)[] {
+function rowToValues(row: ProductAssistLogRow): (string | number | boolean)[] {
   return [
     row.id,
     row.createdAt.toISOString(),
@@ -111,17 +111,17 @@ function rowToValues(row: QueryAssistLogRow): (string | number | boolean)[] {
  * Appends the given log rows to the configured Sheet, writing the header
  * row first if the sheet's first tab is currently empty (a brand-new sheet
  * the user just created). Throws if no write grant is connected or
- * QUERY_ASSIST_LOG_SHEET_ID isn't set — callers (queryAssistLogExport.ts)
+ * PRODUCT_ASSIST_LOG_SHEET_ID isn't set — callers (productAssistLogExport.ts)
  * must treat that as "do not delete anything from the DB," never silently
  * swallow it.
  */
-export async function appendQueryAssistLogRows(rows: QueryAssistLogRow[]): Promise<void> {
+export async function appendProductAssistLogRows(rows: ProductAssistLogRow[]): Promise<void> {
   if (rows.length === 0) return;
 
   const client = await getStoredWriteGrantClient();
   if (!client) {
     throw new Error(
-      'Query Assist Log Export is not connected. Click "Connect Google Sheets" for Product Assist Log Export in Connections first.'
+      'Product Assist Log Export is not connected. Click "Connect Google Sheets" for Product Assist Log Export in Connections first.'
     );
   }
 

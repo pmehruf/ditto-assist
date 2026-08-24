@@ -11,7 +11,7 @@ import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkd
 import { realPlanNames } from "../utils/kbPlanNames";
 import { HEALTH_FAQ_LIBRARY_URL } from "../constants/productAssistLibrary";
 
-interface QueryAssistPageProps {
+interface ProductAssistPageProps {
   theme: "light" | "dark";
 }
 
@@ -26,7 +26,7 @@ interface ChatSource {
   title: string;
   categoryName: string;
   /** brochure/policy_wording/prospectus/addon/other — see 0034's schema
-   * comment and queryAssist.ts's DOCUMENT_TYPE_LABEL. */
+   * comment and productAssist.ts's DOCUMENT_TYPE_LABEL. */
   documentType: "brochure" | "policy_wording" | "prospectus" | "addon" | "other";
   /** Web resource's URL, or a PDF's original label/filename. Only http(s)
    * values are rendered as an openable link — a bare filename (legacy PDF
@@ -43,8 +43,8 @@ const SOURCE_DOCUMENT_TYPE_LABEL: Record<ChatSource["documentType"], string> = {
 };
 
 // ── Product Assist Library — read-only navigator over the same Knowledge
-// Base data /api/query-assist/categories draws its plan selector from (see
-// server.ts's /api/query-assist/library). Never a second resource store —
+// Base data /api/product-assist/categories draws its plan selector from (see
+// server.ts's /api/product-assist/library). Never a second resource store —
 // just a nested view of insurer -> plan -> resources / insurer resources. */
 interface LibraryResource {
   id: number;
@@ -72,7 +72,7 @@ interface LocalChatMessage {
   id: string;
   role: "user" | "assistant";
   /** User turn: the question as typed. Assistant turn: the verified,
-   * advisor-facing answer (queryAssist.ts's structured "answer" field). */
+   * advisor-facing answer (productAssist.ts's structured "answer" field). */
   content: string;
   /** Assistant only — the customer-facing paraphrase (structured "share"
    * field), or null when the model didn't reach a genuine, sufficiently-
@@ -86,8 +86,8 @@ interface LocalChatMessage {
 
 /**
  * A conversation, held ENTIRELY client-side (see the storage helpers below)
- * — Query Assist deliberately keeps no server-side record of advisor
- * conversations (see server.ts's POST /api/query-assist/ask, which is
+ * — Product Assist deliberately keeps no server-side record of advisor
+ * conversations (see server.ts's POST /api/product-assist/ask, which is
  * stateless and never touches the database). Each browser's own history is
  * its own; nothing here syncs across devices or is visible to an admin.
  */
@@ -101,9 +101,14 @@ interface LocalChatSession {
 }
 
 const GENERAL_VALUE = "general";
-const SESSIONS_STORAGE_KEY = "queryAssist.sessions.v1";
+const SESSIONS_STORAGE_KEY = "productAssist.sessions.v1";
+// Pre-rename key (2026-08: "Query Assist" -> "Product Assist" naming
+// cleanup) — loadLocalSessions falls back to this if the new key is empty,
+// so a browser with existing conversation history saved under the old name
+// doesn't just silently lose it after this deploy.
+const LEGACY_SESSIONS_STORAGE_KEY = "queryAssist.sessions.v1";
 // How many prior turns to resend as context on each follow-up — mirrors
-// queryAssist.ts's own MAX_HISTORY_TURNS cap, sent generously here since the
+// productAssist.ts's own MAX_HISTORY_TURNS cap, sent generously here since the
 // server does its own trimming.
 const HISTORY_TURNS_TO_SEND = 8;
 
@@ -114,7 +119,7 @@ function genId(): string {
 
 function loadLocalSessions(): LocalChatSession[] {
   try {
-    const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    const raw = localStorage.getItem(SESSIONS_STORAGE_KEY) ?? localStorage.getItem(LEGACY_SESSIONS_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -253,7 +258,7 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
   );
 }
 
-/** LEGACY ONLY — queryAssist.ts now returns "answer"/"share" as separate
+/** LEGACY ONLY — productAssist.ts now returns "answer"/"share" as separate
  * structured JSON fields (see LocalChatMessage's `content`/`share`), so a
  * freshly-received message no longer needs this parsed out of one combined
  * string. Kept only so a conversation already sitting in someone's
@@ -276,7 +281,7 @@ function splitAnswer(content: string): { answer: string; share: string | null } 
   return { answer: answerPart, share: sharePart || null };
 }
 
-/** Pulls the trailing "**References**" list (see queryAssist.ts's CITATION
+/** Pulls the trailing "**References**" list (see productAssist.ts's CITATION
  * FORMAT / OUTPUT FORMAT — the model always ends Part 1 with a bolded
  * "References" heading followed by a list) out of the answer body so it can
  * be rendered as its own clearly-labeled block instead of blending into the
@@ -292,8 +297,8 @@ function splitReferences(text: string): { body: string; references: string | nul
 }
 
 /**
- * "Query Assist" — advisor-facing chat over the Knowledge Base (see
- * src/server/knowledgeBase/queryAssist.ts). Open to every tier: choose an
+ * "Product Assist" — advisor-facing chat over the Knowledge Base (see
+ * src/server/knowledgeBase/productAssist.ts). Open to every tier: choose an
  * insurer (or "General" for a cross-insurer question), optionally one or
  * more of that insurer's plans, then ask — answers are grounded only in
  * the matching documents/announcements, with inline Primary Reference
@@ -302,9 +307,9 @@ function splitReferences(text: string): { body: string; references: string | nul
  * Conversation history is local-memory only — held in this browser's
  * localStorage, never sent anywhere but back to the /ask endpoint as
  * short-lived context for the CURRENT request. Nothing is persisted server
- * side (see server.ts's POST /api/query-assist/ask).
+ * side (see server.ts's POST /api/product-assist/ask).
  */
-export function QueryAssistPage({ theme }: QueryAssistPageProps) {
+export function ProductAssistPage({ theme }: ProductAssistPageProps) {
   const dark = theme === "dark";
 
   const [categories, setCategories] = useState<KbCategoryLite[]>([]);
@@ -319,7 +324,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
   // Picking a plan chip is optional, not required — if the advisor skips
   // it, the server infers a plan directly from the question text where
   // possible (or asks a clarifying question when it genuinely can't be
-  // determined and matters for the answer); see queryAssist.ts's
+  // determined and matters for the answer); see productAssist.ts's
   // detectMentionedPlanNames / SELECTED SCOPE handling.
   const [selectedPlanTags, setSelectedPlanTags] = useState<string[]>([]);
   // Sidebar Library section — collapsed by default (see the restructured
@@ -364,7 +369,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       setLoading(true);
       setLoadError(null);
       try {
-        const catRes = await fetch("/api/query-assist/categories");
+        const catRes = await fetch("/api/product-assist/categories");
         const catBody = await catRes.json().catch(() => ({}));
         if (!catRes.ok) throw new Error(catBody.error || `Failed to load insurers (HTTP ${catRes.status}).`);
         setCategories(catBody.entries || []);
@@ -381,7 +386,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       // failure rather than surfacing a second error banner for a purely
       // supplementary nav feature.
       try {
-        const libRes = await fetch("/api/query-assist/library");
+        const libRes = await fetch("/api/product-assist/library");
         const libBody = await libRes.json().catch(() => ({}));
         if (libRes.ok) {
           setLibrary({ playbook: libBody.playbook ?? { sourceUrl: null }, insurers: libBody.insurers ?? [] });
@@ -487,7 +492,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
 
     try {
       const history = priorMessages.slice(-HISTORY_TURNS_TO_SEND).map(m => ({ role: m.role, content: m.content }));
-      const res = await fetch("/api/query-assist/ask", {
+      const res = await fetch("/api/product-assist/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ categoryId, planTags, question, history }),
@@ -564,7 +569,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
       {/* Sidebar + main card share one grid row so they always end up the
           same height — at lg+ this row fills whatever vertical space is
           left between the header above and the app's footer below (see
-          App.tsx's query_assist branch of the flush-fit layout used by a
+          App.tsx's product_assist branch of the flush-fit layout used by a
           couple of other data-dense pages), so only the lists/thread
           inside each card scroll, never the page itself. Below lg the
           cards stack and the page scrolls normally, which reads better on
@@ -658,7 +663,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                 </a>
 
                 {/* Insurance Resources — built entirely from the same KB
-                    categories/resources /api/query-assist/library reads live
+                    categories/resources /api/product-assist/library reads live
                     off the database, so a plan rename/delete/disable or a
                     new insurer resource shows up here automatically, no
                     hardcoded list. Omits an insurer branch with nothing to
@@ -856,7 +861,7 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
                   // advisor skips it, the server tries to infer the plan
                   // directly from the question text, and asks for
                   // clarification itself when it genuinely can't tell (see
-                  // queryAssist.ts's SELECTED SCOPE / AMBIGUITY handling).
+                  // productAssist.ts's SELECTED SCOPE / AMBIGUITY handling).
                   <div className="w-full min-w-0 flex flex-wrap items-center gap-1.5">
                     <Tag className="w-3 h-3 shrink-0 text-[#8CA0B3]" />
                     {selectablePlanNames.map(plan => (
@@ -949,12 +954,12 @@ export function QueryAssistPage({ theme }: QueryAssistPageProps) {
               // localStorage (see LocalChatMessage's doc comment) — fall
               // back to parsing it apart. A current message already has
               // `answer`/`share` as separate fields straight from the server
-              // (queryAssist.ts's structured JSON output), nothing to split.
+              // (productAssist.ts's structured JSON output), nothing to split.
               const legacy = m.share === undefined;
               const { answer, share: rawShare } = legacy ? splitAnswer(m.content) : { answer: m.content, share: m.share };
               const { body, references } = splitReferences(answer);
               // The model is told never to include a References list in
-              // "share" (see queryAssist.ts's NO DRAFT RULE paragraph), but
+              // "share" (see productAssist.ts's NO DRAFT RULE paragraph), but
               // doesn't always comply — running it through the same
               // splitReferences used for the Answer above defensively drops
               // one if it slips in, since a Draft Message is meant to be

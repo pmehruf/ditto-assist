@@ -327,7 +327,7 @@ export async function syncFaq(repos: Repositories, triggeredBy: string): Promise
 const STALE_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 /** Best-effort, fire-and-forget staleness check — call (without awaiting)
- * from the Query Assist request path. Never throws — a failed background
+ * from the Product Assist request path. Never throws — a failed background
  * refresh never affects the answer being generated. */
 export async function maybeRefreshFaqIfStale(repos: Repositories): Promise<void> {
   try {

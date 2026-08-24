@@ -41,8 +41,8 @@ import { RolesRepository } from "./rolesRepository.js";
 import { RelationshipTypesRepository } from "./relationshipTypesRepository.js";
 import { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
 import { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
-import { QueryAssistLogsRepository } from "./queryAssistLogsRepository.js";
-import { QueryAssistLogExportConnectionRepository } from "./queryAssistLogExportConnectionRepository.js";
+import { ProductAssistLogsRepository } from "./productAssistLogsRepository.js";
+import { ProductAssistLogExportConnectionRepository } from "./productAssistLogExportConnectionRepository.js";
 import { SpecialInstructionsRepository } from "./specialInstructionsRepository.js";
 import { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
 import { FaqRecordsRepository } from "./faqRecordsRepository.js";
@@ -225,8 +225,8 @@ export interface Repositories {
   kbPlaybookConnection: KbPlaybookConnectionRepository;
   kbPlaybookPlanFacts: KbPlaybookPlanFactsRepository;
   productAssistAcks: ProductAssistAcksRepository;
-  queryAssistLogs: QueryAssistLogsRepository;
-  queryAssistLogExportConnection: QueryAssistLogExportConnectionRepository;
+  productAssistLogs: ProductAssistLogsRepository;
+  productAssistLogExportConnection: ProductAssistLogExportConnectionRepository;
   specialInstructions: SpecialInstructionsRepository;
   kbFaqConnection: KbFaqConnectionRepository;
   faqRecords: FaqRecordsRepository;
@@ -273,8 +273,8 @@ export function createRepositories(db: AnyDb): Repositories {
     kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
     kbPlaybookPlanFacts: new KbPlaybookPlanFactsRepository(db),
     productAssistAcks: new ProductAssistAcksRepository(db),
-    queryAssistLogs: new QueryAssistLogsRepository(db),
-    queryAssistLogExportConnection: new QueryAssistLogExportConnectionRepository(db),
+    productAssistLogs: new ProductAssistLogsRepository(db),
+    productAssistLogExportConnection: new ProductAssistLogExportConnectionRepository(db),
     specialInstructions: new SpecialInstructionsRepository(db),
     kbFaqConnection: new KbFaqConnectionRepository(db),
     faqRecords: new FaqRecordsRepository(db),

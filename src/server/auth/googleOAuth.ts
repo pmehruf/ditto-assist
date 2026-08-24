@@ -347,19 +347,19 @@ export async function exchangeCodeForKbFaqSheetsGrant(code: string): Promise<KbF
 // distinctly-named state cookie) with one deliberate difference: this
 // requests the WRITE `spreadsheets` scope, not `spreadsheets.readonly`,
 // because it's used to append rows to a Sheet (see
-// queryAssistLogSheetsClient.ts's monthly export), not read one. Connected
+// productAssistLogSheetsClient.ts's monthly export), not read one. Connected
 // from Connections, alongside the QA Dashboard and Playbook grants — see
-// query_assist_log_export_connection's schema comment for why it's kept as
+// product_assist_log_export_connection's schema comment for why it's kept as
 // its own separate stored credential rather than reusing either of those.
 // ─────────────────────────────────────────────────────────────────────────
 
-const QUERY_ASSIST_LOG_EXPORT_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const PRODUCT_ASSIST_LOG_EXPORT_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
-export function getQueryAssistLogExportSheetsAuthUrl(state: string, loginHint?: string): string {
+export function getProductAssistLogExportSheetsAuthUrl(state: string, loginHint?: string): string {
   const client = getOAuthClient();
   return client.generateAuthUrl({
     access_type: "offline",
-    scope: ["openid", "email", QUERY_ASSIST_LOG_EXPORT_WRITE_SCOPE],
+    scope: ["openid", "email", PRODUCT_ASSIST_LOG_EXPORT_WRITE_SCOPE],
     hd: ALLOWED_DOMAIN,
     prompt: "consent",
     include_granted_scopes: true,
@@ -368,18 +368,18 @@ export function getQueryAssistLogExportSheetsAuthUrl(state: string, loginHint?: 
   });
 }
 
-export interface QueryAssistLogExportSheetsGrant {
+export interface ProductAssistLogExportSheetsGrant {
   email: string;
   refreshToken: string;
 }
 
 /**
- * Exchanges the Query Assist Log Export's "Connect Google Sheets"
+ * Exchanges the Product Assist Log Export's "Connect Google Sheets"
  * authorization code for a refresh token — same verification discipline as
  * the grants above (signature/domain-checked ID token); only ever stored
  * for a real @joinditto.in account.
  */
-export async function exchangeCodeForQueryAssistLogExportGrant(code: string): Promise<QueryAssistLogExportSheetsGrant> {
+export async function exchangeCodeForProductAssistLogExportGrant(code: string): Promise<ProductAssistLogExportSheetsGrant> {
   const client = getOAuthClient();
   const { tokens } = await client.getToken(code);
 
