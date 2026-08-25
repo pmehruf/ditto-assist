@@ -110,28 +110,51 @@ const app = express();
 app.set("trust proxy", 1);
 
 // ─────────────────────────────────────────────────────────────────────────
-// LEGACY HOST REDIRECT — the app was rebranded from "Declaration Assistant"
-// to "Ditto Assist" (2026-08-07). Cloud Run has no built-in way to rename a
-// service in place, so the old service (declaration-assistant-...) keeps
-// running as its own separate resource, with its own URL, unless someone
-// deletes it — and that old URL is still bookmarked/linked in places.
-// This must be deployed to BOTH the old and new Cloud Run services (same
-// image, same code): on the new service the hostname simply won't match
-// and every request passes straight through unaffected; on the old service
-// it 301-redirects the visitor straight to the equivalent path on the new
-// domain, before any other route/middleware runs.
+// LEGACY HOST REDIRECT — two independent reasons a visitor can land on a
+// stale hostname for this same app/environment, both handled by the one
+// map below:
+//   1. Rebrand (2026-08-07): "Declaration Assistant" -> "Ditto Assist".
+//      Cloud Run has no built-in way to rename a service in place, so the
+//      old service (declaration-assistant-...) keeps running as its own
+//      separate resource, with its own URL, unless someone deletes it.
+//   2. Cloud Run default-URL format change (discovered 2026-08-25): Cloud
+//      Run's own default URL format for this project changed at some point
+//      from `<service>-<project-number>.<region>.run.app` to
+//      `<service>-<hash>-<region-code>.a.run.app` — but BOTH forms keep
+//      resolving to the same live service, so a bookmark/link/old OAuth
+//      client config using the old-format URL still works for normal
+//      browsing, EXCEPT for the Google OAuth round-trip: the redirect_uri
+//      sent to Google is always the canonical `APP_URL` (new-format), so a
+//      sign-in *started* on an old-format URL sets its CSRF state cookie
+//      on that host, then Google redirects back to a DIFFERENT host — the
+//      cookie is host-scoped and never arrives, so the callback always
+//      fails with "Invalid or expired sign-in attempt" (see
+//      /api/auth/google/callback below). This surfaced as a real user
+//      report 2026-08-25: DevTools showed the login request's Initiator as
+//      `ditto-assist-93120856554.asia-south1.run.app`, the old-format URL.
 //
-// Both hostnames below were updated 2026-08-25 — `gcloud run services list`
-// showed Cloud Run's default URL format for this project changed at some
-// point since these were first set (the old ...-93120856554.asia-south1.
-// run.app form no longer matches either live service; see DEPLOYMENT.md's
-// own note), which meant this redirect had silently gone dead (req.hostname
-// could never match the stale LEGACY_HOST).
-const LEGACY_HOST = "declaration-assistant-y5biuzxgda-el.a.run.app";
-const NEW_ORIGIN = "https://ditto-assist-y5biuzxgda-el.a.run.app";
+// This same code/image must be deployed to every service/hostname listed
+// below (production, staging, and the standalone old declaration-assistant
+// service) — on the CANONICAL host for that environment the hostname
+// simply won't match any map entry and every request passes straight
+// through unaffected; on any legacy hostname it 301-redirects the visitor
+// straight to the equivalent path on that environment's canonical domain,
+// before any other route/middleware runs (in particular, before the OAuth
+// login route, so a sign-in attempt can never start on the wrong host).
+const PROD_ORIGIN = "https://ditto-assist-y5biuzxgda-el.a.run.app";
+const STAGING_ORIGIN = "https://ditto-assist-staging-y5biuzxgda-el.a.run.app";
+const LEGACY_HOST_TO_ORIGIN: Record<string, string> = {
+  // Old-format default URL for this app's own current service name.
+  "ditto-assist-93120856554.asia-south1.run.app": PROD_ORIGIN,
+  "ditto-assist-staging-93120856554.asia-south1.run.app": STAGING_ORIGIN,
+  // Pre-rebrand service name, both URL formats.
+  "declaration-assistant-y5biuzxgda-el.a.run.app": PROD_ORIGIN,
+  "declaration-assistant-93120856554.asia-south1.run.app": PROD_ORIGIN,
+};
 app.use((req, res, next) => {
-  if (req.hostname === LEGACY_HOST) {
-    return res.redirect(301, `${NEW_ORIGIN}${req.originalUrl}`);
+  const target = LEGACY_HOST_TO_ORIGIN[req.hostname];
+  if (target) {
+    return res.redirect(301, `${target}${req.originalUrl}`);
   }
   next();
 });
