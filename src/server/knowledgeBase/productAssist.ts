@@ -749,7 +749,20 @@ export async function answerQuery(
     ],
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
-      temperature: 0.1,
+      // Was 0.1. Lowered to 0 (2026-08) after a user-reported case of the
+      // exact same sourced question getting genuinely contradictory answers
+      // across two separate chats — a lingering source of sampling variance
+      // on ambiguous source wording that serves no purpose here: this isn't
+      // a creative-writing task, it's a "read the provided evidence and
+      // report what it says" task, where the most reproducible reading is
+      // also the correct target. Note this reduces but does not eliminate
+      // answer-to-answer variance — Gemini's own infra-level nondeterminism
+      // at temperature 0 is a known, separate residual factor, and a
+      // genuinely ambiguous/inconsistent underlying source document (Policy
+      // Wording or a Product Playbook entry) will still produce inconsistent
+      // answers regardless of temperature, since that's a data problem, not
+      // a sampling problem.
+      temperature: 0,
       // Structured JSON output instead of a "---SHARE---" text delimiter —
       // the previous approach relied on the model reliably remembering to
       // write a literal separator line, and it didn't always comply, which
