@@ -13,7 +13,7 @@ export interface SimilarKbChunk {
   /** Everything except `embedding` — the 768-dim vector is only needed for
    * the similarity ORDER BY itself (computed in SQL via distanceExpr below,
    * never read back into JS), so it's deliberately excluded from the
-   * SELECT. Confirmed via queryAssist.ts, the only caller: it reads
+   * SELECT. Confirmed via productAssist.ts, the only caller: it reads
    * `chunk.content` and nothing else off this object. Dropping it cuts each
    * retrieved row's payload by roughly 74% (embedding averages ~3076 bytes
    * vs. content's ~1078 bytes per row, measured via pg_column_size). */
@@ -22,7 +22,7 @@ export interface SimilarKbChunk {
   resourceTitle: string;
   categoryId: number;
   /** brochure/policy_wording/prospectus/addon/other — see 0034's schema
-   * comment. Lets queryAssist.ts label each excerpt by document type for
+   * comment. Lets productAssist.ts label each excerpt by document type for
    * the model's SOURCE PRECEDENCE reasoning and order/weight retrieval. */
   documentType: KbResourceRow["documentType"];
   /** Web resource's URL, or a PDF's original filename — surfaced so the UI
@@ -66,7 +66,18 @@ export class KbChunksRepository {
    */
   async findSimilar(
     queryEmbedding: number[],
-    options: { limit?: number; categoryIds?: number[]; resourceIds?: number[] } = {}
+    options: {
+      limit?: number;
+      categoryIds?: number[];
+      resourceIds?: number[];
+      /** Narrows to specific document type(s) — e.g. ["policy_wording"] —
+       * so a caller can run one document-type stage at a time instead of
+       * pulling every type into one ranked list. See productAssist.ts's
+       * progressive source-priority retrieval (Policy Wording -> Prospectus
+       * -> Brochure/other), the reason this option exists. Omitted/empty =
+       * no restriction, same as before this option existed. */
+      documentTypes?: KbResourceRow["documentType"][];
+    } = {}
   ): Promise<SimilarKbChunk[]> {
     const limit = options.limit ?? 12;
     const distanceExpr = sql<number>`${cosineDistance(kbChunks.embedding, queryEmbedding)}`;
@@ -74,7 +85,7 @@ export class KbChunksRepository {
     if (options.categoryIds && options.categoryIds.length > 0) {
       conditions.push(inArray(kbResources.categoryId, options.categoryIds));
     }
-    // Narrows to a pre-filtered eligible resource set — e.g. Query Assist's
+    // Narrows to a pre-filtered eligible resource set — e.g. Product Assist's
     // plan-tag scoping (a resource with plan_tags applies only when its
     // tags overlap the advisor's selected plan(s); the caller resolves
     // that eligibility set in JS since it's a small in-memory filter over
@@ -84,6 +95,12 @@ export class KbChunksRepository {
         return [];
       }
       conditions.push(inArray(kbResources.id, options.resourceIds));
+    }
+    if (options.documentTypes && options.documentTypes.length > 0) {
+      conditions.push(inArray(kbResources.documentType, options.documentTypes));
+    }
+    if (limit <= 0) {
+      return [];
     }
     const rows = await this.db
       .select({

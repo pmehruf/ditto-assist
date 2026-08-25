@@ -4,6 +4,7 @@
  */
 
 import type { Repositories } from "../db/repositories/index.js";
+import type { SimilarKbChunk } from "../db/repositories/kbChunksRepository.js";
 import { embedQuery } from "./embeddings.js";
 import { getKbAiClient } from "./geminiClient.js";
 import { Type } from "@google/genai";
@@ -27,6 +28,111 @@ const RETRIEVAL_LIMIT = 24;
 // output — this is about resolving pronouns/follow-ups ("what about the
 // waiting period for that?"), not re-verifying old answers.
 const MAX_HISTORY_TURNS = 4;
+
+// ─── Progressive source-priority retrieval (2026-08) ───────────────────────
+// Rather than one flat top-RETRIEVAL_LIMIT query across every document type
+// at once, retrieveDocumentChunks() below runs Policy Wording -> Prospectus
+// -> Brochure/other as separate, escalating stages, stopping as soon as a
+// stage (or the FAQ gate before it) already provides enough strong evidence
+// — see SOURCE PRECEDENCE #2 in SYSTEM_INSTRUCTION for why that's also the
+// correct authority ordering, not just a cost optimization. Total chunks
+// retrieved across all stages combined is still capped at RETRIEVAL_LIMIT —
+// same worst-case token ceiling as before this existed, just skipped/reduced
+// whenever evidence is found early instead of always paying for the full 24.
+
+// Cosine-similarity floor for counting one retrieved chunk as strong
+// evidence — reuses the exact bar faq.ts's FAQ_RELEVANCE_THRESHOLD already
+// established in this codebase for "is this genuinely relevant", expressed
+// here as a distance ceiling since kbChunks.findSimilar returns cosine
+// DISTANCE (lower = closer; distance = 1 - similarity for the pgvector
+// `<=>` operator — see SimilarKbChunk's own doc comment: "0 = identical
+// direction").
+const CHUNK_SUFFICIENCY_DISTANCE = 0.5;
+// A single close match isn't enough to call a document-type stage
+// "sufficient" and skip the next one — RETRIEVAL_LIMIT's own history
+// (raised from 14 after under-recall dropped scattered restrictions) shows
+// one close match can miss a waiting period, exclusion, or eligibility
+// condition stated elsewhere in the same plan's documents. Require a small
+// cluster of strong matches before short-circuiting to the next source.
+const MIN_SUFFICIENT_CHUNK_MATCHES = 3;
+// Deliberately far stricter than FAQ_RELEVANCE_THRESHOLD (0.5 — "is this
+// FAQ worth including in the prompt at all"): this gates skipping Policy
+// Wording/Prospectus/Brochure retrieval ENTIRELY, so it's reserved for a
+// near-exact match to a curated Ditto FAQ question, not merely a
+// topically-related one. Product Playbook is deliberately NOT part of this
+// gate: unlike the FAQ (scored per-question via questionEmbedding), Playbook
+// facts are intentionally NOT topic-scored — see kbPlaybookPlanFacts's
+// schema.ts comment: they're always injected in full once a plan matches,
+// specifically so a partial-relevance check can't silently drop the one
+// line that actually answers the question. There is no existing signal
+// that safely says "Playbook already covers this exact topic", so Playbook
+// presence alone never skips document-chunk retrieval.
+const FAQ_SUFFICIENCY_THRESHOLD = 0.85;
+
+function isSufficientEvidence(chunks: SimilarKbChunk[]): boolean {
+  return chunks.filter(c => c.distance <= CHUNK_SUFFICIENCY_DISTANCE).length >= MIN_SUFFICIENT_CHUNK_MATCHES;
+}
+
+/**
+ * Progressive, document-type-scoped chunk retrieval — see the module
+ * comment above for the full rationale. Never queries a lower-priority
+ * document type once a higher-priority one (or the FAQ gate) already
+ * provides sufficient evidence per isSufficientEvidence(), and never
+ * returns more than RETRIEVAL_LIMIT chunks combined across every stage.
+ */
+async function retrieveDocumentChunks(
+  repos: Repositories,
+  queryEmbedding: number[],
+  categoryIds: number[],
+  resourceIds: number[] | undefined,
+  faqMatches: MatchedFaq[]
+): Promise<SimilarKbChunk[]> {
+  const baseOptions = { categoryIds, ...(resourceIds !== undefined ? { resourceIds } : {}) };
+
+  // FAQ SUFFICIENCY GATE — spec's "FAQ/Playbook sufficient -> STOP", applied
+  // via the FAQ half only (see FAQ_SUFFICIENCY_THRESHOLD's comment for why
+  // Playbook can't safely participate). A near-exact match to a curated
+  // Ditto FAQ question is trusted enough to skip document-chunk retrieval
+  // entirely for this question.
+  if (faqMatches.some(f => f.score >= FAQ_SUFFICIENCY_THRESHOLD)) {
+    return [];
+  }
+
+  let accumulated: SimilarKbChunk[] = await repos.kbChunks.findSimilar(queryEmbedding, {
+    ...baseOptions,
+    documentTypes: ["policy_wording"],
+    limit: RETRIEVAL_LIMIT,
+  });
+  if (isSufficientEvidence(accumulated)) return accumulated;
+
+  // Prospectus: searched next whenever Policy Wording didn't already settle
+  // it — whether because no Policy Wording resource exists in scope
+  // (accumulated came back empty) or because what came back wasn't enough
+  // (spec section 5's two OR conditions).
+  const prospectusLimit = RETRIEVAL_LIMIT - accumulated.length;
+  if (prospectusLimit > 0) {
+    const prospectus = await repos.kbChunks.findSimilar(queryEmbedding, {
+      ...baseOptions,
+      documentTypes: ["prospectus"],
+      limit: prospectusLimit,
+    });
+    accumulated = [...accumulated, ...prospectus];
+    if (isSufficientEvidence(accumulated)) return accumulated;
+  }
+
+  // Brochure/addon/other — the final, lowest-priority fallback tier, only
+  // ever reached once both higher tiers were checked and insufficient.
+  const remainingLimit = RETRIEVAL_LIMIT - accumulated.length;
+  if (remainingLimit > 0) {
+    const brochureAndOther = await repos.kbChunks.findSimilar(queryEmbedding, {
+      ...baseOptions,
+      documentTypes: ["brochure", "addon", "other"],
+      limit: remainingLimit,
+    });
+    accumulated = [...accumulated, ...brochureAndOther];
+  }
+  return accumulated;
+}
 
 export interface ProductAssistScope {
   /** null = a "General" question, not tied to any one insurer. */
@@ -587,11 +693,19 @@ export async function answerQuery(
   }
   const specialInstructionsBlock = buildSpecialInstructionsBlock(overrideRules, advisory);
 
-  const similar = await repos.kbChunks.findSimilar(queryEmbedding, {
-    categoryIds,
-    ...(resourceIds !== undefined ? { resourceIds } : {}),
-    limit: RETRIEVAL_LIMIT,
-  });
+  // Ditto FAQ — the Org Constitution's other equal-authority peer (see
+  // SOURCE PRECEDENCE #1b). Deliberately NOT gated by scope.categoryId or
+  // effectivePlanTags the way playbookFacts is below: Ditto's own
+  // operational/process position is orthogonal to which insurer happens to
+  // also be in scope (spec §10), so every question checks the FAQ, reusing
+  // the same queryEmbedding already computed for Special Instructions above
+  // — zero extra embedding calls. Computed BEFORE document-chunk retrieval
+  // (moved up from its old position after `similar`) because
+  // retrieveDocumentChunks() needs it for the FAQ sufficiency gate — see
+  // that function's comment.
+  const faqMatches = await resolveApplicableFaqs(repos, queryEmbedding);
+
+  const similar = await retrieveDocumentChunks(repos, queryEmbedding, categoryIds, resourceIds, faqMatches);
 
   // Product Playbook plan facts — only meaningful once a plan is in scope
   // (there's no "insurer-wide" playbook fact, unlike a generic PDF; see
@@ -600,15 +714,6 @@ export async function answerQuery(
     scope.categoryId !== null && effectivePlanTags.length > 0
       ? await repos.kbPlaybookPlanFacts.findMatching(scopeCategoryName ?? "", effectivePlanTags)
       : [];
-
-  // Ditto FAQ — the Org Constitution's other equal-authority peer (see
-  // SOURCE PRECEDENCE #1b). Deliberately NOT gated by scope.categoryId or
-  // effectivePlanTags the way playbookFacts is above: Ditto's own
-  // operational/process position is orthogonal to which insurer happens to
-  // also be in scope (spec §10), so every question checks the FAQ, reusing
-  // the same queryEmbedding already computed for Special Instructions/chunk
-  // retrieval above — zero extra embedding calls.
-  const faqMatches = await resolveApplicableFaqs(repos, queryEmbedding);
 
   const chunkInputs = similar.map(s => ({ resourceTitle: s.resourceTitle, documentType: s.documentType, content: s.chunk.content }));
   const playbookInputs = playbookFacts.map(f => ({ planName: f.planName, content: f.content }));

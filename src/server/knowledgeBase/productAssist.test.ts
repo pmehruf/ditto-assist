@@ -166,16 +166,44 @@ interface FakeReposConfig {
   acronyms?: KbAcronymRow[];
 }
 
-function fakeRepos(cfg: FakeReposConfig = {}): Repositories {
-  return {
+// Documents/limit-aware, per docType — a real DB query narrowed to
+// documentTypes: ["policy_wording"] only ever returns policy_wording rows,
+// so the fake must do the same or the new progressive-retrieval logic in
+// productAssist.ts (which issues up to 3 separate, type-scoped calls) would
+// see the exact same fixture chunks duplicated across every stage. Exposed
+// as a vi.fn (via findSimilarSpy) so tests can assert which stages were, or
+// were NOT, actually queried — the literal thing several of the new
+// progressive-retrieval tests below need to verify.
+function fakeRepos(cfg: FakeReposConfig = {}): { repos: Repositories; findSimilarSpy: ReturnType<typeof vi.fn> } {
+  const findSimilarSpy = vi.fn(
+    async (
+      _embedding: number[],
+      options: { documentTypes?: SimilarKbChunk["documentType"][]; limit?: number } = {}
+    ): Promise<SimilarKbChunk[]> => {
+      const all = cfg.chunks ?? [];
+      const filtered = options.documentTypes ? all.filter(c => options.documentTypes!.includes(c.documentType)) : all;
+      return filtered.slice(0, options.limit ?? filtered.length);
+    }
+  );
+  const repos = {
     kbCategories: { list: async () => cfg.categories ?? [categoryRow()] },
     kbResources: { list: async () => [] },
-    kbChunks: { findSimilar: async () => cfg.chunks ?? [] },
+    kbChunks: { findSimilar: findSimilarSpy },
     kbPlaybookPlanFacts: { findMatching: async () => cfg.playbookFacts ?? [] },
     faqRecords: { listAnswerableActive: async () => cfg.faqs ?? [] },
     specialInstructions: { listActive: async () => cfg.specialInstructions ?? [] },
     kbAcronyms: { listActive: async () => cfg.acronyms ?? [] },
   } as unknown as Repositories;
+  return { repos, findSimilarSpy };
+}
+
+/** Most tests only care about the resulting answer, not which retrieval
+ * stages ran — this thin wrapper keeps every pre-existing call site
+ * (`fakeReposOnly(cfg)` passed straight into `answerQuery`) unchanged. Tests
+ * that need to assert on retrieval staging call `fakeReposOnly()` directly
+ * instead, for access to `findSimilarSpy`. */
+function fakeReposOnly(cfg: FakeReposConfig = {}): Repositories {
+  return fakeRepos(cfg).repos;
 }
 
 const SCOPE = { categoryId: 1, planTags: ["Activ One Max"] };
@@ -223,7 +251,7 @@ describe("Product Assist synthesis — schema & prompt wiring (regression guard)
 
   it("sends a response schema with a required synthesis field ahead of answer/share", async () => {
     mockModelResponse({ answer: "Not specified in available sources.", share: null });
-    await answerQuery(fakeRepos(), SCOPE, "Any question", []);
+    await answerQuery(fakeReposOnly(), SCOPE, "Any question", []);
     const call = generateContentMock.mock.calls[0][0];
     const schema = call.config.responseSchema;
     expect(schema.required).toEqual(["synthesis", "answer", "share"]);
@@ -241,7 +269,7 @@ describe("Acronym Dictionary integration", () => {
   it("a plan-name acronym in the question drives plan detection the same as the full name would — Playbook facts get looked up for it", async () => {
     mockModelResponse({ answer: "The bonus for Activ One Max is 50% per claim-free year.", share: "The bonus is 50% for every year without a claim." });
     await answerQuery(
-      fakeRepos({
+      fakeReposOnly({
         categories: [categoryRow()],
         acronyms: [acronymRow()], // "OS" -> "Activ One Max", which IS in categoryRow()'s planNames roster
         playbookFacts: [playbookFact()],
@@ -259,7 +287,7 @@ describe("Acronym Dictionary integration", () => {
   it("an acronym whose expansion is NOT a plan name (e.g. a benefit/term acronym) does not affect plan detection, only retrieval/context", async () => {
     mockModelResponse({ answer: "Not specified in available sources.", share: null });
     await answerQuery(
-      fakeRepos({
+      fakeReposOnly({
         categories: [categoryRow()],
         acronyms: [acronymRow({ acronym: "CBB", expansion: "Cumulative Bonus Super" })],
       }),
@@ -274,7 +302,7 @@ describe("Acronym Dictionary integration", () => {
   it("matched acronyms are rendered as an ACRONYM REFERENCE block in the prompt, and expand the retrieval query text", async () => {
     mockModelResponse({ answer: "Not specified in available sources.", share: null });
     await answerQuery(
-      fakeRepos({ acronyms: [acronymRow({ acronym: "CBB", expansion: "Cumulative Bonus Super", notes: "HDFC ERGO only" })] }),
+      fakeReposOnly({ acronyms: [acronymRow({ acronym: "CBB", expansion: "Cumulative Bonus Super", notes: "HDFC ERGO only" })] }),
       SCOPE,
       "Does CBB apply after two claim-free years?",
       []
@@ -288,7 +316,7 @@ describe("Acronym Dictionary integration", () => {
 
   it("a question using no known acronym produces no ACRONYM REFERENCE block — byte-identical prompt for the unaffected case", async () => {
     mockModelResponse({ answer: "Not specified in available sources.", share: null });
-    await answerQuery(fakeRepos({ acronyms: [acronymRow()] }), SCOPE, "What is the room rent limit?", []);
+    await answerQuery(fakeReposOnly({ acronyms: [acronymRow()] }), SCOPE, "What is the room rent limit?", []);
     const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
     expect(promptText).not.toContain("ACRONYM REFERENCE");
   });
@@ -311,7 +339,7 @@ describe("Product Assist synthesis — Chronic Care Rider / angiogram vs PTCA (v
       share: "Yes, this qualifies — the procedure was done more than a year ago.",
     });
     const result = await answerQuery(
-      fakeRepos({ chunks: [eligibilityChunk], playbookFacts: [playbookFact()] }),
+      fakeReposOnly({ chunks: [eligibilityChunk], playbookFacts: [playbookFact()] }),
       SCOPE,
       "Customer had PTCA 14 months ago — is the Chronic Care Rider eligible?",
       []
@@ -333,7 +361,7 @@ describe("Product Assist synthesis — Chronic Care Rider / angiogram vs PTCA (v
       share: "No — a diagnostic angiogram on its own doesn't qualify for this rider.",
     });
     const result = await answerQuery(
-      fakeRepos({ chunks: [eligibilityChunk], playbookFacts: [playbookFact()] }),
+      fakeReposOnly({ chunks: [eligibilityChunk], playbookFacts: [playbookFact()] }),
       SCOPE,
       "The customer had a diagnostic angiogram, no angioplasty. Can the Chronic Care Rider reduce the waiting period for Activ One Max?",
       []
@@ -357,7 +385,7 @@ describe("Product Assist synthesis — Chronic Care Rider / angiogram vs PTCA (v
       answer: "Yes. The customer's Type 2 Diabetes diagnosis under oral medication directly matches the Chronic Care Rider's listed eligibility condition, with no minimum duration required.\n\n**References**\n- Policy Wording, Chronic Care Rider eligibility",
       share: "Yes, this condition is covered under the rider.",
     });
-    const result = await answerQuery(fakeRepos({ chunks: [listedConditionChunk] }), SCOPE, "Customer is a Type 2 diabetic on oral medication — eligible for the Chronic Care Rider?", []);
+    const result = await answerQuery(fakeReposOnly({ chunks: [listedConditionChunk] }), SCOPE, "Customer is a Type 2 diabetic on oral medication — eligible for the Chronic Care Rider?", []);
     expect(result.answer.startsWith("Yes.")).toBe(true);
   });
 
@@ -372,7 +400,7 @@ describe("Product Assist synthesis — Chronic Care Rider / angiogram vs PTCA (v
       answer: "No. A diagnostic angiogram is not the same procedure as PTCA/angioplasty, so the eligibility requirement is not met.",
       share: "No, this specific procedure doesn't meet the requirement.",
     });
-    const result = await answerQuery(fakeRepos({ chunks: [eligibilityChunk] }), SCOPE, "Customer only had a diagnostic angiogram — does that meet the Chronic Care Rider requirement?", []);
+    const result = await answerQuery(fakeReposOnly({ chunks: [eligibilityChunk] }), SCOPE, "Customer only had a diagnostic angiogram — does that meet the Chronic Care Rider requirement?", []);
     // Same source content as case 1 (PTCA-satisfied), but a different stated
     // fact (angiogram, not PTCA) must not collapse into the same YES answer.
     expect(result.answer.startsWith("No.")).toBe(true);
@@ -387,7 +415,7 @@ describe("Product Assist synthesis — multi-source & authority hierarchy (valid
       share: "Yes, this is covered.",
     });
     await answerQuery(
-      fakeRepos({
+      fakeReposOnly({
         chunks: [chunk("Section 4.2: Restoration benefit applies once per policy year.")],
         playbookFacts: [playbookFact({ content: "Restoration benefit: confirmed live for this plan, unlimited restorations." })],
       }),
@@ -403,10 +431,17 @@ describe("Product Assist synthesis — multi-source & authority hierarchy (valid
   it("case 6 — ORG CONSTITUTION (FAQ/Playbook) content precedes DOCUMENT EXCERPTS content in the prompt, per source hierarchy", async () => {
     mockModelResponse({ answer: "Not specified in available sources.", share: null });
     await answerQuery(
-      fakeRepos({
+      fakeReposOnly({
         chunks: [chunk("Some insurer document text that could conflict with the Playbook.")],
         playbookFacts: [playbookFact({ content: "Playbook's own authoritative statement on this topic." })],
-        faqs: [faqRow()],
+        // questionEmbedding deliberately NOT the default FIXED_QUERY_EMBEDDING
+        // (a full 1.0-similarity match): this case's own point is that FAQ +
+        // Playbook + document excerpts all coexist in one prompt, which needs
+        // a genuinely-relevant-but-not-certain FAQ match (score ~0.6, above
+        // FAQ_RELEVANCE_THRESHOLD's 0.5 inclusion bar but below
+        // FAQ_SUFFICIENCY_THRESHOLD's 0.85 skip-retrieval gate — see the
+        // dedicated "FAQ sufficiency gate" tests below for the >=0.85 case).
+        faqs: [faqRow({ questionEmbedding: [0.6, 0.8, 0] as unknown as FaqRecordRow["questionEmbedding"] })],
       }),
       SCOPE,
       "What does the Chronic Care Rider cover?",
@@ -433,7 +468,7 @@ describe("Product Assist synthesis — uncertainty & overrides (validation cases
       answer: "I don't have enough information to determine eligibility — the question doesn't specify which cardiac procedure was performed, and the Chronic Care Rider's eligibility depends on that distinction (e.g. PTCA/angioplasty vs a diagnostic-only procedure).",
       share: null,
     });
-    const result = await answerQuery(fakeRepos({ chunks: [chunk("Chronic Care Rider eligibility depends on the exact cardiac procedure performed.")] }), SCOPE, "Customer had a cardiac procedure — is the Chronic Care Rider eligible?", []);
+    const result = await answerQuery(fakeReposOnly({ chunks: [chunk("Chronic Care Rider eligibility depends on the exact cardiac procedure performed.")] }), SCOPE, "Customer had a cardiac procedure — is the Chronic Care Rider eligible?", []);
     expect(result.share).toBeNull();
     expect(result.answer).not.toMatch(/^(Yes|No)\./);
   });
@@ -444,7 +479,7 @@ describe("Product Assist synthesis — uncertainty & overrides (validation cases
       share: "No, this can't be back-dated.",
     });
     await answerQuery(
-      fakeRepos({
+      fakeReposOnly({
         specialInstructions: [specialInstructionRow()],
         chunks: [chunk("Policy wording appears to allow back-dating under some circumstances.")],
         playbookFacts: [playbookFact()],
@@ -462,6 +497,128 @@ describe("Product Assist synthesis — uncertainty & overrides (validation cases
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Progressive source-priority retrieval (2026-08 token-optimization task).
+// retrieveDocumentChunks() in productAssist.ts runs Policy Wording ->
+// Prospectus -> Brochure/other as separate, escalating stages instead of one
+// flat top-RETRIEVAL_LIMIT query across every type, stopping as soon as a
+// stage (or the FAQ sufficiency gate before it) already has enough strong
+// evidence — see that function's own doc comment for the full rationale,
+// including why Product Playbook deliberately does NOT participate in the
+// FAQ gate. findSimilarSpy (see fakeRepos above) makes each stage's calls
+// individually inspectable: which documentTypes were requested, and how
+// many times findSimilar was called at all.
+// ─────────────────────────────────────────────────────────────────────────
+describe("Progressive source-priority retrieval", () => {
+  function pw(distance: number, content = "Policy Wording excerpt") {
+    return chunk(content, { documentType: "policy_wording", distance });
+  }
+  function prospectus(distance: number, content = "Prospectus excerpt") {
+    return chunk(content, { documentType: "prospectus", distance, resourceTitle: "Activ One Max — Prospectus" });
+  }
+  function brochure(distance: number, content = "Brochure excerpt") {
+    return chunk(content, { documentType: "brochure", distance, resourceTitle: "Activ One Max — Brochure" });
+  }
+  // Cosine similarity 1.0 against the fixed test query embedding — clears
+  // FAQ_SUFFICIENCY_THRESHOLD's 0.85 bar by construction.
+  const highConfidenceFaq = faqRow({ questionEmbedding: FIXED_QUERY_EMBEDDING as unknown as FaqRecordRow["questionEmbedding"] });
+  // Similarity ~0.6 — clears FAQ_RELEVANCE_THRESHOLD's 0.5 inclusion bar
+  // (so it still participates in ORG CONSTITUTION) but stays below the 0.85
+  // sufficiency gate, same fixture used in case 6 above.
+  const moderateFaq = faqRow({ questionEmbedding: [0.6, 0.8, 0] as unknown as FaqRecordRow["questionEmbedding"] });
+
+  it("1. FAQ sufficient (>=0.85 match) — document-chunk retrieval is never called at all", async () => {
+    mockModelResponse({ answer: "Yes, this is Ditto's standard process.", share: "Yes, we can help with that." });
+    const { repos, findSimilarSpy } = fakeRepos({
+      faqs: [highConfidenceFaq],
+      chunks: [pw(0.05), pw(0.1), pw(0.15)], // present in fixtures — must NOT be fetched
+    });
+    const result = await answerQuery(repos, SCOPE, "Does Ditto facilitate the Chronic Care Rider add-on?", []);
+    expect(findSimilarSpy).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(0);
+    expect(result.meta.retrievedChunkCount).toBe(0);
+  });
+
+  it("2. FAQ insufficient (<0.85) + Policy Wording available — Policy Wording is searched", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const { repos, findSimilarSpy } = fakeRepos({ faqs: [moderateFaq], chunks: [pw(0.1)] });
+    await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(findSimilarSpy).toHaveBeenCalled();
+    const firstCallOptions = findSimilarSpy.mock.calls[0][1];
+    expect(firstCallOptions.documentTypes).toEqual(["policy_wording"]);
+  });
+
+  it("3. Policy Wording sufficient (>=3 strong matches) — Prospectus and Brochure are never searched", async () => {
+    mockModelResponse({ answer: "The room rent limit is 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." });
+    const { repos, findSimilarSpy } = fakeRepos({
+      chunks: [pw(0.1), pw(0.2), pw(0.3), prospectus(0.05), brochure(0.05)], // PW alone should already be enough
+    });
+    await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(findSimilarSpy).toHaveBeenCalledTimes(1);
+    expect(findSimilarSpy.mock.calls[0][1].documentTypes).toEqual(["policy_wording"]);
+  });
+
+  it("4. Policy Wording unavailable (no Policy Wording resources in scope) — Prospectus can be searched, and stops there once sufficient", async () => {
+    mockModelResponse({ answer: "The room rent limit is 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." });
+    const { repos, findSimilarSpy } = fakeRepos({ chunks: [prospectus(0.1), prospectus(0.2), prospectus(0.3)] }); // no policy_wording chunks at all
+    await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(findSimilarSpy).toHaveBeenCalledTimes(2);
+    expect(findSimilarSpy.mock.calls[0][1].documentTypes).toEqual(["policy_wording"]);
+    expect(findSimilarSpy.mock.calls[1][1].documentTypes).toEqual(["prospectus"]);
+  });
+
+  it("5. Policy Wording insufficient (fewer than 3 strong matches) — Prospectus can be searched", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const { repos, findSimilarSpy } = fakeRepos({ chunks: [pw(0.1), prospectus(0.1)] }); // only 1 PW match, only 1 Prospectus match — insufficient at every stage, escalates all the way through
+    await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(findSimilarSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(findSimilarSpy.mock.calls[1][1].documentTypes).toEqual(["prospectus"]);
+  });
+
+  it("6. Prospectus sufficient — Brochure/other is never searched", async () => {
+    mockModelResponse({ answer: "The room rent limit is 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." });
+    const { repos, findSimilarSpy } = fakeRepos({
+      chunks: [pw(0.1), prospectus(0.1), prospectus(0.2), prospectus(0.3), brochure(0.05)],
+    });
+    await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(findSimilarSpy).toHaveBeenCalledTimes(2);
+    for (const call of findSimilarSpy.mock.calls) {
+      expect(call[1].documentTypes).not.toContain("brochure");
+    }
+  });
+
+  it("7. Existing Special Instruction override-conflict short-circuit is unchanged — no retrieval happens at all", async () => {
+    // Two active Override Rules, same topic/scope, genuinely DIFFERENT
+    // instruction text — this is what specialInstructions.ts's
+    // resolveApplicableInstructions treats as a real conflict (identical
+    // text across rows is not a conflict, per its own distinctOverrideTexts
+    // check), triggering the pre-existing hard-stop in answerQuery() that
+    // returns before FAQ/document retrieval ever runs.
+    const conflictingOverride = specialInstructionRow({
+      id: 2,
+      instructionText: "The Chronic Care Rider CAN be back-dated for this insurer under insurer-approved exceptions.",
+    });
+    const { repos, findSimilarSpy } = fakeRepos({
+      specialInstructions: [specialInstructionRow({ id: 1 }), conflictingOverride],
+      chunks: [pw(0.1), pw(0.1), pw(0.1)],
+      faqs: [moderateFaq],
+    });
+    const result = await answerQuery(repos, SCOPE, "Can the Chronic Care Rider be back-dated for this insurer?", []);
+    expect(findSimilarSpy).not.toHaveBeenCalled();
+    expect(result.answer).toContain("more than one active Special Instruction");
+  });
+
+  it("8. Insurer/plan isolation — the same scoped categoryIds are passed to every retrieval stage, never widened", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const { repos, findSimilarSpy } = fakeRepos({ chunks: [pw(0.1), prospectus(0.1)] });
+    await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(findSimilarSpy.mock.calls.length).toBeGreaterThan(0);
+    for (const call of findSimilarSpy.mock.calls) {
+      expect(call[1].categoryIds).toEqual([SCOPE.categoryId]);
+    }
+  });
+});
+
 describe("Product Assist synthesis — no regression (validation case 9)", () => {
   it("a straightforward, already-correct detail answer still passes through unchanged, and internal synthesis never leaks to the client", async () => {
     mockModelResponse({
@@ -474,7 +631,7 @@ describe("Product Assist synthesis — no regression (validation case 9)", () =>
       answer: "The room rent limit for Activ One Max is capped at 1% of Sum Insured per day.\n\n**References**\n- Policy Wording, Section 3.1",
       share: "Room rent is capped at 1% of the sum insured, per day.",
     });
-    const result = await answerQuery(fakeRepos({ chunks: [chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.")] }), SCOPE, "What is the room rent limit for Activ One Max?", []);
+    const result = await answerQuery(fakeReposOnly({ chunks: [chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.")] }), SCOPE, "What is the room rent limit for Activ One Max?", []);
 
     expect(result.answer).toContain("capped at 1% of Sum Insured per day");
     expect(result.share).toBe("Room rent is capped at 1% of the sum insured, per day.");

@@ -48,6 +48,63 @@ describe("KbChunksRepository.findSimilar", () => {
     ]);
   });
 
+  describe("documentTypes filter — progressive source-priority retrieval", () => {
+    let policyWordingResourceId: number;
+
+    beforeEach(async () => {
+      const [category] = await db.select().from(kbCategories);
+      const [pwResource] = await db
+        .insert(kbResources)
+        .values({
+          categoryId: category.id,
+          type: "pdf",
+          title: "Test Policy Wording",
+          documentType: "policy_wording",
+          status: "active",
+          addedBy: "test@joinditto.in",
+        })
+        .returning();
+      policyWordingResourceId = pwResource.id;
+      await repo.bulkInsert([
+        { resourceId: policyWordingResourceId, chunkIndex: 0, content: "policy wording chunk", embedding: fakeEmbedding(0) },
+      ]);
+    });
+
+    it("narrows results to only the requested document type(s), even when a closer-matching chunk exists on another type", async () => {
+      // fakeEmbedding(0) is the exact vector both the brochure's "closest
+      // chunk" (set up in the outer beforeEach) and this policy_wording
+      // chunk were embedded with — without the documentTypes filter, both
+      // would be top matches. With it, only the policy_wording one may
+      // return.
+      const results = await repo.findSimilar(fakeEmbedding(0), { limit: 12, documentTypes: ["policy_wording"] });
+      expect(results.length).toBeGreaterThan(0);
+      for (const r of results) {
+        expect(r.documentType).toBe("policy_wording");
+      }
+      expect(results.some(r => r.resourceId === policyWordingResourceId)).toBe(true);
+    });
+
+    it("supports multiple document types in one call (e.g. the brochure/addon/other fallback tier)", async () => {
+      const results = await repo.findSimilar(fakeEmbedding(0), { limit: 12, documentTypes: ["brochure", "addon", "other"] });
+      expect(results.length).toBeGreaterThan(0);
+      for (const r of results) {
+        expect(["brochure", "addon", "other"]).toContain(r.documentType);
+      }
+    });
+
+    it("an empty/omitted documentTypes filter behaves exactly as before — no restriction", async () => {
+      const results = await repo.findSimilar(fakeEmbedding(0), { limit: 12 });
+      const types = new Set(results.map(r => r.documentType));
+      expect(types.has("brochure")).toBe(true);
+      expect(types.has("policy_wording")).toBe(true);
+    });
+
+    it("limit 0 (a fully-consumed retrieval budget) returns no rows without erroring", async () => {
+      const results = await repo.findSimilar(fakeEmbedding(0), { limit: 0, documentTypes: ["policy_wording"] });
+      expect(results).toEqual([]);
+    });
+  });
+
   afterEach(async () => {
     await db.$client.close();
   });
