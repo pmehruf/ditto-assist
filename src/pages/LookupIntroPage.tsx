@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Sparkles,
   FileSpreadsheet,
@@ -11,7 +11,6 @@ import {
   Megaphone,
   ArrowUpRight,
   Clock,
-  Search,
   AlertTriangle,
   CheckCircle2,
   Zap,
@@ -23,7 +22,7 @@ import { QaDashboardIcon, DeclarationMapIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { AnnouncementStatModal } from "../components/AnnouncementStatModal";
-import { QAAnnouncement, AuditLogEntry } from "../types/announcements";
+import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 
 type HomeTabId =
@@ -176,10 +175,11 @@ interface QuickActionTile {
  *     slightly more visual weight than the tier below it.
  *  2. SECONDARY — Quality & References: QA Dashboard, Plan References,
  *     Declaration Map — same tile pattern, deliberately more compact.
- *  3. SUPPORTING — Quick Peek: QA Performance (hero) + Recent Searches
- *     (compact) in one row, then a full-width Latest Updates strip
- *     (Announcements' real content, not just a stat tile — see that
- *     section below) closing out the page.
+ *  3. SUPPORTING — Quick Peek: QA Performance full-width, then a
+ *     full-width Latest Updates strip (Announcements' real content, not
+ *     just a stat tile — see that section below) closing out the page.
+ *     (Recent Searches was removed from Home — My Activity is still the
+ *     dedicated place to browse search history.)
  * Layout is genuinely responsive (CSS Grid/Flex with real breakpoints, no
  * fixed-canvas scaling) — see App.tsx's #main-scrollable-body comment for
  * the matching overflow change this replaces (a fixed-width layout
@@ -297,43 +297,6 @@ export function LookupIntroPage({
   const QUICK_ACTIONS = [...visibleAdvisory, ...visibleQuality];
 
   const expandedTile = QUICK_ACTIONS.find((mod) => mod.id === expandedTileId) || null;
-
-  // Recent Declaration Searches + Recently Used Plans — real data from the
-  // same /api/search-history endpoint My Activity uses, latest 5 entries.
-  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
-  const [entriesLoading, setEntriesLoading] = useState(true);
-
-  useEffect(() => {
-    const userEmail = currentUser?.email || "";
-    if (!userEmail) {
-      setEntriesLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setEntriesLoading(true);
-    const params = new URLSearchParams({
-      paginated: "1",
-      userEmail,
-      page: "1",
-      pageSize: "5",
-      sortBy: "timestamp",
-      sortDir: "desc",
-    });
-    fetch(`/api/search-history?${params.toString()}`)
-      .then(async (res) => {
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-        if (cancelled) return;
-        setEntries(body.entries || []);
-      })
-      .catch((err) => console.error("Failed to load recent searches:", err))
-      .finally(() => {
-        if (!cancelled) setEntriesLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser?.email]);
 
   // Weekly Announcements stats — from the full (uncapped) list, not the
   // capped activeAnnouncements, so these counts are accurate even when more
@@ -591,77 +554,24 @@ export function LookupIntroPage({
             either group above) is currently expanded. */}
         {quickGuidePanel}
 
-        {/* SUPPORTING — Quick Peek. Row 1 puts QA Performance forward as the
-            hero (2fr of a 2fr/1fr split on large screens, full width and
-            stacked above Recent Searches on anything narrower) — real
-            day-to-day signal (a rating trend) outranks a short list of past
-            searches. Row 2 is a full-width Latest Updates strip (the real
-            announcement content, not just counts — see latestItems above),
-            which also gives Announcements the room a plain 2-column split
-            didn't have. */}
+        {/* SUPPORTING — Quick Peek. Row 1 is QA Performance, full width
+            (Recent Searches, which used to share this row, was removed
+            from Home). Row 2 is a full-width Latest Updates strip (the
+            real announcement content, not just counts — see latestItems
+            above). */}
         <div className="flex flex-col gap-[clamp(6px,1.2vh,16px)]">
           <SectionLabel icon={<Clock className="w-3.5 h-3.5" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
 
-          {/* ROW 1 — QA Performance (hero) + Recent Searches (compact).
-              NOTE: an arbitrary-value track list like "2fr_1fr" compiles to
-              a literal `2fr 1fr` — unlike Tailwind's numbered grid-cols-N
-              utilities, it is NOT wrapped in minmax(0, ...), so a track can
-              grow past the available width to fit a child's intrinsic
-              content and force the whole page to overflow horizontally
-              (only "fixed" by zooming out). Wrapping each track in
-              minmax(0, ...) keeps both columns free to shrink to the
-              container's real width. */}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(6px,1.2vh,16px)]">
-            <div className="min-w-0">
-              <QaPerformancePeek
-                theme={theme}
-                userEmail={currentUser?.email || ""}
-                onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
-              />
-            </div>
-
-            <div className={`${cardClass} lg:self-start min-w-0`}>
-              {cardHeader("Recent Searches", <Clock className="w-4 h-4" />, () => setActiveTab("my_activity"), "#FB923C")}
-              {entriesLoading ? (
-                <div className="space-y-2.5 animate-pulse">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className={`h-9 rounded-lg ${theme === "dark" ? "bg-white/[0.04]" : "bg-stone-200/60"}`} />
-                  ))}
-                </div>
-              ) : entries.length === 0 ? (
-                <div className={`flex flex-col items-center justify-center text-center py-4 gap-1.5 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
-                  <Search className="w-5 h-5 opacity-50" />
-                  <span className="text-[13px] font-medium">No searches yet — your recent lookups will show up here.</span>
-                </div>
-              ) : (
-                <div className="flex flex-col divide-y divide-dashed" style={{ borderColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(168,162,158,0.35)" }}>
-                  {entries.slice(0, 3).map((entry, idx) => (
-                    <button
-                      type="button"
-                      key={`${entry.timestamp}-${idx}`}
-                      onClick={() => setActiveTab("my_activity")}
-                      className={`flex items-center justify-between gap-3 py-[clamp(4px,0.6vh,6px)] text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
-                        theme === "dark" ? "hover:bg-white/[0.03]" : "hover:bg-stone-100/60"
-                      }`}
-                      title="Open in My Activity"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className={`text-[14px] font-extrabold tracking-tight truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-                          {entry.pedInput}
-                        </div>
-                        <div className={`text-[11.5px] font-normal truncate ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
-                          {entry.planName || "—"}
-                        </div>
-                      </div>
-                      <span className={`text-[11px] font-normal shrink-0 ${theme === "dark" ? "text-stone-600" : "text-stone-400"}`}>
-                        {formatRelativeTime(entry.timestamp)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* ROW 1 — QA Performance, full width. Recent Searches (which
+              used to share this row in a 2fr/1fr grid) was removed from
+              Home; QaPerformancePeek now simply takes the row's full
+              width like any other single flex child — no grid track
+              needed. */}
+          <QaPerformancePeek
+            theme={theme}
+            userEmail={currentUser?.email || ""}
+            onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
+          />
 
           {/* ROW 2 — LATEST UPDATES. Full-width horizontal strip: a compact
               stat row (click any number to see exactly which announcements
