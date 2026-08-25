@@ -521,6 +521,14 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
     setCurrentSessionId(null);
     setMessages([]);
     setSendError(null);
+    // Insurer/plan scope is per-conversation, not a sticky global default —
+    // without this, the picker stayed unlocked (scopeLocked correctly goes
+    // false once messages/currentSessionId clear) but still showed
+    // whichever insurer/plan the previous chat had selected, so "New Chat"
+    // looked like it silently carried over the old scope instead of
+    // starting fresh.
+    setSelectedCategoryValue("");
+    setSelectedPlanTags([]);
   };
 
   const openSession = (session: LocalChatSession) => {
