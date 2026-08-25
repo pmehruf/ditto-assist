@@ -410,19 +410,18 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           Payments QA as three CENTERED zones distributed across the card's
           full width (roughly 40% / 30% / 30%, via flex-[1.4]/flex-1/flex-1
           on a flex-1 row so the split is always proportional to whatever
-          width this card actually has, not a fixed px split). Each zone
-          centers its own content (label, stars-then-number stacked, and
-          supporting line) rather than left-aligning it — on a wide card,
-          left-aligned content inside a wide flex-grow zone reads as "stuck
-          to the left edge with dead space trailing after it" (worst after
-          Payments QA, the rightmost/last zone); centering distributes each
-          zone's whitespace evenly on both sides instead, so the row reads
-          as three balanced blocks rather than content bunched at the left
-          of a mostly-empty card. Consolidated keeps the strongest
-          hierarchy (bigger stars/number, plus the tier badge, trend and
-          last-month line the other two don't get). */}
-      <div className="flex items-stretch flex-1">
-        <div className="min-w-0 px-3 flex-[1.4] flex flex-col items-center text-center justify-center">
+          width this card actually has, not a fixed px split). No vertical
+          divider lines between zones — a hard rule reads as "three
+          separate widgets"; a single shared `gap` on the row does the same
+          separation job as plain whitespace instead, so the row reads as
+          one unified KPI panel. Each zone centers its own content (label,
+          stars-then-number stacked, and supporting line) rather than
+          left-aligning it, so each zone's whitespace distributes evenly on
+          both sides instead of pooling after the last one. Consolidated
+          keeps the strongest hierarchy (bigger stars/number, plus the tier
+          badge, trend and last-month line the other two don't get). */}
+      <div className="flex items-stretch flex-1 gap-6 sm:gap-8">
+        <div className="min-w-0 flex-[1.4] flex flex-col items-center text-center justify-center">
           <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
@@ -482,28 +481,22 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
         ] as const).map(([label, score, count]) => {
           const t = tierFor(score, theme);
           return (
-            <div key={label} className="flex items-stretch flex-1 min-w-0">
-              <div
-                className="w-px self-stretch shrink-0"
-                style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(168,162,158,0.35)" }}
-              />
-              <div className="min-w-0 px-3 flex-1 flex flex-col items-center text-center justify-center">
-                <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
-                  {label}
-                </div>
-                {/* Tier-colored here, neutral white on Consolidated above —
-                    the reverse of "everything tier-colored" — so Consolidated
-                    reads as the plain hero number and Lead/Payments carry the
-                    tier signal beside it. */}
-                <div className="flex flex-col items-center gap-1 mb-[clamp(2px,0.4vh,6px)]">
-                  <StarRating score={score} size={16} color="#FBBF24" />
-                  <span className="text-[22px] leading-none font-black font-mono" style={{ color: t.color }}>
-                    {score !== null ? score.toFixed(2) : "—"}
-                  </span>
-                </div>
-                <div className={`text-[11.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
-                  {count > 0 ? `${count.toLocaleString("en-IN")} evaluation${count === 1 ? "" : "s"}` : "No evaluations yet"}
-                </div>
+            <div key={label} className="min-w-0 flex-1 flex flex-col items-center text-center justify-center">
+              <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                {label}
+              </div>
+              {/* Tier-colored here, neutral white on Consolidated above —
+                  the reverse of "everything tier-colored" — so Consolidated
+                  reads as the plain hero number and Lead/Payments carry the
+                  tier signal beside it. */}
+              <div className="flex flex-col items-center gap-1 mb-[clamp(2px,0.4vh,6px)]">
+                <StarRating score={score} size={16} color="#FBBF24" />
+                <span className="text-[22px] leading-none font-black font-mono" style={{ color: t.color }}>
+                  {score !== null ? score.toFixed(2) : "—"}
+                </span>
+              </div>
+              <div className={`text-[11.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+                {count > 0 ? `${count.toLocaleString("en-IN")} evaluation${count === 1 ? "" : "s"}` : "No evaluations yet"}
               </div>
             </div>
           );
