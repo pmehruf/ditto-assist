@@ -328,7 +328,12 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
     };
   }, []);
 
-  const cardClass = `relative rounded-2xl border p-5 flex flex-col ${
+  // This card is used exclusively by the Home dashboard (LookupIntroPage.tsx)
+  // — vertical padding/margins below use clamp(floor, Xvh, ceiling) so this
+  // supporting-tier card compresses on a short viewport instead of forcing
+  // the page taller than it needs to be. Horizontal padding and all font
+  // sizes are untouched.
+  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
@@ -342,7 +347,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   if (state.kind === "loading") {
     return (
       <div className={cardClass}>
-        <div className="flex items-center justify-between mb-3.5">
+        <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)]">
           <div className="flex items-center gap-2 select-none">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
               <Star className="w-4 h-4" />
@@ -361,7 +366,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   if (state.kind === "unavailable") {
     return (
       <div className={cardClass}>
-        <div className="flex items-center gap-2 select-none mb-3.5">
+        <div className="flex items-center gap-2 select-none mb-[clamp(6px,1vh,14px)]">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
             <Star className="w-4 h-4" />
           </div>
@@ -380,7 +385,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
 
   return (
     <div className={cardClass}>
-      <div className="flex items-center justify-between mb-3.5">
+      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)]">
         <div className="flex items-center gap-2 select-none min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
             <Star className="w-4 h-4" />
@@ -413,10 +418,10 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           left with the rest of the row empty beside it. */}
       <div className="flex items-stretch flex-1">
         <div className="min-w-0 pr-6 flex-[1.35] flex flex-col justify-center">
-          <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-2 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+          <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
-          <div className="flex items-baseline gap-3 mb-2 flex-wrap">
+          <div className="flex items-baseline gap-3 mb-[clamp(3px,0.6vh,8px)] flex-wrap">
             {/* Stars stay a fixed amber (same accent as this card's own
                 header icon) rather than the tier color — with the score
                 number and "Excellent" badge both already using tier.color
@@ -429,7 +434,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
               {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
             </span>
           </div>
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <div className="flex items-center gap-2 mb-[clamp(3px,0.6vh,8px)] flex-wrap">
             <span
               className="text-[12.5px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
               style={{ color: tier.color, backgroundColor: tier.subtle }}
@@ -475,14 +480,14 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
                 style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(168,162,158,0.35)" }}
               />
               <div className="min-w-0 px-6 flex flex-col justify-center">
-                <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-2 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
                   {label}
                 </div>
                 {/* Tier-colored here, neutral white on Consolidated above —
                     the reverse of "everything tier-colored" — so Consolidated
                     reads as the plain hero number and Lead/Payments carry the
                     tier signal beside it. */}
-                <div className="flex items-baseline gap-2 mb-1.5 flex-wrap">
+                <div className="flex items-baseline gap-2 mb-[clamp(2px,0.4vh,6px)] flex-wrap">
                   <StarRating score={score} size={17} color="#FBBF24" />
                   <span className="text-[22px] leading-none font-black font-mono" style={{ color: t.color }}>
                     {score !== null ? score.toFixed(2) : "—"}
@@ -505,7 +510,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           showing a made-up time. */}
       {lastRunAt && (
         <div
-          className={`flex items-center justify-end gap-1 text-[11px] font-medium mt-auto pt-2.5 ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
+          className={`flex items-center justify-end gap-1 text-[11px] font-medium mt-auto pt-[clamp(3px,0.6vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
         >
           <Clock className="w-2.5 h-2.5 shrink-0" />
           Data last updated {formatRelativeTime(lastRunAt)}

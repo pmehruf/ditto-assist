@@ -135,11 +135,14 @@ function SectionLabel({
   /** "lg" gives Advisory Workspace (the primary section) a touch more
    * visual weight than the "md" secondary/supporting sections use — the
    * only difference between them is type size, never a heavier card
-   * treatment, so the hierarchy stays legible without reading as heavy. */
+   * treatment, so the hierarchy stays legible without reading as heavy.
+   * It also keeps a slightly higher minimum bottom margin than "md" on a
+   * short viewport, so the primary section compresses less than
+   * secondary/supporting ones as available height shrinks. */
   size?: "md" | "lg";
 }) {
   return (
-    <div className="flex items-center gap-2 select-none mb-3">
+    <div className={`flex items-center gap-2 select-none ${size === "lg" ? "mb-[clamp(6px,1vh,12px)]" : "mb-[clamp(3px,0.7vh,12px)]"}`}>
       <span style={{ color: hex }}>{icon}</span>
       <span
         style={{ color: hex }}
@@ -358,14 +361,20 @@ export function LookupIntroPage({
   // has to re-derive the filter itself.
   const [openStat, setOpenStat] = useState<{ title: string; list: QAAnnouncement[] } | null>(null);
 
-  const cardClass = `rounded-2xl border p-4 sm:p-5 flex flex-col ${
+  // Vertical padding/gaps below use clamp(floor, Xvh, ceiling) instead of
+  // fixed px so this — the SUPPORTING tier (Quick Peek/Latest Updates) —
+  // compresses first and furthest as available viewport height shrinks,
+  // per the required priority order (Advisory Workspace > Quality &
+  // References > Quick Peek > Latest Updates). Horizontal padding is
+  // untouched (still width-responsive via sm:).
+  const cardClass = `rounded-2xl border px-4 sm:px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
   const cardHeader = (label: string, icon: ReactNode, onOpen: () => void, hex: string) => {
     const resolvedHex = lightSafe(hex, theme);
     return (
-      <div className="flex items-center justify-between mb-3.5 gap-2">
+      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] gap-2">
         <div className="flex items-center gap-2 select-none min-w-0">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
@@ -411,7 +420,7 @@ export function LookupIntroPage({
         // full assigned width at every breakpoint instead of only its
         // top-left corner.
         className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 cursor-pointer hover:-translate-y-0.5 min-w-0 ${
-          compact ? "p-3" : "p-3.5"
+          compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(10px,1.4vh,14px)]"
         } ${
           expanded
             ? theme === "dark"
@@ -450,36 +459,40 @@ export function LookupIntroPage({
     );
   };
 
-  const quickGuidePanel = (
-    <div className={`grid transition-all duration-300 ease-out ${expandedTile ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0 mt-0"}`}>
-      <div className="overflow-hidden">
-        {expandedTile && (
-          <div
-            className="rounded-xl border-l-[3px] pl-4 pr-4 py-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5"
-            style={{
-              borderLeftColor: lightSafe(expandedTile.hex, theme),
-              backgroundColor: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(250,250,249,0.6)",
-            }}
-          >
-            <div className="flex items-start gap-2.5 flex-1 min-w-0">
-              <span className="shrink-0 mt-0.5" style={{ color: lightSafe(expandedTile.hex, theme) }}>
-                {expandedTile.id === "lookup" ? <AlertTriangle className="w-[18px] h-[18px]" /> : expandedTile.icon}
-              </span>
-              <div className="min-w-0">
-                <div className="text-[11px] font-black uppercase tracking-wide mb-1" style={{ color: lightSafe(expandedTile.hex, theme) }}>
-                  {expandedTile.id === "lookup" ? "Before You Start" : "Quick Guide"}
-                </div>
-                <p className={`text-[14px] leading-relaxed font-medium ${theme === "dark" ? "text-white/80" : "text-stone-700"}`}>
-                  {expandedTile.instructions}
-                </p>
-              </div>
-            </div>
-            <PrimaryCtaButton theme={theme} onClick={expandedTile.onOpen} className="shrink-0 self-start sm:self-center">
-              {expandedTile.ctaLabel}
-            </PrimaryCtaButton>
+  // Conditionally mounted (not just visually collapsed) — a Tailwind flex
+  // `gap` inserts space around EVERY flex child regardless of that child's
+  // own rendered height, so the previous always-mounted-but-0-height
+  // (grid-rows-[0fr]) version silently wasted two full section gaps in the
+  // default/idle state (nothing expanded), which is the page's normal
+  // resting state. Unmounting it entirely when idle removes that dead
+  // space; the tradeoff is the close transition is now an unmount instead
+  // of an animated collapse, which only affects switching/closing, not the
+  // far more common "load Home, nothing open yet" case.
+  const quickGuidePanel = expandedTile && (
+    <div
+      key={expandedTile.id}
+      className="rounded-xl border-l-[3px] pl-4 pr-4 py-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 animate-fade-in"
+      style={{
+        borderLeftColor: lightSafe(expandedTile.hex, theme),
+        backgroundColor: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(250,250,249,0.6)",
+      }}
+    >
+      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+        <span className="shrink-0 mt-0.5" style={{ color: lightSafe(expandedTile.hex, theme) }}>
+          {expandedTile.id === "lookup" ? <AlertTriangle className="w-[18px] h-[18px]" /> : expandedTile.icon}
+        </span>
+        <div className="min-w-0">
+          <div className="text-[11px] font-black uppercase tracking-wide mb-1" style={{ color: lightSafe(expandedTile.hex, theme) }}>
+            {expandedTile.id === "lookup" ? "Before You Start" : "Quick Guide"}
           </div>
-        )}
+          <p className={`text-[14px] leading-relaxed font-medium ${theme === "dark" ? "text-white/80" : "text-stone-700"}`}>
+            {expandedTile.instructions}
+          </p>
+        </div>
       </div>
+      <PrimaryCtaButton theme={theme} onClick={expandedTile.onOpen} className="shrink-0 self-start sm:self-center">
+        {expandedTile.ctaLabel}
+      </PrimaryCtaButton>
     </div>
   );
 
@@ -525,7 +538,13 @@ export function LookupIntroPage({
   return (
     <>
       <div
-        className={`w-full max-w-[1680px] mx-auto font-sans flex flex-col gap-4 lg:gap-6 pb-3 ${
+        // Section rhythm scales with actual viewport HEIGHT (clamp on vh)
+        // instead of a fixed px gap — a tall monitor gets the original
+        // comfortable spacing, a shorter browser viewport (real monitor
+        // height minus tab strip/bookmarks bar/app header) gets a
+        // proportionally tighter one, so the page fits at 100% zoom
+        // without relying on the user zooming out.
+        className={`w-full max-w-[1680px] mx-auto font-sans flex flex-col gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
           theme === "dark" ? "text-[#FFFFFF]" : "text-stone-900"
         }`}
       >
@@ -550,7 +569,7 @@ export function LookupIntroPage({
         {visibleAdvisory.length > 0 && (
           <div>
             <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Advisory Workspace" hex={lightSafe("#0EA5E9", theme)} size="lg" />
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 gap-[clamp(8px,1.2vh,12px)]">
               {visibleAdvisory.map((mod) => renderTile(mod, false))}
             </div>
           </div>
@@ -562,7 +581,7 @@ export function LookupIntroPage({
         {visibleQuality.length > 0 && (
           <div>
             <SectionLabel icon={<Layers className="w-3.5 h-3.5" />} text="Quality & References" hex={lightSafe("#64748B", theme)} />
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 gap-[clamp(6px,1vh,10px)]">
               {visibleQuality.map((mod) => renderTile(mod, true))}
             </div>
           </div>
@@ -580,7 +599,7 @@ export function LookupIntroPage({
             announcement content, not just counts — see latestItems above),
             which also gives Announcements the room a plain 2-column split
             didn't have. */}
-        <div className="flex flex-col gap-3 lg:gap-4">
+        <div className="flex flex-col gap-[clamp(6px,1.2vh,16px)]">
           <SectionLabel icon={<Clock className="w-3.5 h-3.5" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
 
           {/* ROW 1 — QA Performance (hero) + Recent Searches (compact).
@@ -592,7 +611,7 @@ export function LookupIntroPage({
               (only "fixed" by zooming out). Wrapping each track in
               minmax(0, ...) keeps both columns free to shrink to the
               container's real width. */}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3 lg:gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(6px,1.2vh,16px)]">
             <div className="min-w-0">
               <QaPerformancePeek
                 theme={theme}
@@ -621,7 +640,7 @@ export function LookupIntroPage({
                       type="button"
                       key={`${entry.timestamp}-${idx}`}
                       onClick={() => setActiveTab("my_activity")}
-                      className={`flex items-center justify-between gap-3 py-1.5 text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
+                      className={`flex items-center justify-between gap-3 py-[clamp(4px,0.6vh,6px)] text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
                         theme === "dark" ? "hover:bg-white/[0.03]" : "hover:bg-stone-100/60"
                       }`}
                       title="Open in My Activity"
@@ -659,16 +678,16 @@ export function LookupIntroPage({
             }
           >
             {cardHeader("Latest Updates", <Megaphone className="w-4 h-4" />, () => setActiveTab("announcement_archive"), "#FB7185")}
-            <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex flex-col lg:flex-row gap-[clamp(6px,1.2vh,16px)]">
               {/* Mini stat row */}
-              <div className="grid grid-cols-3 lg:flex lg:flex-col gap-2 lg:w-36 shrink-0">
+              <div className="grid grid-cols-3 lg:flex lg:flex-col gap-[clamp(4px,0.6vh,8px)] lg:w-36 shrink-0">
                 {statTiles.map((stat) => (
                   <button
                     key={stat.label}
                     type="button"
                     onClick={() => setOpenStat({ title: stat.title, list: [...stat.list] })}
                     title={`View ${stat.title.toLowerCase()}`}
-                    className={`relative w-full flex lg:flex-row flex-col items-center justify-center lg:justify-start gap-1 lg:gap-2 rounded-xl border py-2 px-2 text-center lg:text-left cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
+                    className={`relative w-full flex lg:flex-row flex-col items-center justify-center lg:justify-start gap-1 lg:gap-2 rounded-xl border py-[clamp(4px,0.8vh,8px)] px-2 text-center lg:text-left cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
                       theme === "dark"
                         ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.16]"
                         : "border-stone-200 bg-stone-50/70 hover:bg-white hover:border-stone-300 hover:shadow-sm"
@@ -714,7 +733,7 @@ export function LookupIntroPage({
                           type="button"
                           key={item.id}
                           onClick={() => (item.effectiveDate ? onOpenAnnouncementsForDate(item.effectiveDate) : setActiveTab("announcement_archive"))}
-                          className={`flex items-center gap-2.5 py-1.5 text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
+                          className={`flex items-center gap-2.5 py-[clamp(4px,0.6vh,6px)] text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
                             theme === "dark" ? "hover:bg-white/[0.03]" : "hover:bg-stone-100/60"
                           }`}
                           title="Open in Announcements"
