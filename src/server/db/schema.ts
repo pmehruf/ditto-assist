@@ -1900,3 +1900,49 @@ export const faqRecords = pgTable(
 
 export type FaqRecordRow = typeof faqRecords.$inferSelect;
 export type NewFaqRecordRow = typeof faqRecords.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// advisor_directory_sync_state — one row per directory user this app's
+// Advisor Directory Sync (src/server/qaDashboard/advisorDirectorySync.ts)
+// has ever touched, tracking EXACTLY what it last wrote to that user's
+// department/team/role/tags. Not a duplicate of the user directory — a
+// separate "who owns this field's current value" ledger, so a later sync
+// run can:
+//   1. Skip a re-write when the sheet's desired state already matches what
+//      was applied last time (idempotent no-op, not counted as "updated").
+//   2. Safely UNDO its own assignment when a user drops off "Currently
+//      Employed" — but ONLY the specific field values it recorded here as
+//      self-applied, and ONLY if the user's live value still equals that
+//      recorded value. If a Developer/Platform Admin has since manually
+//      changed the field (live value != what's recorded here), the sync
+//      leaves it alone — this table is what makes "do not overwrite
+//      manually managed fields unless explicitly owned by this sync"
+//      possible without guessing at intent.
+// A missing row for a given user simply means the sync has never touched
+// them — nothing to compare against, nothing to revert.
+// ─────────────────────────────────────────────────────────────────────────
+export const advisorDirectorySyncState = pgTable("advisor_directory_sync_state", {
+  userEmail: varchar("user_email", { length: 320 })
+    .primaryKey()
+    .references(() => users.email, { onDelete: "cascade" }),
+  // master_advisors identity this row was last matched against — display/
+  // debugging only, no FK (the sheet is external, not a DB table).
+  sheetTactId: text("sheet_tact_id"),
+  // This sync's last-seen employment status for this user. false the
+  // instant a sync run either sees "not Currently Employed" or no longer
+  // finds the row at all.
+  currentlyEmployed: boolean("currently_employed").notNull().default(false),
+  // The exact Department/Team/Role/tag values THIS sync wrote, or null in
+  // each slot once reverted (see the table comment above) — never a
+  // snapshot of the user's current live value, which may have since moved
+  // on independently (a manual edit, or a different subsystem).
+  appliedDepartmentId: integer("applied_department_id").references(() => departments.id, { onDelete: "set null" }),
+  appliedOrgTeamId: integer("applied_org_team_id").references(() => orgTeams.id, { onDelete: "set null" }),
+  appliedRoleId: integer("applied_role_id").references(() => roles.id, { onDelete: "set null" }),
+  appliedProductTags: text("applied_product_tags").array().notNull().default([]),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSyncedBy: text("last_synced_by").notNull(),
+});
+
+export type AdvisorDirectorySyncStateRow = typeof advisorDirectorySyncState.$inferSelect;
+export type NewAdvisorDirectorySyncStateRow = typeof advisorDirectorySyncState.$inferInsert;

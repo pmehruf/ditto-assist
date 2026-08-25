@@ -52,6 +52,7 @@ import { ProductAssistQuotaSettingsRepository } from "./productAssistQuotaSettin
 import { ProductAssistUserQuotaOverridesRepository } from "./productAssistUserQuotaOverridesRepository.js";
 import { ProductAssistExtraCreditGrantsRepository } from "./productAssistExtraCreditGrantsRepository.js";
 import { ProductAssistUsageLedgerRepository } from "./productAssistUsageLedgerRepository.js";
+import { AdvisorDirectorySyncStateRepository } from "./advisorDirectorySyncStateRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -201,6 +202,9 @@ export type {
   CompanyUsageTotals,
 } from "./productAssistUsageLedgerRepository.js";
 
+export { AdvisorDirectorySyncStateRepository } from "./advisorDirectorySyncStateRepository.js";
+export type { UpsertAdvisorSyncStateEntry } from "./advisorDirectorySyncStateRepository.js";
+
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
  * intended entry point for API routes (`createRepositories(getDb())`) and
@@ -256,6 +260,7 @@ export interface Repositories {
   productAssistUserQuotaOverrides: ProductAssistUserQuotaOverridesRepository;
   productAssistExtraCreditGrants: ProductAssistExtraCreditGrantsRepository;
   productAssistUsageLedger: ProductAssistUsageLedgerRepository;
+  advisorDirectorySyncState: AdvisorDirectorySyncStateRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -308,5 +313,6 @@ export function createRepositories(db: AnyDb): Repositories {
     productAssistUserQuotaOverrides: new ProductAssistUserQuotaOverridesRepository(db),
     productAssistExtraCreditGrants: new ProductAssistExtraCreditGrantsRepository(db),
     productAssistUsageLedger: new ProductAssistUsageLedgerRepository(db),
+    advisorDirectorySyncState: new AdvisorDirectorySyncStateRepository(db),
   };
 }

@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink, Download, ExternalLink } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Link2, RefreshCw, Unlink, Download, ExternalLink, Users, PlayCircle } from "lucide-react";
 import { KnowledgeBasePlaybook } from "../components/KnowledgeBasePlaybook";
 import { KnowledgeBaseFaqConnection } from "../components/KnowledgeBaseFaqConnection";
 
@@ -65,6 +65,43 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
       setQaConnectionError(err instanceof Error ? err.message : "Failed to disconnect.");
     } finally {
       setQaDisconnecting(false);
+    }
+  };
+
+  // Advisor Directory Sync (2026-08) — master_advisors -> users.department/
+  // team/role/tags, via the SAME QA Dashboard Sheets connection above (no
+  // separate connect/disconnect of its own). See server.ts's
+  // /api/qa-dashboard/advisor-directory-sync and advisorDirectorySync.ts.
+  interface AdvisorSyncResult {
+    recordsRead: number;
+    currentlyEmployedRecords: number;
+    usersMatched: number;
+    usersUpdated: number;
+    usersUnchanged: number;
+    usersReverted: number;
+    usersSkippedNotFound: number;
+    unrecognizedProductRecords: number;
+    notFoundSamples: { tactId: string; email: string | null; name: string }[];
+    errors: string[];
+    syncedAt: string;
+  }
+  const [advisorSyncRunning, setAdvisorSyncRunning] = useState(false);
+  const [advisorSyncResult, setAdvisorSyncResult] = useState<AdvisorSyncResult | null>(null);
+  const [advisorSyncError, setAdvisorSyncError] = useState<string | null>(null);
+
+  const runAdvisorDirectorySync = async () => {
+    setAdvisorSyncRunning(true);
+    setAdvisorSyncError(null);
+    try {
+      const res = await fetch("/api/qa-dashboard/advisor-directory-sync", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Sync failed (HTTP ${res.status}).`);
+      setAdvisorSyncResult(body);
+      if (body.errors?.length) setAdvisorSyncError(body.errors.join(" "));
+    } catch (err) {
+      setAdvisorSyncError(err instanceof Error ? err.message : "Advisor Directory Sync failed.");
+    } finally {
+      setAdvisorSyncRunning(false);
     }
   };
 
@@ -244,6 +281,90 @@ export function ConnectionsPage({ theme, effectiveTier }: ConnectionsPageProps) 
             )}
           </div>
         </div>
+      </div>
+
+      {/* Advisor Directory Sync — reuses the QA Dashboard connection above (no
+          separate OAuth grant). Syncs Department=Advisory / Team=Bliss /
+          Role=Advisor + Health/Term tags onto every directory user matched
+          against a "Currently Employed" master_advisors row. */}
+      <div className={`p-5 ${cardClass}`}>
+        <div className="flex items-center justify-between pb-2 mb-3 border-b border-light-stone/5 dark:border-stone-800">
+          <h3 className={`text-sm font-black uppercase tracking-wider flex items-center gap-2 ${dark ? "text-white" : "text-stone-900"}`}>
+            <Users className="w-4 h-4" />
+            Advisor Directory Sync
+          </h3>
+          <button
+            type="button"
+            onClick={runAdvisorDirectorySync}
+            disabled={advisorSyncRunning}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              dark ? "border-sky-500/40 text-sky-300 hover:bg-sky-500/10" : "border-sky-300 text-sky-700 hover:bg-sky-50"
+            }`}
+          >
+            <PlayCircle className={`w-3.5 h-3.5 ${advisorSyncRunning ? "animate-spin" : ""}`} />
+            {advisorSyncRunning ? "Syncing…" : "Sync Advisor Directory"}
+          </button>
+        </div>
+
+        <p className={`text-[10.5px] mb-3 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+          Matches every "Currently Employed" master_advisors row to a directory user by email (falling back to TACT ID), then
+          sets Department = Advisory, Team = Bliss, Role = Advisor, and Health/Term tags from the sheet's Product column.
+          Never creates or deletes users. Safe to re-run — unchanged users are skipped, and a user who leaves "Currently
+          Employed" has only this sync's own prior assignment reverted, never a value you've since changed by hand.
+        </p>
+
+        {advisorSyncError && (
+          <div
+            className={`flex items-start gap-2 p-3 mb-3 rounded-lg border text-xs font-semibold ${
+              dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{advisorSyncError}</span>
+          </div>
+        )}
+
+        {advisorSyncResult && advisorSyncResult.errors.length === 0 && (
+          <div className={`rounded-lg border p-3 ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-white border-[#D2DFEC]"}`}>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <CheckCircle2 className={`w-4 h-4 shrink-0 ${dark ? "text-emerald-300" : "text-emerald-600"}`} />
+              <span className={`text-xs font-bold ${dark ? "text-white" : "text-stone-900"}`}>
+                Synced {new Date(advisorSyncResult.syncedAt).toLocaleString()}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+              {[
+                ["Records read", advisorSyncResult.recordsRead],
+                ["Currently employed", advisorSyncResult.currentlyEmployedRecords],
+                ["Users matched", advisorSyncResult.usersMatched],
+                ["Users updated", advisorSyncResult.usersUpdated + advisorSyncResult.usersReverted],
+                ["Unchanged", advisorSyncResult.usersUnchanged],
+                ["Reverted (left employment)", advisorSyncResult.usersReverted],
+                ["Skipped / not found", advisorSyncResult.usersSkippedNotFound],
+                ["Unrecognized Product value", advisorSyncResult.unrecognizedProductRecords],
+              ].map(([label, value]) => (
+                <div key={label as string} className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
+                  <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>{label}</p>
+                  <p className={`text-sm font-black mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{value as number}</p>
+                </div>
+              ))}
+            </div>
+            {advisorSyncResult.notFoundSamples.length > 0 && (
+              <div className="mt-2">
+                <p className={`text-[10px] font-black uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                  Not found in the directory (first {advisorSyncResult.notFoundSamples.length})
+                </p>
+                <div className={`text-[10.5px] font-mono space-y-0.5 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                  {advisorSyncResult.notFoundSamples.map((s, i) => (
+                    <div key={i}>
+                      {s.tactId || "—"} · {s.email || "no email"} · {s.name}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Product Assist Log Export — Google Sheets connection. TEMPORARY (see

@@ -65,6 +65,11 @@ export interface Advisor {
    * only, see EMPLOYED_STATUS_VALUES) — just attached to the advisor
    * record for the User Directory / a future skill-domain-based feature. */
   skillDomain: string | null;
+  /** master_advisors "Email ID" column — same lookup getAdvisorByEmail
+   * already uses. Added (additive-only, no existing field changed) for
+   * advisorDirectorySync.ts's email-based directory matching; every other
+   * consumer of Advisor already ignores fields it doesn't use. */
+  email: string | null;
 }
 
 export interface DateFilters {
@@ -244,6 +249,22 @@ function readSkillDomain(headers: string[], row: unknown[]): string | null {
 
 // ==================== IDENTITY ====================
 
+/** "Email ID" header lookup, tolerant of a missing column (some advisor
+ * sheets predate the column, or a future header rename) — returns -1
+ * rather than throwing, matching guideColIndex/mentorColIndex's pattern
+ * rather than colIndex's throwing one, since email is optional context
+ * here, not a hard requirement for every existing caller of this file. */
+function emailColIndex(headers: string[]): number {
+  const idx = headers.indexOf("Email ID");
+  return idx;
+}
+function readEmail(headers: string[], row: unknown[]): string | null {
+  const idx = emailColIndex(headers);
+  if (idx === -1) return null;
+  const v = row[idx];
+  return v != null && String(v).trim() ? String(v).trim().toLowerCase() : null;
+}
+
 export async function getAdvisorByEmail(email: string): Promise<Advisor | null> {
   const { headers, rows } = await getSheetDataCached(SHEETS.MASTER_ADVISORS);
   const emailCol = colIndex(headers, "Email ID");
@@ -261,6 +282,7 @@ export async function getAdvisorByEmail(email: string): Promise<Advisor | null> 
         guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
         mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
         skillDomain: readSkillDomain(headers, row),
+        email: readEmail(headers, row),
       };
     }
   }
@@ -283,6 +305,7 @@ export async function findAdvisorByTactId(tactId: string): Promise<Advisor | nul
         guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
         mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
         skillDomain: readSkillDomain(headers, row),
+        email: readEmail(headers, row),
       };
     }
   }
@@ -317,9 +340,59 @@ export async function getAllAdvisors(): Promise<Advisor[]> {
       guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
       mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
       skillDomain: readSkillDomain(headers, row),
+      email: readEmail(headers, row),
     });
   }
   return advisors;
+}
+
+/** True for the exact same "Currently Employed" match getAllAdvisors() uses
+ * — exposed so advisorDirectorySync.ts can apply the identical filtering
+ * rule without duplicating the EMPLOYED_STATUS_VALUES literal, per "without
+ * changing the existing QA Dashboard sync or filtering logic." */
+export function isEmployedStatus(statusRaw: string | null): boolean {
+  return EMPLOYED_STATUS_VALUES.includes(String(statusRaw ?? "").trim().toLowerCase());
+}
+
+export interface MasterAdvisorsRow extends Advisor {
+  /** Raw, untrimmed Status cell (column header-matched, see
+   * statusColIndex) — null if the sheet has no recognizable status column
+   * at all. Use isEmployedStatus(statusRaw) for the actual filter. */
+  statusRaw: string | null;
+}
+
+/**
+ * Every row of master_advisors (Currently Employed or not), for
+ * advisorDirectorySync.ts's directory sync — unlike getAllAdvisors(), which
+ * pre-filters to only Currently Employed and is left completely unchanged
+ * above, this returns every row (including a null-tactId row, since a sync
+ * needs to see rows the roster views intentionally skip in order to report
+ * accurate "records read" / "no longer employed" counts) plus the raw
+ * status cell so the caller can apply isEmployedStatus() itself. Same
+ * cached sheet read as every other function in this file — no separate
+ * fetch, no separate cache entry.
+ */
+export async function getMasterAdvisorsRowsForSync(): Promise<{ totalRows: number; rows: MasterAdvisorsRow[] }> {
+  const { headers, rows } = await getSheetDataCached(SHEETS.MASTER_ADVISORS);
+  const tactCol = colIndex(headers, "Tact ID");
+  const nameCol = colIndex(headers, "Name");
+  const guideCol = guideColIndex(headers);
+  const mentorCol = mentorColIndex(headers);
+  const statusCol = statusColIndex(headers);
+
+  const out: MasterAdvisorsRow[] = rows
+    .filter((row) => row[tactCol] || row[nameCol]) // skip genuinely blank rows (no tact id AND no name)
+    .map((row) => ({
+      tactId: row[tactCol] != null ? String(row[tactCol]) : "",
+      name: row[nameCol] != null ? String(row[nameCol]) : "",
+      guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
+      mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
+      skillDomain: readSkillDomain(headers, row),
+      email: readEmail(headers, row),
+      statusRaw: statusCol !== -1 && row[statusCol] != null ? String(row[statusCol]) : null,
+    }));
+
+  return { totalRows: out.length, rows: out };
 }
 
 export async function getAdvisorsForGuide(guideName: string): Promise<Advisor[]> {

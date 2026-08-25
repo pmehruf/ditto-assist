@@ -358,6 +358,13 @@
       "when": 1788500000000,
       "tag": "0050_platform_admin_feature_access",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1788600000000,
+      "tag": "0051_advisor_directory_sync_state",
+      "breakpoints": true
     }
   ]
 }

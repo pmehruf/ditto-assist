@@ -62,6 +62,7 @@ import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDa
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
+import { syncAdvisorDirectory } from "./src/server/qaDashboard/advisorDirectorySync.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
@@ -5007,6 +5008,45 @@ app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("QA Dashboard: failed to disconnect Google Sheets:", err);
     return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+// --- Advisor Directory Sync (2026-08) — master_advisors -> users.
+// department/team/role/tags, via the same QA Dashboard Sheets connection
+// above. See advisorDirectorySync.ts for the full sync logic; this route is
+// just the trigger + result reporting, same shape as /api/kb/faq/resync.
+// Admin/Developer only (a directory-wide write action), rate-limited like
+// every other expensive admin action. ---
+app.post("/api/qa-dashboard/advisor-directory-sync", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Syncing the Advisor Directory"))) return;
+    const repos = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, repos.users);
+    const { changeLogs } = repos;
+    const result = await syncAdvisorDirectory(repos, `${req.user!.name} (${callerTier})`);
+
+    if (result.errors.length === 0) {
+      try {
+        await changeLogs.create({
+          userName: req.user!.name,
+          role: callerTier,
+          actionType: "Advisor Directory Synced",
+          planName: null,
+          description:
+            `Advisor Directory Sync: ${result.recordsRead} record(s) read, ${result.currentlyEmployedRecords} Currently Employed, ` +
+            `${result.usersMatched} matched, ${result.usersUpdated} updated, ${result.usersUnchanged} unchanged, ` +
+            `${result.usersReverted} reverted, ${result.usersSkippedNotFound} skipped (not found).`,
+          snapshot: null,
+        });
+      } catch (logErr) {
+        console.error("Failed to write change log for Advisor Directory Sync:", logErr);
+      }
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Advisor Directory Sync failed:", err);
+    return res.status(500).json({ error: `Advisor Directory Sync failed: ${err.message}` });
   }
 });
 
