@@ -178,8 +178,8 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
             <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{user.tier}</p>
           </div>
           <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
-            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Department</p>
-            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{departmentName}</p>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Team</p>
+            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{teamName}</p>
           </div>
           <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
             <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>QA Dashboard</p>
@@ -188,8 +188,8 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
             </p>
           </div>
           <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
-            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Team</p>
-            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{teamName}</p>
+            <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Department</p>
+            <p className={`text-xs font-bold mt-0.5 ${dark ? "text-white" : "text-stone-900"}`}>{departmentName}</p>
           </div>
           <div className={`rounded-lg border px-2.5 py-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
             <p className={`text-[9px] font-black uppercase tracking-wider ${dark ? "text-stone-500" : "text-stone-400"}`}>Role</p>

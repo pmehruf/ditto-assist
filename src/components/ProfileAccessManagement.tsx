@@ -828,21 +828,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
               </div>
 
               <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
-                <input type="checkbox" checked={bulkFields.department} onChange={e => setBulkFields(f => ({ ...f, department: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Department</span>
-              </label>
-              <div className="w-36 shrink-0">
-                <CustomSelect
-                  theme={theme}
-                  value={bulkDepartmentId != null ? String(bulkDepartmentId) : ""}
-                  onChange={(val) => setBulkDepartmentId(val ? Number(val) : null)}
-                  triggerClassName={selectTriggerClass}
-                  disabled={!bulkFields.department}
-                  options={departmentOptions(bulkDepartmentId)}
-                />
-              </div>
-
-              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
                 <input type="checkbox" checked={bulkFields.team} onChange={e => setBulkFields(f => ({ ...f, team: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
                 <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Team</span>
               </label>
@@ -854,6 +839,21 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   triggerClassName={selectTriggerClass}
                   disabled={!bulkFields.team}
                   options={teamOptions(bulkTeamId)}
+                />
+              </div>
+
+              <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={bulkFields.department} onChange={e => setBulkFields(f => ({ ...f, department: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Department</span>
+              </label>
+              <div className="w-36 shrink-0">
+                <CustomSelect
+                  theme={theme}
+                  value={bulkDepartmentId != null ? String(bulkDepartmentId) : ""}
+                  onChange={(val) => setBulkDepartmentId(val ? Number(val) : null)}
+                  triggerClassName={selectTriggerClass}
+                  disabled={!bulkFields.department}
+                  options={departmentOptions(bulkDepartmentId)}
                 />
               </div>
 
@@ -918,8 +918,8 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <th className={thClass}>Tags</th>
-                <th className={thClass}>Department</th>
                 <th className={thClass}>Team</th>
+                <th className={thClass}>Department</th>
                 <th className={thClass}>Role</th>
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -956,19 +956,19 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   <td className={tdClass}>
                     <CustomSelect
                       theme={theme}
-                      value={newDraft.departmentId != null ? String(newDraft.departmentId) : ""}
-                      onChange={(val) => setNewDraft(d => ({ ...d, departmentId: val ? Number(val) : null }))}
+                      value={newDraft.orgTeamId != null ? String(newDraft.orgTeamId) : ""}
+                      onChange={(val) => setNewDraft(d => ({ ...d, orgTeamId: val ? Number(val) : null }))}
                       triggerClassName={selectTriggerClass}
-                      options={departmentOptions(newDraft.departmentId)}
+                      options={teamOptions(newDraft.orgTeamId)}
                     />
                   </td>
                   <td className={tdClass}>
                     <CustomSelect
                       theme={theme}
-                      value={newDraft.orgTeamId != null ? String(newDraft.orgTeamId) : ""}
-                      onChange={(val) => setNewDraft(d => ({ ...d, orgTeamId: val ? Number(val) : null }))}
+                      value={newDraft.departmentId != null ? String(newDraft.departmentId) : ""}
+                      onChange={(val) => setNewDraft(d => ({ ...d, departmentId: val ? Number(val) : null }))}
                       triggerClassName={selectTriggerClass}
-                      options={teamOptions(newDraft.orgTeamId)}
+                      options={departmentOptions(newDraft.departmentId)}
                     />
                   </td>
                   <td className={tdClass}>
@@ -1102,13 +1102,13 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       {isEditing ? (
                         <CustomSelect
                           theme={theme}
-                          value={row.departmentId != null ? String(row.departmentId) : ""}
-                          onChange={(val) => setDraft(d => d && { ...d, departmentId: val ? Number(val) : null })}
+                          value={row.orgTeamId != null ? String(row.orgTeamId) : ""}
+                          onChange={(val) => setDraft(d => d && { ...d, orgTeamId: val ? Number(val) : null })}
                           triggerClassName={selectTriggerClass}
-                          options={departmentOptions(row.departmentId)}
+                          options={teamOptions(row.orgTeamId)}
                         />
-                      ) : departmentLabel(user.departmentId) ? (
-                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{departmentLabel(user.departmentId)}</span>
+                      ) : teamLabel(user.orgTeamId) ? (
+                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{teamLabel(user.orgTeamId)}</span>
                       ) : (
                         <span className={`text-[10.5px] ${dark ? "text-stone-600" : "text-stone-400"}`}>—</span>
                       )}
@@ -1117,13 +1117,13 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       {isEditing ? (
                         <CustomSelect
                           theme={theme}
-                          value={row.orgTeamId != null ? String(row.orgTeamId) : ""}
-                          onChange={(val) => setDraft(d => d && { ...d, orgTeamId: val ? Number(val) : null })}
+                          value={row.departmentId != null ? String(row.departmentId) : ""}
+                          onChange={(val) => setDraft(d => d && { ...d, departmentId: val ? Number(val) : null })}
                           triggerClassName={selectTriggerClass}
-                          options={teamOptions(row.orgTeamId)}
+                          options={departmentOptions(row.departmentId)}
                         />
-                      ) : teamLabel(user.orgTeamId) ? (
-                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{teamLabel(user.orgTeamId)}</span>
+                      ) : departmentLabel(user.departmentId) ? (
+                        <span className={`text-[10.5px] font-semibold ${dark ? "text-stone-300" : "text-stone-700"}`}>{departmentLabel(user.departmentId)}</span>
                       ) : (
                         <span className={`text-[10.5px] ${dark ? "text-stone-600" : "text-stone-400"}`}>—</span>
                       )}
