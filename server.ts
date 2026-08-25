@@ -4873,21 +4873,25 @@ app.patch("/api/me/tags", requireAuth, async (req, res) => {
 // 2026-08-25 — expanded to also collect Product tags + Department/Team/Role
 // at signup (Task: "Expand User Onboarding + User Directory + Profile
 // Card"), so an Admin no longer has to manually backfill these for every
-// new hire. All four are now REQUIRED here (product decision, not an
+// new hire. Department/Team/Role are REQUIRED (product decision, not an
 // existing DB constraint — the columns stay nullable for existing/
 // admin-created rows; POST /api/users' own optional-department/team/role
 // validation pattern below is reused verbatim for the existence checks).
-// Department/Team/Role are stored as the SAME departmentId/orgTeamId/roleId
-// foreign keys the Directory and Product Assist eligibility evaluator
-// already read — no parallel classification system, and this is the exact
-// shape a Developer/Admin manually assigns via PUT /api/users:email today.
+// Product tags stay OPTIONAL (2026-08-25 follow-up correction): central-
+// level employees with no line-of-business training don't have a Health or
+// Term domain to pick — same "may not know yet, an Admin can set it later"
+// allowance PATCH /api/me/tags and POST /api/users already give this exact
+// field elsewhere. Department/Team/Role are stored as the SAME
+// departmentId/orgTeamId/roleId foreign keys the Directory and Product
+// Assist eligibility evaluator already read — no parallel classification
+// system, and this is the exact shape a Developer/Admin manually assigns
+// via PUT /api/users:email today.
 app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
   try {
     const { name, tactId, tags, departmentId, orgTeamId, roleId } = req.body;
-    // Product (Health/Term/Both) is now required at signup — an empty
-    // selection is rejected below, unlike the post-login Skill Domain nudge
-    // (PATCH /api/me/tags) or an Admin's own "Add User" form, which both
-    // still allow leaving it unassigned.
+    // Optional at signup — an omitted or empty selection just leaves the
+    // user unassigned, same as before (and same as PATCH /api/me/tags and
+    // POST /api/users allow for this field).
     const resolvedTags = tags === undefined ? [] : tags;
     // Normalized regardless of how it was typed — see normalizeTactId
     // (utils/tactId.ts). TactIdInput already constrains entry to
@@ -4899,11 +4903,11 @@ app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
     if (
       typeof name !== "string" || !name.trim() ||
       typeof tactId !== "string" || !normalizedTactId ||
-      !isValidAdvisorTags(resolvedTags) || resolvedTags.length === 0 ||
+      !isValidAdvisorTags(resolvedTags) ||
       !hasDepartmentId || !hasOrgTeamId || !hasRoleId
     ) {
       return res.status(400).json({
-        error: `name, tactId, at least one Product tag (${ADVISOR_TAG_VALUES.join(", ")}), departmentId, orgTeamId, and roleId are all required.`,
+        error: `name, tactId, departmentId, orgTeamId, and roleId are all required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.`,
       });
     }
 

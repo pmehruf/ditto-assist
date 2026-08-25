@@ -1499,11 +1499,13 @@ export default function App() {
   const [tempSsoName, setTempSsoName] = useState<string>("");
   const [tempTactId, setTempTactId] = useState<string>("");
   // Product — which insurance line(s) this new hire handles (Health and/or
-  // Term). REQUIRED at signup (2026-08-25 — was optional as "Skill Domain");
-  // feeds users.tags (see drizzle/0026_advisor_tags.sql), the exact same
-  // tag set the Directory and Product Assist eligibility evaluator read —
-  // no separate product classification. Still changeable later by an
-  // Admin/Developer in the Directory.
+  // Term). OPTIONAL at signup (2026-08-25, reaffirmed after a brief stint
+  // as required: central-level employees without line-of-business training
+  // have no domain to pick) — feeds users.tags (see
+  // drizzle/0026_advisor_tags.sql), the exact same tag set the Directory
+  // and Product Assist eligibility evaluator read — no separate product
+  // classification. Still changeable later by an Admin/Developer in the
+  // Directory, or via the post-login Skill Domain nudge.
   const [tempTags, setTempTags] = useState<string[]>([]);
   // Organization — Department/Team/Role, REQUIRED at signup (2026-08-25).
   // Populated from the same departmentsList/orgTeamsList/rolesList catalogs
@@ -2165,10 +2167,6 @@ export default function App() {
 
     if (!nameClean || !tactClean) {
       setLoginError("Full Name and TACT ID are mandatory fields to active your portal account.");
-      return;
-    }
-    if (tempTags.length === 0) {
-      setLoginError("Select at least one Product (Health, Term, or both).");
       return;
     }
     if (tempDepartmentId == null || tempOrgTeamId == null || tempRoleId == null) {
@@ -2835,10 +2833,10 @@ export default function App() {
 
                     <div className="space-y-2">
                       <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
-                        Product
+                        Product <span className="normal-case font-medium opacity-60">(optional)</span>
                       </p>
                       <p className={`text-[10.5px] leading-snug font-semibold ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        Which insurance line(s) do you handle? Select Health, Term, or both.
+                        Which insurance line(s) do you handle? Select either, both, or leave blank if not applicable — e.g. central-level roles without line-of-business training.
                       </p>
                       <AdvisorTagCheckboxes
                         theme={theme}
