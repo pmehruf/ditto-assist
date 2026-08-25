@@ -2833,10 +2833,10 @@ export default function App() {
 
                     <div className="space-y-2">
                       <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
-                        Product <span className="normal-case font-medium opacity-60">(optional)</span>
+                        Select your product(s) of expertise <span className="normal-case font-medium opacity-60">(optional)</span>
                       </p>
                       <p className={`text-[10.5px] leading-snug font-semibold ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        Which insurance line(s) do you handle? Select either, both, or leave blank if not applicable — e.g. central-level roles without line-of-business training.
+                        Choose all products you're currently trained or experienced in.
                       </p>
                       <AdvisorTagCheckboxes
                         theme={theme}
