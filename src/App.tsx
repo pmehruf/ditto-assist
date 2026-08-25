@@ -100,7 +100,7 @@ import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { ProductAssistDailyWarning } from "./components/ProductAssistDailyWarning";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { downloadCSV } from "./utils/csvExport";
-import { formatDisplayTimestamp } from "./utils/timestamps";
+import { formatCompactTimestamp } from "./utils/timestamps";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
 
 // ─────────────────────────────────────────────
@@ -3718,122 +3718,140 @@ export default function App() {
                   maxHeight: "calc(100vh - 24px)",
                   overflowY: "auto",
                 }}
-                className={`fixed w-72 max-w-[calc(100vw-24px)] rounded-lg border shadow-xl z-[9999] p-4 font-sans text-left ${
+                className={`fixed w-72 max-w-[calc(100vw-24px)] rounded-xl border shadow-xl z-[9999] p-4 font-sans text-left backdrop-blur-xl ${
                   theme === "dark"
-                    ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
-                    : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
+                    ? "bg-[#0a1420]/92 border-sky-500/[0.12] text-white shadow-black/70"
+                    : "bg-white/95 border-stone-200 text-stone-900 shadow-stone-300"
                 }`}
               >
-              <div className="space-y-3">
-                <div className="border-b pb-2 border-dashed border-stone-700/50 dark:border-stone-200/50">
-                  <p className="text-xs font-bold leading-tight">
-                    {currentUser?.name}
-                  </p>
-                </div>
+              {/* 2026-08-25 redesign — was a stack of individually-boxed
+                  "form field" rows; now a compact identity header + a plain
+                  label/value metadata grid (no per-field boxes), matching the
+                  rest of the app's card language instead of a database
+                  editor. Same underlying fields as before, same only-if-
+                  present logic — purely presentational. Department/Team/
+                  Role are resolved against the same departmentsList/
+                  orgTeamsList/rolesList catalogs the Directory uses (fetched
+                  for every tier now, not just Admin+ — see the fetch effects
+                  above), so a renamed catalog entry shows correctly here too. */}
+              {(() => {
+                const roleName = currentUser?.roleId != null ? rolesList.find(r => r.id === currentUser.roleId)?.name : undefined;
+                const deptName = currentUser?.departmentId != null ? departmentsList.find(d => d.id === currentUser.departmentId)?.name : undefined;
+                const teamName = currentUser?.orgTeamId != null ? orgTeamsList.find(t => t.id === currentUser.orgTeamId)?.name : undefined;
+                const identityLine = [roleName, deptName].filter(Boolean).join(" · ");
+                const tierBadgeClass =
+                  currentUser?.tier === "Developer"
+                    ? "text-red-500"
+                    : currentUser?.tier === "Platform Admin"
+                    ? "text-violet-600 dark:text-violet-400"
+                    : currentUser?.tier === "Admin"
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-blue-600 dark:text-sky-400";
+                const mutedLabel = theme === "dark" ? "text-stone-500" : "text-stone-400";
+                const strongValue = theme === "dark" ? "text-stone-100" : "text-stone-800";
 
-                {/* Only-if-present rows below (2026-08-25 profile card expansion)
-                    — every lookup renders nothing rather than an empty/dashed
-                    label when the field is unassigned, per the "don't display
-                    empty labels with blank values" requirement. Department/
-                    Team/Role are resolved against the same departmentsList/
-                    orgTeamsList/rolesList catalogs the Directory uses (fetched
-                    for every tier now, not just Admin+ — see the fetch effects
-                    above), so a renamed catalog entry shows correctly here too
-                    without any extra plumbing. */}
-                <div className="space-y-2 text-xs">
-                  <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                    <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Email ID:</span>
-                    <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.email || "advisor@joinditto.in"}</span>
-                  </div>
-
-                  {currentUser?.tags && currentUser.tags.length > 0 && (
-                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Product:</span>
-                      <span className="text-[10.5px] font-semibold truncate mt-0.5">{currentUser.tags.join(" + ")}</span>
-                    </div>
-                  )}
-
-                  {currentUser?.departmentId != null && (
-                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Department:</span>
-                      <span className="text-[10.5px] font-semibold truncate mt-0.5">
-                        {departmentsList.find(d => d.id === currentUser.departmentId)?.name || "—"}
+                return (
+                  <>
+                    {/* 1. IDENTITY HEADER — avatar, name (strongest weight),
+                        role · department (secondary), compact status badge. */}
+                    <div className={`flex items-center gap-2.5 pb-3 mb-3 border-b ${theme === "dark" ? "border-white/[0.08]" : "border-stone-150"}`}>
+                      <span
+                        className="w-9 h-9 shrink-0 rounded-full overflow-hidden flex items-center justify-center"
+                        style={{ backgroundColor: "#206147", borderColor: "#b9b97a", borderStyle: "solid", borderWidth: "1px" }}
+                      >
+                        {currentUser?.avatarUrl || currentUser?.photoUrl ? (
+                          <img
+                            src={currentUser.avatarUrl || currentUser.photoUrl}
+                            alt={currentUser.name}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <span className="text-xs font-bold uppercase text-white">
+                            {currentUser?.name?.charAt(0) || "M"}
+                          </span>
+                        )}
                       </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-black leading-tight truncate">{currentUser?.name}</p>
+                        {identityLine && (
+                          <p className={`text-[10.5px] font-semibold truncate mt-0.5 ${mutedLabel}`}>{identityLine}</p>
+                        )}
+                      </div>
+                      {currentUser?.status && (
+                        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                          currentUser.status === "Active"
+                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                            : "bg-stone-500/15 text-stone-500"
+                        }`}>
+                          {currentUser.status}
+                        </span>
+                      )}
                     </div>
-                  )}
 
-                  {currentUser?.orgTeamId != null && (
-                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Team:</span>
-                      <span className="text-[10.5px] font-semibold truncate mt-0.5">
-                        {orgTeamsList.find(t => t.id === currentUser.orgTeamId)?.name || "—"}
-                      </span>
+                    {/* 2. ACCOUNT METADATA — plain label/value pairs, two
+                        columns where width allows, one column when tight. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5">
+                      <div className="min-w-0">
+                        <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Email</p>
+                        <p className={`text-[11px] font-semibold font-mono truncate mt-0.5 ${strongValue}`}>{currentUser?.email || "—"}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>TACT ID</p>
+                        <p className={`text-[11px] font-semibold font-mono truncate mt-0.5 ${strongValue}`}>{currentUser?.tactId || "—"}</p>
+                      </div>
+
+                      {currentUser?.tags && currentUser.tags.length > 0 && (
+                        <div className="min-w-0">
+                          <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Product</p>
+                          <p className={`text-[11px] font-semibold truncate mt-0.5 ${strongValue}`}>{currentUser.tags.join(" + ")}</p>
+                        </div>
+                      )}
+
+                      {teamName && (
+                        <div className="min-w-0">
+                          <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Team</p>
+                          <p className={`text-[11px] font-semibold truncate mt-0.5 ${strongValue}`}>{teamName}</p>
+                        </div>
+                      )}
+
+                      {deptName && (
+                        <div className="min-w-0">
+                          <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Department</p>
+                          <p className={`text-[11px] font-semibold truncate mt-0.5 ${strongValue}`}>{deptName}</p>
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Access</p>
+                        <p className={`text-[11px] font-black uppercase truncate mt-0.5 ${tierBadgeClass}`}>{currentUser?.tier || "General"}</p>
+                      </div>
+
+                      {currentUser?.createdAt && (
+                        <div className="min-w-0">
+                          <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Joined</p>
+                          <p className={`text-[11px] font-semibold truncate mt-0.5 ${strongValue}`}>{formatCompactTimestamp(currentUser.createdAt)}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
 
-                  {currentUser?.roleId != null && (
-                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Role:</span>
-                      <span className="text-[10.5px] font-semibold truncate mt-0.5">
-                        {rolesList.find(r => r.id === currentUser.roleId)?.name || "—"}
-                      </span>
+                    {/* 3. LOGOUT — separated by its own divider, understated
+                        outline treatment rather than a large filled button. */}
+                    <div className={`mt-3.5 pt-3 border-t ${theme === "dark" ? "border-white/[0.08]" : "border-stone-150"}`}>
+                      <button
+                        onClick={() => {
+                          setProfileOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full py-1.5 px-3 border border-red-500/25 hover:border-red-500/60 hover:bg-red-500/5 text-[11px] font-bold text-red-500 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Log out</span>
+                      </button>
                     </div>
-                  )}
-
-                  <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                    <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">TACT ID:</span>
-                    <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.tactId || "—"}</span>
-                  </div>
-
-                  <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                    <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Access Level:</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
-                      currentUser?.tier === "Developer"
-                        ? "bg-red-500/10 text-red-500"
-                        : currentUser?.tier === "Platform Admin"
-                        ? "bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                        : currentUser?.tier === "Admin"
-                        ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                        : "bg-blue-500/10 text-blue-600 dark:text-sky-400"
-                    }`}>
-                      {currentUser?.tier || "General"}
-                    </span>
-                  </div>
-
-                  {currentUser?.status && (
-                    <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Status:</span>
-                      <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
-                        currentUser.status === "Active"
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "bg-stone-500/15 text-stone-500"
-                      }`}>
-                        {currentUser.status}
-                      </span>
-                    </div>
-                  )}
-
-                  {currentUser?.createdAt && (
-                    <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
-                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Joined:</span>
-                      <span className="text-[10.5px] font-semibold">{formatDisplayTimestamp(currentUser.createdAt)}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-2 border-t border-stone-700/50 dark:border-stone-250">
-                  <button
-                    onClick={() => {
-                      setProfileOpen(false);
-                      handleLogout();
-                    }}
-                    className="w-full py-2 px-3 border border-red-500/20 hover:border-red-500 bg-red-500/5 hover:bg-red-500/10 text-xs font-bold text-red-500 rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Log Out</span>
-                  </button>
-                </div>
-              </div>
+                  </>
+                );
+              })()}
               </motion.div>
             </>
           )}

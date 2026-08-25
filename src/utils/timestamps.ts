@@ -48,3 +48,20 @@ export function formatDisplayTimestamp(ts: string): string {
   const yyyy = dateObj.getFullYear();
   return `${dd}-${mm}-${yyyy} ` + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Compact "15 Jul 2026 · 05:30" form — same parsing as formatDisplayTimestamp
+ * above, just a friendlier month-abbreviated rendering for space-constrained,
+ * metadata-style surfaces (e.g. the profile card popover in App.tsx) where
+ * the numeric DD-MM-YYYY form reads as denser/more form-like than wanted. */
+export function formatCompactTimestamp(ts: string): string {
+  if (!ts) return "";
+  const dateObj = parseGlobalLogTimestamp(ts);
+  if (!dateObj) return ts;
+  const dd = String(dateObj.getDate()).padStart(2, "0");
+  const mon = MONTH_ABBR[dateObj.getMonth()];
+  const yyyy = dateObj.getFullYear();
+  const time = dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${dd} ${mon} ${yyyy} · ${time}`;
+}
