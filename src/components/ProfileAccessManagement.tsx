@@ -924,7 +924,16 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="Joined" sortKey="createdAt" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
-                {canManage && <th className={`${thClass} text-right`}>Actions</th>}
+                {canManage && (
+                  // Sticky so Save/Cancel stay reachable without scrolling right —
+                  // edit mode widens the row (TACT input, tag checkboxes, dropdowns)
+                  // well past the viewport (2026-08-25 fix). Solid backing (matching
+                  // this file's other "sunken surface" inputs) so scrolled-under
+                  // cells don't show through.
+                  <th className={`${thClass} text-right sticky right-0 z-20 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-white border-stone-200"}`}>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -1001,7 +1010,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   <td className={`${tdClass} text-[10.5px] italic ${dark ? "text-stone-500" : "text-stone-400"}`}>
                     Not yet saved
                   </td>
-                  <td className={`${tdClass} text-right`}>
+                  <td className={`${tdClass} text-right sticky right-0 z-10 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-white border-stone-200"}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <ClippedButton onClick={saveNewUser} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save new user">
                         <Save className="w-3.5 h-3.5" />
@@ -1177,7 +1186,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       {user.createdAt ? formatDisplayTimestamp(user.createdAt) : "—"}
                     </td>
                     {canManage && (
-                      <td className={`${tdClass} text-right`}>
+                      <td className={`${tdClass} text-right sticky right-0 z-10 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-white border-stone-200"}`}>
                         {isEditing ? (
                           <div className="flex items-center justify-end gap-1.5">
                             <ClippedButton onClick={saveEdit} disabled={saving} cornerBg={dark ? "#0e2236" : "#ffffff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save">
