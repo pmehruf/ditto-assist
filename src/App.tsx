@@ -3078,6 +3078,7 @@ export default function App() {
           GroupIcon: ShieldUser,
           pages: [
             navPage("profile_access", "Access Control Center", User, "Viewer"),
+            navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
             navPage("audit", "Activity Log", Clock, "Viewer"),
             navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
               hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
@@ -3104,7 +3105,6 @@ export default function App() {
                 ) : undefined,
             }),
             navPage("connections", "Connections", Link2, "Viewer"),
-            navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
             navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
               iconColorClass: isActive => (isActive ? "#E08D4B" : RAIL_ICON_REST),
             }),
