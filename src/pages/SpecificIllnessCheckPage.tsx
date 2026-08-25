@@ -177,7 +177,7 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions, dbPlanConf
         <div>
           <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Specific Illness Check</span>
+            <span>Specific Illness Assist</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Check whether a declared medical condition carries a 2-year specific illness waiting period under any plan.

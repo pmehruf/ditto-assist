@@ -482,7 +482,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
             }`}
           >
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Coverage Projection Studio</span>
+            <span>Cover Projection Assist</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Illustrate Base Cover, Bonus, and Restoration Benefit projections across policy years for supported plans.
@@ -571,7 +571,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                     }}
                     // Cross-app UI consistency pass (2026-08): selected state
                     // reuses Product Assist's own fixed #01334F/#AEDCF4
-                    // selected-chip pair (see QueryAssistPage.tsx's plan
+                    // selected-chip pair (see ProductAssistPage.tsx's plan
                     // tags) instead of generic Tailwind blue-* — identical
                     // literal in both themes there, so no dark/light branch
                     // is needed here either.

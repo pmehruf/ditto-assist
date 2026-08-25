@@ -79,7 +79,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // Read-only calculator — Viewer-only like advisory_zone, visible to
     // every tier including General advisors (no persisted data to edit).
     id: "coverage_projection",
-    name: "Coverage Projection Studio",
+    name: "Cover Projection Assist",
     description: "Illustrate Base Cover, Bonus, and Restoration Benefit projections across policy years for supported plans",
     defaultTier: "General",
     generalAccess: "Viewer",
@@ -91,7 +91,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // data to edit; this reads the same specificIllnessEngine.ts logic as
     // the Admin Zone's Specific Illness Ledger sandbox, minus its editor).
     id: "specific_illness_check",
-    name: "Specific Illness Check",
+    name: "Specific Illness Assist",
     description: "Check whether a declared medical condition falls under a plan's 2-year specific illness waiting period",
     defaultTier: "General",
     generalAccess: "Viewer",

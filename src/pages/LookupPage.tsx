@@ -14,7 +14,10 @@ import {
   Info,
   RefreshCw,
   RotateCcw,
-  ChevronDown
+  ChevronDown,
+  Lightbulb,
+  MousePointerClick,
+  Flag
 } from "lucide-react";
 import { DeclarationMapIcon } from "../components/icons";
 import { GridTexture } from "../components/GridTexture";
@@ -98,6 +101,34 @@ interface LookupPageProps {
   setSlideDirection: (value: "right-to-left" | "left-to-right") => void;
 }
 
+// Quick tips — moved here from the Home dashboard (relocated, not
+// duplicated: Home no longer has its own copy of this content or rotation
+// logic). Kept on this page since these are Declaration Assist-specific
+// usage tips, so they're most useful right where the advisor is actually
+// working, not on the Home dashboard.
+const QUICK_TIPS: { icon: typeof Lightbulb; text: string; hex: string }[] = [
+  {
+    icon: Lightbulb,
+    text: "Start typing a condition and pick from the dropdown suggestions for the most accurate match.",
+    hex: "#FACC15",
+  },
+  {
+    icon: MousePointerClick,
+    text: "You can queue multiple conditions before running the search — add each one, then map them all together.",
+    hex: "#2DD4BF",
+  },
+  {
+    icon: Flag,
+    text: "Spot a mapping that looks wrong? Use the Flag action on the result to report it for review.",
+    hex: "#F87171",
+  },
+  {
+    icon: ShieldCheck,
+    text: "Always verify the result before disclosing it to a customer — this tool supports your judgement, it doesn't replace it.",
+    hex: "#34D399",
+  },
+];
+
 /**
  * "Declaration Assistant" lookup tab — main functional form + results content
  * (the `!showIntro` branch). Extracted verbatim from App.tsx (Phase 1.3). The
@@ -170,6 +201,16 @@ export function LookupPage({
   const leftColRef = useRef<HTMLDivElement | null>(null);
   const [leftColHeight, setLeftColHeight] = useState<number | null>(null);
   const [isDesktopLayout, setIsDesktopLayout] = useState(true);
+
+  // Quick tips rotation — same 7s interval the Home dashboard used before
+  // this moved here.
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTipIndex((prev) => (prev + 1) % QUICK_TIPS.length);
+    }, 7000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const mql = window.matchMedia("(min-width: 1024px)"); // Tailwind's `lg`
@@ -304,6 +345,40 @@ export function LookupPage({
                     Search and map conditions to find the perfect match for your
                     declaration.
                   </span>
+
+                  {/* Quick Tips — compact single-line auto-rotating strip,
+                      styled to this page's own mono/uppercase-label idiom
+                      rather than the rounded card style Home uses. */}
+                  {(() => {
+                    const tip = QUICK_TIPS[tipIndex];
+                    const TipIcon = tip.icon;
+                    return (
+                      <div
+                        key={tipIndex}
+                        className="flex items-center gap-2 select-none animate-fade-in max-w-full"
+                        style={{ marginTop: "8px" }}
+                      >
+                        <span
+                          className="flex items-center justify-center w-5 h-5 rounded-full shrink-0"
+                          style={{ backgroundColor: `${tip.hex}1A`, color: tip.hex }}
+                        >
+                          <TipIcon className="w-3 h-3" />
+                        </span>
+                        <span
+                          style={{ color: tip.hex }}
+                          className="text-[9.5px] font-black uppercase tracking-widest shrink-0"
+                        >
+                          Tip
+                        </span>
+                        <span
+                          className={`text-[11px] font-medium leading-snug truncate ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}
+                          title={tip.text}
+                        >
+                          {tip.text}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Declaration Map — helper action, top-right of title section */}

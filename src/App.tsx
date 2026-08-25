@@ -3156,8 +3156,8 @@ export default function App() {
               onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
             }),
             navPage("product_assist", "Product Assist", ProductAssistIcon, "Editor"),
-            navPage("coverage_projection", "Cover projection", FileSpreadsheet, "Viewer"),
-            navPage("specific_illness_check", "Specific Illness Check", ClipboardCheck, "Viewer"),
+            navPage("coverage_projection", "Cover Projection Assist", FileSpreadsheet, "Viewer"),
+            navPage("specific_illness_check", "Specific Illness Assist", ClipboardCheck, "Viewer"),
           ],
         },
         {
@@ -4018,8 +4018,8 @@ export default function App() {
                 plan_scope: { label: "DA Mapping Config", icon: <Waypoints className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                coverage_projection: { label: "Coverage Projection Studio", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                specific_illness_check: { label: "Specific Illness Check", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                coverage_projection: { label: "Cover Projection Assist", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                specific_illness_check: { label: "Specific Illness Assist", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 product_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4430,7 +4430,16 @@ export default function App() {
         id="main-scrollable-body"
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
           activeTab === "lookup" && showIntro
-            ? "overflow-hidden min-h-0"
+            ? // Was a flat "overflow-hidden min-h-0" paired with
+              // LookupIntroPage's ScaleToFit (shrunk the whole dashboard like
+              // an image to guarantee no scroll, at the cost of unreadable
+              // text/targets on a narrow viewport). Now that Home reflows
+              // with real responsive CSS instead, it needs the same
+              // "no-scroll on desktop, scrollable on tablet/narrow" behavior
+              // its sibling branch below already uses — content that
+              // genuinely doesn't fit at a small viewport scrolls rather
+              // than getting silently clipped.
+              "lg:overflow-hidden overflow-y-auto min-h-0"
             : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "product_assist"
             ? "lg:overflow-hidden overflow-y-auto"
             : "overflow-y-auto"
@@ -4737,7 +4746,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              <ErrorBoundary theme={theme} label="Coverage Projection Studio">
+              <ErrorBoundary theme={theme} label="Cover Projection Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <CoverageProjectionStudioPage theme={theme} />
               </Suspense>
@@ -4760,7 +4769,7 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="space-y-6"
             >
-              <ErrorBoundary theme={theme} label="Specific Illness Check">
+              <ErrorBoundary theme={theme} label="Specific Illness Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <SpecificIllnessCheckPage theme={theme} dynamicSuggestions={dynamicSuggestions} dbPlanConfigs={dbPlanConfigs} />
               </Suspense>
