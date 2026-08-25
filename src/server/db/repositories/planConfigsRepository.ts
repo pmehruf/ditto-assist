@@ -61,15 +61,34 @@ export class PlanConfigsRepository {
    * one" two-step the UI used to do, which could leave an orphaned duplicate
    * row (and therefore a stale, still-matchable "identity") if the DELETE
    * ever failed. Any other field in `entry` is updated in the same
-   * statement. Throws (Postgres 23505) if `newPlanName` already exists.
+   * statement. Throws (Postgres 23505) if `newPlanName` already belongs to
+   * an ACTIVE (removed=false) plan.
+   *
+   * Reclaims a removed-plan tombstone at `newPlanName` first (2026-08-25
+   * fix): Plan Management's Delete action writes `removed=true` rather than
+   * DELETE-ing the row (see schema.ts's comment on `removed`), so that name
+   * still occupies the `planName` primary-key slot. Without this, renaming
+   * a different plan onto that exact name — e.g. deleting "Care Supreme",
+   * then trying to rename "Care Supreme New" back to "Care Supreme" — hit a
+   * spurious Postgres 23505 on the PK and surfaced as "A plan with that
+   * name already exists," even though the name had been deleted. A
+   * genuinely ACTIVE row at `newPlanName` is left untouched, so that case
+   * still throws 23505 and the existing 409 handling in server.ts is
+   * unchanged.
    */
   async rename(oldPlanName: string, newPlanName: string, entry: UpdatePlanConfigEntry): Promise<PlanConfigRow | undefined> {
-    const [row] = await this.db
-      .update(planConfigs)
-      .set({ ...entry, planName: newPlanName, updatedAt: new Date() })
-      .where(eq(planConfigs.planName, oldPlanName))
-      .returning();
-    return row;
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(planConfigs).where(eq(planConfigs.planName, newPlanName));
+      if (existing && existing.removed) {
+        await tx.delete(planConfigs).where(eq(planConfigs.planName, newPlanName));
+      }
+      const [row] = await tx
+        .update(planConfigs)
+        .set({ ...entry, planName: newPlanName, updatedAt: new Date() })
+        .where(eq(planConfigs.planName, oldPlanName))
+        .returning();
+      return row;
+    });
   }
 
   async delete(planName: string): Promise<void> {

@@ -84,7 +84,7 @@ import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "./constant
 import { AuditLogEntry, ReportedIssue, QAAnnouncement, ExternalResource } from "./types/announcements";
 import { LoggedUser, UserProfile } from "./types/user";
 import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole } from "./types/permissions";
-import { DraftPlan, DbPlanConfigEntry } from "./types/plans";
+import { DbPlanConfigEntry } from "./types/plans";
 import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
 import { DeclarationMapIcon, QaDashboardIcon, ProductAssistIcon } from "./components/icons";
@@ -1018,46 +1018,6 @@ export default function App() {
     };
   }, [isMenuOpen, isRightSidebarOpen]);
 
-  // Draft plans submitted for approval
-  const [draftPlans] = usePersistentState<DraftPlan[]>(
-    "ditto_draft_plans",
-    () => [
-      {
-        name: "Activ One Safeguard [DRAFT]",
-        submittedBy: "Rebecca S",
-        submittedAt: "2026-06-02",
-        status: "Pending Approval",
-        questions: [
-          "Are you suffering from any chronic kidney disease?",
-          "Have you had any history of organ transplantation?",
-          "Any other congenital or endocrine disease?"
-        ]
-      },
-      {
-        name: "Care Elite Protect [DRAFT]",
-        submittedBy: "Shashank J",
-        submittedAt: "2026-06-03",
-        status: "Pending Approval",
-        questions: [
-          "Do you have any active psychiatric or nervous disorders?",
-          "History of bypass surgeries or major heart ailments?",
-          "Any other non-disclosed ailments?"
-        ]
-      }
-    ],
-    {
-      deserialize: (raw) => {
-        const parsed = JSON.parse(raw) as DraftPlan[];
-        const seen = new Set<string>();
-        return parsed.filter(d => {
-          if (!d || !d.name || seen.has(d.name)) return false;
-          seen.add(d.name);
-          return true;
-        });
-      },
-    }
-  );
-
   // Production plans list (persisted dynamically)
   const [productionPlans, setProductionPlans] = usePersistentState<string[]>(
     "ditto_production_plans",
@@ -1091,7 +1051,6 @@ export default function App() {
     setProductionPlans(prev => {
       const valid = new Set<string>(PLANS);
       dbPlanConfigs.forEach(row => { if (!row.removed) valid.add(row.planName); });
-      draftPlans.forEach(draft => valid.add(draft.name));
       // A "removed" row (Plan Management's Delete action) must win even for
       // a hardcoded PLANS name — otherwise a deleted built-in plan (e.g.
       // Care Supreme with no prior customization) would be added right back
@@ -1470,27 +1429,6 @@ export default function App() {
       }
     });
 
-    // Merge active draft plans
-    draftPlans.forEach(draft => {
-      const questionsWithTags = planQuestionsState[draft.name] || draft.questions.map(q => {
-        let tag: "Specific" | "Umbrella" | "Catch-all" = "Specific";
-        if (q.toLowerCase().includes("other") || q.toLowerCase().includes("any other")) tag = "Catch-all";
-        return { text: q, tag };
-      });
-
-      const specifics = questionsWithTags.filter(q => q.tag === "Specific").map(q => q.text);
-      const umbrellas = questionsWithTags.filter(q => q.tag === "Umbrella").map(q => q.text);
-      const catchAllOpt = questionsWithTags.find(q => q.tag === "Catch-all")?.text || "Other Medical Conditions";
-
-      base[draft.name] = {
-        questions: [...specifics, catchAllOpt],
-        anyOther: catchAllOpt,
-        hasUmbrella: umbrellas.length > 0,
-        umbrellaQuestions: umbrellas,
-        categoryMap: guessCategoryMap(specifics)
-      };
-    });
-
     // DB-authored plans (Plan Management page) are the live source of
     // truth and win over anything derived above — this mirrors exactly
     // what /api/match does server-side (see dbRowToPlanConfig in
@@ -1526,7 +1464,7 @@ export default function App() {
     });
 
     return base;
-  }, [draftPlans, productionPlans, planQuestionsState, dbPlanConfigs, restrictionsByPlan]);
+  }, [productionPlans, planQuestionsState, dbPlanConfigs, restrictionsByPlan]);
 
   // Theme support — dark default, toggleable dark mode, persistently saved
   const [theme, setTheme] = usePersistentState<"light" | "dark">(
@@ -4790,12 +4728,17 @@ export default function App() {
           )}
 
           {/* TAB 8: PLAN MANAGEMENT — add/edit insurance plan declaration
-              questionnaires and their category-to-question mapping. This is
-              the finished version of what used to be dead draftPlans/
-              planQuestionsState/productionPlans scaffolding: it's now backed
+              questionnaires and their category-to-question mapping. Backed
               by Postgres (plan_configs table) and read directly by
               /api/match server-side, so a plan added here is immediately
-              usable for real matching. */}
+              usable for real matching. (The old draftPlans "Pending
+              Approval" scaffolding this comment used to reference was
+              removed 2026-08-25 — it was never actually dead: two hardcoded
+              fake plans ("Activ One Safeguard [DRAFT]", "Care Elite
+              Protect [DRAFT]") were still being merged into productionPlans
+              and planConfigs above, making them selectable in the live
+              Lookup picker with no real underlying insurer plan behind
+              them.) */}
           {activeTab === "plan_scope" && (
             <motion.div
               key="plan_scope"
