@@ -10,6 +10,18 @@ export interface LoggedUser {
   tier: "General" | "Admin" | "Platform Admin" | "Developer";
   avatarUrl?: string;
   photoUrl?: string;
+  // Optional directory fields, same meaning as UserProfile below — added
+  // 2026-08-25 so the profile card popover can show Product/Department/
+  // Team/Role/Status/Joined without a second fetch. Populated from GET
+  // /api/me (session hydration) and from the first-time-setup/first-login
+  // response; simply absent for any code path that hasn't been updated to
+  // pass them (the profile card treats each as "don't show this row").
+  status?: "Active" | "Disabled";
+  createdAt?: string;
+  tags?: string[];
+  departmentId?: number | null;
+  orgTeamId?: number | null;
+  roleId?: number | null;
 }
 
 export interface UserProfile {

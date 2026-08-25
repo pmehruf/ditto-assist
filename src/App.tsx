@@ -100,6 +100,7 @@ import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { ProductAssistDailyWarning } from "./components/ProductAssistDailyWarning";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { downloadCSV } from "./utils/csvExport";
+import { formatDisplayTimestamp } from "./utils/timestamps";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
 
 // ─────────────────────────────────────────────
@@ -956,11 +957,15 @@ export default function App() {
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
       fetchMyAccessGrants();
-      if (currentUser.tier !== "General") {
-        fetchDepartments();
-        fetchOrgTeams();
-        fetchRoles();
-      }
+      // Fetched for every tier (2026-08-25) — previously General-only,
+      // since Access Control Center is Admin/Developer-only and this data
+      // was assumed to matter only there. It's now also needed by the
+      // profile card popover to resolve a General-tier user's own
+      // Department/Team/Role name (see GET /api/departments' updated
+      // read-access comment in server.ts for the same rationale).
+      fetchDepartments();
+      fetchOrgTeams();
+      fetchRoles();
       fetchUsersList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1493,11 +1498,22 @@ export default function App() {
   const [tempSsoEmail, setTempSsoEmail] = useState<string>("");
   const [tempSsoName, setTempSsoName] = useState<string>("");
   const [tempTactId, setTempTactId] = useState<string>("");
-  // Skill Domain — which insurance line(s) this new hire handles (Health
-  // and/or Term). Optional at signup; feeds users.tags (see
-  // drizzle/0026_advisor_tags.sql) and can be changed later by an
-  // Admin/Developer in User Management.
+  // Product — which insurance line(s) this new hire handles (Health and/or
+  // Term). REQUIRED at signup (2026-08-25 — was optional as "Skill Domain");
+  // feeds users.tags (see drizzle/0026_advisor_tags.sql), the exact same
+  // tag set the Directory and Product Assist eligibility evaluator read —
+  // no separate product classification. Still changeable later by an
+  // Admin/Developer in the Directory.
   const [tempTags, setTempTags] = useState<string[]>([]);
+  // Organization — Department/Team/Role, REQUIRED at signup (2026-08-25).
+  // Populated from the same departmentsList/orgTeamsList/rolesList catalogs
+  // Access Control Center's Directory already uses (fetched for every tier
+  // now — see the "fetch once signed in" effect below, and the dedicated
+  // fetch fired alongside setIsFirstTimeSetup(true) for the pre-login case).
+  // Stored as the catalogs' real IDs, never a free-text name.
+  const [tempDepartmentId, setTempDepartmentId] = useState<number | null>(null);
+  const [tempOrgTeamId, setTempOrgTeamId] = useState<number | null>(null);
+  const [tempRoleId, setTempRoleId] = useState<number | null>(null);
   // Post-login nudge (NOT first-time setup) for an already-provisioned user
   // whose tags are still empty — set by the session-hydration effect below
   // whenever GET /api/me returns a user with no tags. Dismissible; reappears
@@ -1537,7 +1553,18 @@ export default function App() {
             name: existingUser.name,
             tactId: existingUser.tactId,
             tier: existingUser.tier,
-            avatarUrl: identity.picture
+            avatarUrl: identity.picture,
+            // Carried through for the profile card popover (2026-08-25) —
+            // see LoggedUser's own doc comment. Every one of these is
+            // optional/nullable on UserProfile too, so an existing user with
+            // unassigned Department/Team/Role/tags just renders those rows
+            // absent, never a fabricated default.
+            status: existingUser.status,
+            createdAt: existingUser.createdAt,
+            tags: existingUser.tags,
+            departmentId: existingUser.departmentId,
+            orgTeamId: existingUser.orgTeamId,
+            roleId: existingUser.roleId,
           });
           // Keep the local directory cache in sync with the one confirmed-
           // current record we just fetched, so the "keep currentUser in
@@ -1578,6 +1605,15 @@ export default function App() {
           setTempSsoName(identity.name);
           setTempTactId("");
           setIsFirstTimeSetup(true);
+          // The first-time-setup form's Organization dropdowns need these
+          // catalogs BEFORE currentUser exists, so they can't wait for the
+          // "fetch once signed in" effect further down (which only runs
+          // once currentUser is set). Fire-and-forget — each already
+          // fails silently and leaves its list empty if this 401s for any
+          // reason, matching every other best-effort fetch in this file.
+          fetchDepartments();
+          fetchOrgTeams();
+          fetchRoles();
         }
       } catch (_) {
         // Network/parse error reaching the session endpoint: fall back to the login screen.
@@ -2131,6 +2167,14 @@ export default function App() {
       setLoginError("Full Name and TACT ID are mandatory fields to active your portal account.");
       return;
     }
+    if (tempTags.length === 0) {
+      setLoginError("Select at least one Product (Health, Term, or both).");
+      return;
+    }
+    if (tempDepartmentId == null || tempOrgTeamId == null || tempRoleId == null) {
+      setLoginError("Department, Team, and Role are all required to activate your portal account.");
+      return;
+    }
 
     setLoginLoading(true);
 
@@ -2146,7 +2190,14 @@ export default function App() {
       const res = await fetch("/api/me/first-time-setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: nameClean, tactId: tactClean, tags: tempTags }),
+        body: JSON.stringify({
+          name: nameClean,
+          tactId: tactClean,
+          tags: tempTags,
+          departmentId: tempDepartmentId,
+          orgTeamId: tempOrgTeamId,
+          roleId: tempRoleId,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -2164,7 +2215,13 @@ export default function App() {
         email: newUserProfile.email,
         name: newUserProfile.name,
         tactId: newUserProfile.tactId,
-        tier: newUserProfile.tier
+        tier: newUserProfile.tier,
+        status: newUserProfile.status,
+        createdAt: newUserProfile.createdAt,
+        tags: newUserProfile.tags,
+        departmentId: newUserProfile.departmentId,
+        orgTeamId: newUserProfile.orgTeamId,
+        roleId: newUserProfile.roleId,
       };
 
       setCurrentUser(sessionUser);
@@ -2177,6 +2234,9 @@ export default function App() {
       setTempSsoName("");
       setTempTactId("");
       setTempTags([]);
+      setTempDepartmentId(null);
+      setTempOrgTeamId(null);
+      setTempRoleId(null);
     } catch (err: unknown) {
       setLoginError(err instanceof Error ? err.message : "Failed to complete setup. Please try again.");
     } finally {
@@ -2196,6 +2256,10 @@ export default function App() {
     if (!res.ok) throw new Error(body.error || `Failed to save (HTTP ${res.status}).`);
     const saved: UserProfile = body.user;
     setUsersList(prev => prev.map(u => (u.email.toLowerCase() === saved.email.toLowerCase() ? saved : u)));
+    // Keep the profile card's Product row in sync immediately, without
+    // waiting for a refresh — this is the caller's own row (self-service),
+    // so it's always safe to trust `saved` here.
+    setCurrentUser(prev => (prev ? { ...prev, tags: saved.tags } : prev));
     setShowSkillDomainPrompt(false);
   };
 
@@ -2726,57 +2790,116 @@ export default function App() {
                     </div>
                   )}
 
-                  <form onSubmit={handleProfileCompletion} className="space-y-5">
-                    <div className="space-y-2">
-                      <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        value={tempSsoName}
-                        onChange={(e) => {
-                          setTempSsoName(e.target.value);
-                          setLoginError(null);
-                        }}
-                        placeholder="e.g. Shashank J"
-                        className={`w-full px-4 py-3 rounded-2xl border outline-none text-xs transition-all font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
-                          isDark 
-                            ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500" 
-                            : "bg-stone-50 border-stone-200 text-stone-900 placeholder:text-stone-400 font-bold"
-                        }`}
-                        required
-                      />
+                  <form onSubmit={handleProfileCompletion} className="space-y-6">
+                    <div className="space-y-4">
+                      <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
+                        Personal Details
+                      </p>
+                      <div className="space-y-2">
+                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                          Full Name
+                        </label>
+                        <input
+                          type="text"
+                          value={tempSsoName}
+                          onChange={(e) => {
+                            setTempSsoName(e.target.value);
+                            setLoginError(null);
+                          }}
+                          placeholder="e.g. Shashank J"
+                          className={`w-full px-4 py-3 rounded-2xl border outline-none text-xs transition-all font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
+                            isDark
+                              ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500"
+                              : "bg-stone-50 border-stone-200 text-stone-900 placeholder:text-stone-400 font-bold"
+                          }`}
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                          TACT ID
+                        </label>
+                        <TactIdInput
+                          theme={theme}
+                          value={tempTactId}
+                          onChange={(val) => {
+                            setTempTactId(val);
+                            setLoginError(null);
+                          }}
+                          placeholder="e.g. 128"
+                          required
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-2">
-                      <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        TACT ID
-                      </label>
-                      <TactIdInput
-                        theme={theme}
-                        value={tempTactId}
-                        onChange={(val) => {
-                          setTempTactId(val);
-                          setLoginError(null);
-                        }}
-                        placeholder="e.g. 128"
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        Skill Domain <span className="normal-case font-medium opacity-60">(optional)</span>
-                      </label>
+                      <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
+                        Product
+                      </p>
                       <p className={`text-[10.5px] leading-snug font-semibold ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        Which insurance line(s) do you handle? Select either, both, or leave blank — an Admin can set this for you later.
+                        Which insurance line(s) do you handle? Select Health, Term, or both.
                       </p>
                       <AdvisorTagCheckboxes
                         theme={theme}
                         value={tempTags}
-                        onChange={setTempTags}
+                        onChange={(tags) => {
+                          setTempTags(tags);
+                          setLoginError(null);
+                        }}
                         size="md"
                       />
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
+                        Organization
+                      </p>
+                      <div className="space-y-2">
+                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                          Department
+                        </label>
+                        <CustomSelect
+                          theme={theme}
+                          value={tempDepartmentId != null ? String(tempDepartmentId) : ""}
+                          onChange={(val) => {
+                            setTempDepartmentId(val ? Number(val) : null);
+                            setLoginError(null);
+                          }}
+                          placeholder="Select your department"
+                          options={departmentsList.filter(d => d.active).map(d => ({ value: String(d.id), label: d.name }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                          Team
+                        </label>
+                        <CustomSelect
+                          theme={theme}
+                          value={tempOrgTeamId != null ? String(tempOrgTeamId) : ""}
+                          onChange={(val) => {
+                            setTempOrgTeamId(val ? Number(val) : null);
+                            setLoginError(null);
+                          }}
+                          placeholder="Select your team"
+                          options={orgTeamsList.filter(t => t.active).map(t => ({ value: String(t.id), label: t.name }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                          Role
+                        </label>
+                        <CustomSelect
+                          theme={theme}
+                          value={tempRoleId != null ? String(tempRoleId) : ""}
+                          onChange={(val) => {
+                            setTempRoleId(val ? Number(val) : null);
+                            setLoginError(null);
+                          }}
+                          placeholder="Select your role"
+                          options={rolesList.filter(r => r.active).map(r => ({ value: String(r.id), label: r.name }))}
+                        />
+                      </div>
                     </div>
 
                     <PrimaryCtaButton
@@ -2801,6 +2924,9 @@ export default function App() {
                       setTempSsoName("");
                       setTempTactId("");
                       setTempTags([]);
+                      setTempDepartmentId(null);
+                      setTempOrgTeamId(null);
+                      setTempRoleId(null);
                       setLoginError(null);
                     }}
                     className={`w-full text-center text-[10px] font-black tracking-widest uppercase mt-1 cursor-pointer select-none ${
@@ -3594,7 +3720,7 @@ export default function App() {
                   maxHeight: "calc(100vh - 24px)",
                   overflowY: "auto",
                 }}
-                className={`fixed w-64 rounded-lg border shadow-xl z-[9999] p-4 font-sans text-left ${
+                className={`fixed w-72 max-w-[calc(100vw-24px)] rounded-lg border shadow-xl z-[9999] p-4 font-sans text-left ${
                   theme === "dark"
                     ? "bg-[#12151A] border-[#252A34] text-white shadow-black/80"
                     : "bg-white border-stone-200 text-stone-900 shadow-stone-300"
@@ -3607,11 +3733,54 @@ export default function App() {
                   </p>
                 </div>
 
+                {/* Only-if-present rows below (2026-08-25 profile card expansion)
+                    — every lookup renders nothing rather than an empty/dashed
+                    label when the field is unassigned, per the "don't display
+                    empty labels with blank values" requirement. Department/
+                    Team/Role are resolved against the same departmentsList/
+                    orgTeamsList/rolesList catalogs the Directory uses (fetched
+                    for every tier now, not just Admin+ — see the fetch effects
+                    above), so a renamed catalog entry shows correctly here too
+                    without any extra plumbing. */}
                 <div className="space-y-2 text-xs">
                   <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
                     <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Email ID:</span>
                     <span className="font-mono text-[10.5px] truncate mt-0.5">{currentUser?.email || "advisor@joinditto.in"}</span>
                   </div>
+
+                  {currentUser?.tags && currentUser.tags.length > 0 && (
+                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Product:</span>
+                      <span className="text-[10.5px] font-semibold truncate mt-0.5">{currentUser.tags.join(" + ")}</span>
+                    </div>
+                  )}
+
+                  {currentUser?.departmentId != null && (
+                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Department:</span>
+                      <span className="text-[10.5px] font-semibold truncate mt-0.5">
+                        {departmentsList.find(d => d.id === currentUser.departmentId)?.name || "—"}
+                      </span>
+                    </div>
+                  )}
+
+                  {currentUser?.orgTeamId != null && (
+                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Team:</span>
+                      <span className="text-[10.5px] font-semibold truncate mt-0.5">
+                        {orgTeamsList.find(t => t.id === currentUser.orgTeamId)?.name || "—"}
+                      </span>
+                    </div>
+                  )}
+
+                  {currentUser?.roleId != null && (
+                    <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Role:</span>
+                      <span className="text-[10.5px] font-semibold truncate mt-0.5">
+                        {rolesList.find(r => r.id === currentUser.roleId)?.name || "—"}
+                      </span>
+                    </div>
+                  )}
 
                   <div className={`flex flex-col p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
                     <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">TACT ID:</span>
@@ -3632,6 +3801,26 @@ export default function App() {
                       {currentUser?.tier || "General"}
                     </span>
                   </div>
+
+                  {currentUser?.status && (
+                    <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Status:</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
+                        currentUser.status === "Active"
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-stone-500/15 text-stone-500"
+                      }`}>
+                        {currentUser.status}
+                      </span>
+                    </div>
+                  )}
+
+                  {currentUser?.createdAt && (
+                    <div className={`flex justify-between items-center p-1.5 rounded ${theme === "dark" ? "bg-stone-900/60" : "bg-stone-50"}`}>
+                      <span className="text-[10px] font-medium text-stone-400 dark:text-stone-500">Joined:</span>
+                      <span className="text-[10.5px] font-semibold">{formatDisplayTimestamp(currentUser.createdAt)}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2 border-t border-stone-700/50 dark:border-stone-250">

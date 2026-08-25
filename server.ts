@@ -2551,13 +2551,19 @@ app.delete("/api/feature-access/:featureId", requireAuth, async (req, res) => {
   }
 });
 
-// Departments — read gated to Admin+Developer (only relevant to directory
-// assignment, General never needs the list); writes Developer-only, same
-// bar as directory tier edits, since this is still an existing-user-record
-// edit surface even though the field itself carries no permission meaning.
+// Departments — read open to any signed-in user (2026-08-25 revision: was
+// Admin+Developer-only, on the assumption "General never needs the list").
+// That assumption broke once first-time-setup and the profile card started
+// resolving/selecting a Department by name: a brand-new sign-in isn't in the
+// directory yet (always resolves to "General" — see getCallerTier) and a
+// General-tier user still needs to read their OWN Department's name. Same
+// rationale GET /api/me already documents for itself ("a user is always
+// allowed to know their own role") extended to the catalog they picked it
+// from — this is read-only, non-sensitive organizational metadata, not an
+// access-control decision. Writes (POST/PATCH below) remain Developer-only,
+// unchanged.
 app.get("/api/departments", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing departments"))) return;
     const { departments } = createRepositories(getDb());
     const rows = await departments.list();
     return res.json({ entries: rows });
@@ -2674,13 +2680,13 @@ app.patch("/api/departments/:id", requireAuth, async (req, res) => {
 });
 
 // Org Teams (Bliss / Falcon / Central) — same read/write posture as
-// Departments above: read gated Admin+, writes gated Developer+Platform
+// Departments above: read open to any signed-in user (2026-08-25, same
+// rationale as GET /api/departments), writes gated Developer+Platform
 // Admin. Foundation-only for now (see schema.ts's doc comment on
 // `org_teams`) — assigning a user to a team has zero effect on what they
 // can access until a later data-scoping enforcement phase.
 app.get("/api/org-teams", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing teams"))) return;
     const { orgTeams } = createRepositories(getDb());
     const rows = await orgTeams.list();
     return res.json({ entries: rows });
@@ -2796,10 +2802,10 @@ app.patch("/api/org-teams/:id", requireAuth, async (req, res) => {
 
 // Roles (Advisor / Mentor / Guide / ...) — independent of both `tier` and
 // QA Dashboard's own admin/guide/mentor role (see schema.ts). Same
-// read/write posture as Org Teams above.
+// read/write posture as Org Teams above: read open to any signed-in user
+// (2026-08-25, same rationale as GET /api/departments).
 app.get("/api/roles", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing roles"))) return;
     const { roles } = createRepositories(getDb());
     const rows = await roles.list();
     return res.json({ entries: rows });
@@ -4863,22 +4869,58 @@ app.patch("/api/me/tags", requireAuth, async (req, res) => {
 // profile-completion never reached data/users.json, so they'd be asked to
 // "complete setup" again on every new device, and no Developer/Admin would ever
 // see them in the User Management directory.
+//
+// 2026-08-25 — expanded to also collect Product tags + Department/Team/Role
+// at signup (Task: "Expand User Onboarding + User Directory + Profile
+// Card"), so an Admin no longer has to manually backfill these for every
+// new hire. All four are now REQUIRED here (product decision, not an
+// existing DB constraint — the columns stay nullable for existing/
+// admin-created rows; POST /api/users' own optional-department/team/role
+// validation pattern below is reused verbatim for the existence checks).
+// Department/Team/Role are stored as the SAME departmentId/orgTeamId/roleId
+// foreign keys the Directory and Product Assist eligibility evaluator
+// already read — no parallel classification system, and this is the exact
+// shape a Developer/Admin manually assigns via PUT /api/users:email today.
 app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
   try {
-    const { name, tactId, tags } = req.body;
-    // Skill Domain is optional at signup (a new hire may not know their
-    // domain yet, or an Admin/Developer may assign it later) — an omitted
-    // or empty selection just leaves the user unassigned, same as before.
+    const { name, tactId, tags, departmentId, orgTeamId, roleId } = req.body;
+    // Product (Health/Term/Both) is now required at signup — an empty
+    // selection is rejected below, unlike the post-login Skill Domain nudge
+    // (PATCH /api/me/tags) or an Admin's own "Add User" form, which both
+    // still allow leaving it unassigned.
     const resolvedTags = tags === undefined ? [] : tags;
     // Normalized regardless of how it was typed — see normalizeTactId
     // (utils/tactId.ts). TactIdInput already constrains entry to
     // digits-only client-side; this is the server-side backstop.
     const normalizedTactId = typeof tactId === "string" ? normalizeTactId(tactId) : "";
-    if (typeof name !== "string" || !name.trim() || typeof tactId !== "string" || !normalizedTactId || !isValidAdvisorTags(resolvedTags)) {
-      return res.status(400).json({ error: `name and tactId are required. tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
+    const hasDepartmentId = typeof departmentId === "number" && Number.isInteger(departmentId);
+    const hasOrgTeamId = typeof orgTeamId === "number" && Number.isInteger(orgTeamId);
+    const hasRoleId = typeof roleId === "number" && Number.isInteger(roleId);
+    if (
+      typeof name !== "string" || !name.trim() ||
+      typeof tactId !== "string" || !normalizedTactId ||
+      !isValidAdvisorTags(resolvedTags) || resolvedTags.length === 0 ||
+      !hasDepartmentId || !hasOrgTeamId || !hasRoleId
+    ) {
+      return res.status(400).json({
+        error: `name, tactId, at least one Product tag (${ADVISOR_TAG_VALUES.join(", ")}), departmentId, orgTeamId, and roleId are all required.`,
+      });
     }
 
-    const { users: usersRepo } = createRepositories(getDb());
+    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
+
+    // Same existence checks as POST /api/users below — a signup can't
+    // reference a Department/Team/Role that doesn't exist (or was
+    // deactivated/renamed since the dropdown was fetched).
+    const [dept, team, role] = await Promise.all([
+      departments.get(departmentId),
+      orgTeams.get(orgTeamId),
+      roles.get(roleId),
+    ]);
+    if (!dept) return res.status(400).json({ error: "That department doesn't exist." });
+    if (!team) return res.status(400).json({ error: "That team doesn't exist." });
+    if (!role) return res.status(400).json({ error: "That role doesn't exist." });
+
     const email = req.user!.email.toLowerCase();
     const existing = await usersRepo.findByEmail(email);
     if (existing) {
@@ -4892,6 +4934,9 @@ app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
       tier: "General",
       status: "Active",
       tags: resolvedTags,
+      departmentId,
+      orgTeamId,
+      roleId,
     });
     return res.json({ user: newUser });
   } catch (err: any) {
