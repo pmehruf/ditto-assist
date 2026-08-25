@@ -404,7 +404,13 @@ export function LookupIntroPage({
         onClick={() => setExpandedTileId((prev) => (prev === mod.id ? null : mod.id))}
         title={`${mod.title} — show quick guide`}
         aria-expanded={expanded}
-        className={`group relative text-left rounded-xl border transition-all duration-200 cursor-pointer hover:-translate-y-0.5 min-w-0 ${
+        // Icon-left / text-right row instead of a stacked (icon-on-top)
+        // layout — on a wide monitor a 3-across grid gives each tile far
+        // more width than a small stacked block needs, which read as a
+        // mostly-empty card. A horizontal row naturally uses the tile's
+        // full assigned width at every breakpoint instead of only its
+        // top-left corner.
+        className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 cursor-pointer hover:-translate-y-0.5 min-w-0 ${
           compact ? "p-3" : "p-3.5"
         } ${
           expanded
@@ -417,8 +423,8 @@ export function LookupIntroPage({
         }`}
       >
         <div
-          className={`rounded-lg border flex items-center justify-center transition-transform duration-200 group-hover:scale-105 ${
-            compact ? "w-7 h-7 mb-2" : "w-9 h-9 mb-2.5"
+          className={`rounded-lg border flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105 ${
+            compact ? "w-8 h-8" : "w-10 h-10"
           }`}
           style={{
             backgroundColor: `${lightSafe(mod.hex, theme)}1A`,
@@ -428,16 +434,18 @@ export function LookupIntroPage({
         >
           {mod.icon}
         </div>
-        <h3
-          className={`font-black uppercase tracking-wide truncate ${compact ? "text-[12px]" : "text-[13px]"} ${
-            theme === "dark" ? "text-white" : "text-stone-900"
-          }`}
-        >
-          {mod.title}
-        </h3>
-        <p className={`font-semibold leading-snug truncate mt-0.5 ${compact ? "text-[11px]" : "text-[12px]"} ${theme === "dark" ? "text-white/50" : "text-stone-500"}`}>
-          {mod.tag}
-        </p>
+        <div className="min-w-0 flex-1">
+          <h3
+            className={`font-black uppercase tracking-wide truncate ${compact ? "text-[12px]" : "text-[13px]"} ${
+              theme === "dark" ? "text-white" : "text-stone-900"
+            }`}
+          >
+            {mod.title}
+          </h3>
+          <p className={`font-semibold leading-snug truncate mt-0.5 ${compact ? "text-[11px]" : "text-[12px]"} ${theme === "dark" ? "text-white/50" : "text-stone-500"}`}>
+            {mod.tag}
+          </p>
+        </div>
       </button>
     );
   };
@@ -575,15 +583,25 @@ export function LookupIntroPage({
         <div className="flex flex-col gap-3 lg:gap-4">
           <SectionLabel icon={<Clock className="w-3.5 h-3.5" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
 
-          {/* ROW 1 — QA Performance (hero) + Recent Searches (compact). */}
-          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-3 lg:gap-4">
-            <QaPerformancePeek
-              theme={theme}
-              userEmail={currentUser?.email || ""}
-              onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
-            />
+          {/* ROW 1 — QA Performance (hero) + Recent Searches (compact).
+              NOTE: an arbitrary-value track list like "2fr_1fr" compiles to
+              a literal `2fr 1fr` — unlike Tailwind's numbered grid-cols-N
+              utilities, it is NOT wrapped in minmax(0, ...), so a track can
+              grow past the available width to fit a child's intrinsic
+              content and force the whole page to overflow horizontally
+              (only "fixed" by zooming out). Wrapping each track in
+              minmax(0, ...) keeps both columns free to shrink to the
+              container's real width. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3 lg:gap-4">
+            <div className="min-w-0">
+              <QaPerformancePeek
+                theme={theme}
+                userEmail={currentUser?.email || ""}
+                onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
+              />
+            </div>
 
-            <div className={`${cardClass} lg:self-start`}>
+            <div className={`${cardClass} lg:self-start min-w-0`}>
               {cardHeader("Recent Searches", <Clock className="w-4 h-4" />, () => setActiveTab("my_activity"), "#FB923C")}
               {entriesLoading ? (
                 <div className="space-y-2.5 animate-pulse">
