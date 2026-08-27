@@ -55,20 +55,22 @@ export function InstructionManualPanel({
         </span>
       </div>
 
-      {/* justify-evenly (not justify-start): now that the outer card
-          stretches to match the Input section's height (see LookupPage.tsx's
-          items-stretch), this list is often taller than its 5 items'
-          natural content — justify-start left all the extra room stranded
-          in one big gap below card 5, which read as broken/unfinished.
-          Spreading it evenly between (and above/below) all 5 items fills
-          the card properly instead. */}
+      {/* Plain flex-col (no justify-evenly): that approach left each
+          divide-y border floating in blank space, disconnected from the
+          item below it, instead of sitting flush against it — looked just
+          as unfinished as the original top-stacked gap. Each of the 5 items
+          below now carries its own flex-1 instead, so they stay adjacent
+          (dividers touch normally) while collectively growing to absorb
+          whatever extra height the stretched card has — every item's own
+          justify-center then centers its text within its now-larger slot,
+          so the card reads as evenly filled at any height. */}
       <div
-        className={`divide-y flex-grow flex flex-col justify-evenly overflow-y-auto ${
+        className={`divide-y flex-grow flex flex-col overflow-y-auto ${
           theme === "dark" ? "divide-white/[0.08]" : "divide-[#a1b7c3]"
         }`}
       >
         {/* CARD 1 */}
-        <div className="flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -99,7 +101,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 2 */}
-        <div className="flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -124,7 +126,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 3 */}
-        <div className="flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -163,7 +165,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 4 */}
-        <div className="flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -188,7 +190,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 5 */}
-        <div className="flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
