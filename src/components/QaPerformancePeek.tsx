@@ -333,18 +333,21 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   // supporting-tier card compresses on a short viewport instead of forcing
   // the page taller than it needs to be. Horizontal padding and all font
   // sizes are untouched.
-  // `lg:h-[420px]` — at desktop (the "poster" composition LookupIntroPage.tsx
+  // `lg:h-[380px]` — at desktop (the "poster" composition LookupIntroPage.tsx
   // builds at lg and up, see ScaleToFit.tsx), this card gets a deliberate,
-  // fixed, generous height rather than its natural content height. That's
-  // NOT the same thing as the "stretch to match the Announcement card"
-  // behavior that used to cause a large dead gap here — this is one fixed
-  // number, authored once, and LookupIntroPage.tsx derives the Announcement
-  // card's own height FROM this fixed value (this column's total measured
-  // height, this card included) so the two cards' bottoms land on the same
-  // line by construction, at every screen size the whole composition scales
-  // to. Below `lg` this card keeps its original natural/content height,
-  // completely unaffected.
-  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] lg:h-[420px] flex flex-col ${
+  // fixed height rather than its natural content height. That's NOT the
+  // same thing as the "stretch to match the Announcement card" behavior
+  // that used to cause a large dead gap here — this is one fixed number,
+  // authored once, and LookupIntroPage.tsx derives the Announcement card's
+  // own height FROM this fixed value (this column's total measured height,
+  // this card included) so the two cards' bottoms land on the same line by
+  // construction, at every screen size the whole composition scales to.
+  // (Was 420px — trimmed to 380px, matched by a slight height increase on
+  // the Workspace Tools tiles above, so this card and the Announcement
+  // Counter beside it stop reading as visually oversized/mismatched
+  // against that shorter tile row.) Below `lg` this card keeps its
+  // original natural/content height, completely unaffected.
+  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] lg:h-[380px] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 

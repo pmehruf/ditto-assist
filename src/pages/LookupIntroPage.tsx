@@ -383,7 +383,14 @@ export function LookupIntroPage({
         // full assigned width at every breakpoint instead of only its
         // top-left corner.
         className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 cursor-pointer hover:-translate-y-0.5 min-w-0 ${
-          compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(10px,1.4vh,14px)]"
+          // Workspace Tools tiles (non-compact) got slightly taller padding
+          // so the row reads as more visually weighted against QA
+          // Performance/the Announcement Counter below it (whose fixed
+          // desktop height was reduced by roughly this same amount — see
+          // QaPerformancePeek.tsx) — the two used to feel visually
+          // mismatched (short tiles, tall cards below). References stays
+          // unchanged (it's still the deliberately more compact tier).
+          compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(14px,1.8vh,20px)]"
         } ${
           expanded
             ? theme === "dark"
