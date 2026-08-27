@@ -144,25 +144,18 @@ export function HomeAnnouncementCard({
         </div>
       </div>
 
-      {/* Content — internally scrollable so a long announcement never pushes
-          the dashboard taller. This element carries an explicit `height`
-          (not just min/max-height) and `overflow-y-auto` directly on
-          itself — a previous version set only minHeight/maxHeight on this
-          wrapper and put overflow-y-auto on a separate `h-full` inner div,
-          which doesn't actually scroll: a percentage height (`h-full` =
-          100%) only resolves against an ancestor with a DEFINITE height,
-          and min/max-height alone never establishes one, so the inner div's
-          "100%" computed as `auto` (= its own content's natural size) and
-          never overflowed itself. The outer div's own `overflow-hidden`
-          then hard-clipped anything past max-height with no scrollbar at
-          all — that was the "announcement content is being truncated"
-          bug. A single element with a real `height` fixes it: content
-          shorter than that height just displays; longer content genuinely
-          scrolls inside this box via its own overflow-y-auto. */}
+      {/* Content — fills whatever vertical room the card actually has
+          (`flex-1 min-h-0`, the correct way to bound a scrollable region
+          inside a flex column: a flex item WITH min-height:0 gets a real,
+          definite height from the flex algorithm, unlike a plain block
+          child of a min/max-height-only parent — see this component's own
+          earlier bug where that gave the browser nothing to size against
+          and content silently got clipped instead of scrolling) and only
+          scrolls internally once an announcement is too long even for the
+          card's now much larger (full page height) content area. */}
       <div
-        className="overflow-y-auto pr-1"
+        className="flex-1 min-h-0 overflow-y-auto pr-1"
         style={{
-          height: "clamp(110px,16vh,220px)",
           scrollbarWidth: "thin",
           scrollbarColor: theme === "dark" ? "#475569 transparent" : "#94A3B8 transparent",
         }}

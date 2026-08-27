@@ -8,7 +8,6 @@ import {
   Sparkles,
   FileSpreadsheet,
   BookOpen,
-  Clock,
   AlertTriangle,
   ClipboardCheck,
   Briefcase,
@@ -403,12 +402,19 @@ export function LookupIntroPage({
         // height minus tab strip/bookmarks bar/app header) gets a
         // proportionally tighter one, so the page fits at 100% zoom
         // without relying on the user zooming out.
-        className={`w-full max-w-[1900px] mx-auto font-sans flex flex-col gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
+        // `flex-1 min-h-0` — this root now actively fills the height its own
+        // parent (App.tsx's motion.div, itself `flex-grow flex flex-col
+        // min-h-0`) makes available, instead of just sizing to its content.
+        // That's what lets the two-section layout below genuinely reach
+        // "just above the footer" rather than stopping at its own content
+        // height.
+        className={`w-full max-w-[1900px] mx-auto font-sans flex flex-col flex-1 min-h-0 gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
           theme === "dark" ? "text-[#FFFFFF]" : "text-stone-900"
         }`}
       >
-        {/* WORKSPACE HEADER */}
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        {/* WORKSPACE HEADER — full-width greeting, shared by both sections
+            below rather than living inside either column. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 shrink-0">
           <div className="flex items-baseline gap-2.5 min-w-0">
             <div className="w-6 h-0.5 flex-shrink-0 self-center" style={{ backgroundColor: "var(--accent)" }} />
             <h1
@@ -420,72 +426,73 @@ export function LookupIntroPage({
           </div>
         </div>
 
-        {/* PRIMARY — ADVISORY WORKSPACE. The tools used every day, given a
-            touch more visual weight than Quality & References below.
-            Responsive: 1 column on a phone-width viewport, 2 on a narrow
-            tablet, all 4 side by side from lg up — never a fixed grid that
-            has nowhere to go on a narrow screen. */}
-        {visibleAdvisory.length > 0 && (
-          <div>
-            <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Advisory Workspace" hex={lightSafe("#0EA5E9", theme)} size="lg" />
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(8px,1.2vh,12px)]">
-              {visibleAdvisory.map((mod) => renderTile(mod, false))}
-            </div>
-          </div>
-        )}
+        {/* TWO MAIN SECTIONS — left 2/3 (Workspace Tools, References, QA
+            Performance) and right 1/3 (Announcements), side by side from
+            `lg` up. `items-stretch` (the grid default) is deliberate here,
+            unlike the old Quick Peek row: both columns take the row's full
+            height, which is what lets the right column's Announcement card
+            span "the full available page height" and the left column's QA
+            Performance card grow to fill whatever space is left under
+            Workspace Tools/References — both driven by this row's own
+            `flex-1 min-h-0`, which stretches it down to just above the
+            footer (rendered by App.tsx, below this component). Below `lg`
+            they stack (left column's 3 pieces, then Announcements). */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
+          {/* LEFT — 2/3: Workspace Tools, References, QA Performance. */}
+          <div className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
+            {/* WORKSPACE TOOLS. Responsive: 1 column on a phone-width
+                viewport, 2 on a narrow tablet, all 4 side by side from lg up. */}
+            {visibleAdvisory.length > 0 && (
+              <div className="shrink-0">
+                <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Workspace Tools" hex={lightSafe("#0EA5E9", theme)} size="lg" />
+                <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(8px,1.2vh,12px)]">
+                  {visibleAdvisory.map((mod) => renderTile(mod, false))}
+                </div>
+              </div>
+            )}
 
-        {/* SECONDARY — QUALITY & REFERENCES. Same tile pattern, deliberately
-            more compact (smaller icon/text) so it reads as a lower-priority
-            tier without needing a second, heavier card wrapper. */}
-        {visibleQuality.length > 0 && (
-          <div>
-            <SectionLabel icon={<Layers className="w-3.5 h-3.5" />} text="Quality & References" hex={lightSafe("#64748B", theme)} />
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(6px,1vh,10px)]">
-              {visibleQuality.map((mod) => renderTile(mod, true))}
-            </div>
-          </div>
-        )}
+            {/* REFERENCES. Same tile pattern, deliberately more compact
+                (smaller icon/text) so it reads as a lower-priority tier
+                without needing a second, heavier card wrapper. */}
+            {visibleQuality.length > 0 && (
+              <div className="shrink-0">
+                <SectionLabel icon={<Layers className="w-3.5 h-3.5" />} text="References" hex={lightSafe("#64748B", theme)} />
+                <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(6px,1vh,10px)]">
+                  {visibleQuality.map((mod) => renderTile(mod, true))}
+                </div>
+              </div>
+            )}
 
-        {/* QUICK GUIDE — shared accordion panel for whichever tile (from
-            either group above) is currently expanded. */}
-        {quickGuidePanel}
+            {/* QUICK GUIDE — shared accordion panel for whichever tile (from
+                either group above) is currently expanded. */}
+            {quickGuidePanel && <div className="shrink-0">{quickGuidePanel}</div>}
 
-        {/* SUPPORTING — Quick Peek. QA Performance and Announcements sit in
-            ONE grid row — not two cards stacked vertically — so they read
-            as "the dashboard's intelligence band" rather than two unrelated
-            blocks. QA Performance is now a compact, fixed-content KPI strip
-            (see QaPerformancePeek.tsx), so this row uses `items-start`
-            instead of the old `items-stretch`: forcing QA Performance to
-            match Announcements' height would just reopen the "excessive
-            empty space" problem the compact redesign fixes. Both cards
-            share a common top edge; their bottom edges are no longer forced
-            to match, which is expected now that Announcements (real,
-            variable-length content) and QA Performance (fixed KPIs) have
-            genuinely different natural heights. Below `lg` they stack (QA
-            Performance above Announcements). */}
-        <div className="flex flex-col gap-[clamp(6px,1.2vh,16px)]">
-          <SectionLabel icon={<Clock className="w-3.5 h-3.5" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
-
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(6px,1.2vh,16px)] items-start">
-            <div className="min-w-0">
+            {/* QA PERFORMANCE — fills whatever space is left in this column.
+                `[&>*]:h-full` forces the card (a plain block, no className
+                prop of its own) to actually fill this wrapper's stretched
+                height instead of sitting at its own content height with
+                dead space below it — same pattern used on the right column
+                below for HomeAnnouncementCard. */}
+            <div className="flex-1 min-h-0 [&>*]:h-full">
               <QaPerformancePeek
                 theme={theme}
                 userEmail={currentUser?.email || ""}
                 onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
               />
             </div>
+          </div>
 
-            <div className="min-w-0">
-              <HomeAnnouncementCard
-                theme={theme}
-                activeAnnouncements={activeAnnouncements}
-                noticeIndex={noticeIndex}
-                setNoticeIndex={setNoticeIndex}
-                slideDirection={slideDirection}
-                setSlideDirection={setSlideDirection}
-                onViewAll={() => setActiveTab("announcement_archive")}
-              />
-            </div>
+          {/* RIGHT — 1/3: Announcements, full column height. */}
+          <div className="min-w-0 min-h-0 [&>*]:h-full">
+            <HomeAnnouncementCard
+              theme={theme}
+              activeAnnouncements={activeAnnouncements}
+              noticeIndex={noticeIndex}
+              setNoticeIndex={setNoticeIndex}
+              slideDirection={slideDirection}
+              setSlideDirection={setSlideDirection}
+              onViewAll={() => setActiveTab("announcement_archive")}
+            />
           </div>
         </div>
       </div>
