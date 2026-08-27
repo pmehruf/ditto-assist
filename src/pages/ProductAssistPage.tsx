@@ -1002,7 +1002,12 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
               and the page scrolls normally. */}
           <div className="flex-1 min-h-[240px] lg:min-h-0 overflow-y-auto space-y-5 px-4 py-5">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-2 text-center py-6">
+              // Sized down from w-48/56 + gap-2/py-6 — that generous sizing
+              // was tuned before the app-wide auto-zoom feature (autoZoom.ts)
+              // shipped; at a zoomed-in desktop scale it read as oversized
+              // and pushed the "Write your query" input toward/past the
+              // fold. Same illustration, same copy, just a smaller footprint.
+              <div className="flex flex-col items-center justify-center gap-1.5 text-center py-4">
                 {/* The duo illustration as the empty state's main visual
                     anchor — sized generously since it's the focal point,
                     plain (no card/background of its own). The source PNG
@@ -1012,7 +1017,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
                     black is a no-op, so only the character/glow pixels
                     show) instead of pasting a visible dark rectangle into
                     the light theme. */}
-                <div className="isolate w-48 sm:w-56">
+                <div className="isolate w-36 sm:w-44">
                   <img
                     src="/assets/.aistudio/bot-advisor-mascot-duo.png"
                     alt=""

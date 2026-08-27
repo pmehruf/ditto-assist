@@ -289,7 +289,7 @@ export function AnnouncementLogPage({
     ]);
   };
 
-  const cardClass = `p-5 rounded-2xl border flex flex-col h-full min-h-0 overflow-hidden ${
+  const cardClass = `p-4 rounded-2xl border flex flex-col h-full min-h-0 overflow-hidden ${
     /* Light theme uses the design system's own surface tokens rather
        than one-off hex values: --surface-elevated for the primary card,
        with --border (#D2DFEC). --surface-elevated already carries its own
@@ -306,12 +306,16 @@ export function AnnouncementLogPage({
   return (
     /* Fills the app's content area on lg+ (main is lg:flex lg:flex-col
        lg:min-h-0 for this tab) so the two cards below share exactly the
-       remaining height — no hardcoded viewport offsets, no page scroll. */
-    <div className="space-y-5 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0">
+       remaining height — no hardcoded viewport offsets, no page scroll.
+       space-y-5 -> space-y-3 and the header's pb-3 -> pb-2 below: a small,
+       deliberate trim (not a redesign) to reclaim vertical room now that
+       the app-wide auto-zoom feature makes every fixed-px gap read bigger
+       on a large monitor. */
+    <div className="space-y-3 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0">
       {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
           Studio, the reference implementation): flat, no card surface,
           accent line + title sitting directly on the page. */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800 lg:shrink-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2 border-b border-stone-200 dark:border-stone-800 lg:shrink-0">
         <div>
           <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
             dark ? "text-white" : "text-[#111827]"
@@ -330,7 +334,7 @@ export function AnnouncementLogPage({
           rather than a hardcoded 100vh offset, so both cards always end
           exactly at the viewport edge and each scrolls internally. Below lg
           the columns stack and flow naturally. */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch lg:flex-1 lg:min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch lg:flex-1 lg:min-h-0">
 
         {/* Form card (5 cols) */}
         <div className="col-span-1 lg:col-span-5 flex flex-col min-h-0">

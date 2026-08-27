@@ -4441,7 +4441,18 @@ export default function App() {
               // on tablet/narrow" behavior its sibling branch below uses.
               "lg:overflow-hidden overflow-y-auto min-h-0"
             : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "product_assist"
-            ? "lg:overflow-hidden overflow-y-auto"
+            ? // Same reasoning as the showIntro branch above, and the same
+              // missing piece: without `min-h-0` here, this flex-grow item
+              // can't shrink below its content's natural (min-content)
+              // height, so on a tall render (e.g. content sized up by the
+              // app-wide auto-zoom) it silently overflows the shell's
+              // h-screen bounds — pushing the pinned footer bar below the
+              // viewport instead of leaving it visible, and defeating each
+              // page's own internal "only this inner region scrolls" design
+              // (LookupPage/ProductAssistPage/AnnouncementLogPage all already
+              // build their own min-h-0/overflow-y-auto chain correctly, but
+              // it only works if this outer flex item can actually shrink).
+              "lg:overflow-hidden overflow-y-auto min-h-0"
             : "overflow-y-auto"
         }`}
       >

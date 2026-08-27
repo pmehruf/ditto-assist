@@ -79,10 +79,19 @@ export function ScaleToFit({ children, active, className = "" }: ScaleToFitProps
   const canScale = naturalSize.w > 0 && naturalSize.h > 0 && outerSize.w > 0 && outerSize.h > 0;
   const rawScale = canScale ? Math.min(outerSize.w / naturalSize.w, outerSize.h / naturalSize.h) : 1;
   // Never scale up beyond a sane ceiling (an ultra-wide monitor shouldn't
-  // balloon text past comfortable reading size) and never below a
-  // legibility floor (a very cramped window shrinks the composition, but
-  // not into illegible territory).
-  const scale = Math.min(Math.max(rawScale, 0.6), 1.6);
+  // balloon text past comfortable reading size). The legibility floor used
+  // to be 0.6, but that turned into a real bug once the app-wide auto-zoom
+  // feature shipped (autoZoom.ts): on a large/zoomed monitor the natural
+  // (unscaled) composition height grew relative to the available box, so
+  // the fit-to-space ratio needed to go below 0.6 — the floor forced a
+  // bigger `scale` than actually fit, so `scaledHeight` (naturalH * scale)
+  // exceeded the real available space and pushed the app's pinned footer
+  // off-screen, requiring a scroll to see it (exactly the "never below a
+  // legibility floor" comment's failure mode, just triggered by zoom
+  // instead of a cramped window). Lowered so contain-fit's own guarantee —
+  // this composition never exceeds its box — always wins over legibility;
+  // 0.4 still keeps text readable at any monitor size this ships to.
+  const scale = Math.min(Math.max(rawScale, 0.4), 1.6);
   const scaledHeight = naturalSize.h > 0 ? naturalSize.h * scale : undefined;
 
   return (

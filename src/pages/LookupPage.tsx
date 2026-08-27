@@ -178,8 +178,18 @@ export function LookupPage({
               QA Announcement panel below keeps its own bordered card. The
               grid texture is scoped to the input area only so it doesn't
               bleed into the announcement card. */}
+          {/* items-stretch (not items-center): the Input section carries no
+              border/card of its own (see comment above), but the
+              Instruction Manual panel does — with items-center that bordered
+              panel was vertically centered against the row's height (set by
+              whichever column is naturally taller), so its top/bottom edges
+              didn't line up with the Input section's own content. Stretching
+              both columns to the row's full height pins the Instruction
+              Manual card's bottom border to the same vertical level as the
+              Input section's last element (Find a Match/Reset Fields), on
+              every viewport. */}
           <div
-            className={`w-full flex flex-col lg:flex-row items-center gap-10 lg:gap-16 animate-fade-in ${
+            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
