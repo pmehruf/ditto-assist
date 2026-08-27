@@ -435,7 +435,7 @@ export function LookupIntroPage({
         <div className="flex flex-col gap-[clamp(6px,1.2vh,16px)]">
           <SectionLabel icon={<Clock className="w-3.5 h-3.5" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-[clamp(6px,1.2vh,16px)] items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(6px,1.2vh,16px)] items-start">
             <div className="min-w-0">
               <QaPerformancePeek
                 theme={theme}
