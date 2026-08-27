@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   Sparkles,
   FileSpreadsheet,
@@ -19,8 +19,15 @@ import { DeclarationMapIcon, ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
 import { HomeAnnouncementCard } from "../components/HomeAnnouncementCard";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
+import { ScaleToFit } from "../components/ScaleToFit";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
+
+/** Reference width the desktop ("poster") composition is authored at — see
+ * ScaleToFit.tsx. Below this constant's matching breakpoint (`lg`, 1024px)
+ * the page uses its original, independently-responsive stacked layout. */
+const DESKTOP_CANVAS_WIDTH = 1536;
 
 type HomeTabId =
   | "lookup"
@@ -152,11 +159,17 @@ interface QuickActionTile {
  *     Announcements carousel (real, single-item content with
  *     auto-rotation — see HomeAnnouncementCard.tsx) in one row.
  *     (Recent Searches was removed from Home.)
- * Layout is genuinely responsive (CSS Grid/Flex with real breakpoints, no
- * fixed-canvas scaling) — see App.tsx's #main-scrollable-body comment for
- * the matching overflow change this replaces (a fixed-width layout
- * uniformly scaled to fit, which shrank text/click-targets on narrow
- * viewports instead of reflowing them).
+ * Below the `lg` breakpoint, layout is genuinely responsive (CSS Grid/Flex
+ * with real breakpoints, independently reflowing) — see App.tsx's
+ * #main-scrollable-body comment for the matching overflow change this
+ * replaces.
+ * At `lg` and up, by explicit request, the composition switches to a fixed-
+ * width "poster" — one deliberate reference layout (DESKTOP_CANVAS_WIDTH),
+ * uniformly scaled to fit whatever desktop/monitor space is available (see
+ * ScaleToFit.tsx) — specifically so QA Performance and the Announcement
+ * card's bottoms always land on the same line and the whole composition
+ * grows/shrinks together across screen sizes, rather than each piece
+ * reflowing independently and drifting out of proportion with each other.
  * The `activeTab === "lookup" && showIntro` condition and wrapping
  * `<motion.div key="intro">` deliberately stay in App.tsx (see
  * ResourcesPage.tsx for why — moving them here would break the
@@ -175,6 +188,43 @@ export function LookupIntroPage({
   hasAccess,
 }: LookupIntroPageProps) {
   const firstName = currentUser?.name?.split(" ")[0];
+
+  // Desktop/large-monitor "poster" composition (see ScaleToFit.tsx) only
+  // activates at the same `lg` breakpoint the two-column grid below already
+  // switches on — below it, the page keeps its original, independently-
+  // responsive stacked layout, completely untouched by anything here.
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+
+  // LEFT COLUMN height, measured live — Workspace Tools + References + the
+  // Quick Guide panel (whichever of these render) + QA Performance (whose
+  // own height is now a deliberate fixed constant at desktop, not natural —
+  // see QaPerformancePeek.tsx). The Announcement card's height is then set
+  // to this EXACT measured number, so its bottom edge lands on the same
+  // line as QA Performance's bottom edge by construction — not by
+  // stretching QA Performance, and not by hand-computed guesswork: the
+  // browser's own layout of the left column is the source of truth, so
+  // this stays correct even if a Quick Guide panel opens/closes or tile
+  // labels wrap differently.
+  const leftColRef = useRef<HTMLDivElement>(null);
+  const [announcementHeightPx, setAnnouncementHeightPx] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isDesktop) {
+      setAnnouncementHeightPx(null);
+      return;
+    }
+    const el = leftColRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const box = entry.contentBoxSize?.[0];
+      setAnnouncementHeightPx(box ? box.blockSize : entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isDesktop]);
+
   // Every Quick Action tile expands the same inline panel below its group
   // instead of navigating immediately — clicking a tile shows a short blurb
   // + a CTA that does the actual navigating. Accordion-style: one tile's
@@ -395,22 +445,27 @@ export function LookupIntroPage({
 
   return (
     <>
+      <ScaleToFit active={isDesktop} className="flex-1 min-h-0">
       <div
         // Section rhythm scales with actual viewport HEIGHT (clamp on vh)
         // instead of a fixed px gap — a tall monitor gets the original
         // comfortable spacing, a shorter browser viewport (real monitor
         // height minus tab strip/bookmarks bar/app header) gets a
         // proportionally tighter one, so the page fits at 100% zoom
-        // without relying on the user zooming out.
-        // `flex-1 min-h-0` — this root now actively fills the height its own
-        // parent (App.tsx's motion.div, itself `flex-grow flex flex-col
-        // min-h-0`) makes available, instead of just sizing to its content.
-        // That's what lets the two-section layout below genuinely reach
-        // "just above the footer" rather than stopping at its own content
-        // height.
-        className={`w-full max-w-[1900px] mx-auto font-sans flex flex-col flex-1 min-h-0 gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
+        // without relying on the user zooming out. (Below `lg` only — at
+        // `lg`+ this whole block is the fixed-width "poster" composition
+        // ScaleToFit.tsx scales uniformly to fit, so `flex-1`/`min-h-0`
+        // here are inert there — ScaleToFit's own wrapper divs, not this
+        // one, participate in App.tsx's real flex chain in that mode.)
+        // `w-full max-w-[1900px] mx-auto` (below `lg`) vs `lg:w-[1536px]
+        // lg:max-w-none` (at `lg`+): the desktop composition is authored at
+        // one fixed reference width — see DESKTOP_CANVAS_WIDTH — rather
+        // than reflowing per-viewport, precisely so it can be scaled as one
+        // proportional unit instead of each piece resizing independently.
+        className={`w-full max-w-[1900px] mx-auto lg:max-w-none font-sans flex flex-col flex-1 min-h-0 gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
           theme === "dark" ? "text-[#FFFFFF]" : "text-stone-900"
         }`}
+        style={isDesktop ? { width: DESKTOP_CANVAS_WIDTH } : undefined}
       >
         {/* WORKSPACE HEADER — full-width greeting, shared by both sections
             below rather than living inside either column. */}
@@ -428,20 +483,17 @@ export function LookupIntroPage({
 
         {/* TWO MAIN SECTIONS — left 2/3 (Workspace Tools, References, QA
             Performance) and right 1/3 (Announcements), side by side from
-            `lg` up. `items-stretch` (the grid default) is deliberate here,
-            unlike the old Quick Peek row: both columns take the row's full
-            height, driven by this row's own `flex-1 min-h-0`, which
-            stretches it down to just above the footer (rendered by
-            App.tsx, below this component). The right column's Announcement
-            card fills that full height (`[&>*]:h-full`) — but QA
-            Performance in the left column deliberately does NOT: it stays
-            at its own natural content height (`shrink-0`, no h-full), so
-            on a large monitor the extra vertical room stays empty in the
-            left column instead of stretching the card. Below `lg` they
-            stack (left column's 3 pieces, then Announcements). */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
+            `lg` up. Below `lg` they stack (left column's 3 pieces, then
+            Announcements) — completely unaffected by anything below.
+            At `lg`+: QA Performance has a fixed height (see
+            QaPerformancePeek.tsx), and the Announcement card's height is
+            set to the left column's own measured total height (via
+            `leftColRef` below) — so the two cards' bottoms land on exactly
+            the same line, by construction, without stretching QA
+            Performance itself. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0 lg:items-start">
           {/* LEFT — 2/3: Workspace Tools, References, QA Performance. */}
-          <div className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
+          <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
             {/* WORKSPACE TOOLS. Responsive: 1 column on a phone-width
                 viewport, 2 on a narrow tablet, all 4 side by side from lg up. */}
             {visibleAdvisory.length > 0 && (
@@ -469,16 +521,10 @@ export function LookupIntroPage({
                 either group above) is currently expanded. */}
             {quickGuidePanel && <div className="shrink-0">{quickGuidePanel}</div>}
 
-            {/* QA PERFORMANCE — stays at its own natural/content height,
-                deliberately NOT stretched to fill the rest of this column.
-                No h-full, no flex-1 on the card itself: `shrink-0` just
-                pins it to its content height inside this flex column. On a
-                large monitor the column (and this whole left side) is
-                still exactly as tall as the right column via the parent
-                grid's `items-stretch`, but that extra height is just empty,
-                invisible flex space below the card — not force-fed into it.
-                The right column's Announcement card is the one that uses
-                the leftover vertical room (its own `[&>*]:h-full` below). */}
+            {/* QA PERFORMANCE — natural content height below `lg`. At `lg`+
+                it has its own fixed height (QaPerformancePeek.tsx) that
+                this column's measured total (via leftColRef) is built
+                from — not stretched to match anything here. */}
             <div className="shrink-0">
               <QaPerformancePeek
                 theme={theme}
@@ -488,8 +534,12 @@ export function LookupIntroPage({
             </div>
           </div>
 
-          {/* RIGHT — 1/3: Announcements, full column height. */}
-          <div className="min-w-0 min-h-0 [&>*]:h-full">
+          {/* RIGHT — 1/3: Announcements. Below `lg`, natural height
+              (`[&>*]:h-full` is inert with no explicit wrapper height set).
+              At `lg`+, `announcementHeightPx` (the left column's own
+              measured height) is applied directly, so this card's bottom
+              lands exactly on QA Performance's bottom. */}
+          <div className="min-w-0 min-h-0 [&>*]:h-full" style={isDesktop && announcementHeightPx ? { height: announcementHeightPx } : undefined}>
             <HomeAnnouncementCard
               theme={theme}
               activeAnnouncements={activeAnnouncements}
@@ -502,6 +552,7 @@ export function LookupIntroPage({
           </div>
         </div>
       </div>
+      </ScaleToFit>
     </>
   );
 }

@@ -333,7 +333,18 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   // supporting-tier card compresses on a short viewport instead of forcing
   // the page taller than it needs to be. Horizontal padding and all font
   // sizes are untouched.
-  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
+  // `lg:h-[420px]` — at desktop (the "poster" composition LookupIntroPage.tsx
+  // builds at lg and up, see ScaleToFit.tsx), this card gets a deliberate,
+  // fixed, generous height rather than its natural content height. That's
+  // NOT the same thing as the "stretch to match the Announcement card"
+  // behavior that used to cause a large dead gap here — this is one fixed
+  // number, authored once, and LookupIntroPage.tsx derives the Announcement
+  // card's own height FROM this fixed value (this column's total measured
+  // height, this card included) so the two cards' bottoms land on the same
+  // line by construction, at every screen size the whole composition scales
+  // to. Below `lg` this card keeps its original natural/content height,
+  // completely unaffected.
+  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] lg:h-[420px] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
@@ -355,7 +366,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
             <span className={`text-[12px] font-black uppercase tracking-wide ${theme === "dark" ? "text-white" : "text-stone-900"}`}>QA Performance</span>
           </div>
         </div>
-        <div className="animate-pulse space-y-2">
+        <div className="lg:flex-1 lg:flex lg:flex-col lg:justify-center animate-pulse space-y-2">
           <div className={`h-7 w-32 rounded-lg ${theme === "dark" ? "bg-white/[0.04]" : "bg-stone-200/60"}`} />
           <div className={`h-3.5 w-20 rounded ${theme === "dark" ? "bg-white/[0.04]" : "bg-stone-200/60"}`} />
         </div>
@@ -385,7 +396,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
 
   return (
     <div className={cardClass}>
-      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)]">
+      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] lg:shrink-0">
         <div className="flex items-center gap-2 select-none min-w-0">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
             <Star className="w-4 h-4" />
@@ -406,6 +417,14 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
         </button>
       </div>
 
+      {/* BODY WRAPPER — below `lg` this is inert (no classes apply), so the
+          KPI row and last-updated line just flow normally exactly as
+          before. At `lg`+, where the card above has a fixed height
+          (420px), `lg:flex-1 lg:flex lg:flex-col lg:justify-center` makes
+          this whole body center as one block in the space left under the
+          header — filling the taller card evenly instead of leaving a
+          dead gap between the KPI numbers and the last-updated line. */}
+      <div className="lg:flex-1 lg:flex lg:flex-col lg:justify-center lg:min-h-0">
       {/* THREE-UP COHESIVE GROUPING — Consolidated Score, Lead QA, and
           Payments QA as three CENTERED zones distributed across the card's
           full width (roughly 40% / 30% / 30%, via flex-[1.4]/flex-1/flex-1
@@ -506,17 +525,18 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
       {/* Always visible — real last-processed time (processRawDump's actual
           trigger history via the Apps Script Executions API, see
           appsScriptClient.ts), not a guess and not hidden behind hover.
-          Pinned bottom-right of the card. Omitted entirely (not shown as a
-          placeholder) when that fetch comes back unavailable, rather than
-          showing a made-up time. */}
+          Pinned bottom-right of the card below `lg` (`mt-auto` still pushes
+          it down within this natural-height card there); at `lg`+ it just
+          flows after the KPI row as part of the centered body block above. */}
       {lastRunAt && (
         <div
-          className={`flex items-center justify-end gap-1 text-[11px] font-medium mt-auto pt-[clamp(3px,0.6vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
+          className={`flex items-center justify-end gap-1 text-[11px] font-medium mt-auto lg:mt-0 pt-[clamp(3px,0.6vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
         >
           <Clock className="w-2.5 h-2.5 shrink-0" />
           Data last updated {formatRelativeTime(lastRunAt)}
         </div>
       )}
+      </div>
     </div>
   );
 }

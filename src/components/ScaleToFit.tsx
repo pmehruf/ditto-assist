@@ -5,81 +5,96 @@
 
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-/**
- * Uniformly scales a fixed-width "canonical" layout to fit whatever space
- * its parent gives it — laptop, monitor, TV, doesn't matter — so the
- * content NEVER needs to scroll and NEVER overflows, the same way an image
- * with `object-fit: contain` resizes to fill its frame without distorting.
- *
- * How it works: `children` render at a fixed `baseWidth` (so CSS Grid/Flex
- * columns compute real proportions instead of collapsing to their
- * min-content width) inside an absolutely-positioned, centered box. A
- * ResizeObserver on both the outer frame (available space) and the inner
- * box (content's natural, unscaled height — which varies with real data:
- * announcement counts, recent-search rows, etc.) recomputes
- * `scale = min(availableWidth / naturalWidth, availableHeight / naturalHeight)`
- * on every change and applies it via `transform: scale()`. Because CSS
- * transforms don't affect layout geometry (only paint), `offsetWidth` /
- * `offsetHeight` on the inner box keep reporting its true unscaled size
- * even while it's visibly scaled — that's what makes re-measuring safe to
- * do continuously without feedback loops.
- *
- * IMPORTANT: anything that must stay pinned to the real viewport (modals,
- * `position: fixed` overlays) must render OUTSIDE this component — a CSS
- * `transform` on an ancestor makes that ancestor the containing block for
- * `position: fixed` descendants, so a fixed-positioned modal rendered
- * *inside* `children` would get scaled and mispositioned along with
- * everything else instead of covering the real screen.
- */
-export function ScaleToFit({
-  children,
-  baseWidth,
-  className = "",
-}: {
+interface ScaleToFitProps {
   children: ReactNode;
-  /** The canonical design width (px) content is authored at before scaling. */
-  baseWidth: number;
+  /** No-op passthrough (renders `children` directly, no measuring/transform)
+   * when false — used to keep this effect scoped to desktop/large-monitor
+   * viewports only. Below that, the existing responsive/stacked layout
+   * already works correctly and untouched. */
+  active: boolean;
   className?: string;
-}) {
-  const outerRef = useRef<HTMLDivElement | null>(null);
-  const innerRef = useRef<HTMLDivElement | null>(null);
-  const [scale, setScale] = useState(1);
-  const [ready, setReady] = useState(false);
+}
+
+/**
+ * "Poster" scaling for the Home dashboard's desktop composition — the whole
+ * block (greeting + two-column grid) is authored at one fixed reference
+ * width so every internal proportion (tile grid, QA Performance vs
+ * Announcements) is deterministic, then uniformly scaled via a single CSS
+ * `transform: scale()` (contain-fit, like `object-fit: contain` on an
+ * image) to whatever space is actually available — larger monitor, larger
+ * scale; smaller window, smaller scale. Because it's one uniform transform
+ * applied to the whole composition, every relative position (including "QA
+ * Performance's card bottom lines up with the Announcement card's bottom")
+ * stays exactly true at every size — that alignment is guaranteed by the
+ * fixed-width design itself (see LookupIntroPage.tsx's height-matching
+ * effect), not by this component.
+ *
+ * How it works: `innerRef` renders `children` at a fixed width (set by the
+ * caller via className, e.g. `w-[1536px]`) with no outer constraint, so its
+ * rendered box is its true natural/unscaled size. A `ResizeObserver` on
+ * that box reports this natural size — transforms never affect the box a
+ * ResizeObserver reports (only paint), so this stays accurate regardless of
+ * the scale currently applied, meaning there's no feedback loop between
+ * "current scale" and "measured natural size." A second `ResizeObserver` on
+ * `outerRef` (this component's own slot in the page) reports the actual
+ * available space. `scale` is then the largest factor that fits the
+ * natural box inside the available space on both axes at once (contain­
+ * fit), floored so the composition never becomes illegibly small.
+ */
+export function ScaleToFit({ children, active, className = "" }: ScaleToFitProps) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [outerSize, setOuterSize] = useState({ w: 0, h: 0 });
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
 
   useLayoutEffect(() => {
-    const outer = outerRef.current;
-    const inner = innerRef.current;
-    if (!outer || !inner) return;
+    if (!active) return;
+    const outerEl = outerRef.current;
+    const innerEl = innerRef.current;
+    if (!outerEl || !innerEl) return;
 
-    const recompute = () => {
-      const naturalW = inner.offsetWidth;
-      const naturalH = inner.offsetHeight;
-      const availW = outer.clientWidth;
-      const availH = outer.clientHeight;
-      if (naturalW === 0 || naturalH === 0 || availW === 0 || availH === 0) return;
-      setScale(Math.min(availW / naturalW, availH / naturalH));
-      setReady(true);
+    const readBox = (entry: ResizeObserverEntry) => {
+      const box = entry.contentBoxSize?.[0];
+      return box ? { w: box.inlineSize, h: box.blockSize } : { w: entry.contentRect.width, h: entry.contentRect.height };
     };
 
-    recompute();
-    const ro = new ResizeObserver(recompute);
-    ro.observe(outer);
-    ro.observe(inner);
-    return () => ro.disconnect();
-  }, []);
+    const roOuter = new ResizeObserver((entries) => {
+      if (entries[0]) setOuterSize(readBox(entries[0]));
+    });
+    const roInner = new ResizeObserver((entries) => {
+      if (entries[0]) setNaturalSize(readBox(entries[0]));
+    });
+    roOuter.observe(outerEl);
+    roInner.observe(innerEl);
+    return () => {
+      roOuter.disconnect();
+      roInner.disconnect();
+    };
+  }, [active]);
+
+  if (!active) {
+    return <>{children}</>;
+  }
+
+  const canScale = naturalSize.w > 0 && naturalSize.h > 0 && outerSize.w > 0 && outerSize.h > 0;
+  const rawScale = canScale ? Math.min(outerSize.w / naturalSize.w, outerSize.h / naturalSize.h) : 1;
+  // Never scale up beyond a sane ceiling (an ultra-wide monitor shouldn't
+  // balloon text past comfortable reading size) and never below a
+  // legibility floor (a very cramped window shrinks the composition, but
+  // not into illegible territory).
+  const scale = Math.min(Math.max(rawScale, 0.6), 1.6);
+  const scaledHeight = naturalSize.h > 0 ? naturalSize.h * scale : undefined;
 
   return (
-    <div ref={outerRef} className={`relative w-full h-full min-h-0 overflow-hidden ${className}`}>
+    <div ref={outerRef} className={`relative w-full flex justify-center overflow-hidden ${className}`} style={{ height: scaledHeight }}>
       <div
         ref={innerRef}
         style={{
-          width: baseWidth,
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          transform: `translate(-50%, -50%) scale(${scale})`,
-          transformOrigin: "center center",
-          visibility: ready ? "visible" : "hidden",
+          transform: canScale ? `scale(${scale})` : undefined,
+          transformOrigin: "top center",
+          // Only visible once measured/scaled — avoids a one-frame flash of
+          // the unscaled, oversized natural-width composition.
+          visibility: canScale ? "visible" : "hidden",
         }}
       >
         {children}
@@ -87,3 +102,5 @@ export function ScaleToFit({
     </div>
   );
 }
+
+export default ScaleToFit;
