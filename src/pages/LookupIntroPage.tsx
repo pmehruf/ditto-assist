@@ -430,13 +430,15 @@ export function LookupIntroPage({
             Performance) and right 1/3 (Announcements), side by side from
             `lg` up. `items-stretch` (the grid default) is deliberate here,
             unlike the old Quick Peek row: both columns take the row's full
-            height, which is what lets the right column's Announcement card
-            span "the full available page height" and the left column's QA
-            Performance card grow to fill whatever space is left under
-            Workspace Tools/References — both driven by this row's own
-            `flex-1 min-h-0`, which stretches it down to just above the
-            footer (rendered by App.tsx, below this component). Below `lg`
-            they stack (left column's 3 pieces, then Announcements). */}
+            height, driven by this row's own `flex-1 min-h-0`, which
+            stretches it down to just above the footer (rendered by
+            App.tsx, below this component). The right column's Announcement
+            card fills that full height (`[&>*]:h-full`) — but QA
+            Performance in the left column deliberately does NOT: it stays
+            at its own natural content height (`shrink-0`, no h-full), so
+            on a large monitor the extra vertical room stays empty in the
+            left column instead of stretching the card. Below `lg` they
+            stack (left column's 3 pieces, then Announcements). */}
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
           {/* LEFT — 2/3: Workspace Tools, References, QA Performance. */}
           <div className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
@@ -467,13 +469,17 @@ export function LookupIntroPage({
                 either group above) is currently expanded. */}
             {quickGuidePanel && <div className="shrink-0">{quickGuidePanel}</div>}
 
-            {/* QA PERFORMANCE — fills whatever space is left in this column.
-                `[&>*]:h-full` forces the card (a plain block, no className
-                prop of its own) to actually fill this wrapper's stretched
-                height instead of sitting at its own content height with
-                dead space below it — same pattern used on the right column
-                below for HomeAnnouncementCard. */}
-            <div className="flex-1 min-h-0 [&>*]:h-full">
+            {/* QA PERFORMANCE — stays at its own natural/content height,
+                deliberately NOT stretched to fill the rest of this column.
+                No h-full, no flex-1 on the card itself: `shrink-0` just
+                pins it to its content height inside this flex column. On a
+                large monitor the column (and this whole left side) is
+                still exactly as tall as the right column via the parent
+                grid's `items-stretch`, but that extra height is just empty,
+                invisible flex space below the card — not force-fed into it.
+                The right column's Announcement card is the one that uses
+                the leftover vertical room (its own `[&>*]:h-full` below). */}
+            <div className="shrink-0">
               <QaPerformancePeek
                 theme={theme}
                 userEmail={currentUser?.email || ""}
