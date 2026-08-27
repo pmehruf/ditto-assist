@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { MascotWithFallback } from "./mascots/MascotWithFallback";
 import { QAAnnouncement } from "../types/announcements";
 import { AnnouncementContent } from "./AnnouncementContent";
+import { getDaysDiff, formatOrdinal, getCountdownBadgeConfig, getRatingBadgeConfig } from "../utils/announcementDisplay";
 
 interface AnnouncementCarouselCardProps {
   theme: "light" | "dark";
@@ -33,11 +34,16 @@ interface AnnouncementCarouselCardProps {
 }
 
 /**
- * Horizontal QA/General Announcement carousel card — extracted verbatim from
- * LookupPage.tsx (previously inlined there) so it can be reused on other
- * pages. Originally lived on the Declarations page next to the PED mapping
- * form; moved to the Home page dashboard, with the Instruction Manual taking
- * its old slot on Declarations instead.
+ * Horizontal QA/General Announcement carousel card — originally lived on the
+ * Declarations page next to the PED mapping form. Not currently rendered
+ * anywhere: the Declarations page now shows InstructionManualPanel in that
+ * slot instead, and the Home dashboard has its own, smaller Home-native
+ * carousel (HomeAnnouncementCard.tsx) rather than this component, which was
+ * designed for a tall standalone sidebar column. Kept (not deleted) as a
+ * reusable, still-functional component in case a future page wants this
+ * exact large-card treatment; its formatting helpers (countdown/rating
+ * badges, ordinal dates) now live in utils/announcementDisplay.ts, shared
+ * with HomeAnnouncementCard so both stay in sync.
  */
 export function AnnouncementCarouselCard({
   theme,
@@ -56,125 +62,9 @@ export function AnnouncementCarouselCard({
   const index = noticeIndex % sorted.length;
   const item = sorted[index];
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const getDaysDiff = (dateStr: string) => {
-    const targetDate = new Date(dateStr);
-    targetDate.setHours(0, 0, 0, 0);
-    const diffTime = targetDate.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-  const formatOrdinal = (dStr: string) => {
-    const d = new Date(dStr);
-    const months = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "June",
-      "July",
-      "Aug",
-      "Sept",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
-    const day = d.getDate();
-    const month = months[d.getMonth()];
-    let suffix = "th";
-    if (day === 1 || day === 21 || day === 31) suffix = "st";
-    else if (day === 2 || day === 22) suffix = "nd";
-    else if (day === 3 || day === 23) suffix = "rd";
-    return `${day}${suffix} ${month}`;
-  };
-
   const diffDays = getDaysDiff(item.effectiveDate);
-
-  const countdownClasses =
-    "bg-[#de7c50] text-black border border-[#c26a3d] font-extrabold";
-  const getCountdownBadgeConfig = (diff: number) => {
-    if (diff === 0) {
-      return { text: "Effective today", classes: countdownClasses };
-    } else if (diff === 1) {
-      return { text: "Live in 1 day", classes: countdownClasses };
-    } else if (diff === 2) {
-      return { text: "Live in 2 days", classes: countdownClasses };
-    } else if (diff === 3) {
-      return { text: "Live in 3 days", classes: countdownClasses };
-    } else if (diff > 3 && diff <= 7) {
-      return {
-        text: `Live in ${diff} days`,
-        classes: countdownClasses,
-      };
-    } else if (diff < 0) {
-      const absDiff = Math.abs(diff);
-      const dayLabel = absDiff === 1 ? "day" : "days";
-      return {
-        text: `Active since ${absDiff} ${dayLabel}`,
-        classes: countdownClasses,
-      };
-    } else {
-      return {
-        text: `Active from ${formatOrdinal(item.effectiveDate)}`,
-        classes: countdownClasses,
-      };
-    }
-  };
-
-  const getRatingBadgeConfig = (rating: number | undefined) => {
-    if (rating === undefined || rating === 0) {
-      return {
-        text: "No Rating",
-        classes:
-          theme === "dark"
-            ? "bg-stone-500/10 text-stone-400 border border-stone-500/15 font-extrabold"
-            : "bg-stone-55 text-stone-600 border border-stone-205 font-extrabold",
-      };
-    }
-    if (rating === 1) {
-      return {
-        text: "Rating 1",
-        classes:
-          "bg-[#c1665c] text-black border border-[#a84f46] font-extrabold",
-      };
-    } else if (rating === 2) {
-      return {
-        text: "Rating 2",
-        classes:
-          "bg-[#de7c50] text-black border border-[#c26a3d] font-extrabold",
-      };
-    } else if (rating === 3) {
-      return {
-        text: "Rating 3",
-        classes:
-          "bg-[#d1a34a] text-black border border-[#b3872f] font-extrabold",
-      };
-    } else if (rating === 4) {
-      return {
-        text: "Rating 4",
-        classes:
-          "bg-[#94b06c] text-black border border-[#7a9552] font-extrabold",
-      };
-    } else if (rating === -1) {
-      return {
-        text: "Highlight",
-        classes:
-          theme === "dark"
-            ? "bg-purple-500/10 text-purple-400 border border-purple-500/20 font-extrabold"
-            : "bg-purple-55 text-purple-700 border border-purple-200 font-extrabold",
-      };
-    }
-    return {
-      text: `Rating ${rating}`,
-      classes:
-        "bg-[#6fa08c] text-black border border-[#57806e] font-extrabold",
-    };
-  };
-
-  const countdownConfig = getCountdownBadgeConfig(diffDays);
-  const ratingConfig = getRatingBadgeConfig(item.rating);
+  const countdownConfig = getCountdownBadgeConfig(diffDays, item.effectiveDate);
+  const ratingConfig = getRatingBadgeConfig(item.rating, theme);
 
   const annType = item.type || "QA Announcement";
 

@@ -3,25 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Sparkles,
   FileSpreadsheet,
   BookOpen,
-  Megaphone,
-  ArrowUpRight,
   Clock,
   AlertTriangle,
-  CheckCircle2,
-  Zap,
   ClipboardCheck,
   Briefcase,
   Layers,
 } from "lucide-react";
 import { QaDashboardIcon, DeclarationMapIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
+import { HomeAnnouncementCard } from "../components/HomeAnnouncementCard";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
-import { AnnouncementStatModal } from "../components/AnnouncementStatModal";
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 
@@ -40,14 +36,15 @@ interface LookupIntroPageProps {
   currentUser: LoggedUser | null;
   setShowIntro: (value: boolean) => void;
   setActiveTab: (value: HomeTabId) => void;
+  // Announcement carousel — the same shared state App.tsx already drives the
+  // Declaration Assist page's carousel with (see HomeAnnouncementCard.tsx's
+  // doc comment: one rotation timer in App.tsx, read by whichever page
+  // currently renders an announcement card).
   activeAnnouncements: QAAnnouncement[];
-  // Full, uncapped announcement list (App.tsx's qaAnnouncements) — used only
-  // for the weekly stats (new / went live / going live today) below the
-  // Announcements card's preview, since activeAnnouncements is capped to 8.
-  allAnnouncements: QAAnnouncement[];
-  // Opens the Announcements archive pre-filtered to a specific effective
-  // date — used by "Open Today's Announcements".
-  onOpenAnnouncementsForDate: (date: string) => void;
+  noticeIndex: number;
+  setNoticeIndex: (updater: number | ((prev: number) => number)) => void;
+  slideDirection: "right-to-left" | "left-to-right";
+  setSlideDirection: (value: "right-to-left" | "left-to-right") => void;
   // Same gate the sidebar uses (App.tsx's hasAccess) — Quick Actions should
   // only ever offer tools this advisor can actually open.
   hasAccess: (featureId: string, action: "Viewer" | "Editor") => boolean;
@@ -58,36 +55,6 @@ function getGreeting(): string {
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
   return "Good evening";
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-function fmtDateOnly(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-function parseDateOnly(s?: string): Date | null {
-  if (!s) return null;
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function formatRelativeTime(iso: string): string {
-  if (!iso) return "";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffMs = Date.now() - then;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay === 1) return "Yesterday";
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
 /** Every accent hex on this page was picked for the dark theme (mostly
@@ -175,9 +142,9 @@ interface QuickActionTile {
  *     slightly more visual weight than the tier below it.
  *  2. SECONDARY — Quality & References: QA Dashboard, Plan References,
  *     Declaration Map — same tile pattern, deliberately more compact.
- *  3. SUPPORTING — Quick Peek: QA Performance full-width, then a
- *     full-width Latest Updates strip (Announcements' real content, not
- *     just a stat tile — see that section below) closing out the page.
+ *  3. SUPPORTING — Quick Peek: a compact QA Performance KPI strip paired
+ *     with the Announcements carousel (real, single-item content with
+ *     auto-rotation — see HomeAnnouncementCard.tsx) in one row.
  *     (Recent Searches was removed from Home — My Activity is still the
  *     dedicated place to browse search history.)
  * Layout is genuinely responsive (CSS Grid/Flex with real breakpoints, no
@@ -196,8 +163,10 @@ export function LookupIntroPage({
   setShowIntro,
   setActiveTab,
   activeAnnouncements,
-  allAnnouncements,
-  onOpenAnnouncementsForDate,
+  noticeIndex,
+  setNoticeIndex,
+  slideDirection,
+  setSlideDirection,
   hasAccess,
 }: LookupIntroPageProps) {
   const firstName = currentUser?.name?.split(" ")[0];
@@ -298,71 +267,6 @@ export function LookupIntroPage({
 
   const expandedTile = QUICK_ACTIONS.find((mod) => mod.id === expandedTileId) || null;
 
-  // Weekly Announcements stats — from the full (uncapped) list, not the
-  // capped activeAnnouncements, so these counts are accurate even when more
-  // than 8 announcements exist.
-  const todayStr = fmtDateOnly(new Date());
-  const { newThisWeekList, wentLiveThisWeekList, liveToday } = useMemo(() => {
-    const today = parseDateOnly(todayStr)!;
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 6);
-    const newList: QAAnnouncement[] = [];
-    const wentLiveList: QAAnnouncement[] = [];
-    const liveTodayList: QAAnnouncement[] = [];
-    for (const a of allAnnouncements) {
-      const posted = parseDateOnly(a.announcementDate);
-      if (posted && posted >= weekAgo && posted <= today) newList.push(a);
-      const effective = parseDateOnly(a.effectiveDate);
-      if (effective && effective >= weekAgo && effective <= today) wentLiveList.push(a);
-      if (a.effectiveDate === todayStr) liveTodayList.push(a);
-    }
-    return { newThisWeekList: newList, wentLiveThisWeekList: wentLiveList, liveToday: liveTodayList };
-  }, [allAnnouncements, todayStr]);
-
-  // Which stat tile's popup (if any) is open — holds the tile's label +
-  // the exact filtered list it represents, so AnnouncementStatModal never
-  // has to re-derive the filter itself.
-  const [openStat, setOpenStat] = useState<{ title: string; list: QAAnnouncement[] } | null>(null);
-
-  // Vertical padding/gaps below use clamp(floor, Xvh, ceiling) instead of
-  // fixed px so this — the SUPPORTING tier (Quick Peek/Latest Updates) —
-  // compresses first and furthest as available viewport height shrinks,
-  // per the required priority order (Advisory Workspace > Quality &
-  // References > Quick Peek > Latest Updates). Horizontal padding is
-  // untouched (still width-responsive via sm:).
-  const cardClass = `rounded-2xl border px-4 sm:px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
-    theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
-  }`;
-
-  const cardHeader = (label: string, icon: ReactNode, onOpen: () => void, hex: string) => {
-    const resolvedHex = lightSafe(hex, theme);
-    return (
-      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] gap-2">
-        <div className="flex items-center gap-2 select-none min-w-0">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-            style={{ backgroundColor: `${resolvedHex}1A`, color: resolvedHex }}
-          >
-            {icon}
-          </div>
-          <span className={`text-[13px] sm:text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-            {label}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onOpen}
-          className={`flex items-center gap-0.5 text-[12px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
-            theme === "dark" ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-800"
-          }`}
-        >
-          View all
-          <ArrowUpRight className="w-3 h-3" />
-        </button>
-      </div>
-    );
-  };
-
   /** Shared tile renderer for both Quick Action groups — `compact` is the
    * only thing that differs between Advisory Workspace and Quality &
    * References (icon box size, padding, title weight), per SectionLabel's
@@ -459,45 +363,6 @@ export function LookupIntroPage({
     </div>
   );
 
-  // Latest Updates — the real announcement content (title/category, not
-  // just a count) belongs on Home now; the Declaration Assist page (see
-  // LookupPage.tsx) keeps its own full carousel unchanged, since removing
-  // it would mean restructuring that page's two-column layout, which is
-  // out of scope for this Home redesign (see App.tsx's AnnouncementCarouselCard
-  // usage there). This reuses the exact same activeAnnouncements/
-  // allAnnouncements props Home already received — no new data source, no
-  // second announcement system, just a Home-appropriate presentation of it.
-  const latestItems = activeAnnouncements.slice(0, 3);
-  const statTiles = [
-    {
-      label: "New",
-      sub: "This Week",
-      value: newThisWeekList.length,
-      list: newThisWeekList,
-      title: "New This Week",
-      icon: <Sparkles className="w-3.5 h-3.5" />,
-      color: theme === "dark" ? "#60A5FA" : "#2563EB",
-    },
-    {
-      label: "Went Live",
-      sub: "This Week",
-      value: wentLiveThisWeekList.length,
-      list: wentLiveThisWeekList,
-      title: "Went Live This Week",
-      icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-      color: theme === "dark" ? "#34D399" : "#059669",
-    },
-    {
-      label: "Live",
-      sub: "Today",
-      value: liveToday.length,
-      list: liveToday,
-      title: "Live Today",
-      icon: <Zap className="w-3.5 h-3.5" />,
-      color: theme === "dark" ? "#22D3EE" : "#0754b7",
-    },
-  ] as const;
-
   return (
     <>
       <div
@@ -507,7 +372,7 @@ export function LookupIntroPage({
         // height minus tab strip/bookmarks bar/app header) gets a
         // proportionally tighter one, so the page fits at 100% zoom
         // without relying on the user zooming out.
-        className={`w-full max-w-[1680px] mx-auto font-sans flex flex-col gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
+        className={`w-full max-w-[1900px] mx-auto font-sans flex flex-col gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
           theme === "dark" ? "text-[#FFFFFF]" : "text-stone-900"
         }`}
       >
@@ -554,39 +419,24 @@ export function LookupIntroPage({
             either group above) is currently expanded. */}
         {quickGuidePanel}
 
-        {/* SUPPORTING — Quick Peek. QA Performance and Latest Updates are
-            composed as ONE deliberate pair in a single grid row — not two
-            cards stacked vertically — so they read as "the dashboard's
-            intelligence band" rather than two unrelated blocks. QA
-            Performance gets ~60% of the row (it carries more information:
-            three stat blocks plus trend), Latest Updates gets ~40% (a
-            compact feed). Grid's default `align-items: stretch` matches
-            their heights automatically — QaPerformancePeek's own internal
-            `flex-1`/`justify-center` rows already re-center their content
-            when given extra height, so both cards share the same top AND
-            bottom edge with no extra height-matching logic needed. Below
-            `lg` they stack (QA Performance above Latest Updates), which is
-            fine — the side-by-side composition is a desktop/laptop-width
-            benefit, not a requirement at phone/tablet widths. */}
+        {/* SUPPORTING — Quick Peek. QA Performance and Announcements sit in
+            ONE grid row — not two cards stacked vertically — so they read
+            as "the dashboard's intelligence band" rather than two unrelated
+            blocks. QA Performance is now a compact, fixed-content KPI strip
+            (see QaPerformancePeek.tsx), so this row uses `items-start`
+            instead of the old `items-stretch`: forcing QA Performance to
+            match Announcements' height would just reopen the "excessive
+            empty space" problem the compact redesign fixes. Both cards
+            share a common top edge; their bottom edges are no longer forced
+            to match, which is expected now that Announcements (real,
+            variable-length content) and QA Performance (fixed KPIs) have
+            genuinely different natural heights. Below `lg` they stack (QA
+            Performance above Announcements). */}
         <div className="flex flex-col gap-[clamp(6px,1.2vh,16px)]">
           <SectionLabel icon={<Clock className="w-3.5 h-3.5" />} text="Quick Peek" hex={lightSafe("#FB923C", theme)} />
 
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-[clamp(6px,1.2vh,16px)] items-stretch">
-            {/* Wrapper div does two jobs QaPerformancePeek can't do for
-                itself (it has no className prop): (1) min-w-0 — a grid
-                track wrapped in minmax(0, ...) bounds the TRACK, but a
-                grid item's own default min-width is still content-based
-                unless the item opts in, same fix as the horizontal-
-                overflow bug from the grid-cols-[2fr_1fr] row this
-                replaces; (2) [&>*]:h-full — the grid's default stretch
-                already makes THIS wrapper exactly as tall as the row, but
-                a plain block child doesn't inherit that height on its own,
-                so the actual QaPerformancePeek card would sit at content
-                height with dead space below it. Forcing the direct child
-                to h-full makes the real card fill the stretched wrapper,
-                which is what actually aligns its bottom edge with Latest
-                Updates'. */}
-            <div className="min-w-0 [&>*]:h-full">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-[clamp(6px,1.2vh,16px)] items-start">
+            <div className="min-w-0">
               <QaPerformancePeek
                 theme={theme}
                 userEmail={currentUser?.email || ""}
@@ -594,107 +444,20 @@ export function LookupIntroPage({
               />
             </div>
 
-            {/* LATEST UPDATES — redesigned for a narrower column instead of
-                reusing the old full-width layout (stat column left + list
-                right) shrunk down: the mini stat row is now always a
-                horizontal 3-up strip across the top (rather than a tall
-                left-hand column that would eat most of this card's
-                narrower width), with the announcement list stacked below
-                it. This is a genuinely different composition for this
-                width, not the old wide layout just made smaller. */}
-            <div
-              className={`${cardClass} min-w-0`}
-              style={
-                liveToday.length > 0
-                  ? { borderColor: theme === "dark" ? "rgba(34,211,238,0.35)" : "rgba(7,84,183,0.3)" }
-                  : undefined
-              }
-            >
-              {cardHeader("Latest Updates", <Megaphone className="w-4 h-4" />, () => setActiveTab("announcement_archive"), "#FB7185")}
-              <div className="flex flex-col gap-[clamp(6px,1vh,12px)] flex-1">
-                {/* Mini stat row — always 3-up, compact. */}
-                <div className="grid grid-cols-3 gap-[clamp(4px,0.6vh,8px)]">
-                  {statTiles.map((stat) => (
-                    <button
-                      key={stat.label}
-                      type="button"
-                      onClick={() => setOpenStat({ title: stat.title, list: [...stat.list] })}
-                      title={`View ${stat.title.toLowerCase()}`}
-                      className={`relative w-full flex flex-col items-center justify-center gap-1 rounded-xl border py-[clamp(4px,0.8vh,8px)] px-2 text-center cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
-                        theme === "dark"
-                          ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.16]"
-                          : "border-stone-200 bg-stone-50/70 hover:bg-white hover:border-stone-300 hover:shadow-sm"
-                      }`}
-                    >
-                      {stat.label === "Live" && stat.value > 0 && (
-                        <span className="absolute top-1.5 right-1.5 flex w-1.5 h-1.5">
-                          <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style={{ backgroundColor: stat.color }} />
-                          <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: stat.color }} />
-                        </span>
-                      )}
-                      <span style={{ color: stat.color }}>{stat.icon}</span>
-                      <span className="flex items-baseline gap-1.5">
-                        <span className="text-[18px] font-black font-mono leading-none" style={{ color: stat.value > 0 ? stat.color : theme === "dark" ? "#F8FAFC" : "#1E293B" }}>
-                          {stat.value}
-                        </span>
-                      </span>
-                      <span className={`text-[9.5px] font-bold uppercase tracking-wide leading-tight ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                        {stat.label}
-                        <br /> {stat.sub}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Latest items by title/category — the actual content. */}
-                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                  {latestItems.length === 0 ? (
-                    <div className={`flex items-center gap-2 py-2 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
-                      <Megaphone className="w-4 h-4 opacity-50 shrink-0" />
-                      <span className="text-[13px] font-medium">No active announcements right now.</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col divide-y divide-dashed" style={{ borderColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(168,162,158,0.35)" }}>
-                      {latestItems.map((item) => {
-                        const isGeneral = item.type === "General Announcement";
-                        const dotColor = lightSafe(isGeneral ? "#2DD4BF" : "#FB7185", theme);
-                        return (
-                          <button
-                            type="button"
-                            key={item.id}
-                            onClick={() => (item.effectiveDate ? onOpenAnnouncementsForDate(item.effectiveDate) : setActiveTab("announcement_archive"))}
-                            className={`flex items-center gap-2.5 py-[clamp(4px,0.6vh,6px)] text-left cursor-pointer transition-colors rounded-lg -mx-1 px-1 ${
-                              theme === "dark" ? "hover:bg-white/[0.03]" : "hover:bg-stone-100/60"
-                            }`}
-                            title="Open in Announcements"
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
-                            <div className="min-w-0 flex-1">
-                              <div className={`text-[13px] font-extrabold tracking-tight truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-                                {item.title || item.category}
-                              </div>
-                              <div className={`text-[11px] font-normal truncate ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
-                                {item.category}
-                                {item.from ? ` · ${item.from}` : ""}
-                              </div>
-                            </div>
-                            <span className={`text-[11px] font-normal shrink-0 ${theme === "dark" ? "text-stone-600" : "text-stone-400"}`}>
-                              {formatRelativeTime(item.announcementDate || item.effectiveDate || "")}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="min-w-0">
+              <HomeAnnouncementCard
+                theme={theme}
+                activeAnnouncements={activeAnnouncements}
+                noticeIndex={noticeIndex}
+                setNoticeIndex={setNoticeIndex}
+                slideDirection={slideDirection}
+                setSlideDirection={setSlideDirection}
+                onViewAll={() => setActiveTab("announcement_archive")}
+              />
             </div>
           </div>
         </div>
       </div>
-      {openStat && (
-        <AnnouncementStatModal theme={theme} title={openStat.title} announcements={openStat.list} onClose={() => setOpenStat(null)} />
-      )}
     </>
   );
 }

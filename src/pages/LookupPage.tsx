@@ -4,7 +4,7 @@
  */
 
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ShieldCheck,
   Search,
@@ -23,10 +23,9 @@ import { DeclarationMapIcon } from "../components/icons";
 import { GridTexture } from "../components/GridTexture";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
-import { AnnouncementCarouselCard } from "../components/AnnouncementCarouselCard";
+import { InstructionManualPanel } from "../components/InstructionManualPanel";
 import { DeclarationAssistantResults } from "../components/DeclarationAssistantResults";
 import { MatchOutput, PlanConfig } from "../types.js";
-import { QAAnnouncement } from "../types/announcements";
 import { ReportingItem } from "../types/lookup";
 import { getPlanInsurerColor, hexToRgba, getContrastTextForPlanColor } from "../utils/planInsurerColors";
 import { getPlanDisplayLabel } from "../utils/planDisplayLabel";
@@ -91,14 +90,6 @@ interface LookupPageProps {
 
   // Nav
   setActiveTab: (value: TabId) => void;
-
-  // QA Announcement carousel — back on this page (moved off the Home page,
-  // which wasn't really benefiting from it)
-  activeAnnouncements: QAAnnouncement[];
-  noticeIndex: number;
-  setNoticeIndex: (updater: number | ((prev: number) => number)) => void;
-  slideDirection: "right-to-left" | "left-to-right";
-  setSlideDirection: (value: "right-to-left" | "left-to-right") => void;
 }
 
 // Quick tips — moved here from the Home dashboard (relocated, not
@@ -172,11 +163,6 @@ export function LookupPage({
   planConfigs,
   checkIllnessInPlanSpecificList,
   setActiveTab,
-  activeAnnouncements,
-  noticeIndex,
-  setNoticeIndex,
-  slideDirection,
-  setSlideDirection
 }: LookupPageProps) {
   // Quiet per-plan insurer color hint for the queue card (border, queued PED
   // tags, and the total-queue counter) — same muted palette used for the PED
@@ -194,14 +180,6 @@ export function LookupPage({
   const selectedPlanDisabledNote = selectedPlan ? disabledPlanNotes[selectedPlan] : undefined;
   const isSelectedPlanDisabled = selectedPlanDisabledNote !== undefined;
 
-  // The QA Announcement card (right column, intro/pre-results view) needs to
-  // match the PED Mapping Engine input column's (left column) actual
-  // rendered height exactly, with its own content scrolling internally if
-  // it doesn't fit.
-  const leftColRef = useRef<HTMLDivElement | null>(null);
-  const [leftColHeight, setLeftColHeight] = useState<number | null>(null);
-  const [isDesktopLayout, setIsDesktopLayout] = useState(true);
-
   // Quick tips rotation — same 7s interval the Home dashboard used before
   // this moved here.
   const [tipIndex, setTipIndex] = useState(0);
@@ -210,25 +188,6 @@ export function LookupPage({
       setTipIndex((prev) => (prev + 1) % QUICK_TIPS.length);
     }, 7000);
     return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const mql = window.matchMedia("(min-width: 1024px)"); // Tailwind's `lg`
-    const updateLayout = () => setIsDesktopLayout(mql.matches);
-    updateLayout();
-    mql.addEventListener("change", updateLayout);
-    return () => mql.removeEventListener("change", updateLayout);
-  }, []);
-
-  useEffect(() => {
-    const el = leftColRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      const height = entries[0]?.contentRect?.height;
-      if (height) setLeftColHeight(height);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
   }, []);
 
   return (
@@ -274,7 +233,6 @@ export function LookupPage({
                 glow blobs already rendered behind every tab in App.tsx), so
                 it blends into the page instead of looking like its own panel. */}
             <div
-              ref={leftColRef}
               className="flex-1 min-w-0 flex flex-col justify-start relative z-10"
             >
               {/* Title mapping section */}
@@ -1110,22 +1068,12 @@ export function LookupPage({
               </div>
             </div>
 
-            {/* QA Announcement carousel — moved back here from the Home
-                page (it wasn't earning its place there). Height-matched to
-                the left column via leftColHeight/ResizeObserver above, same
-                as its original placement on this page. */}
-            {activeAnnouncements.length > 0 && (
-              <AnnouncementCarouselCard
-                theme={theme}
-                activeAnnouncements={activeAnnouncements}
-                noticeIndex={noticeIndex}
-                setNoticeIndex={setNoticeIndex}
-                slideDirection={slideDirection}
-                setSlideDirection={setSlideDirection}
-                onViewAll={() => setActiveTab("announcement_archive")}
-                heightPx={isDesktopLayout ? leftColHeight : null}
-              />
-            )}
+            {/* Announcements moved to the Home dashboard (see
+                HomeAnnouncementCard.tsx) — this slot now shows the
+                Instruction Manual reference card instead (previously lived
+                inline on Home's old right-hand column; see
+                InstructionManualPanel.tsx's own doc comment). */}
+            <InstructionManualPanel theme={theme} />
           </div>
         </>
       )}

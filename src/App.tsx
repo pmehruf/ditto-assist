@@ -273,16 +273,15 @@ export default function App() {
   // API (see QAAnnouncementForm.tsx and AnnouncementLogPage.tsx).
   const [qaAnnouncements, setQaAnnouncements] = useState<QAAnnouncement[]>([]);
 
-  // Set by the Workspace's "Open Today's Announcements" CTA just before it
-  // switches to the announcement_archive tab, so that page opens already
-  // filtered to whatever's effective on that date instead of the normal
-  // browse-everything view. Empty string = no pending filter (normal open
-  // via the sidebar/nav behaves exactly as before).
-  const [announcementEffectiveDateFilter, setAnnouncementEffectiveDateFilter] = useState<string>("");
-  const openAnnouncementsForDate = (date: string) => {
-    setAnnouncementEffectiveDateFilter(date);
-    setActiveTab("announcement_archive");
-  };
+  // Previously set by a per-item "Open Today's Announcements" CTA before
+  // switching to the announcement_archive tab, so that page opened already
+  // filtered to a specific effective date. That per-item entry point no
+  // longer exists (the Home dashboard's Announcements card is a single-item
+  // carousel with one "View all" action, not a per-item list — see
+  // HomeAnnouncementCard.tsx), so this is always "" now: AnnouncementArchivePage
+  // still accepts initialEffectiveDate (kept as a prop in case a future entry
+  // point wants it again), it just never receives a non-empty value today.
+  const announcementEffectiveDateFilter = "";
 
   // Developer-hidden pages (feature ids). Fetched for every signed-in user
   // because the nav needs it; only the Developer can change it. See hasAccess()
@@ -4486,8 +4485,10 @@ export default function App() {
                     setShowIntro={setShowIntro}
                     setActiveTab={setActiveTab}
                     activeAnnouncements={activeAnnouncements}
-                    allAnnouncements={qaAnnouncements}
-                    onOpenAnnouncementsForDate={openAnnouncementsForDate}
+                    noticeIndex={noticeIndex}
+                    setNoticeIndex={setNoticeIndex}
+                    slideDirection={slideDirection}
+                    setSlideDirection={setSlideDirection}
                     hasAccess={hasAccess}
                   />
                 </Suspense>
@@ -4551,11 +4552,6 @@ export default function App() {
                 planConfigs={planConfigs}
                 checkIllnessInPlanSpecificList={checkIllnessInPlanSpecificList}
                 setActiveTab={setActiveTab}
-                activeAnnouncements={activeAnnouncements}
-                noticeIndex={noticeIndex}
-                setNoticeIndex={setNoticeIndex}
-                slideDirection={slideDirection}
-                setSlideDirection={setSlideDirection}
               />
               </Suspense>
               </ErrorBoundary>
