@@ -4429,15 +4429,16 @@ export default function App() {
         id="main-scrollable-body"
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
           activeTab === "lookup" && showIntro
-            ? // Was a flat "overflow-hidden min-h-0" paired with
-              // LookupIntroPage's ScaleToFit (shrunk the whole dashboard like
-              // an image to guarantee no scroll, at the cost of unreadable
-              // text/targets on a narrow viewport). Now that Home reflows
-              // with real responsive CSS instead, it needs the same
-              // "no-scroll on desktop, scrollable on tablet/narrow" behavior
-              // its sibling branch below already uses — content that
-              // genuinely doesn't fit at a small viewport scrolls rather
-              // than getting silently clipped.
+            ? // `lg:overflow-hidden` gives LookupIntroPage's ScaleToFit a
+              // bounded box to measure "available space" against at
+              // desktop — ScaleToFit's own contain-fit scaling already
+              // guarantees the poster composition never exceeds that box,
+              // so this is a safety net, not the thing doing the fitting.
+              // Below `lg`, ScaleToFit is inactive (Home reflows with real
+              // responsive CSS instead) and content that genuinely doesn't
+              // fit at a small viewport scrolls rather than getting
+              // silently clipped — same "no-scroll on desktop, scrollable
+              // on tablet/narrow" behavior its sibling branch below uses.
               "lg:overflow-hidden overflow-y-auto min-h-0"
             : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "product_assist"
             ? "lg:overflow-hidden overflow-y-auto"
@@ -4489,6 +4490,7 @@ export default function App() {
                     setNoticeIndex={setNoticeIndex}
                     slideDirection={slideDirection}
                     setSlideDirection={setSlideDirection}
+                    allAnnouncements={qaAnnouncements}
                     hasAccess={hasAccess}
                   />
                 </Suspense>

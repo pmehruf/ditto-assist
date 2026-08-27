@@ -18,6 +18,8 @@ import {
 import { DeclarationMapIcon, ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
 import { HomeAnnouncementCard } from "../components/HomeAnnouncementCard";
+import { AnnouncementCounterCard } from "../components/AnnouncementCounterCard";
+import { AnnouncementStatModal } from "../components/AnnouncementStatModal";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { ScaleToFit } from "../components/ScaleToFit";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -54,6 +56,10 @@ interface LookupIntroPageProps {
   setNoticeIndex: (updater: number | ((prev: number) => number)) => void;
   slideDirection: "right-to-left" | "left-to-right";
   setSlideDirection: (value: "right-to-left" | "left-to-right") => void;
+  // The FULL (uncapped) announcement list — App.tsx's own `qaAnnouncements`
+  // state — feeding the Announcement Counter card's weekly stats, which
+  // need accurate counts past the 8-item cap `activeAnnouncements` uses.
+  allAnnouncements: QAAnnouncement[];
   // Same gate the sidebar uses (App.tsx's hasAccess) — Quick Actions should
   // only ever offer tools this advisor can actually open.
   hasAccess: (featureId: string, action: "Viewer" | "Editor") => boolean;
@@ -155,10 +161,13 @@ interface QuickActionTile {
  *     compact. (QA Dashboard isn't a tile here — it's still fully
  *     reachable via the QA Performance card's "View QA Dashboard" link in
  *     Quick Peek below.)
- *  3. SUPPORTING — Quick Peek: a QA Performance KPI card paired with the
- *     Announcements carousel (real, single-item content with
- *     auto-rotation — see HomeAnnouncementCard.tsx) in one row.
- *     (Recent Searches was removed from Home.)
+ *  3. SUPPORTING — a 1:2 row of the Announcement Counter (New This Week /
+ *     Went Live This Week / Live Today, see AnnouncementCounterCard.tsx —
+ *     click a stat to browse it, via AnnouncementStatModal.tsx) and QA
+ *     Performance, paired with the Announcements carousel (real, single-
+ *     item content with auto-rotation — see HomeAnnouncementCard.tsx) in
+ *     its own full-height column alongside. (Recent Searches was removed
+ *     from Home.)
  * Below the `lg` breakpoint, layout is genuinely responsive (CSS Grid/Flex
  * with real breakpoints, independently reflowing) — see App.tsx's
  * #main-scrollable-body comment for the matching overflow change this
@@ -185,9 +194,14 @@ export function LookupIntroPage({
   setNoticeIndex,
   slideDirection,
   setSlideDirection,
+  allAnnouncements,
   hasAccess,
 }: LookupIntroPageProps) {
   const firstName = currentUser?.name?.split(" ")[0];
+
+  // Which Announcement Counter stat tile's popup (if any) is open — holds
+  // the tile's title + the exact filtered list it represents.
+  const [openStat, setOpenStat] = useState<{ title: string; list: QAAnnouncement[] } | null>(null);
 
   // Desktop/large-monitor "poster" composition (see ScaleToFit.tsx) only
   // activates at the same `lg` breakpoint the two-column grid below already
@@ -521,16 +535,33 @@ export function LookupIntroPage({
                 either group above) is currently expanded. */}
             {quickGuidePanel && <div className="shrink-0">{quickGuidePanel}</div>}
 
-            {/* QA PERFORMANCE — natural content height below `lg`. At `lg`+
-                it has its own fixed height (QaPerformancePeek.tsx) that
-                this column's measured total (via leftColRef) is built
-                from — not stretched to match anything here. */}
-            <div className="shrink-0">
-              <QaPerformancePeek
-                theme={theme}
-                userEmail={currentUser?.email || ""}
-                onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
-              />
+            {/* ANNOUNCEMENT COUNTER + QA PERFORMANCE — split 1:2, side by
+                side from `lg` up (stacked below it). QA Performance's own
+                design (alignment/typography/spacing/comparison visuals) is
+                completely untouched — only its available width changed,
+                same as it already adapts to any container width. The
+                Counter card sits at `lg:h-full`, stretched by this row's
+                default `items-stretch` to match QA Performance's own fixed
+                height at `lg`+ (QaPerformancePeek.tsx) — QA Performance
+                anchors the row's height; the Counter card just fills it,
+                the exact reverse of "stretching QA to match something
+                else." Below `lg`, both are natural height, stacked. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-[clamp(10px,1.8vh,24px)] shrink-0">
+              <div className="min-w-0">
+                <AnnouncementCounterCard
+                  theme={theme}
+                  allAnnouncements={allAnnouncements}
+                  onViewAll={() => setActiveTab("announcement_archive")}
+                  onOpenStat={(title, list) => setOpenStat({ title, list })}
+                />
+              </div>
+              <div className="min-w-0">
+                <QaPerformancePeek
+                  theme={theme}
+                  userEmail={currentUser?.email || ""}
+                  onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
+                />
+              </div>
             </div>
           </div>
 
@@ -553,6 +584,12 @@ export function LookupIntroPage({
         </div>
       </div>
       </ScaleToFit>
+
+      {/* Rendered OUTSIDE ScaleToFit deliberately — a modal overlay must
+          never inherit the poster composition's `transform: scale()`
+          (it would scale the popup itself, and its fixed/centered
+          positioning is relative to the real viewport, not the canvas). */}
+      {openStat && <AnnouncementStatModal theme={theme} title={openStat.title} announcements={openStat.list} onClose={() => setOpenStat(null)} />}
     </>
   );
 }
