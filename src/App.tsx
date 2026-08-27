@@ -2488,7 +2488,10 @@ export default function App() {
   // login screen (or the app) before we know the answer.
   if (authChecking) {
     return (
-      <div className={`h-screen w-full flex items-center justify-center ${
+      // h-[calc(...)] instead of h-screen: see autoZoom.ts's doc comment —
+      // divides back down by the current app-wide zoom factor so this still
+      // exactly fills the physical viewport instead of overflowing it.
+      <div className={`h-[calc(100vh/var(--app-zoom,1))] w-full flex items-center justify-center ${
         isDark ? "bg-[#001322] text-[#F5F7FA]" : "bg-[#F1F6FB] text-stone-900"
       }`}>
         <RefreshCw className={`w-6 h-6 animate-spin ${isDark ? "text-cyan-400" : "text-blue-600"}`} />
@@ -2508,7 +2511,9 @@ export default function App() {
     // hero content use that extra column width rather than staying capped
     // at its old fixed-px size.
     return (
-      <div className={`h-screen max-h-screen flex flex-col md:grid md:grid-cols-[3fr_2fr] 2xl:grid-cols-[8fr_5fr] min-[1800px]:grid-cols-[2fr_1fr] font-sans relative overflow-hidden w-full transition-all duration-500 ${
+      // h-[calc(...)]/max-h-[calc(...)] instead of h-screen/max-h-screen:
+      // see autoZoom.ts's doc comment.
+      <div className={`h-[calc(100vh/var(--app-zoom,1))] max-h-[calc(100vh/var(--app-zoom,1))] flex flex-col md:grid md:grid-cols-[3fr_2fr] 2xl:grid-cols-[8fr_5fr] min-[1800px]:grid-cols-[2fr_1fr] font-sans relative overflow-hidden w-full transition-all duration-500 ${
         isDark
           ? "bg-[#001322] text-[#F5F7FA]"
           : "bg-[#F1F6FB] text-stone-900"
@@ -3039,8 +3044,9 @@ export default function App() {
   // checking server state or actively showing the warning.
   if (productAssistGateState === "checking" && activeTab === "product_assist") {
     return (
+      // h-[calc(...)] instead of h-screen: see autoZoom.ts's doc comment.
       <div
-        className={`h-screen w-full flex items-center justify-center ${
+        className={`h-[calc(100vh/var(--app-zoom,1))] w-full flex items-center justify-center ${
           isDark ? "bg-[#001322] text-[#F5F7FA]" : "bg-[#F1F6FB] text-stone-900"
         }`}
       >
@@ -3433,7 +3439,17 @@ export default function App() {
 
   // Active Main UI App
   return (
-    <div className={`h-screen font-sans flex flex-row antialiased relative ${
+    // h-[calc(...)] instead of h-screen: see autoZoom.ts's doc comment —
+    // CSS `zoom` (applied app-wide for large monitors) inflates the
+    // rendered size of a 100vh box without shrinking the vh unit count, so
+    // a plain h-screen shell paints taller than the physical viewport once
+    // zoomed, pushing the footer bar (and anything else pinned to the
+    // bottom) off-screen. Dividing by --app-zoom here undoes exactly that
+    // inflation, so this shell — and everything measured against it,
+    // including LookupIntroPage's ScaleToFit and the other pages' own
+    // min-h-0/overflow-y-auto chains — is sized against the real,
+    // physical viewport again, the same as with no zoom applied at all.
+    <div className={`h-[calc(100vh/var(--app-zoom,1))] font-sans flex flex-row antialiased relative ${
       isDark 
         ? "bg-[#001322] text-slate-100" 
         : "bg-[#F1F6FB] text-stone-900"

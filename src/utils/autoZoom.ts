@@ -43,8 +43,22 @@
  * responsive breakpoint might read — including Home's own ScaleToFit,
  * which works off ratios of measured sizes rather than absolute
  * thresholds, so it stays correct under this ambient zoom rather than
- * double-compensating), so nothing else in the app needs to
- * compensate for it the way a transform-based approach would require.
+ * double-compensating).
+ *
+ * One thing it does NOT do automatically, though: `vh`/`vw` units (and
+ * therefore Tailwind's `h-screen`) stay pinned to the real, physical
+ * viewport size — CSS `zoom` inflates the rendered pixel size of
+ * everything in its subtree, `vh` included, but it does not shrink the
+ * *number* of vh units the viewport reports. So a `height: 100vh` box
+ * still computes to "the full viewport height," and then that whole box
+ * gets rendered `zoom`x bigger on screen — at zoom 1.35 a box sized to
+ * exactly fill the screen at 1x now paints 35% taller than the screen,
+ * pushing anything pinned below it (this app's footer bar) off-screen.
+ * `--app-zoom` is set here specifically so `h-screen`/`max-h-screen`
+ * usages in the app shell (App.tsx) can counteract this — sizing
+ * themselves to `100vh / zoom` instead, so after the zoom scale-up they
+ * land back on exactly the physical viewport height, the same as they
+ * would with no zoom applied at all.
  */
 
 const LAPTOP_REFERENCE_WIDTH = 1536;
@@ -64,7 +78,12 @@ function applyZoom(): void {
   const zoom = computeZoom(window.screen?.width || 0);
   // Round to 3 decimal places — plenty of precision for a smooth-
   // looking scale, avoids writing a needlessly long float to the DOM.
-  document.documentElement.style.setProperty("zoom", String(Math.round(zoom * 1000) / 1000));
+  const rounded = String(Math.round(zoom * 1000) / 1000);
+  document.documentElement.style.setProperty("zoom", rounded);
+  // See this file's doc comment: lets App.tsx's h-screen/max-h-screen
+  // shell containers divide themselves back down to the real viewport
+  // height, counteracting zoom's own inflation of a 100vh box.
+  document.documentElement.style.setProperty("--app-zoom", rounded);
 }
 
 let rafId: number | null = null;
