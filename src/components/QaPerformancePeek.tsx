@@ -445,12 +445,10 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           <div className={`text-[13px] font-bold uppercase tracking-wide mb-[clamp(4px,0.8vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
-          {/* Stars beside the number, one baseline — not stacked. Sized up
-              considerably (was 20px stars / 32px number) so this hero
-              figure fills this card's fixed desktop height (420px)
-              properly instead of leaving a large empty gap around a
-              comparatively small number. */}
-          <div className="flex items-baseline gap-3 mb-[clamp(4px,0.8vh,10px)]">
+          {/* Consolidated ONLY: stars stacked above the number (not beside
+              it, unlike Lead QA/Payments QA below) — still left-aligned,
+              same sizes as before, just re-stacked vertically per request. */}
+          <div className="flex flex-col items-start gap-1 mb-[clamp(4px,0.8vh,10px)]">
             {/* Stars stay a fixed amber (same accent as this card's own
                 header icon) rather than the tier color — with the score
                 number and "Excellent" badge both already using tier.color
