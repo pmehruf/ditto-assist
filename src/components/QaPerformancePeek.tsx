@@ -332,11 +332,8 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   // — vertical padding/margins below use clamp(floor, Xvh, ceiling) so this
   // supporting-tier card compresses on a short viewport instead of forcing
   // the page taller than it needs to be. Horizontal padding and all font
-  // sizes are untouched. Padding ceiling tightened (20px -> 14px) as part of
-  // the "significantly more compact vertically" pass — this card no longer
-  // stretches to match its Quick Peek row sibling (Announcements), so its
-  // own content height is what the card's actual height is now.
-  const cardClass = `relative rounded-2xl border px-5 py-[clamp(8px,1.2vh,14px)] flex flex-col ${
+  // sizes are untouched.
+  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
@@ -350,7 +347,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   if (state.kind === "loading") {
     return (
       <div className={cardClass}>
-        <div className="flex items-center justify-between mb-[clamp(4px,0.8vh,10px)]">
+        <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)]">
           <div className="flex items-center gap-2 select-none">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
               <Star className="w-4 h-4" />
@@ -412,66 +409,72 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
       {/* THREE-UP COHESIVE GROUPING — Consolidated Score, Lead QA, and
           Payments QA as three CENTERED zones distributed across the card's
           full width (roughly 40% / 30% / 30%, via flex-[1.4]/flex-1/flex-1
-          so the split is always proportional to whatever width this card
-          actually has, not a fixed px split). No vertical divider lines
-          between zones — a single shared `gap` on the row does the
-          separation job instead, so the row reads as one unified KPI panel.
-          Stars sit BESIDE the number (not stacked above it) in every zone —
-          this is the height win: using the zone's horizontal width for the
-          rating instead of an extra vertical line is what let this card's
-          total height come down without deleting any of the same data
-          (score, stars, tier, trend, last-month, evaluation counts all
-          still present, just laid out on fewer lines). Consolidated keeps
-          the strongest hierarchy (bigger number, plus the tier badge/trend
-          the other two don't get) but is now a compact 2-line zone instead
-          of 4. */}
-      <div className="flex items-center flex-1 gap-5 sm:gap-7">
+          on a flex-1 row so the split is always proportional to whatever
+          width this card actually has, not a fixed px split). No vertical
+          divider lines between zones — a hard rule reads as "three
+          separate widgets"; a single shared `gap` on the row does the same
+          separation job as plain whitespace instead, so the row reads as
+          one unified KPI panel. Each zone centers its own content (label,
+          stars-then-number stacked, and supporting line) rather than
+          left-aligning it, so each zone's whitespace distributes evenly on
+          both sides instead of pooling after the last one. Consolidated
+          keeps the strongest hierarchy (bigger stars/number, plus the tier
+          badge, trend and last-month line the other two don't get). */}
+      <div className="flex items-stretch flex-1 gap-6 sm:gap-8">
         <div className="min-w-0 flex-[1.4] flex flex-col items-center text-center justify-center">
-          <div className={`text-[11px] font-bold uppercase tracking-wide mb-[clamp(2px,0.4vh,5px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+          <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
-          <div className="flex items-baseline justify-center gap-2">
-            <span className={`text-[26px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-              {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
-            </span>
+          {/* Stars above the number (not side-by-side) — centers more
+              cleanly as a block than a wide baseline-aligned row does. */}
+          <div className="flex flex-col items-center gap-1 mb-[clamp(3px,0.6vh,8px)]">
             {/* Stars stay a fixed amber (same accent as this card's own
                 header icon) rather than the tier color — with the score
                 number and "Excellent" badge both already using tier.color
                 right next to each other, tinting the stars the same made
                 three same-colored elements in a row read as a mistake
-                rather than a signal. */}
-            <StarRating score={state.consolidated} size={15} color="#FBBF24" />
+                rather than a signal. Gold stars are also just the familiar
+                rating convention on their own, independent of any tier. */}
+            <StarRating score={state.consolidated} size={24} color="#FBBF24" />
+            <span className={`text-[40px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+              {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
+            </span>
           </div>
-          <div className="flex items-center justify-center gap-1.5 mt-[clamp(2px,0.4vh,5px)] flex-wrap">
+          <div className="flex items-center justify-center gap-2 mb-[clamp(3px,0.6vh,8px)] flex-wrap">
             <span
-              className="text-[10.5px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
+              className="text-[12.5px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
               style={{ color: tier.color, backgroundColor: tier.subtle }}
             >
               {tier.label}
             </span>
             {trend !== null && trend !== 0 && (
-              <span className={`text-[10.5px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
-                {trend > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              <span className={`text-[12px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
+                {trend > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                 {trend > 0 ? "+" : ""}
-                {trend.toFixed(2)}
-              </span>
-            )}
-            {/* Last-month baseline folded onto this same row (was its own
-                line below) — still always-visible, just no longer a
-                dedicated line of vertical space. */}
-            {state.prevConsolidated !== null && (
-              <span className={`text-[10.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
-                · was {state.prevConsolidated.toFixed(2)}
+                {trend.toFixed(2)} this month
               </span>
             )}
           </div>
+          {/* Always visible (not hover-only) — labelled plainly rather than
+              "vs last month", since it sits directly under the Consolidated
+              Score above, not the Lead QA figure beside it; this is the
+              trend line's own previous-period baseline, not a per-metric
+              number. Plain text, no chart — the arrow + delta above already
+              carries the trend; a shape here would just repeat it. */}
+          {state.prevConsolidated !== null && (
+            <div className={`text-[12px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+              Last month: {state.prevConsolidated.toFixed(2)}
+            </div>
+          )}
         </div>
 
-        {/* Lead QA / Payments QA — same number-beside-stars rhythm as
-            Consolidated, plus the evaluation-count line. Real numbers
-            already returned by the same endpoints this card was already
-            calling (leadScoreInstances/numberOfLeads and
-            paymentsInstances) — nothing invented, nothing newly fetched. */}
+        {/* Lead QA / Payments QA — same label-over-value rhythm as
+            Consolidated (stars above score, both centered), plus a
+            workload line (evaluation count) that fills the space below
+            the score instead of leaving it blank. Real numbers already
+            returned by the same endpoints this card was already calling
+            (leadScoreInstances/numberOfLeads and paymentsInstances) —
+            nothing invented, nothing newly fetched. */}
         {([
           ["Lead QA", state.lead, state.leadCount],
           ["Payments QA", state.payments, state.paymentsCount],
@@ -479,20 +482,20 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           const t = tierFor(score, theme);
           return (
             <div key={label} className="min-w-0 flex-1 flex flex-col items-center text-center justify-center">
-              <div className={`text-[11px] font-bold uppercase tracking-wide mb-[clamp(2px,0.4vh,5px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+              <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
                 {label}
               </div>
               {/* Tier-colored here, neutral white on Consolidated above —
                   the reverse of "everything tier-colored" — so Consolidated
                   reads as the plain hero number and Lead/Payments carry the
                   tier signal beside it. */}
-              <div className="flex items-baseline justify-center gap-1.5">
-                <span className="text-[19px] leading-none font-black font-mono" style={{ color: t.color }}>
+              <div className="flex flex-col items-center gap-1 mb-[clamp(2px,0.4vh,6px)]">
+                <StarRating score={score} size={16} color="#FBBF24" />
+                <span className="text-[22px] leading-none font-black font-mono" style={{ color: t.color }}>
                   {score !== null ? score.toFixed(2) : "—"}
                 </span>
-                <StarRating score={score} size={12} color="#FBBF24" />
               </div>
-              <div className={`text-[10.5px] font-medium mt-[clamp(2px,0.4vh,4px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+              <div className={`text-[11.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
                 {count > 0 ? `${count.toLocaleString("en-IN")} evaluation${count === 1 ? "" : "s"}` : "No evaluations yet"}
               </div>
             </div>

@@ -145,30 +145,41 @@ export function HomeAnnouncementCard({
       </div>
 
       {/* Content — internally scrollable so a long announcement never pushes
-          the dashboard taller; height stays viewport-aware like every other
-          Quick Peek element. */}
+          the dashboard taller. This element carries an explicit `height`
+          (not just min/max-height) and `overflow-y-auto` directly on
+          itself — a previous version set only minHeight/maxHeight on this
+          wrapper and put overflow-y-auto on a separate `h-full` inner div,
+          which doesn't actually scroll: a percentage height (`h-full` =
+          100%) only resolves against an ancestor with a DEFINITE height,
+          and min/max-height alone never establishes one, so the inner div's
+          "100%" computed as `auto` (= its own content's natural size) and
+          never overflowed itself. The outer div's own `overflow-hidden`
+          then hard-clipped anything past max-height with no scrollbar at
+          all — that was the "announcement content is being truncated"
+          bug. A single element with a real `height` fixes it: content
+          shorter than that height just displays; longer content genuinely
+          scrolls inside this box via its own overflow-y-auto. */}
       <div
-        className="relative overflow-hidden"
-        style={{ minHeight: "clamp(56px,9vh,84px)", maxHeight: "clamp(70px,13vh,120px)" }}
+        className="overflow-y-auto pr-1"
+        style={{
+          height: "clamp(110px,16vh,220px)",
+          scrollbarWidth: "thin",
+          scrollbarColor: theme === "dark" ? "#475569 transparent" : "#94A3B8 transparent",
+        }}
       >
-        <div
-          className="h-full overflow-y-auto pr-1"
-          style={{ scrollbarWidth: "thin", scrollbarColor: theme === "dark" ? "#475569 transparent" : "#94A3B8 transparent" }}
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={item.id}
-              custom={slideDirection}
-              variants={motionVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            >
-              <AnnouncementContent content={item.announcement} theme={theme} />
-            </motion.div>
-          </AnimatePresence>
-        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={item.id}
+            custom={slideDirection}
+            variants={motionVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: "spring", stiffness: 260, damping: 28 }}
+          >
+            <AnnouncementContent content={item.announcement} theme={theme} />
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {item.announcementDate && (
