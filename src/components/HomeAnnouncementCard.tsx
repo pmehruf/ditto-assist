@@ -154,7 +154,7 @@ export function HomeAnnouncementCard({
           scrolls internally once an announcement is too long even for the
           card's now much larger (full page height) content area. */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto pr-1"
+        className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pr-1"
         style={{
           scrollbarWidth: "thin",
           scrollbarColor: theme === "dark" ? "#475569 transparent" : "#94A3B8 transparent",

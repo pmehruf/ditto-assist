@@ -494,11 +494,13 @@ export function announcementContentToDisplayHtml(content: string, theme: "light"
  */
 export function announcementSurfaceClasses(theme: "light" | "dark"): string {
   const structural =
-    "text-xs leading-relaxed text-left [&_div]:min-h-[1.2em] " +
+    "text-xs leading-relaxed text-left min-w-0 break-words [overflow-wrap:anywhere] " +
+    "[&_div]:min-h-[1.2em] " +
     "[&_blockquote]:pl-3 [&_blockquote]:border-l-2 [&_blockquote]:my-1 " +
     "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul_ul]:list-[circle] " +
-    "[&_a]:underline [&_a]:underline-offset-2 " +
-    "[&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded";
+    "[&_a]:underline [&_a]:underline-offset-2 [&_a]:break-all " +
+    "[&_code]:font-mono [&_code]:text-[0.92em] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded " +
+    "[&_img]:max-w-full [&_img]:h-auto [&_table]:max-w-full [&_table]:block [&_table]:overflow-x-auto";
   return theme === "dark"
     ? `${structural} [&_blockquote]:border-white/20 [&_a]:text-[#00D3F3] [&_code]:bg-white/10`
     : `${structural} [&_blockquote]:border-black/15 [&_a]:text-[#0754B7] [&_code]:bg-black/[0.06]`;
