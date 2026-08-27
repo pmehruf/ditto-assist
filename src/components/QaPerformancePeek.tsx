@@ -420,7 +420,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           both sides instead of pooling after the last one. Consolidated
           keeps the strongest hierarchy (bigger stars/number, plus the tier
           badge, trend and last-month line the other two don't get). */}
-      <div className="flex items-stretch flex-1 gap-6 sm:gap-8">
+      <div className="flex items-stretch gap-6 sm:gap-8">
         <div className="min-w-0 flex-[1.4] flex flex-col items-center text-center justify-center">
           <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
