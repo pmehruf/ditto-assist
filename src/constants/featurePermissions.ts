@@ -234,5 +234,19 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     defaultTier: "Developer",
     generalAccess: "None",
     adminAccess: "None"
+  },
+  {
+    // AI USAGE & LIMITS — Product Assist credit/quota management, added
+    // 2026-08-25 alongside DEVELOPER_ONLY_FEATURES above (which already
+    // gates real access to this page). This registry entry was missed in
+    // that commit, which meant the page had no row on Feature Visibility
+    // even though DEVELOPER_ONLY_FEATURES already made it Developer-only in
+    // practice — added so it can be hidden/shown like every other page.
+    id: "product_assist_quota",
+    name: "AI Usage & Limits",
+    description: "Manage Product Assist credit allowances and usage limits",
+    defaultTier: "Developer",
+    generalAccess: "None",
+    adminAccess: "None"
   }
 ];
