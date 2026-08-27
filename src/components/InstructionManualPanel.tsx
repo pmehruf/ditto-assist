@@ -55,8 +55,15 @@ export function InstructionManualPanel({
         </span>
       </div>
 
+      {/* justify-evenly (not justify-start): now that the outer card
+          stretches to match the Input section's height (see LookupPage.tsx's
+          items-stretch), this list is often taller than its 5 items'
+          natural content — justify-start left all the extra room stranded
+          in one big gap below card 5, which read as broken/unfinished.
+          Spreading it evenly between (and above/below) all 5 items fills
+          the card properly instead. */}
       <div
-        className={`divide-y flex-grow flex flex-col justify-start overflow-y-auto ${
+        className={`divide-y flex-grow flex flex-col justify-evenly overflow-y-auto ${
           theme === "dark" ? "divide-white/[0.08]" : "divide-[#a1b7c3]"
         }`}
       >
