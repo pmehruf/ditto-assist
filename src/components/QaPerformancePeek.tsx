@@ -398,22 +398,22 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
     <div className={cardClass}>
       <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] lg:shrink-0">
         <div className="flex items-center gap-2 select-none min-w-0">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
-            <Star className="w-4 h-4" />
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
+            <Star className="w-[18px] h-[18px]" />
           </div>
-          <span className={`text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+          <span className={`text-[16px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
             QA Performance
           </span>
         </div>
         <button
           type="button"
           onClick={onOpenQaDashboard}
-          className={`flex items-center gap-0.5 text-[12px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
+          className={`flex items-center gap-0.5 text-[13px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
             theme === "dark" ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-800"
           }`}
         >
           View QA Dashboard
-          <ArrowUpRight className="w-3 h-3" />
+          <ArrowUpRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -437,13 +437,17 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           just reflowed to fit comfortably at this width. Consolidated
           keeps the strongest hierarchy (bigger stars/number, tier badge,
           trend, and the last-month line the other two don't get). */}
-      <div className="flex items-stretch gap-5 sm:gap-6">
+      <div className="flex items-stretch gap-6 sm:gap-8">
         <div className="min-w-0 flex-1 flex flex-col items-start text-left justify-center">
-          <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+          <div className={`text-[13px] font-bold uppercase tracking-wide mb-[clamp(4px,0.8vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
-          {/* Stars beside the number, one baseline — not stacked. */}
-          <div className="flex items-baseline gap-2.5 mb-[clamp(3px,0.6vh,8px)]">
+          {/* Stars beside the number, one baseline — not stacked. Sized up
+              considerably (was 20px stars / 32px number) so this hero
+              figure fills this card's fixed desktop height (420px)
+              properly instead of leaving a large empty gap around a
+              comparatively small number. */}
+          <div className="flex items-baseline gap-3 mb-[clamp(4px,0.8vh,10px)]">
             {/* Stars stay a fixed amber (same accent as this card's own
                 header icon) rather than the tier color — with the score
                 number and "Excellent" badge both already using tier.color
@@ -451,21 +455,21 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
                 three same-colored elements in a row read as a mistake
                 rather than a signal. Gold stars are also just the familiar
                 rating convention on their own, independent of any tier. */}
-            <StarRating score={state.consolidated} size={20} color="#FBBF24" />
-            <span className={`text-[32px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+            <StarRating score={state.consolidated} size={28} color="#FBBF24" />
+            <span className={`text-[48px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
               {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
             </span>
           </div>
-          <div className="flex items-center justify-start gap-2 mb-[clamp(3px,0.6vh,8px)] flex-wrap">
+          <div className="flex items-center justify-start gap-2.5 mb-[clamp(4px,0.8vh,10px)] flex-wrap">
             <span
-              className="text-[12.5px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
+              className="text-[14px] font-black uppercase tracking-wide px-2 py-1 rounded"
               style={{ color: tier.color, backgroundColor: tier.subtle }}
             >
               {tier.label}
             </span>
             {trend !== null && trend !== 0 && (
-              <span className={`text-[12px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
-                {trend > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+              <span className={`text-[13.5px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
+                {trend > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                 {trend > 0 ? "+" : ""}
                 {trend.toFixed(2)} this month
               </span>
@@ -478,7 +482,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
               number. Plain text, no chart — the arrow + delta above already
               carries the trend; a shape here would just repeat it. */}
           {state.prevConsolidated !== null && (
-            <div className={`text-[12px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+            <div className={`text-[13.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
               Last month: {state.prevConsolidated.toFixed(2)}
             </div>
           )}
@@ -493,7 +497,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
             same endpoints this card was already calling
             (leadScoreInstances/numberOfLeads and paymentsInstances) —
             nothing invented, nothing newly fetched. */}
-        <div className="min-w-0 flex-1 flex flex-col justify-center gap-[clamp(6px,1vh,12px)]">
+        <div className="min-w-0 flex-1 flex flex-col justify-center gap-[clamp(8px,1.4vh,16px)]">
           {([
             ["Lead QA", state.lead, state.leadCount],
             ["Payments QA", state.payments, state.paymentsCount],
@@ -503,25 +507,26 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
               <div key={label}>
                 {idx === 1 && (
                   <div
-                    className="h-px w-full mb-[clamp(6px,1vh,12px)]"
+                    className="h-px w-full mb-[clamp(8px,1.4vh,16px)]"
                     style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(120,113,108,0.25)" }}
                   />
                 )}
                 <div className="min-w-0 flex flex-col items-start text-left">
-                  <div className={`text-[11.5px] font-bold uppercase tracking-wide mb-[clamp(2px,0.4vh,6px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                  <div className={`text-[13px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
                     {label}
                   </div>
                   {/* Tier-colored here, neutral white on Consolidated above —
                       the reverse of "everything tier-colored" — so Consolidated
                       reads as the plain hero number and Lead/Payments carry the
-                      tier signal beside it. */}
-                  <div className="flex items-baseline gap-2 mb-[clamp(2px,0.4vh,6px)]">
-                    <StarRating score={score} size={16} color="#FBBF24" />
-                    <span className="text-[20px] leading-none font-black font-mono" style={{ color: t.color }}>
+                      tier signal beside it. Sized up (was 16px stars / 20px
+                      number) alongside Consolidated's own increase. */}
+                  <div className="flex items-baseline gap-2.5 mb-[clamp(3px,0.6vh,8px)]">
+                    <StarRating score={score} size={24} color="#FBBF24" />
+                    <span className="text-[30px] leading-none font-black font-mono" style={{ color: t.color }}>
                       {score !== null ? score.toFixed(2) : "—"}
                     </span>
                   </div>
-                  <div className={`text-[11.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+                  <div className={`text-[13px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
                     {count > 0 ? `${count.toLocaleString("en-IN")} evaluation${count === 1 ? "" : "s"}` : "No evaluations yet"}
                   </div>
                 </div>
@@ -539,9 +544,9 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           flows after the KPI row as part of the centered body block above. */}
       {lastRunAt && (
         <div
-          className={`flex items-center justify-end gap-1 text-[11px] font-medium mt-auto lg:mt-0 pt-[clamp(3px,0.6vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
+          className={`flex items-center justify-end gap-1.5 text-[12.5px] font-medium mt-auto lg:mt-0 pt-[clamp(4px,0.8vh,12px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
         >
-          <Clock className="w-2.5 h-2.5 shrink-0" />
+          <Clock className="w-3 h-3 shrink-0" />
           Data last updated {formatRelativeTime(lastRunAt)}
         </div>
       )}
