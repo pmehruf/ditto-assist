@@ -13,8 +13,10 @@ import {
   ClipboardCheck,
   Briefcase,
   Layers,
+  Newspaper,
+  History,
 } from "lucide-react";
-import { QaDashboardIcon, DeclarationMapIcon } from "../components/icons";
+import { DeclarationMapIcon, ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
 import { HomeAnnouncementCard } from "../components/HomeAnnouncementCard";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
@@ -23,6 +25,7 @@ import { LoggedUser } from "../types/user";
 
 type HomeTabId =
   | "lookup"
+  | "product_assist"
   | "qa_dashboard"
   | "coverage_projection"
   | "specific_illness_check"
@@ -78,6 +81,7 @@ const ACCENT_LIGHT_MODE: Record<string, string> = {
   "#FB923C": "#C2410C", // orange-400 -> orange-700
   "#FB7185": "#BE123C", // rose-400 -> rose-700
   "#14B8A6": "#0F766E", // teal-500 -> teal-700
+  "#6366F1": "#4338CA", // indigo-500 -> indigo-700
 };
 function lightSafe(hex: string, theme: "light" | "dark"): string {
   if (theme === "dark") return hex;
@@ -138,15 +142,17 @@ interface QuickActionTile {
  * glance ("these are my tools" -> "these are reference tools" -> "these are
  * updates/activity"):
  *  1. PRIMARY — Advisory Workspace: the day-to-day tools (Declaration
- *     Assist, Cover Projection Assist, Specific Illness Assist), given
- *     slightly more visual weight than the tier below it.
- *  2. SECONDARY — Quality & References: QA Dashboard, Plan References,
- *     Declaration Map — same tile pattern, deliberately more compact.
- *  3. SUPPORTING — Quick Peek: a compact QA Performance KPI strip paired
- *     with the Announcements carousel (real, single-item content with
+ *     Assist, Product Assist, Cover Projection Assist, Specific Illness
+ *     Assist), given slightly more visual weight than the tier below it.
+ *  2. SECONDARY — Quality & References: Plan References, Announcements,
+ *     Declaration Map, My Activity — same tile pattern, deliberately more
+ *     compact. (QA Dashboard isn't a tile here — it's still fully
+ *     reachable via the QA Performance card's "View QA Dashboard" link in
+ *     Quick Peek below.)
+ *  3. SUPPORTING — Quick Peek: a QA Performance KPI card paired with the
+ *     Announcements carousel (real, single-item content with
  *     auto-rotation — see HomeAnnouncementCard.tsx) in one row.
- *     (Recent Searches was removed from Home — My Activity is still the
- *     dedicated place to browse search history.)
+ *     (Recent Searches was removed from Home.)
  * Layout is genuinely responsive (CSS Grid/Flex with real breakpoints, no
  * fixed-canvas scaling) — see App.tsx's #main-scrollable-body comment for
  * the matching overflow change this replaces (a fixed-width layout
@@ -194,6 +200,18 @@ export function LookupIntroPage({
       onOpen: () => setShowIntro(false),
     },
     {
+      id: "product_assist",
+      featureId: "product_assist",
+      title: "Product Assist",
+      tag: "Ask questions about insurer plans",
+      icon: <ProductAssistIcon className="w-[18px] h-[18px]" />,
+      hex: "#6366F1",
+      instructions:
+        "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements.",
+      ctaLabel: "Open Product Assist",
+      onOpen: () => setActiveTab("product_assist"),
+    },
+    {
       id: "coverage_projection",
       featureId: "coverage_projection",
       title: "Cover Projection Assist",
@@ -220,19 +238,10 @@ export function LookupIntroPage({
   ];
 
   // SECONDARY — quality/reference tools, visited less often than the above.
+  // QA Dashboard is no longer a tile here (it's still fully reachable — the
+  // QA Performance card in Quick Peek below links straight to it via "View
+  // QA Dashboard") so this row can match the reference layout's 4 tiles.
   const QUALITY_REFERENCES: QuickActionTile[] = [
-    {
-      id: "qa_dashboard",
-      featureId: "qa_dashboard",
-      title: "QA Dashboard",
-      tag: "Lead & payments QA scoring",
-      icon: <QaDashboardIcon width={16} height={16} color="currentColor" />,
-      hex: "#8B5CF6",
-      instructions:
-        "Review your Lead and Payments QA scores, track how they're trending, and read detailed feedback on flagged calls and chats.",
-      ctaLabel: "Open QA Dashboard",
-      onOpen: () => setActiveTab("qa_dashboard"),
-    },
     {
       id: "advisory_zone",
       featureId: "advisory_zone",
@@ -245,6 +254,17 @@ export function LookupIntroPage({
       onOpen: () => setActiveTab("advisory_zone"),
     },
     {
+      id: "announcement_archive",
+      featureId: "announcement_archive",
+      title: "Announcements",
+      tag: "Browse every posted update",
+      icon: <Newspaper className="w-4 h-4" />,
+      hex: "#FB7185",
+      instructions: "Browse the full searchable archive of every posted QA and General announcement, filterable by date.",
+      ctaLabel: "Open Announcements",
+      onOpen: () => setActiveTab("announcement_archive"),
+    },
+    {
       id: "resources",
       featureId: "resources",
       title: "Declaration Map",
@@ -254,6 +274,17 @@ export function LookupIntroPage({
       instructions: "Browse the visual guide to medical declaration rules and payout mapping structures.",
       ctaLabel: "Open Declaration Map",
       onOpen: () => setActiveTab("resources"),
+    },
+    {
+      id: "my_activity",
+      featureId: "my_activity",
+      title: "My Activity",
+      tag: "Your personal search history",
+      icon: <History className="w-4 h-4" />,
+      hex: "#8B5CF6",
+      instructions: "Review your own past lookups and searches — a personal log of everything you've searched in Declaration Assist.",
+      ctaLabel: "Open My Activity",
+      onOpen: () => setActiveTab("my_activity"),
     },
   ];
 
@@ -392,12 +423,12 @@ export function LookupIntroPage({
         {/* PRIMARY — ADVISORY WORKSPACE. The tools used every day, given a
             touch more visual weight than Quality & References below.
             Responsive: 1 column on a phone-width viewport, 2 on a narrow
-            tablet, all 3 side by side from sm/md up — never a fixed
-            6-column grid that has nowhere to go on a narrow screen. */}
+            tablet, all 4 side by side from lg up — never a fixed grid that
+            has nowhere to go on a narrow screen. */}
         {visibleAdvisory.length > 0 && (
           <div>
             <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Advisory Workspace" hex={lightSafe("#0EA5E9", theme)} size="lg" />
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 gap-[clamp(8px,1.2vh,12px)]">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(8px,1.2vh,12px)]">
               {visibleAdvisory.map((mod) => renderTile(mod, false))}
             </div>
           </div>
@@ -409,7 +440,7 @@ export function LookupIntroPage({
         {visibleQuality.length > 0 && (
           <div>
             <SectionLabel icon={<Layers className="w-3.5 h-3.5" />} text="Quality & References" hex={lightSafe("#64748B", theme)} />
-            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 gap-[clamp(6px,1vh,10px)]">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(6px,1vh,10px)]">
               {visibleQuality.map((mod) => renderTile(mod, true))}
             </div>
           </div>
