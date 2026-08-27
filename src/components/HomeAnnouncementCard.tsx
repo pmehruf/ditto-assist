@@ -4,7 +4,7 @@
  */
 
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, ChevronRight, Megaphone, ArrowUpRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Megaphone } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
 import { AnnouncementContent } from "./AnnouncementContent";
 import {
@@ -21,7 +21,6 @@ interface HomeAnnouncementCardProps {
   setNoticeIndex: (updater: number | ((prev: number) => number)) => void;
   slideDirection: "right-to-left" | "left-to-right";
   setSlideDirection: (value: "right-to-left" | "left-to-right") => void;
-  onViewAll: () => void;
 }
 
 /**
@@ -52,28 +51,18 @@ export function HomeAnnouncementCard({
   setNoticeIndex,
   slideDirection,
   setSlideDirection,
-  onViewAll,
 }: HomeAnnouncementCardProps) {
+  // No internal title/header row — LookupIntroPage.tsx now renders an
+  // external "Updates - Live feed" section label above this card (matching
+  // "Workspace Tools"'s own label styling/level), so this card starts
+  // straight into its own content in both states below.
   const cardClass = `rounded-2xl border px-4 sm:px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
-  const headerIconColor = theme === "dark" ? "#FB7185" : "#BE123C";
-  const headerIconBg = theme === "dark" ? "#FB71851A" : "#BE123C1A";
-
   if (activeAnnouncements.length === 0) {
     return (
       <div className={cardClass}>
-        <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] gap-2">
-          <div className="flex items-center gap-2 select-none min-w-0">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
-              <Megaphone className="w-4 h-4" />
-            </div>
-            <span className={`text-[13px] sm:text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-              Announcements
-            </span>
-          </div>
-        </div>
         <div className={`flex-1 flex flex-col items-center justify-center text-center py-3 gap-1.5 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
           <Megaphone className="w-5 h-5 opacity-50" />
           <span className="text-[13px] font-medium">No active announcements right now.</span>
@@ -104,27 +93,6 @@ export function HomeAnnouncementCard({
 
   return (
     <div className={cardClass}>
-      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] gap-2">
-        <div className="flex items-center gap-2 select-none min-w-0">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
-            <Megaphone className="w-4 h-4" />
-          </div>
-          <span className={`text-[13px] sm:text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-            Announcements
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onViewAll}
-          className={`flex items-center gap-0.5 text-[12px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
-            theme === "dark" ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-800"
-          }`}
-        >
-          View all
-          <ArrowUpRight className="w-3 h-3" />
-        </button>
-      </div>
-
       {/* Category + badges row */}
       <div className="flex items-center justify-between gap-2 mb-[clamp(4px,0.8vh,8px)] flex-wrap">
         <span className={`text-[11px] font-bold uppercase tracking-wide truncate ${isGeneral ? (theme === "dark" ? "text-emerald-400" : "text-emerald-700") : (theme === "dark" ? "text-rose-400" : "text-rose-700")}`}>
