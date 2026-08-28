@@ -270,21 +270,6 @@ export function LookupIntroPage({
       onOpen: () => setShowIntro(false),
     },
     {
-      id: "product_assist",
-      featureId: "product_assist",
-      title: "Product Assist",
-      tag: "Ask questions about insurer plans",
-      icon: <ProductAssistIcon className="w-[18px] h-[18px]" />,
-      hex: "#6366F1",
-      instructions:
-        "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements.",
-      ctaLabel: "Open Product Assist",
-      onOpen: () => setActiveTab("product_assist"),
-      // Not yet launched — visible so advisors know it's coming, but masked
-      // and non-interactive until it ships. Remove this line to re-enable.
-      comingSoon: true,
-    },
-    {
       id: "coverage_projection",
       featureId: "coverage_projection",
       title: "Cover Projection Assist",
@@ -307,6 +292,24 @@ export function LookupIntroPage({
         "Check whether a declared medical condition carries a 2-year specific illness waiting period, and see exactly how it's mapped under each plan.",
       ctaLabel: "Open Specific Illness Assist",
       onOpen: () => setActiveTab("specific_illness_check"),
+    },
+    {
+      // Kept last (4th) deliberately — a not-yet-launched, masked "surprise"
+      // tile reads better tucked at the end of the row than interrupting
+      // the three real, everyday tools up front.
+      id: "product_assist",
+      featureId: "product_assist",
+      title: "Product Assist",
+      tag: "Ask questions about insurer plans",
+      icon: <ProductAssistIcon className="w-[18px] h-[18px]" />,
+      hex: "#6366F1",
+      instructions:
+        "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements.",
+      ctaLabel: "Open Product Assist",
+      onOpen: () => setActiveTab("product_assist"),
+      // Not yet launched — visible so advisors know it's coming, but masked
+      // and non-interactive until it ships. Remove this line to re-enable.
+      comingSoon: true,
     },
   ];
 
