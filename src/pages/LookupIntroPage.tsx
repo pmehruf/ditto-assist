@@ -16,6 +16,7 @@ import {
   History,
   Megaphone,
   ArrowUpRight,
+  Gift,
 } from "lucide-react";
 import { DeclarationMapIcon, ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
@@ -387,7 +388,7 @@ export function LookupIntroPage({
           if (comingSoon) return;
           setExpandedTileId((prev) => (prev === mod.id ? null : mod.id));
         }}
-        title={comingSoon ? `${mod.title} — coming soon` : `${mod.title} — show quick guide`}
+        title={comingSoon ? "A new tool is coming soon" : `${mod.title} — show quick guide`}
         aria-expanded={comingSoon ? undefined : expanded}
         // Icon-left / text-right row instead of a stacked (icon-on-top)
         // layout — on a wide monitor a 3-across grid gives each tile far
@@ -420,30 +421,30 @@ export function LookupIntroPage({
             : "bg-white/60 border-stone-300 hover:bg-white hover:border-stone-400 hover:shadow-sm"
         }`}
       >
-        {/* "SOON" badge — top-right corner, doesn't disturb the icon/text
-            row's own layout so it works at both tile densities. */}
-        {comingSoon && (
-          <span
-            className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-widest select-none ${
-              theme === "dark"
-                ? "bg-amber-400/15 text-amber-300 border border-amber-400/30"
-                : "bg-amber-100 text-amber-700 border border-amber-300"
-            }`}
-          >
-            Soon
-          </span>
-        )}
+        {/* comingSoon fully masks the tile's identity — it's meant to be a
+            surprise, not a preview, so the icon, title, and tag never
+            render the real ones below; a generic "gift" icon + "Coming
+            Soon" copy replace them entirely instead of layering a badge
+            over the real content. */}
         <div
           className={`rounded-lg border flex items-center justify-center shrink-0 transition-transform duration-200 ${comingSoon ? "" : "group-hover:scale-105"} ${
             compact ? "w-8 h-8" : "w-10 h-10"
           }`}
-          style={{
-            backgroundColor: `${lightSafe(mod.hex, theme)}1A`,
-            borderColor: `${lightSafe(mod.hex, theme)}4D`,
-            color: lightSafe(mod.hex, theme),
-          }}
+          style={
+            comingSoon
+              ? undefined
+              : {
+                  backgroundColor: `${lightSafe(mod.hex, theme)}1A`,
+                  borderColor: `${lightSafe(mod.hex, theme)}4D`,
+                  color: lightSafe(mod.hex, theme),
+                }
+          }
         >
-          {mod.icon}
+          {comingSoon ? (
+            <Gift className={compact ? "w-4 h-4" : "w-[18px] h-[18px]"} />
+          ) : (
+            mod.icon
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <h3
@@ -451,10 +452,10 @@ export function LookupIntroPage({
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
-            {mod.title}
+            {comingSoon ? "Coming Soon" : mod.title}
           </h3>
           <p className={`font-semibold leading-snug truncate mt-0.5 ${compact ? "text-[11px]" : "text-[12px]"} ${theme === "dark" ? "text-white/50" : "text-stone-500"}`}>
-            {mod.tag}
+            {comingSoon ? "A new tool is on the way" : mod.tag}
           </p>
         </div>
       </button>
