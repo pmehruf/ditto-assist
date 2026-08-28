@@ -59,19 +59,33 @@
  * themselves to `100vh / zoom` instead, so after the zoom scale-up they
  * land back on exactly the physical viewport height, the same as they
  * would with no zoom applied at all.
+ *
+ * GLOBAL_DENSITY_SCALE: a second, separate piece of feedback — even on
+ * a laptop (below LAPTOP_REFERENCE_WIDTH, where the curve below used to
+ * apply no zoom at all) the UI at a plain 100% render felt congested;
+ * a side-by-side comparison against the exact same pages at 80–90%
+ * native browser zoom read as noticeably more spacious with no layout
+ * change otherwise. Rather than retune every component's padding/font
+ * sizes individually, this multiplies the *whole* curve — laptop
+ * baseline and large-monitor scale-up alike — down by a flat 0.85
+ * (the middle of that 80–90% range), so "100%" now renders the way the
+ * old ~85% did, at every screen size, while the large-monitor ramp
+ * above still scales up relative to that new, smaller baseline.
  */
 
 const LAPTOP_REFERENCE_WIDTH = 1536;
 const MONITOR_REFERENCE_WIDTH = 2000;
 const MONITOR_REFERENCE_ZOOM = 1.25;
 const ZOOM_CAP = 1.35;
+const GLOBAL_DENSITY_SCALE = 0.85;
 
 const SLOPE = (MONITOR_REFERENCE_ZOOM - 1) / (MONITOR_REFERENCE_WIDTH - LAPTOP_REFERENCE_WIDTH);
 
 function computeZoom(screenWidth: number): number {
-  if (!screenWidth || screenWidth <= LAPTOP_REFERENCE_WIDTH) return 1;
-  const raw = 1 + (screenWidth - LAPTOP_REFERENCE_WIDTH) * SLOPE;
-  return Math.min(raw, ZOOM_CAP);
+  const raw = !screenWidth || screenWidth <= LAPTOP_REFERENCE_WIDTH
+    ? 1
+    : 1 + (screenWidth - LAPTOP_REFERENCE_WIDTH) * SLOPE;
+  return Math.min(raw, ZOOM_CAP) * GLOBAL_DENSITY_SCALE;
 }
 
 function applyZoom(): void {
