@@ -148,6 +148,10 @@ interface QuickActionTile {
   instructions: string;
   ctaLabel: string;
   onOpen: () => void;
+  /** Renders a "SOON" badge, dims the tile, and disables its click/expand
+   * behavior — for a tool that's visible (so advisors know it's coming) but
+   * not yet launched. See renderTile below. */
+  comingSoon?: boolean;
 }
 
 /**
@@ -275,6 +279,9 @@ export function LookupIntroPage({
         "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements.",
       ctaLabel: "Open Product Assist",
       onOpen: () => setActiveTab("product_assist"),
+      // Not yet launched — visible so advisors know it's coming, but masked
+      // and non-interactive until it ships. Remove this line to re-enable.
+      comingSoon: true,
     },
     {
       id: "coverage_projection",
@@ -369,20 +376,28 @@ export function LookupIntroPage({
    * "same card treatment, only size communicates hierarchy" approach. */
   const renderTile = (mod: QuickActionTile, compact: boolean) => {
     const expanded = expandedTileId === mod.id;
+    const comingSoon = !!mod.comingSoon;
     return (
       <button
         key={mod.id}
         type="button"
-        onClick={() => setExpandedTileId((prev) => (prev === mod.id ? null : mod.id))}
-        title={`${mod.title} — show quick guide`}
-        aria-expanded={expanded}
+        disabled={comingSoon}
+        aria-disabled={comingSoon}
+        onClick={() => {
+          if (comingSoon) return;
+          setExpandedTileId((prev) => (prev === mod.id ? null : mod.id));
+        }}
+        title={comingSoon ? `${mod.title} — coming soon` : `${mod.title} — show quick guide`}
+        aria-expanded={comingSoon ? undefined : expanded}
         // Icon-left / text-right row instead of a stacked (icon-on-top)
         // layout — on a wide monitor a 3-across grid gives each tile far
         // more width than a small stacked block needs, which read as a
         // mostly-empty card. A horizontal row naturally uses the tile's
         // full assigned width at every breakpoint instead of only its
         // top-left corner.
-        className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 cursor-pointer hover:-translate-y-0.5 min-w-0 ${
+        className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 min-w-0 ${
+          comingSoon ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:-translate-y-0.5"
+        } ${
           // Workspace Tools tiles (non-compact) got slightly taller padding
           // so the row reads as more visually weighted against QA
           // Performance/the Announcement Counter below it (whose fixed
@@ -392,7 +407,11 @@ export function LookupIntroPage({
           // unchanged (it's still the deliberately more compact tier).
           compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(14px,1.8vh,20px)]"
         } ${
-          expanded
+          comingSoon
+            ? theme === "dark"
+              ? "bg-white/[0.02] border-white/[0.06]"
+              : "bg-stone-100/60 border-stone-200"
+            : expanded
             ? theme === "dark"
               ? "bg-white/[0.06] border-white/[0.24]"
               : "bg-white border-stone-400 shadow-sm"
@@ -401,8 +420,21 @@ export function LookupIntroPage({
             : "bg-white/60 border-stone-300 hover:bg-white hover:border-stone-400 hover:shadow-sm"
         }`}
       >
+        {/* "SOON" badge — top-right corner, doesn't disturb the icon/text
+            row's own layout so it works at both tile densities. */}
+        {comingSoon && (
+          <span
+            className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-widest select-none ${
+              theme === "dark"
+                ? "bg-amber-400/15 text-amber-300 border border-amber-400/30"
+                : "bg-amber-100 text-amber-700 border border-amber-300"
+            }`}
+          >
+            Soon
+          </span>
+        )}
         <div
-          className={`rounded-lg border flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105 ${
+          className={`rounded-lg border flex items-center justify-center shrink-0 transition-transform duration-200 ${comingSoon ? "" : "group-hover:scale-105"} ${
             compact ? "w-8 h-8" : "w-10 h-10"
           }`}
           style={{
