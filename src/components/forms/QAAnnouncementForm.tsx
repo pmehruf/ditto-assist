@@ -869,8 +869,12 @@ export function QAAnnouncementForm({
             above Content — below that. The card is full-width now that
             the Announcement Manager stacks the form above the list (see
             AnnouncementLogPage.tsx), so there's enough room for a
-            side-by-side split without cramping the fields grid below. */}
-        <div className="flex flex-col lg:flex-row gap-4">
+            side-by-side split without cramping the fields grid below.
+            gap-4 spaces the two sections when stacked (<lg); at lg+ the
+            gap collapses to 0 and the Content column's own lg:border-l +
+            lg:pl-5 below take over, so the two columns read as clearly
+            separate workspaces instead of just floating in whitespace. */}
+        <div className="flex flex-col lg:flex-row gap-4 lg:gap-0">
 
         {/* ── SECTION: Announcement Details ── */}
         <div className="shrink-0 lg:flex-1 lg:min-w-0">
@@ -961,65 +965,71 @@ export function QAAnnouncementForm({
               </Field>
             </div>
 
-            {/* Two distinct dates share their own row: Announced = when
-                this notice was posted (defaults to today, drives which
-                announcements advisors see); Effective = when the rule it
-                describes kicks in (optional). */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Announced" theme={theme}>
-                <DateInputDMY
-                  title="Announcement date — when this notice was posted"
-                  value={announcementDate}
-                  onChange={setAnnouncementDate}
-                  required
-                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white"
-                      : "bg-white border-stone-250 text-stone-800"
-                  }`}
-                />
-              </Field>
+            {/* Dates + their convenience checkboxes now share one bordered
+                group (was two separately-spaced blocks) so they read as
+                one logical "when does this apply" unit instead of drifting
+                as unrelated rows. Announced = when this notice was posted
+                (defaults to today, drives which announcements advisors
+                see); Effective = when the rule it describes kicks in
+                (optional); the checkboxes below are pure shortcuts that
+                drive the Effective field (see toggleAlreadyInForce/
+                toggleEffectiveImmediately above) — neither is itself a
+                stored field. */}
+            <div className={`space-y-2.5 p-2.5 rounded-lg border ${
+              theme === "dark" ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50/70 border-stone-200"
+            }`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Announced" theme={theme}>
+                  <DateInputDMY
+                    title="Announcement date — when this notice was posted"
+                    value={announcementDate}
+                    onChange={setAnnouncementDate}
+                    required
+                    displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                      theme === "dark"
+                        ? "bg-[#12151A] border-[#252A34] text-white"
+                        : "bg-white border-stone-250 text-stone-800"
+                    }`}
+                  />
+                </Field>
 
-              <Field label="Effective" hint="optional" theme={theme}>
-                <DateInputDMY
-                  title="Effective date (optional) — when the rule takes effect"
-                  value={date}
-                  disabled={alreadyInForce || effectiveImmediately}
-                  onChange={setDate}
-                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
-                    alreadyInForce || effectiveImmediately ? "opacity-50" : ""
-                  } ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white"
-                      : "bg-white border-stone-250 text-stone-800"
-                  }`}
-                />
-              </Field>
-            </div>
+                <Field label="Effective" hint="optional" theme={theme}>
+                  <DateInputDMY
+                    title="Effective date (optional) — when the rule takes effect"
+                    value={date}
+                    disabled={alreadyInForce || effectiveImmediately}
+                    onChange={setDate}
+                    displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                      alreadyInForce || effectiveImmediately ? "opacity-50" : ""
+                    } ${
+                      theme === "dark"
+                        ? "bg-[#12151A] border-[#252A34] text-white"
+                        : "bg-white border-stone-250 text-stone-800"
+                    }`}
+                  />
+                </Field>
+              </div>
 
-            {/* Effective Date convenience checkboxes — mutually exclusive
-                shortcuts (see toggleAlreadyInForce/toggleEffectiveImmediately
-                above); neither is a stored field, they just drive the date
-                input above. */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 -mt-1">
-              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                <input
-                  type="checkbox"
-                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
-                  checked={alreadyInForce}
-                  onChange={(e) => toggleAlreadyInForce(e.target.checked)}
-                />
-                Already in-Force
-              </label>
-              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                <input
-                  type="checkbox"
-                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
-                  checked={effectiveImmediately}
-                  onChange={(e) => toggleEffectiveImmediately(e.target.checked)}
-                />
-                Effective Immediately
-              </label>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                    checked={alreadyInForce}
+                    onChange={(e) => toggleAlreadyInForce(e.target.checked)}
+                  />
+                  Already in-Force
+                </label>
+                <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                    checked={effectiveImmediately}
+                    onChange={(e) => toggleEffectiveImmediately(e.target.checked)}
+                  />
+                  Effective Immediately
+                </label>
+              </div>
             </div>
           </>
         ) : (
@@ -1057,67 +1067,69 @@ export function QAAnnouncementForm({
               </Field>
             </div>
 
-            {/* Two dates share their own row: Announced = when posted
-                (drives which announcements advisors see); Effective = when
-                the rule kicks in (optional). Valid Till was removed from
-                the form (per design feedback) — announcements no longer
-                auto-expire on a per-notice date; existing rows that still
-                carry one keep their old expiry behavior. */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Announced" theme={theme}>
-                <DateInputDMY
-                  title="Announcement date — when this notice was posted"
-                  value={announcementDate}
-                  onChange={setAnnouncementDate}
-                  required
-                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white"
-                      : "bg-white border-stone-250 text-stone-820"
-                  }`}
-                />
-              </Field>
+            {/* Dates + their convenience checkboxes share one bordered
+                group (same "when does this apply" grouping as the QA
+                branch above). Announced = when posted (drives which
+                announcements advisors see); Effective = when the rule
+                kicks in (optional). Valid Till was removed from the form
+                (per design feedback) — announcements no longer auto-expire
+                on a per-notice date; existing rows that still carry one
+                keep their old expiry behavior. */}
+            <div className={`space-y-2.5 p-2.5 rounded-lg border ${
+              theme === "dark" ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50/70 border-stone-200"
+            }`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Announced" theme={theme}>
+                  <DateInputDMY
+                    title="Announcement date — when this notice was posted"
+                    value={announcementDate}
+                    onChange={setAnnouncementDate}
+                    required
+                    displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                      theme === "dark"
+                        ? "bg-[#12151A] border-[#252A34] text-white"
+                        : "bg-white border-stone-250 text-stone-820"
+                    }`}
+                  />
+                </Field>
 
-              <Field label="Effective" hint="optional" theme={theme}>
-                <DateInputDMY
-                  title="Effective date (optional) — when the rule takes effect"
-                  value={date}
-                  disabled={alreadyInForce || effectiveImmediately}
-                  onChange={setDate}
-                  displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
-                    alreadyInForce || effectiveImmediately ? "opacity-50" : ""
-                  } ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white"
-                      : "bg-white border-stone-250 text-stone-820"
-                  }`}
-                />
-              </Field>
-            </div>
+                <Field label="Effective" hint="optional" theme={theme}>
+                  <DateInputDMY
+                    title="Effective date (optional) — when the rule takes effect"
+                    value={date}
+                    disabled={alreadyInForce || effectiveImmediately}
+                    onChange={setDate}
+                    displayClassName={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border flex items-center ${
+                      alreadyInForce || effectiveImmediately ? "opacity-50" : ""
+                    } ${
+                      theme === "dark"
+                        ? "bg-[#12151A] border-[#252A34] text-white"
+                        : "bg-white border-stone-250 text-stone-820"
+                    }`}
+                  />
+                </Field>
+              </div>
 
-            {/* Effective Date convenience checkboxes — mutually exclusive
-                shortcuts (see toggleAlreadyInForce/toggleEffectiveImmediately
-                above); neither is a stored field, they just drive the date
-                input above. */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 -mt-1">
-              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                <input
-                  type="checkbox"
-                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
-                  checked={alreadyInForce}
-                  onChange={(e) => toggleAlreadyInForce(e.target.checked)}
-                />
-                Already in-Force
-              </label>
-              <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                <input
-                  type="checkbox"
-                  className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
-                  checked={effectiveImmediately}
-                  onChange={(e) => toggleEffectiveImmediately(e.target.checked)}
-                />
-                Effective Immediately
-              </label>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                    checked={alreadyInForce}
+                    onChange={(e) => toggleAlreadyInForce(e.target.checked)}
+                  />
+                  Already in-Force
+                </label>
+                <label className={`flex items-center gap-1.5 text-[10.5px] font-bold cursor-pointer ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                    checked={effectiveImmediately}
+                    onChange={(e) => toggleEffectiveImmediately(e.target.checked)}
+                  />
+                  Effective Immediately
+                </label>
+              </div>
             </div>
           </>
         )}
@@ -1125,13 +1137,14 @@ export function QAAnnouncementForm({
         </div>
 
         {/* ── SECTION: Content ──
-            Right column beside Announcement Details at lg+; below it on
-            narrower screens. The editor has a min-h-[160px] floor so it
-            never collapses to nothing, and grows with typed content beyond
-            that — this card is no longer pinned to a fixed viewport height
-            (see AnnouncementLogPage.tsx), so the page itself scrolls
-            naturally rather than this section scrolling internally. */}
-        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0">
+            Right column beside Announcement Details at lg+, set off with
+            its own left border + padding (rather than relying on the gap
+            alone) so the split reads as two clearly separate workspaces;
+            below Details on narrower screens, where the border/padding are
+            inert. The editor itself now renders at a fixed, compact height
+            (see its own comment below) instead of stretching to fill
+            whatever room the card happens to have. */}
+        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 lg:border-l lg:pl-5 border-stone-200 dark:border-white/[0.08]">
           <SectionLabel theme={theme}>Content</SectionLabel>
 
           {/* Formatting toolbar — Bold, Italic, Underline, Code, Text
@@ -1306,7 +1319,7 @@ export function QAAnnouncementForm({
               wrapper + absolutely-positioned placeholder below stands in
               for the native `placeholder` attribute a plain textarea would
               have had — contentEditable elements don't support one. */}
-          <div className="relative flex-1 min-h-0 flex flex-col">
+          <div className="relative flex flex-col">
             {text.trim() === "" && (
               <span
                 className={`absolute top-3 left-3 text-[10.5px] leading-relaxed pointer-events-none select-none ${
@@ -1327,8 +1340,13 @@ export function QAAnnouncementForm({
               // published views render with (see announcementHtml.ts) —
               // sharing it is what makes the editor a true WYSIWYG preview.
               // Only the chrome (border, padding, height, focus ring)
-              // differs.
-              className={`w-full flex-1 min-h-[160px] font-normal p-3 rounded-lg border outline-none overflow-y-auto ${announcementSurfaceClasses(effectiveTheme)} ${
+              // differs. A fixed h-[240px] (was flex-1 min-h-[160px], which
+              // stretched to fill whatever leftover room the card had —
+              // often a lot of empty space) keeps the box a comfortable,
+              // predictable writing size; overflow-y-auto lets typed
+              // content past that scroll inside the box instead of growing
+              // it, same internal-scroll pattern used elsewhere in the app.
+              className={`w-full h-[240px] font-normal p-3 rounded-lg border outline-none overflow-y-auto ${announcementSurfaceClasses(effectiveTheme)} ${
                 theme === "dark"
                   ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
                   : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
@@ -1340,15 +1358,18 @@ export function QAAnnouncementForm({
         </div>
       </div>
 
-      {/* FOOTER — pinned; the submit button is always visible */}
-      <div className="shrink-0 pt-3 mt-3 border-t border-light-stone/5 dark:border-stone-800">
+      {/* FOOTER — pinned; the submit button is always visible. py-2.5 (was
+          py-3) and pt-2.5/mt-2.5 (was pt-3/mt-3) — still full-width and
+          prominent, just sized to feel like the form's own last row
+          instead of a separate oversized banner tacked on below it. */}
+      <div className="shrink-0 pt-2.5 mt-2.5 border-t border-light-stone/5 dark:border-stone-800">
         {editingAnnouncementId ? (
           <div className="flex gap-2">
             <ClippedButton
               type="submit"
               size="lg"
               cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-              className="flex-grow py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
+              className="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
             >
               <Check className="w-4 h-4" />
               <span>Save Changes</span>
@@ -1358,7 +1379,7 @@ export function QAAnnouncementForm({
               size="lg"
               onClick={() => setEditingAnnouncementId && setEditingAnnouncementId(null)}
               cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-              className="px-4 py-3 bg-stone-500 hover:bg-stone-600 text-white text-xs font-extrabold uppercase tracking-widest gap-2"
+              className="px-4 py-2.5 bg-stone-500 hover:bg-stone-600 text-white text-xs font-extrabold uppercase tracking-widest gap-2"
             >
               <span>Cancel</span>
             </ClippedButton>
@@ -1368,7 +1389,7 @@ export function QAAnnouncementForm({
             type="submit"
             size="lg"
             cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
+            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
           >
             <Plus className="w-4 h-4" />
             <span>Add Announcement</span>

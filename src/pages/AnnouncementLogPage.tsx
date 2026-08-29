@@ -314,11 +314,16 @@ export function AnnouncementLogPage({
        below: a small, deliberate trim (not a redesign) to reclaim vertical
        room now that the app-wide auto-zoom feature makes every fixed-px
        gap read bigger on a large monitor. */
-    <div className="space-y-3 text-left">
+    <div className="space-y-2.5 text-left">
       {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
           Studio, the reference implementation): flat, no card surface,
-          accent line + title sitting directly on the page. */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2 border-b border-stone-200 dark:border-stone-800">
+          accent line + title sitting directly on the page. Trimmed to
+          pb-1.5/mt-0.5 (was pb-2/mt-1) — this page has a full creation
+          workspace plus a listing table below it, so shaving a couple px
+          off the header helps those fit more comfortably in one screen,
+          and every fixed-px gap here already reads bigger under the
+          app-wide auto-zoom on a large monitor. */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-1.5 border-b border-stone-200 dark:border-stone-800">
         <div>
           <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
             dark ? "text-white" : "text-[#111827]"
@@ -326,7 +331,7 @@ export function AnnouncementLogPage({
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
             <span>Announcement Manager</span>
           </h1>
-          <p className="text-xs mt-1 font-semibold text-content-muted">
+          <p className="text-xs mt-0.5 font-semibold text-content-muted">
             Manage and view compliance updates, premium policy exceptions, and payment guidelines with proximity-based visual urgency triggers.
           </p>
         </div>
