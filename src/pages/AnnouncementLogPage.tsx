@@ -329,15 +329,21 @@ export function AnnouncementLogPage({
         </div>
       </div>
 
-      {/* Grid content split: Adder Form Left / List on Right.
-          Takes the height left over after the header (lg:flex-1 + min-h-0)
-          rather than a hardcoded 100vh offset, so both cards always end
-          exactly at the viewport edge and each scrolls internally. Below lg
-          the columns stack and flow naturally. */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch lg:flex-1 lg:min-h-0">
+      {/* Stacked, not side-by-side: form on top, Active Announcements below
+          — both now get the page's full width instead of a 5/12 or 7/12
+          column, which was cramping the form's fields and the table's
+          columns alike. Takes the height left over after the header
+          (lg:flex-1 + min-h-0) rather than a hardcoded 100vh offset, so
+          the whole stack always ends exactly at the viewport edge; the
+          two cards split that height roughly 42:58 (lg:flex-[5]/flex-[7],
+          the same ratio their column-spans used to be) so each keeps
+          scrolling internally exactly as before, just on the vertical
+          axis instead of side by side. Below lg both are natural-height
+          and the page flows/scrolls normally, same as before. */}
+      <div className="flex flex-col gap-4 lg:flex-1 lg:min-h-0">
 
-        {/* Form card (5 cols) */}
-        <div className="col-span-1 lg:col-span-5 flex flex-col min-h-0">
+        {/* Form card */}
+        <div className="flex flex-col min-h-0 lg:flex-[5]">
           <div className={cardClass}>
             {/* The form owns its own three-part layout (fixed header,
                 scrolling fields, pinned submit footer), so it just needs the
@@ -359,8 +365,8 @@ export function AnnouncementLogPage({
           </div>
         </div>
 
-        {/* List card (7 cols) */}
-        <div className="col-span-1 lg:col-span-7 flex flex-col min-h-0">
+        {/* List card */}
+        <div className="flex flex-col min-h-0 lg:flex-[7]">
           <div className={cardClass}>
             <div className="space-y-3 h-full flex flex-col min-h-0">
               <div className="flex justify-between items-center pb-2 border-b border-light-stone/5 dark:border-stone-800 shrink-0">
