@@ -156,18 +156,19 @@ interface QuickActionTile {
 
 /**
  * Home page — the advisor's *workspace*, not a dashboard for any one
- * module. Three tiers, matching the hierarchy an advisor should read at a
- * glance ("these are my tools" -> "these are reference tools" -> "these are
- * updates/activity"):
- *  1. PRIMARY — Advisory Workspace: the day-to-day tools (Declaration
- *     Assist, Product Assist, Cover Projection Assist, Specific Illness
- *     Assist), given slightly more visual weight than the tier below it.
- *  2. SECONDARY — Quality & References: Plan References, Announcements,
- *     Declaration Map, My Activity — same tile pattern, deliberately more
- *     compact. (QA Dashboard isn't a tile here — it's still fully
- *     reachable via the QA Performance card's "View QA Dashboard" link in
- *     Quick Peek below.)
- *  3. SUPPORTING — a 1:2 row of the Announcement Counter (New This Week /
+ * module. Two tiers, matching the hierarchy an advisor should read at a
+ * glance ("these are my tools" -> "these are updates/activity"):
+ *  1. WORKSPACE TOOLS — one merged section/grid under a single heading,
+ *     combining the day-to-day tools (Declaration Assist, Product Assist,
+ *     Cover Projection Assist, Specific Illness Assist) with what used to
+ *     be a separate "References" tier (Plan References, Announcements,
+ *     Declaration Map, My Activity) — all tiles render at the same
+ *     compact size (see renderTile's `compact` doc comment for why: a
+ *     taller authored section here would shrink ScaleToFit's fit-to-space
+ *     scale for the whole composition below). (QA Dashboard isn't a tile
+ *     here — it's still fully reachable via the QA Performance card's
+ *     "View QA Dashboard" link in Quick Peek below.)
+ *  2. SUPPORTING — a 1:2 row of the Announcement Counter (New This Week /
  *     Went Live This Week / Live Today, see AnnouncementCounterCard.tsx —
  *     click a stat to browse it, via AnnouncementStatModal.tsx) and QA
  *     Performance, paired with the Announcements carousel (real, single-
@@ -215,8 +216,9 @@ export function LookupIntroPage({
   // responsive stacked layout, completely untouched by anything here.
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
-  // LEFT COLUMN height, measured live — Workspace Tools + References + the
-  // Quick Guide panel (whichever of these render) + QA Performance (whose
+  // LEFT COLUMN height, measured live — Workspace Tools (the merged tools
+  // + former References grid) + the Quick Guide panel (whichever of these
+  // render) + QA Performance (whose
   // own height is now a deliberate fixed constant at desktop, not natural —
   // see QaPerformancePeek.tsx). The Announcement card's height is then set
   // to this EXACT measured number, so its bottom edge lands on the same
@@ -312,10 +314,12 @@ export function LookupIntroPage({
     },
   ];
 
-  // SECONDARY — quality/reference tools, visited less often than the above.
-  // QA Dashboard is no longer a tile here (it's still fully reachable — the
-  // QA Performance card in Quick Peek below links straight to it via "View
-  // QA Dashboard") so this row can match the reference layout's 4 tiles.
+  // Quality/reference tools, visited less often than the above — merged
+  // into the same Workspace Tools grid as ADVISORY_WORKSPACE at render
+  // time (see QUICK_ACTIONS below), kept as its own array here only for
+  // data organization. QA Dashboard is not a tile here (it's still fully
+  // reachable — the QA Performance card in Quick Peek below links
+  // straight to it via "View QA Dashboard").
   const QUALITY_REFERENCES: QuickActionTile[] = [
     {
       id: "advisory_zone",
@@ -373,10 +377,12 @@ export function LookupIntroPage({
 
   const expandedTile = QUICK_ACTIONS.find((mod) => mod.id === expandedTileId) || null;
 
-  /** Shared tile renderer for both Quick Action groups — `compact` is the
-   * only thing that differs between Advisory Workspace and Quality &
-   * References (icon box size, padding, title weight), per SectionLabel's
-   * "same card treatment, only size communicates hierarchy" approach. */
+  /** Shared tile renderer for the Workspace Tools grid (icon box size,
+   * padding, title weight all key off `compact`) — currently always
+   * called with `compact: true` (see the grid render below), keeping the
+   * merged section's authored height down for ScaleToFit's sake. The
+   * non-compact path is left in place for a future caller that wants the
+   * heavier look. */
   const renderTile = (mod: QuickActionTile, compact: boolean) => {
     const expanded = expandedTileId === mod.id;
     const comingSoon = !!mod.comingSoon;
@@ -401,13 +407,15 @@ export function LookupIntroPage({
         className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 min-w-0 ${
           comingSoon ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:-translate-y-0.5"
         } ${
-          // Workspace Tools tiles (non-compact) got slightly taller padding
-          // so the row reads as more visually weighted against QA
-          // Performance/the Announcement Counter below it (whose fixed
-          // desktop height was reduced by roughly this same amount — see
-          // QaPerformancePeek.tsx) — the two used to feel visually
-          // mismatched (short tiles, tall cards below). References stays
-          // unchanged (it's still the deliberately more compact tier).
+          // The single Workspace Tools grid (Advisory Workspace + the
+          // former References tier, merged into one section — see the
+          // grid above this render function) renders every tile compact,
+          // keeping the merged section's authored height close to what it
+          // was pre-merge so ScaleToFit's fit-to-space scale for the whole
+          // desktop composition doesn't shrink. The non-compact size below
+          // is kept for any future caller that needs the heavier look this
+          // originally shipped with (e.g. a single-row, few-tiles case) —
+          // not used by the current render path.
           compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(14px,1.8vh,20px)]"
         } ${
           comingSoon
@@ -539,10 +547,10 @@ export function LookupIntroPage({
           </div>
         </div>
 
-        {/* TWO MAIN SECTIONS — left 2/3 (Workspace Tools, References, QA
-            Performance) and right 1/3 (Announcements), side by side from
-            `lg` up. Below `lg` they stack (left column's 3 pieces, then
-            Announcements) — completely unaffected by anything below.
+        {/* TWO MAIN SECTIONS — left 2/3 (Workspace Tools, QA Performance)
+            and right 1/3 (Announcements), side by side from `lg` up. Below
+            `lg` they stack (left column's pieces, then Announcements) —
+            completely unaffected by anything below.
             At `lg`+: QA Performance has a fixed height (see
             QaPerformancePeek.tsx), and the Announcement card's height is
             set to the left column's own measured total height (via
@@ -550,23 +558,32 @@ export function LookupIntroPage({
             the same line, by construction, without stretching QA
             Performance itself. */}
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0 lg:items-start">
-          {/* LEFT — 2/3: Workspace Tools, References, QA Performance. */}
+          {/* LEFT — 2/3: Workspace Tools, QA Performance. */}
           <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
             {/* WORKSPACE TOOLS — the former "References" tier (Plan
                 References, Announcements, etc.) now lives in this same
                 grid under this one heading instead of its own separate
                 "References" label/section; QUICK_ACTIONS is already the
-                combined visibleAdvisory + visibleQuality list, and every
-                tile now renders at the same (non-compact) size so the
-                merged row reads as one consistent set of tools rather
-                than two visually different tiers. Responsive: 1 column on
-                a phone-width viewport, 2 on a narrow tablet, 4 side by
-                side from lg up (wraps to a second row past 4 tiles). */}
+                combined visibleAdvisory + visibleQuality list. Every tile
+                renders at the COMPACT size (same as the old References
+                row) rather than the larger Workspace Tools size — with up
+                to 8 tiles now sharing one grid (wrapping to 2 rows), using
+                the taller non-compact padding on both rows would grow this
+                section's authored height noticeably, and since the whole
+                desktop composition is one fixed-width "poster" uniformly
+                scaled to fit by ScaleToFit (see DESKTOP_CANVAS_WIDTH's doc
+                comment), a taller authored height means a smaller fit
+                scale for the ENTIRE dashboard, not just this section.
+                Compact keeps the merged section's height close to what it
+                was pre-merge, so the composition's overall scale is
+                unaffected. Responsive: 1 column on a phone-width viewport,
+                2 on a narrow tablet, 4 side by side from lg up (wraps to a
+                second row past 4 tiles). */}
             {QUICK_ACTIONS.length > 0 && (
               <div className="shrink-0">
                 <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Workspace Tools" hex={lightSafe("#0EA5E9", theme)} size="lg" />
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(8px,1.2vh,12px)]">
-                  {QUICK_ACTIONS.map((mod) => renderTile(mod, false))}
+                  {QUICK_ACTIONS.map((mod) => renderTile(mod, true))}
                 </div>
               </div>
             )}
