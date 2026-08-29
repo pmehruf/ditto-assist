@@ -23,7 +23,7 @@ export function InstructionManualPanel({
 }: InstructionManualPanelProps) {
   return (
     <div
-      className={`rounded-2xl border overflow-hidden flex flex-col text-left ${className} ${
+      className={`rounded-2xl border overflow-hidden flex flex-col min-h-0 text-left ${className} ${
         theme === "dark"
           ? "bg-white/[0.02] border-white/[0.08]"
           : "bg-stone-50/60 border-stone-300"
@@ -63,9 +63,16 @@ export function InstructionManualPanel({
           (dividers touch normally) while collectively growing to absorb
           whatever extra height the stretched card has — every item's own
           justify-center then centers its text within its now-larger slot,
-          so the card reads as evenly filled at any height. */}
+          so the card reads as evenly filled at any height.
+          min-h-0 (paired with LookupPage.tsx's row now being lg:flex-1
+          lg:min-h-0 too): without it, this flex-grow region couldn't
+          shrink below the 5 items' natural/min-content height, so on a
+          shorter viewport the list silently pushed the whole card (and the
+          page around it) taller than the available space instead of
+          scrolling within itself, which is what overflow-y-auto here is
+          actually for. */}
       <div
-        className={`divide-y flex-grow flex flex-col overflow-y-auto ${
+        className={`divide-y flex-grow flex flex-col min-h-0 overflow-y-auto ${
           theme === "dark" ? "divide-white/[0.08]" : "divide-[#a1b7c3]"
         }`}
       >

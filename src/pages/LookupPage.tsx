@@ -187,9 +187,21 @@ export function LookupPage({
               both columns to the row's full height pins the Instruction
               Manual card's bottom border to the same vertical level as the
               Input section's last element (Find a Match/Reset Fields), on
-              every viewport. */}
+              every viewport.
+              lg:flex-1 lg:min-h-0: without an explicit height, this row was
+              free to grow to whatever the Instruction Manual card's own
+              5-item list naturally needed — on a shorter/denser viewport
+              that could exceed the space main-scrollable-body actually has
+              (lg:overflow-hidden, no page scroll by design), so the excess
+              was silently clipped right at the viewport edge instead of
+              being reachable. Bounding the row to the space actually left
+              in its own flex-column ancestor means the Instruction Manual
+              card (stretched to match) is now a real, capped box — its own
+              overflow-y-auto (see InstructionManualPanel.tsx) can then
+              genuinely scroll internally when the list doesn't fit, instead
+              of the row (and the row's content) overflowing the page. */}
           <div
-            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 animate-fade-in ${
+            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 lg:flex-1 lg:min-h-0 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
