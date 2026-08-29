@@ -4459,7 +4459,7 @@ export default function App() {
               // silently clipped — same "no-scroll on desktop, scrollable
               // on tablet/narrow" behavior its sibling branch below uses.
               "lg:overflow-hidden overflow-y-auto min-h-0"
-            : (activeTab === "lookup" && !showIntro) || activeTab === "qa_announcement_log" || activeTab === "product_assist"
+            : (activeTab === "lookup" && !showIntro) || activeTab === "product_assist"
             ? // Same reasoning as the showIntro branch above, and the same
               // missing piece: without `min-h-0` here, this flex-grow item
               // can't shrink below its content's natural (min-content)
@@ -4468,9 +4468,15 @@ export default function App() {
               // h-screen bounds — pushing the pinned footer bar below the
               // viewport instead of leaving it visible, and defeating each
               // page's own internal "only this inner region scrolls" design
-              // (LookupPage/ProductAssistPage/AnnouncementLogPage all already
-              // build their own min-h-0/overflow-y-auto chain correctly, but
-              // it only works if this outer flex item can actually shrink).
+              // (LookupPage/ProductAssistPage all already build their own
+              // min-h-0/overflow-y-auto chain correctly, but it only works
+              // if this outer flex item can actually shrink).
+              // AnnouncementLogPage was moved OUT of this branch — its form
+              // (stacked above the list, not side-by-side) needs its full
+              // natural height rather than being squeezed into whatever's
+              // left of the viewport, so this tab now falls to the plain
+              // "overflow-y-auto" branch below and the whole page scrolls
+              // normally, same as most other tabs.
               "lg:overflow-hidden overflow-y-auto min-h-0"
             : "overflow-y-auto"
         }`}
@@ -4483,7 +4489,7 @@ export default function App() {
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
               ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-start min-h-0"
-              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "product_assist"
+              : (!showIntro && activeTab === "lookup") || activeTab === "product_assist"
               ? "lg:p-5 pt-1.5 sm:pt-2 lg:flex lg:flex-col lg:min-h-0"
               : "lg:p-5 pt-1.5 sm:pt-2"
           }`}
@@ -4492,7 +4498,7 @@ export default function App() {
           <div className={`w-full lg:w-[98%] xl:w-[96%] max-w-[var(--container-content)] mx-auto ${
             showIntro && activeTab === "lookup"
               ? "flex-grow flex flex-col min-h-0"
-              : (!showIntro && activeTab === "lookup") || activeTab === "qa_announcement_log" || activeTab === "product_assist"
+              : (!showIntro && activeTab === "lookup") || activeTab === "product_assist"
               ? "lg:flex-grow lg:flex lg:flex-col lg:min-h-0"
               : ""
           }`}>

@@ -289,7 +289,7 @@ export function AnnouncementLogPage({
     ]);
   };
 
-  const cardClass = `p-4 rounded-2xl border flex flex-col h-full min-h-0 overflow-hidden ${
+  const cardClass = `p-4 rounded-2xl border flex flex-col overflow-hidden ${
     /* Light theme uses the design system's own surface tokens rather
        than one-off hex values: --surface-elevated for the primary card,
        with --border (#D2DFEC). --surface-elevated already carries its own
@@ -304,18 +304,21 @@ export function AnnouncementLogPage({
   const tdClass = `align-top px-2.5 py-2.5 text-[11px] break-words ${dark ? "text-stone-200" : "text-stone-700"}`;
 
   return (
-    /* Fills the app's content area on lg+ (main is lg:flex lg:flex-col
-       lg:min-h-0 for this tab) so the two cards below share exactly the
-       remaining height — no hardcoded viewport offsets, no page scroll.
-       space-y-5 -> space-y-3 and the header's pb-3 -> pb-2 below: a small,
-       deliberate trim (not a redesign) to reclaim vertical room now that
-       the app-wide auto-zoom feature makes every fixed-px gap read bigger
-       on a large monitor. */
-    <div className="space-y-3 text-left lg:flex lg:flex-col lg:flex-1 lg:min-h-0">
+    /* This page now stacks the form above the list (see below) rather than
+       side-by-side, and simply flows/scrolls with the page — the earlier
+       "fill exactly the remaining viewport, no page scroll" approach
+       (matching most of the rest of the app) doesn't have room for a full
+       form AND a full table stacked vertically, so App.tsx no longer puts
+       this tab in that no-scroll shell (see its #main-scrollable-body
+       comment). space-y-5 -> space-y-3 and the header's pb-3 -> pb-2
+       below: a small, deliberate trim (not a redesign) to reclaim vertical
+       room now that the app-wide auto-zoom feature makes every fixed-px
+       gap read bigger on a large monitor. */
+    <div className="space-y-3 text-left">
       {/* PAGE-LEVEL HEADER — standardized app-wide (see Coverage Projection
           Studio, the reference implementation): flat, no card surface,
           accent line + title sitting directly on the page. */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2 border-b border-stone-200 dark:border-stone-800 lg:shrink-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-2 border-b border-stone-200 dark:border-stone-800">
         <div>
           <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
             dark ? "text-white" : "text-[#111827]"
@@ -332,22 +335,22 @@ export function AnnouncementLogPage({
       {/* Stacked, not side-by-side: form on top, Active Announcements below
           — both now get the page's full width instead of a 5/12 or 7/12
           column, which was cramping the form's fields and the table's
-          columns alike. Takes the height left over after the header
-          (lg:flex-1 + min-h-0) rather than a hardcoded 100vh offset, so
-          the whole stack always ends exactly at the viewport edge; the
-          two cards split that height roughly 42:58 (lg:flex-[5]/flex-[7],
-          the same ratio their column-spans used to be) so each keeps
-          scrolling internally exactly as before, just on the vertical
-          axis instead of side by side. Below lg both are natural-height
-          and the page flows/scrolls normally, same as before. */}
-      <div className="flex flex-col gap-4 lg:flex-1 lg:min-h-0">
+          columns alike. Neither card is height-bound to a shared budget
+          anymore (see this function's doc comment) — each sizes to its
+          own natural content height, and the table below caps itself to a
+          scrollable max-height rather than the page growing unbounded
+          with a full page of rows. */}
+      <div className="flex flex-col gap-4">
 
         {/* Form card */}
-        <div className="flex flex-col min-h-0 lg:flex-[5]">
+        <div className="flex flex-col">
           <div className={cardClass}>
-            {/* The form owns its own three-part layout (fixed header,
-                scrolling fields, pinned submit footer), so it just needs the
-                card's full height — no outer scroll wrapper. */}
+            {/* The form's own internal fields section (see
+                QAAnnouncementForm.tsx's `h-full`/`flex-1 min-h-0
+                overflow-y-auto` chain) only turns into a scroll region
+                when an ancestor actually constrains its height — now that
+                this card sizes to natural content instead, the form just
+                renders in full and the page scrolls if needed. */}
             <QAAnnouncementForm
               theme={theme}
               // This gallery's own `entries` (fetched with includeAllTeams=1
@@ -366,9 +369,9 @@ export function AnnouncementLogPage({
         </div>
 
         {/* List card */}
-        <div className="flex flex-col min-h-0 lg:flex-[7]">
+        <div className="flex flex-col">
           <div className={cardClass}>
-            <div className="space-y-3 h-full flex flex-col min-h-0">
+            <div className="space-y-3 flex flex-col">
               <div className="flex justify-between items-center pb-2 border-b border-light-stone/5 dark:border-stone-800 shrink-0">
                 <h3 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
                   Active Announcements ({total})
@@ -414,8 +417,13 @@ export function AnnouncementLogPage({
               {/* Table — replaces the old masonry tile gallery. Horizontally
                   scrolls on narrow viewports rather than dropping columns,
                   since every one of these fields was visible in the old
-                  tiles and none of them are being cut. */}
-              <div className="flex-grow min-h-0 overflow-auto rounded-lg border border-black/[0.04] dark:border-white/[0.06]">
+                  tiles and none of them are being cut. Capped to a
+                  max-height (rather than flex-grow filling a shared
+                  viewport budget, per this page's own doc comment above)
+                  so a full 25-row page doesn't make the whole page
+                  unreasonably tall — it scrolls internally instead, same
+                  idea as the QIP/roster table caps on the QA Dashboard. */}
+              <div className="max-h-[55vh] overflow-auto rounded-lg border border-black/[0.04] dark:border-white/[0.06]">
                 {entries.length === 0 ? (
                   <div className="text-center py-20 text-xs italic text-stone-500 select-none">
                     {loading
