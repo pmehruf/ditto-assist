@@ -1128,12 +1128,20 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
              grid, and the QIP card below caps its own table to 9 rows (see
              qipNineRowMaxHeight) — so there's nothing left to keep in sync
              between two unrelated elements. */
-          <div className="flex flex-col xl:flex-row gap-4">
+          <div className="flex flex-col lg:flex-row gap-4">
             {/* Overall Score — a 2x2 pairing (not a single tall stack): the
                 two money-metric cards (Payments/Lead Score) form one
                 column, the two conversation-quality cards (Chat/Call, no
-                score highlighting) form the other. */}
-            <div className="xl:basis-2/5 xl:grow xl:shrink min-w-0 space-y-3">
+                score highlighting) form the other.
+                lg: (not xl:, which this row used before): xl's 1280px
+                viewport-width threshold routinely failed on real laptop
+                screens once the sidebar and content padding ate into that
+                budget, silently falling back to the stacked layout even
+                though there was room — this row shares the page with
+                nothing else, so it only needs lg's 1024px to pair up
+                safely. Matches the breakpoint LookupPage.tsx's own
+                Input/Instruction-Manual row uses for the same reason. */}
+            <div className="lg:basis-2/5 lg:grow lg:shrink min-w-0 space-y-3">
               <h2 className="text-xs font-black uppercase tracking-wider text-content flex items-center gap-1.5 mb-1">
                 <BarChart3 className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />
                 Overall Score — {guideMentorFilteredSummary.length} advisor{guideMentorFilteredSummary.length === 1 ? "" : "s"}
@@ -1154,7 +1162,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                 height is capped to 9 rows (see qipNineRowMaxHeight below);
                 it does not try to match the Overall Score column anymore. */}
             <div
-              className={`xl:basis-3/5 xl:grow xl:shrink min-w-0 rounded-2xl overflow-hidden border flex flex-col ${
+              className={`lg:basis-3/5 lg:grow lg:shrink min-w-0 rounded-2xl overflow-hidden border flex flex-col ${
                 dark
                   ? "border-[rgba(184,106,28,0.35)] bg-white/[0.02] shadow-sm"
                   : "border-[rgba(176,106,36,0.28)] bg-white shadow-card hover:shadow-overlay transition-shadow duration-200"
