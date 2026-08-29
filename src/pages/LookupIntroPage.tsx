@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   ClipboardCheck,
   Briefcase,
-  Layers,
   Newspaper,
   History,
   Megaphone,
@@ -553,25 +552,21 @@ export function LookupIntroPage({
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0 lg:items-start">
           {/* LEFT — 2/3: Workspace Tools, References, QA Performance. */}
           <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
-            {/* WORKSPACE TOOLS. Responsive: 1 column on a phone-width
-                viewport, 2 on a narrow tablet, all 4 side by side from lg up. */}
-            {visibleAdvisory.length > 0 && (
+            {/* WORKSPACE TOOLS — the former "References" tier (Plan
+                References, Announcements, etc.) now lives in this same
+                grid under this one heading instead of its own separate
+                "References" label/section; QUICK_ACTIONS is already the
+                combined visibleAdvisory + visibleQuality list, and every
+                tile now renders at the same (non-compact) size so the
+                merged row reads as one consistent set of tools rather
+                than two visually different tiers. Responsive: 1 column on
+                a phone-width viewport, 2 on a narrow tablet, 4 side by
+                side from lg up (wraps to a second row past 4 tiles). */}
+            {QUICK_ACTIONS.length > 0 && (
               <div className="shrink-0">
                 <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Workspace Tools" hex={lightSafe("#0EA5E9", theme)} size="lg" />
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(8px,1.2vh,12px)]">
-                  {visibleAdvisory.map((mod) => renderTile(mod, false))}
-                </div>
-              </div>
-            )}
-
-            {/* REFERENCES. Same tile pattern, deliberately more compact
-                (smaller icon/text) so it reads as a lower-priority tier
-                without needing a second, heavier card wrapper. */}
-            {visibleQuality.length > 0 && (
-              <div className="shrink-0">
-                <SectionLabel icon={<Layers className="w-3.5 h-3.5" />} text="References" hex={lightSafe("#64748B", theme)} />
-                <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(6px,1vh,10px)]">
-                  {visibleQuality.map((mod) => renderTile(mod, true))}
+                  {QUICK_ACTIONS.map((mod) => renderTile(mod, false))}
                 </div>
               </div>
             )}
