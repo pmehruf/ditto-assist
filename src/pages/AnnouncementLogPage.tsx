@@ -344,8 +344,10 @@ export function AnnouncementLogPage({
           anymore (see this function's doc comment) — each sizes to its
           own natural content height, and the table below caps itself to a
           scrollable max-height rather than the page growing unbounded
-          with a full page of rows. */}
-      <div className="flex flex-col gap-4">
+          with a full page of rows. gap-3 (was gap-4) — the form card is
+          now compact enough that Active Announcements should begin within
+          the first viewport rather than needing a scroll to reach it. */}
+      <div className="flex flex-col gap-3">
 
         {/* Form card */}
         <div className="flex flex-col">

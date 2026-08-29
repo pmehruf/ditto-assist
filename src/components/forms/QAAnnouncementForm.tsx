@@ -838,8 +838,10 @@ export function QAAnnouncementForm({
   // region ever scrolls, and only when the fields genuinely overflow.
   return (
     <form onSubmit={handleSubmit} className="flex flex-col h-full min-h-0 text-left">
-      {/* HEADER — fixed */}
-      <div className="shrink-0 pb-2.5 mb-3 border-b border-light-stone/5 dark:border-stone-800">
+      {/* HEADER — fixed. pb-2/mb-2.5 (was pb-2.5/mb-3) — a small further
+          trim so this card takes less of the page before Active
+          Announcements below it. */}
+      <div className="shrink-0 pb-2 mb-2.5 border-b border-light-stone/5 dark:border-stone-800">
         <h3 className={`text-sm font-bold uppercase tracking-wider ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
           {editingAnnouncementId ? "Edit Announcement" : "Add New Announcement"}
         </h3>
@@ -848,8 +850,8 @@ export function QAAnnouncementForm({
         </p>
       </div>
 
-      {/* FIELDS — the only scrolling region */}
-      <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3.5">
+      {/* FIELDS — the only scrolling region. gap-3 (was gap-3.5). */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-3">
 
         {/* Inline Alerts */}
         {errorMsg && (
@@ -873,8 +875,12 @@ export function QAAnnouncementForm({
             gap-4 spaces the two sections when stacked (<lg); at lg+ the
             gap collapses to 0 and the Content column's own lg:border-l +
             lg:pl-5 below take over, so the two columns read as clearly
-            separate workspaces instead of just floating in whitespace. */}
-        <div className="flex flex-col lg:flex-row gap-4 lg:gap-0">
+            separate workspaces instead of just floating in whitespace.
+            lg:items-start (default is stretch) — without it, the shorter
+            Details column got stretched to match Content's height, which
+            just left a block of dead space below its actual fields; each
+            column now sizes to its own natural content instead. */}
+        <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-0">
 
         {/* ── SECTION: Announcement Details ── */}
         <div className="shrink-0 lg:flex-1 lg:min-w-0">
@@ -1340,13 +1346,16 @@ export function QAAnnouncementForm({
               // published views render with (see announcementHtml.ts) —
               // sharing it is what makes the editor a true WYSIWYG preview.
               // Only the chrome (border, padding, height, focus ring)
-              // differs. A fixed h-[240px] (was flex-1 min-h-[160px], which
+              // differs. A fixed h-[180px] (was flex-1 min-h-[160px], which
               // stretched to fill whatever leftover room the card had —
-              // often a lot of empty space) keeps the box a comfortable,
-              // predictable writing size; overflow-y-auto lets typed
-              // content past that scroll inside the box instead of growing
-              // it, same internal-scroll pattern used elsewhere in the app.
-              className={`w-full h-[240px] font-normal p-3 rounded-lg border outline-none overflow-y-auto ${announcementSurfaceClasses(effectiveTheme)} ${
+              // often a lot of empty space; 240px was a first pass that
+              // still ran noticeably taller than the Details column next
+              // to it) keeps the box a comfortable, predictable writing
+              // size roughly proportionate to the fields on the left;
+              // overflow-y-auto lets typed content past that scroll inside
+              // the box instead of growing it, same internal-scroll
+              // pattern used elsewhere in the app.
+              className={`w-full h-[180px] font-normal p-3 rounded-lg border outline-none overflow-y-auto ${announcementSurfaceClasses(effectiveTheme)} ${
                 theme === "dark"
                   ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
                   : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
@@ -1358,18 +1367,19 @@ export function QAAnnouncementForm({
         </div>
       </div>
 
-      {/* FOOTER — pinned; the submit button is always visible. py-2.5 (was
-          py-3) and pt-2.5/mt-2.5 (was pt-3/mt-3) — still full-width and
-          prominent, just sized to feel like the form's own last row
-          instead of a separate oversized banner tacked on below it. */}
-      <div className="shrink-0 pt-2.5 mt-2.5 border-t border-light-stone/5 dark:border-stone-800">
+      {/* FOOTER — pinned; the submit button is always visible. py-2 and
+          pt-2/mt-2 (was py-2.5/pt-2.5/mt-2.5, itself already trimmed down
+          from an original py-3/pt-3/mt-3) — still full-width and
+          prominent, just sized like a normal action button rather than a
+          banner. */}
+      <div className="shrink-0 pt-2 mt-2 border-t border-light-stone/5 dark:border-stone-800">
         {editingAnnouncementId ? (
           <div className="flex gap-2">
             <ClippedButton
               type="submit"
               size="lg"
               cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-              className="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
+              className="flex-grow py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
             >
               <Check className="w-4 h-4" />
               <span>Save Changes</span>
@@ -1379,7 +1389,7 @@ export function QAAnnouncementForm({
               size="lg"
               onClick={() => setEditingAnnouncementId && setEditingAnnouncementId(null)}
               cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-              className="px-4 py-2.5 bg-stone-500 hover:bg-stone-600 text-white text-xs font-extrabold uppercase tracking-widest gap-2"
+              className="px-4 py-2 bg-stone-500 hover:bg-stone-600 text-white text-xs font-extrabold uppercase tracking-widest gap-2"
             >
               <span>Cancel</span>
             </ClippedButton>
@@ -1389,7 +1399,7 @@ export function QAAnnouncementForm({
             type="submit"
             size="lg"
             cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
+            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
           >
             <Plus className="w-4 h-4" />
             <span>Add Announcement</span>
