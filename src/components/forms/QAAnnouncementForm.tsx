@@ -872,15 +872,16 @@ export function QAAnnouncementForm({
             the Announcement Manager stacks the form above the list (see
             AnnouncementLogPage.tsx), so there's enough room for a
             side-by-side split without cramping the fields grid below.
-            gap-4 spaces the two sections when stacked (<lg); at lg+ the
-            gap collapses to 0 and the Content column's own lg:border-l +
-            lg:pl-5 below take over, so the two columns read as clearly
-            separate workspaces instead of just floating in whitespace.
+            gap-4 spaces the two sections at every size, including around
+            the lg+-only divider element below.
             lg:items-start (default is stretch) — without it, the shorter
-            Details column got stretched to match Content's height, which
-            just left a block of dead space below its actual fields; each
-            column now sizes to its own natural content instead. */}
-        <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-0">
+            column got stretched to match the taller one's height, which
+            just left a block of dead space below its actual content; each
+            column now sizes to its own natural content instead. The
+            divider between them is its own element (see its own comment)
+            rather than a border on either column, specifically so it isn't
+            tied to whichever column happens to be shorter. */}
+        <div className="flex flex-col lg:flex-row lg:items-start gap-4">
 
         {/* ── SECTION: Announcement Details ── */}
         <div className="shrink-0 lg:flex-1 lg:min-w-0">
@@ -1142,15 +1143,25 @@ export function QAAnnouncementForm({
           </div>
         </div>
 
+        {/* Divider — a dedicated element rather than a border on either
+            column. `self-stretch` overrides the row's own lg:items-start
+            just for this one child, so it always spans the full height of
+            the taller column (whichever that is) instead of stopping
+            partway down when Details and Content end at different
+            heights — which is exactly what a border-l on one of the
+            columns themselves did (it only ever ran as tall as that one
+            column, producing a visibly truncated line whenever the other
+            column was taller). Hidden below lg, where the columns stack
+            and a vertical rule between them doesn't apply. */}
+        <div className="hidden lg:block w-px self-stretch bg-stone-200 dark:bg-white/[0.08]" />
+
         {/* ── SECTION: Content ──
-            Right column beside Announcement Details at lg+, set off with
-            its own left border + padding (rather than relying on the gap
-            alone) so the split reads as two clearly separate workspaces;
-            below Details on narrower screens, where the border/padding are
-            inert. The editor itself now renders at a fixed, compact height
-            (see its own comment below) instead of stretching to fill
-            whatever room the card happens to have. */}
-        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0 lg:border-l lg:pl-5 border-stone-200 dark:border-white/[0.08]">
+            Right column beside Announcement Details at lg+ (the divider
+            above marks the split); below Details on narrower screens. The
+            editor itself renders at a fixed, compact height (see its own
+            comment below) instead of stretching to fill whatever room the
+            card happens to have. */}
+        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0">
           <SectionLabel theme={theme}>Content</SectionLabel>
 
           {/* Formatting toolbar — Bold, Italic, Underline, Code, Text
