@@ -630,10 +630,15 @@ export function LookupIntroPage({
           >
             <div className="flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2 select-none min-w-0">
-                <Megaphone className="w-4 h-4" style={{ color: lightSafe("#FB7185", theme) }} />
+                {/* Aqua blue (#0EA5E9), same hex SectionLabel uses for
+                    "Workspace Tools" above — this label sits at the same
+                    row/level as that one in the mirrored right column, so
+                    it now matches it exactly instead of standing out in
+                    the rose/pink this used to be. */}
+                <Megaphone className="w-4 h-4" style={{ color: lightSafe("#0EA5E9", theme) }} />
                 <span
                   className="font-mono uppercase tracking-[0.2em] font-bold text-[13px] truncate"
-                  style={{ color: lightSafe("#FB7185", theme) }}
+                  style={{ color: lightSafe("#0EA5E9", theme) }}
                 >
                   Updates - Live feed
                 </span>
