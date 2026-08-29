@@ -865,8 +865,15 @@ export function QAAnnouncementForm({
           </div>
         )}
 
+        {/* Details (left) / Content (right) at lg+; stacked — Details
+            above Content — below that. The card is full-width now that
+            the Announcement Manager stacks the form above the list (see
+            AnnouncementLogPage.tsx), so there's enough room for a
+            side-by-side split without cramping the fields grid below. */}
+        <div className="flex flex-col lg:flex-row gap-4">
+
         {/* ── SECTION: Announcement Details ── */}
-        <div className="shrink-0">
+        <div className="shrink-0 lg:flex-1 lg:min-w-0">
           <SectionLabel theme={theme}>Announcement Details</SectionLabel>
           <div className="space-y-3">
         {/* 3-per-row (was 2-per-row / three stacked rows) — Type + Audience
@@ -1118,17 +1125,13 @@ export function QAAnnouncementForm({
         </div>
 
         {/* ── SECTION: Content ──
-            Grows to fill whatever vertical room this card actually has
-            (flex-1 + the editor's h-full below), instead of a fixed pixel
-            height that left a lot of dead space on a tall external monitor
-            and felt cramped on a laptop screen. min-h-0 lets it shrink
-            below its content size when space is tight; a min-h floor on
-            the editor itself keeps it from collapsing to nothing on very
-            short viewports. The fields region above (line ~596) is already
-            overflow-y-auto, so if there's truly not enough room this area
-            scrolls and the submit button still never gets pushed out of
-            view. */}
-        <div className="flex-1 min-h-0 flex flex-col">
+            Right column beside Announcement Details at lg+; below it on
+            narrower screens. The editor has a min-h-[160px] floor so it
+            never collapses to nothing, and grows with typed content beyond
+            that — this card is no longer pinned to a fixed viewport height
+            (see AnnouncementLogPage.tsx), so the page itself scrolls
+            naturally rather than this section scrolling internally. */}
+        <div className="flex-1 min-h-0 flex flex-col lg:min-w-0">
           <SectionLabel theme={theme}>Content</SectionLabel>
 
           {/* Formatting toolbar — Bold, Italic, Underline, Code, Text
@@ -1332,6 +1335,8 @@ export function QAAnnouncementForm({
               }`}
             />
           </div>
+        </div>
+
         </div>
       </div>
 
