@@ -736,6 +736,19 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   const qipHeaderRowRef = useRef<HTMLTableRowElement>(null);
   const [qipNineRowMaxHeight, setQipNineRowMaxHeight] = useState<number | null>(null);
 
+  // Same row cap idea, applied to the full advisor roster table below the
+  // Overall Score/QIP row — see the effect right after filteredSummary is
+  // defined. Without a cap, that table's natural height (up to ~126 rows)
+  // pushed the whole roster page well past one viewport, so what should
+  // have been a "score cards + QIP table on one line" screen with the
+  // advisor list one small scroll below instead read as if the list and
+  // its Export CSV button had simply vanished — footer is always pinned
+  // to the bottom of the viewport regardless of scroll position, so a
+  // page that's taller than the screen just hides everything past the
+  // fold rather than visibly overflowing past the footer.
+  const summaryHeaderRowRef = useRef<HTMLTableRowElement>(null);
+  const [summaryTableMaxHeight, setSummaryTableMaxHeight] = useState<number | null>(null);
+
   const loadDashboard = useCallback(async (dateFilters: DateFilters, requestedTactId: string | null, hasList: boolean) => {
     setLoading(true);
     setError("");
@@ -922,6 +935,22 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [qipCandidates.length]);
+
+  // Same mechanism as the QIP cap above, sized to 6 rows instead of 9 —
+  // this table sits a third block down the page (below the header, the
+  // filter bar, and the Overall Score/QIP row already), so it gets a
+  // smaller share of the remaining viewport. Fewer than 6 advisors sizes
+  // naturally; more scrolls internally within this table's own box
+  // instead of growing the page past one screen.
+  useEffect(() => {
+    const el = summaryHeaderRowRef.current;
+    if (!el) return;
+    const update = () => setSummaryTableMaxHeight(el.getBoundingClientRect().height * 6);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [filteredSummary.length]);
 
   function avgOf(values: number[]): number | null {
     return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100 : null;
@@ -1250,10 +1279,13 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           <div className="flex justify-end">
             <ExportCsvButton onClick={exportSummaryCsv} disabled={filteredSummary.length === 0} />
           </div>
-          <div className={`overflow-auto rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+          <div
+            className={`overflow-auto rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}
+            style={summaryTableMaxHeight ? { maxHeight: summaryTableMaxHeight } : undefined}
+          >
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr>
+                <tr ref={summaryHeaderRowRef}>
                   {["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"].map((h, i) => (
                     <th
                       key={`${h}-${i}`}
