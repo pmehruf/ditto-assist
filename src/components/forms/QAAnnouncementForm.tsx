@@ -876,15 +876,13 @@ export function QAAnnouncementForm({
         <div className="shrink-0 lg:flex-1 lg:min-w-0">
           <SectionLabel theme={theme}>Announcement Details</SectionLabel>
           <div className="space-y-3">
-        {/* 3-per-row (was 2-per-row / three stacked rows) — Type + Audience
-            are shared across both announcement types, so Title (which IS
-            type-dependent, both its bound state and its placeholder) joins
-            them as this row's third cell instead of starting a row of its
-            own; the second row below pairs the type's remaining field
-            (Rating for QA, From for General) with the two dates, so six
-            fields now read as two rows of three instead of three rows of
-            two — same fields, same grouping logic, just packed tighter. */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* 2-per-row / three stacked rows — Type + Audience share the
+            first row; Title (type-dependent, both its bound state and its
+            placeholder) moves into the second row alongside the type's
+            remaining field (Rating for QA, From for General), since Title
+            can't be hoisted into this shared row without also hoisting its
+            per-type binding; the two dates keep their own third row. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Type" theme={theme}>
             <CustomSelect
               theme={theme === "dark" ? "dark" : "light"}
@@ -918,45 +916,28 @@ export function QAAnnouncementForm({
               ]}
             />
           </Field>
-
-          {announcementType === "QA Announcement" ? (
-            <Field label="Title" theme={theme}>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="e.g. Weekly QA Highlights"
-                className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
-                  theme === "dark"
-                    ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-600"
-                    : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
-                }`}
-                required
-              />
-            </Field>
-          ) : (
-            <Field label="Title" theme={theme}>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Independence Day Downtime Alert"
-                className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
-                  theme === "dark"
-                    ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-605"
-                    : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
-                }`}
-                required
-              />
-            </Field>
-          )}
         </div>
 
         {/* CONDITIONAL FORMS */}
         {announcementType === "QA Announcement" ? (
           <>
-            {/* Rating + the two dates share one row. */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Title + Rating share one row. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Title" theme={theme}>
+                <input
+                  type="text"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. Weekly QA Highlights"
+                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
+                    theme === "dark"
+                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-600"
+                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
+                  }`}
+                  required
+                />
+              </Field>
+
               <Field label="Rating" theme={theme}>
                 <CustomSelect
                   theme={theme === "dark" ? "dark" : "light"}
@@ -978,11 +959,13 @@ export function QAAnnouncementForm({
                   ]}
                 />
               </Field>
+            </div>
 
-              {/* Two distinct dates: Announced = when this notice was posted
-                  (defaults to today, drives which announcements advisors
-                  see); Effective = when the rule it describes kicks in
-                  (optional). */}
+            {/* Two distinct dates share their own row: Announced = when
+                this notice was posted (defaults to today, drives which
+                announcements advisors see); Effective = when the rule it
+                describes kicks in (optional). */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Announced" theme={theme}>
                 <DateInputDMY
                   title="Announcement date — when this notice was posted"
@@ -1041,8 +1024,23 @@ export function QAAnnouncementForm({
           </>
         ) : (
           <>
-            {/* From + the two dates share one row — same rhythm as QA above. */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Title + From share one row. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Title" theme={theme}>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Independence Day Downtime Alert"
+                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
+                    theme === "dark"
+                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-605"
+                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
+                  }`}
+                  required
+                />
+              </Field>
+
               <Field label="From" hint="optional" theme={theme}>
                 <input
                   type="text"
@@ -1057,13 +1055,15 @@ export function QAAnnouncementForm({
                   }`}
                 />
               </Field>
+            </div>
 
-              {/* Two dates: Announced = when posted (drives which
-                  announcements advisors see); Effective = when the rule
-                  kicks in (optional). Valid Till was removed from the form
-                  (per design feedback) — announcements no longer auto-
-                  expire on a per-notice date; existing rows that still
-                  carry one keep their old expiry behavior. */}
+            {/* Two dates share their own row: Announced = when posted
+                (drives which announcements advisors see); Effective = when
+                the rule kicks in (optional). Valid Till was removed from
+                the form (per design feedback) — announcements no longer
+                auto-expire on a per-notice date; existing rows that still
+                carry one keep their old expiry behavior. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Announced" theme={theme}>
                 <DateInputDMY
                   title="Announcement date — when this notice was posted"
