@@ -736,15 +736,12 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   const qipHeaderRowRef = useRef<HTMLTableRowElement>(null);
   const [qipNineRowMaxHeight, setQipNineRowMaxHeight] = useState<number | null>(null);
 
-  // The advisor roster table below the Overall Score/QIP row previously
-  // used this same row-cap-via-ResizeObserver pattern (5-6 rows, internal
-  // scroll) to keep the whole page inside one viewport — since the footer
-  // is always pinned to the bottom regardless of scroll position, a page
-  // taller than the screen used to just hide the list and its Export CSV
-  // button past the fold rather than visibly overflowing. Per explicit
-  // request this table now renders every row and lets the page itself
-  // scroll instead, so there's no ref/max-height state to measure here
-  // anymore — see the table's own render below.
+  // The advisor roster table below the Overall Score/QIP row used this
+  // same row-cap-via-ResizeObserver pattern (a fixed 6 rows, internal
+  // scroll) to keep the whole page inside one viewport, was briefly made
+  // fully unbounded (no cap at all), and now caps via a plain max-h-[65vh]
+  // instead — see the table's own render below for why that's a better
+  // fit than either extreme: no ref/max-height state needs measuring here.
 
   const loadDashboard = useCallback(async (dateFilters: DateFilters, requestedTactId: string | null, hasList: boolean) => {
     setLoading(true);
@@ -1263,20 +1260,30 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           <div className="flex justify-end">
             <ExportCsvButton onClick={exportSummaryCsv} disabled={filteredSummary.length === 0} />
           </div>
-          {/* No max-height/internal scroll here (previously row-capped via a
-              ResizeObserver on the header row, same pattern as the QIP
-              table above) — per explicit request this table always renders
-              every filtered advisor, and the page itself scrolls once it
-              runs past one viewport instead of this box scrolling
-              internally. */}
-          <div className={`rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+          {/* Caps at 65vh (was row-capped via a ResizeObserver on the header
+              row measuring a fixed row count — e.g. 6 rows — regardless of
+              viewport size; briefly removed entirely per an earlier
+              request, but a fully unbounded table let ordinary page
+              scrolling run on indefinitely through a long roster). 65vh
+              lets the table grow with its own content up to roughly a
+              full viewport's worth of rows — short lists size naturally,
+              well under that cap — and once it hits the cap, this box's
+              own overflow-y (via `overflow-auto`) takes over: scrolling
+              while the table already fills the visible viewport scrolls
+              its rows instead of the page. Same max-h-[Nvh]+overflow-auto
+              convention SheetTableView above and AnnouncementLogPage's own
+              list table already use for this exact "cap by viewport, then
+              scroll internally" behavior — vh scales with the actual
+              screen instead of a fixed row count, so this needs no
+              ResizeObserver/measuring effect at all. */}
+          <div className={`max-h-[65vh] overflow-auto rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
                   {["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"].map((h, i) => (
                     <th
                       key={`${h}-${i}`}
-                      className={`text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
+                      className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
                         dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
                       }`}
                     >
