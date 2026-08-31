@@ -4448,20 +4448,23 @@ export default function App() {
         id="main-scrollable-body"
         className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
           activeTab === "lookup" && showIntro
-            ? // `lg:overflow-hidden` gives LookupIntroPage's ScaleToFit a
-              // bounded box to measure "available space" against at
-              // desktop — ScaleToFit's own contain-fit scaling already
-              // guarantees the poster composition never exceeds that box,
-              // so this is a safety net, not the thing doing the fitting.
-              // Below `lg`, ScaleToFit is inactive (Home reflows with real
-              // responsive CSS instead) and content that genuinely doesn't
-              // fit at a small viewport scrolls rather than getting
-              // silently clipped — same "no-scroll on desktop, scrollable
-              // on tablet/narrow" behavior its sibling branch below uses.
-              "lg:overflow-hidden overflow-y-auto min-h-0"
+            ? // Previously `lg:overflow-hidden overflow-y-auto` — desktop
+              // relied entirely on LookupIntroPage's ScaleToFit to guarantee
+              // the poster composition never exceeds this box, with
+              // overflow-hidden as a "safety net" that actually just clipped
+              // content silently whenever that guarantee didn't hold (e.g.
+              // unusually high browser zoom, where the app's own auto-zoom
+              // compensation and ScaleToFit's measurement can't keep up).
+              // Plain `overflow-y-auto` at every breakpoint is the real
+              // safety net: it's a no-op visually whenever content fits (no
+              // scrollbar, no scroll) and only ever activates when content
+              // genuinely overflows, so nothing that fit before looks any
+              // different — it just stops hiding content that doesn't fit.
+              "overflow-y-auto min-h-0"
             : (activeTab === "lookup" && !showIntro) || activeTab === "product_assist"
-            ? // Same reasoning as the showIntro branch above, and the same
-              // missing piece: without `min-h-0` here, this flex-grow item
+            ? // Same reasoning as the showIntro branch above — desktop no
+              // longer force-disables scrolling via `lg:overflow-hidden`.
+              // min-h-0 is still required: without it, this flex-grow item
               // can't shrink below its content's natural (min-content)
               // height, so on a tall render (e.g. content sized up by the
               // app-wide auto-zoom) it silently overflows the shell's
@@ -4477,7 +4480,7 @@ export default function App() {
               // left of the viewport, so this tab now falls to the plain
               // "overflow-y-auto" branch below and the whole page scrolls
               // normally, same as most other tabs.
-              "lg:overflow-hidden overflow-y-auto min-h-0"
+              "overflow-y-auto min-h-0"
             : "overflow-y-auto"
         }`}
       >
