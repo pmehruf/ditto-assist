@@ -188,21 +188,26 @@ export function LookupPage({
               Manual card's bottom border to the same vertical level as the
               Input section's last element (Find a Match/Reset Fields), on
               every viewport.
-              lg:flex-1 lg:min-h-0: without an explicit height, this row was
-              free to grow to whatever the Instruction Manual card's own
-              5-item list naturally needed. Bounding the row to the space
-              actually left in its own flex-column ancestor means the
-              Instruction Manual card (stretched to match) is a real, capped
-              box — its own overflow-y-auto (see InstructionManualPanel.tsx)
-              scrolls internally first when the list doesn't fit, which is
-              nicer than the whole page scrolling for a few extra list rows.
+              lg:flex-1 lg:min-h-fit (was lg:min-h-0): flex-1 still lets the
+              row grow to fill leftover space in its flex-column ancestor
+              (so Instruction Manual's card still visually matches Input
+              section's height in the normal case), but min-h-fit gives the
+              row a real floor at its own natural/intrinsic height instead of
+              letting the flex algorithm shrink it to whatever's "left" —
+              which is what silently squeezed the Input section (title +
+              selectors + queue box + Find a Match/Reset Fields) shorter than
+              its own content needed on a denser viewport or higher zoom,
+              with the excess rendering past the row's compressed box instead
+              of pushing it visibly taller. The Instruction Manual card is
+              unaffected: its own overflow-y-auto list (see
+              InstructionManualPanel.tsx) still scrolls internally if its
+              5-item list is naturally taller than this now-protected row.
               main-scrollable-body (App.tsx) is itself overflow-y-auto at
-              every breakpoint now, so on a shorter/denser viewport — or
-              unusually high zoom — where this row's content exceeds even
-              that budget, the page scrolls to reach it rather than clipping
-              it. */}
+              every breakpoint too, as a second-layer safety net for the
+              rarer case where even this row's natural height exceeds the
+              viewport outright. */}
           <div
-            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 lg:flex-1 lg:min-h-0 animate-fade-in ${
+            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 lg:flex-1 lg:min-h-fit animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
