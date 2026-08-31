@@ -94,8 +94,25 @@ export function ScaleToFit({ children, active, className = "" }: ScaleToFitProps
   const scale = Math.min(Math.max(rawScale, 0.4), 1.6);
   const scaledHeight = naturalSize.h > 0 ? naturalSize.h * scale : undefined;
 
+  // `items-center` (added alongside the original `justify-center`): the
+  // caller passes `flex-1 min-h-0` as `className` so this component's own
+  // box grows to fill whatever vertical space App.tsx's shell has left for
+  // it above the footer. `flex-1` sets flex-basis:0%, which — per the flex
+  // spec — makes the flex algorithm ignore this element's own `height`
+  // style (set above to exactly `scaledHeight`) when sizing it; the box
+  // actually grows via flex-grow to the full available height instead,
+  // which is usually taller than `scaledHeight` whenever the composition's
+  // authored aspect ratio (DESKTOP_CANVAS_WIDTH-wide) is wider than the
+  // viewport's, since contain-fit's width-bound scale then under-fills the
+  // available height (the usual "letterboxing" tradeoff of a contain fit).
+  // Without vertical centering the scaled poster stayed pinned to the top
+  // of that taller box, dumping the entire leftover gap in one place at
+  // the bottom — directly above the footer. Centering distributes it
+  // evenly above and below instead, which is the standard, purely-CSS fix
+  // for this: the composition's own dimensions and scale math are
+  // unchanged, only where it sits within its (already-correctly-sized) box.
   return (
-    <div ref={outerRef} className={`relative w-full flex justify-center overflow-hidden ${className}`} style={{ height: scaledHeight }}>
+    <div ref={outerRef} className={`relative w-full flex justify-center items-center overflow-hidden ${className}`} style={{ height: scaledHeight }}>
       <div
         ref={innerRef}
         style={{

@@ -624,8 +624,14 @@ function SheetTableView({
 
   const visible = columns ? table.headers.filter((h) => columns.some((c) => norm(c) === norm(h))) : table.headers;
 
+  // Outer div owns rounded-xl + overflow-hidden; the actual scrolling
+  // happens on the plain inner div (max-h-[65vh] overflow-auto, no
+  // rounding of its own) — see the roster table below for the full
+  // explanation of why this split fixes the scrollbar/sticky-header
+  // clipping the rounded corner.
   return (
-    <div className={`overflow-auto max-h-[65vh] rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+    <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+      <div className="overflow-auto max-h-[65vh]">
       <table className="w-full text-xs border-collapse min-w-[700px]">
         <thead>
           <tr>
@@ -660,6 +666,7 @@ function SheetTableView({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -1256,27 +1263,52 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
         {advisorsSummary === null ? (
           <p className="text-xs text-content-muted py-6">Loading advisors…</p>
         ) : (
-          <>
-          <div className="flex justify-end">
-            <ExportCsvButton onClick={exportSummaryCsv} disabled={filteredSummary.length === 0} />
-          </div>
-          {/* Caps at 65vh (was row-capped via a ResizeObserver on the header
-              row measuring a fixed row count — e.g. 6 rows — regardless of
-              viewport size; briefly removed entirely per an earlier
-              request, but a fully unbounded table let ordinary page
-              scrolling run on indefinitely through a long roster). 65vh
-              lets the table grow with its own content up to roughly a
-              full viewport's worth of rows — short lists size naturally,
-              well under that cap — and once it hits the cap, this box's
-              own overflow-y (via `overflow-auto`) takes over: scrolling
-              while the table already fills the visible viewport scrolls
-              its rows instead of the page. Same max-h-[Nvh]+overflow-auto
-              convention SheetTableView above and AnnouncementLogPage's own
-              list table already use for this exact "cap by viewport, then
-              scroll internally" behavior — vh scales with the actual
-              screen instead of a fixed row count, so this needs no
-              ResizeObserver/measuring effect at all. */}
-          <div className={`max-h-[65vh] overflow-auto rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+          /* Outer div owns rounded-xl + overflow-hidden; the actual
+             scrolling happens on the PLAIN inner div below (max-h-[65vh]
+             overflow-auto, no rounding of its own) — same nested-container
+             split the QIP card above already uses. A single div carrying
+             both `rounded-xl` and `overflow-auto` (the previous shape here)
+             lets the browser's native scrollbar sit flush against — and
+             visually clip — the rounded corner, and the sticky header's
+             opaque background paints square-cornered right up against
+             that same corner. Splitting the rounding from the scrolling
+             fixes both: this outer box clips everything (table, sticky
+             header, scrollbar) to its own rounded shape, and the inner
+             div never has corners of its own to clip. See SheetTableView
+             above for the identical fix applied to the same defect. */
+          <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+            {/* Icon-only export — was a full ClippedButton with a text
+                label in its own flex row above this card (its own block-
+                level row plus the parent's space-y-3 gap before the table
+                even started). Folded into a slim bar inside the card
+                itself instead: no separate row's worth of vertical space,
+                and the icon alone is enough — the button's title attr
+                still spells out what it does for anyone hovering it. */}
+            <div className={`flex justify-end px-2 py-1 border-b ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+              <button
+                type="button"
+                onClick={exportSummaryCsv}
+                disabled={filteredSummary.length === 0}
+                title="Export this table as a CSV file"
+                className={`p-1.5 rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                  dark ? "text-slate-300 hover:bg-white/[0.08]" : "text-stone-600 hover:bg-black/[0.05]"
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {/* Caps at 65vh (was row-capped via a ResizeObserver on the
+                header row measuring a fixed row count — e.g. 6 rows —
+                regardless of viewport size; briefly removed entirely per
+                an earlier request, but a fully unbounded table let
+                ordinary page scrolling run on indefinitely through a long
+                roster). 65vh lets the table grow with its own content up
+                to roughly a full viewport's worth of rows — short lists
+                size naturally, well under that cap — and once it hits the
+                cap, this box's own overflow-y takes over: scrolling while
+                the table already fills the visible viewport scrolls its
+                rows instead of the page. */}
+            <div className="max-h-[65vh] overflow-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
@@ -1332,8 +1364,8 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
-          </>
         )}
       </div>
     );
