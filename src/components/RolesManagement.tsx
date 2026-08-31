@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from "react";
-import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, IdCard, Power } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, IdCard, Power, Search } from "lucide-react";
 import { AppRole } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
@@ -43,8 +43,20 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
   const [draftDescription, setDraftDescription] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const memberCount = (roleId: number) => usersList.filter((u) => u.roleId === roleId).length;
+
+  const visibleRoles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return roles.filter((r) => {
+      if (statusFilter === "active" && !r.active) return false;
+      if (statusFilter === "inactive" && r.active) return false;
+      if (q && !r.name.toLowerCase().includes(q) && !(r.description || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [roles, searchQuery, statusFilter]);
 
   const resetCreateForm = () => {
     setCreating(false);
@@ -197,10 +209,48 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
             No roles yet. {canEdit ? "Create one to get started." : "The Developer hasn't created any yet."}
           </p>
         ) : (
+          <>
+          {roles.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search roles…"
+                  className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-[11px] font-semibold outline-none ${
+                    dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+                  }`}
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                {(["all", "active", "inactive"] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setStatusFilter(f)}
+                    className={`px-2.5 py-1.5 rounded-lg border text-[10.5px] font-bold capitalize cursor-pointer ${
+                      statusFilter === f
+                        ? "border-[var(--accent)] text-[var(--accent)]"
+                        : dark ? "border-stone-850 text-stone-400 hover:bg-white/[0.04]" : "border-stone-200 text-stone-500 hover:bg-stone-50"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {visibleRoles.length === 0 ? (
+            <p className={`px-3 py-8 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
+              No roles match the current search/filters.
+            </p>
+          ) : (
           <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
-                {roles.map((role, idx) => {
+                {visibleRoles.map((role, idx) => {
                   const isEditing = canEdit && editingId === role.id;
                   return (
                     <tr key={role.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
@@ -274,6 +324,8 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
               </tbody>
             </table>
           </div>
+          )}
+          </>
         )}
 
         <p className="text-[10.5px] font-semibold text-content-muted">

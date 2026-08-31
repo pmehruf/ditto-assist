@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
-import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Link2, Power, Trash2, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Link2, Power, Trash2, RefreshCw, Search } from "lucide-react";
 import { RelationshipType, UserRelationship } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
@@ -236,6 +236,36 @@ export function RelationshipsManagement({ theme, effectiveTier, usersList, logAc
   const nameFor = (email: string) => usersList.find((u) => u.email === email)?.name || null;
   const typeName = (id: number) => types.find((t) => t.id === id)?.name || `#${id}`;
 
+  // ── Search / filter ─────────────────────────────────────────────────
+  const [typeSearch, setTypeSearch] = useState("");
+  const [typeStatusFilter, setTypeStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [mappingSearch, setMappingSearch] = useState("");
+  const [mappingTypeFilter, setMappingTypeFilter] = useState<string>("");
+
+  const visibleTypes = useMemo(() => {
+    const q = typeSearch.trim().toLowerCase();
+    return types.filter((t) => {
+      if (typeStatusFilter === "active" && !t.active) return false;
+      if (typeStatusFilter === "inactive" && t.active) return false;
+      if (q && !t.name.toLowerCase().includes(q) && !(t.description || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [types, typeSearch, typeStatusFilter]);
+
+  const visibleMappings = useMemo(() => {
+    const q = mappingSearch.trim().toLowerCase();
+    return mappings.filter((m) => {
+      if (mappingTypeFilter && String(m.relationshipTypeId) !== mappingTypeFilter) return false;
+      if (q) {
+        const ownerText = `${nameFor(m.ownerEmail) || ""} ${m.ownerEmail}`.toLowerCase();
+        const subjectText = `${nameFor(m.subjectEmail) || ""} ${m.subjectEmail}`.toLowerCase();
+        if (!ownerText.includes(q) && !subjectText.includes(q)) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mappings, mappingSearch, mappingTypeFilter, usersList]);
+
   return (
     <div className="space-y-5">
       {actionError && (
@@ -302,10 +332,48 @@ export function RelationshipsManagement({ theme, effectiveTier, usersList, logAc
                   No relationship types yet. {canEdit ? "Create one to get started." : "The Developer hasn't created any yet."}
                 </p>
               ) : (
+                <>
+                {types.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[180px]">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint pointer-events-none" />
+                      <input
+                        type="text"
+                        value={typeSearch}
+                        onChange={(e) => setTypeSearch(e.target.value)}
+                        placeholder="Search relationship types…"
+                        className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-[11px] font-semibold outline-none ${
+                          dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+                        }`}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(["all", "active", "inactive"] as const).map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setTypeStatusFilter(f)}
+                          className={`px-2.5 py-1.5 rounded-lg border text-[10.5px] font-bold capitalize cursor-pointer ${
+                            typeStatusFilter === f
+                              ? "border-[var(--accent)] text-[var(--accent)]"
+                              : dark ? "border-stone-850 text-stone-400 hover:bg-white/[0.04]" : "border-stone-200 text-stone-500 hover:bg-stone-50"
+                          }`}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {visibleTypes.length === 0 ? (
+                  <p className={`px-3 py-6 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                    No relationship types match the current search/filters.
+                  </p>
+                ) : (
                 <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
                   <table className="w-full border-collapse">
                     <tbody>
-                      {types.map((type, idx) => {
+                      {visibleTypes.map((type, idx) => {
                         const isEditing = canEdit && editingTypeId === type.id;
                         return (
                           <tr key={type.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
@@ -376,6 +444,8 @@ export function RelationshipsManagement({ theme, effectiveTier, usersList, logAc
                     </tbody>
                   </table>
                 </div>
+                )}
+                </>
               )}
             </div>
           </div>
@@ -448,10 +518,41 @@ export function RelationshipsManagement({ theme, effectiveTier, usersList, logAc
                   No mappings yet. {canEdit ? "Create one to get started." : "The Developer hasn't created any yet."}
                 </p>
               ) : (
+                <>
+                {mappings.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[180px]">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint pointer-events-none" />
+                      <input
+                        type="text"
+                        value={mappingSearch}
+                        onChange={(e) => setMappingSearch(e.target.value)}
+                        placeholder="Search by name or email…"
+                        className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-[11px] font-semibold outline-none ${
+                          dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+                        }`}
+                      />
+                    </div>
+                    <div className="min-w-[160px]">
+                      <CustomSelect
+                        theme={theme}
+                        value={mappingTypeFilter}
+                        onChange={setMappingTypeFilter}
+                        triggerClassName={selectTriggerClass}
+                        options={[{ value: "", label: "All relationship types" }, ...types.map((t) => ({ value: String(t.id), label: t.name }))]}
+                      />
+                    </div>
+                  </div>
+                )}
+                {visibleMappings.length === 0 ? (
+                  <p className={`px-3 py-6 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                    No mappings match the current search/filters.
+                  </p>
+                ) : (
                 <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
                   <table className="w-full border-collapse">
                     <tbody>
-                      {mappings.map((m, idx) => (
+                      {visibleMappings.map((m, idx) => (
                         <tr key={m.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
                           <td className="px-3 py-2.5 text-xs">
                             <span className={`font-black ${dark ? "text-white" : "text-stone-900"}`}>{nameFor(m.subjectEmail) || m.subjectEmail}</span>
@@ -480,6 +581,8 @@ export function RelationshipsManagement({ theme, effectiveTier, usersList, logAc
                     </tbody>
                   </table>
                 </div>
+                )}
+                </>
               )}
             </div>
           </div>

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from "react";
-import { Save, RefreshCw, AlertTriangle, ShieldCheck, Lock, RotateCcw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Save, RefreshCw, AlertTriangle, ShieldCheck, Lock, RotateCcw, Search } from "lucide-react";
 import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "../constants/featurePermissions";
 import { FeatureAccessOverride } from "../types/permissions";
 import { ClippedButton } from "./ClippedButton";
@@ -158,6 +158,19 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
     </span>
   );
 
+  const [featureSearch, setFeatureSearch] = useState("");
+  const [overriddenOnly, setOverriddenOnly] = useState(false);
+
+  const visiblePermissions = useMemo(() => {
+    const q = featureSearch.trim().toLowerCase();
+    return DEFAULT_FEATURE_PERMISSIONS.filter((perm) => {
+      if (overriddenOnly && !overrideById.get(perm.id)) return false;
+      if (q && !perm.name.toLowerCase().includes(q) && !perm.description.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featureSearch, overriddenOnly, overrides]);
+
   return (
     <div className={`rounded-2xl border p-5 transition-all ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"}`}>
       <div className="space-y-4">
@@ -175,6 +188,37 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
           </div>
         )}
 
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint pointer-events-none" />
+            <input
+              type="text"
+              value={featureSearch}
+              onChange={(e) => setFeatureSearch(e.target.value)}
+              placeholder="Search features…"
+              className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-[11px] font-semibold outline-none ${
+                dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+              }`}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setOverriddenOnly((v) => !v)}
+            className={`px-2.5 py-1.5 rounded-lg border text-[10.5px] font-bold cursor-pointer whitespace-nowrap ${
+              overriddenOnly
+                ? "border-[var(--accent)] text-[var(--accent)]"
+                : dark ? "border-stone-850 text-stone-400 hover:bg-white/[0.04]" : "border-stone-200 text-stone-500 hover:bg-stone-50"
+            }`}
+          >
+            Overridden only
+          </button>
+        </div>
+
+        {visiblePermissions.length === 0 ? (
+          <p className={`px-3 py-8 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
+            No features match the current search/filters.
+          </p>
+        ) : (
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[900px]">
             <thead>
@@ -187,7 +231,7 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
               </tr>
             </thead>
             <tbody>
-              {DEFAULT_FEATURE_PERMISSIONS.map((perm, idx) => {
+              {visiblePermissions.map((perm, idx) => {
                 const locked = DEVELOPER_ONLY_FEATURES.has(perm.id);
                 const values = rowValues(perm.id, perm.generalAccess, perm.adminAccess);
                 const dirty = isDirty(perm.id, perm.generalAccess, perm.adminAccess);
@@ -292,6 +336,7 @@ export function FeatureAccessManagement({ theme, effectiveTier, overrides, onCha
             </tbody>
           </table>
         </div>
+        )}
 
         <p className="text-[10.5px] font-semibold text-content-muted">
           {canEdit

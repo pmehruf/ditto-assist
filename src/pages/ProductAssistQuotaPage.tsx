@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
-import { RefreshCw, AlertTriangle, Plus, Minus, X, Save } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { RefreshCw, AlertTriangle, Plus, Minus, X, Save, Search } from "lucide-react";
 import { Department, OrgTeam, AppRole } from "../types/permissions";
 import { CustomSelect } from "../components/CustomSelect";
 
@@ -184,6 +184,19 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles }: 
   const [usersError, setUsersError] = useState<string | null>(null);
   const [usersLoading, setUsersLoading] = useState(false);
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
+  const [usersSearch, setUsersSearch] = useState("");
+  const [usersBucketFilter, setUsersBucketFilter] = useState<QuotaBucket | "">("");
+  const [usersStateFilter, setUsersStateFilter] = useState<QuotaState | "">("");
+
+  const filteredUsers = useMemo(() => {
+    const q = usersSearch.trim().toLowerCase();
+    return users.filter((u) => {
+      if (usersBucketFilter && u.bucket !== usersBucketFilter) return false;
+      if (usersStateFilter && u.state !== usersStateFilter) return false;
+      if (q && !u.name.toLowerCase().includes(q) && !u.userEmail.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [users, usersSearch, usersBucketFilter, usersStateFilter]);
 
   const refreshUsers = async () => {
     setUsersLoading(true);
@@ -403,8 +416,44 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles }: 
             </div>
           )}
 
+          <div className={`flex flex-wrap items-end gap-3 mb-3 p-3 rounded-lg border ${dark ? "bg-white/[0.02] border-white/[0.06]" : "bg-stone-50/70 border-stone-200"}`}>
+            <label className="flex-1 min-w-[180px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
+              <span className="flex items-center gap-1"><Search className="w-3 h-3" /> Search</span>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint" />
+                <input
+                  type="text"
+                  value={usersSearch}
+                  onChange={(e) => setUsersSearch(e.target.value)}
+                  placeholder="Name or email…"
+                  className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-xs font-semibold outline-none ${
+                    dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                  }`}
+                />
+              </div>
+            </label>
+            <label className="flex-1 min-w-[170px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
+              <span>Bucket</span>
+              <CustomSelect
+                value={usersBucketFilter}
+                onChange={(v) => setUsersBucketFilter(v as QuotaBucket | "")}
+                theme={theme}
+                options={[{ value: "", label: "All buckets" }, ...(Object.keys(BUCKET_LABEL) as QuotaBucket[]).map((b) => ({ value: b, label: BUCKET_LABEL[b] }))]}
+              />
+            </label>
+            <label className="flex-1 min-w-[150px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
+              <span>Status</span>
+              <CustomSelect
+                value={usersStateFilter}
+                onChange={(v) => setUsersStateFilter(v as QuotaState | "")}
+                theme={theme}
+                options={[{ value: "", label: "All statuses" }, ...(Object.keys(STATE_STYLE) as QuotaState[]).map((s) => ({ value: s, label: STATE_STYLE[s].label }))]}
+              />
+            </label>
+          </div>
+
           <div className="space-y-2">
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <div key={u.userEmail}>
                 <div className={`flex flex-wrap items-center justify-between gap-3 p-3 ${rowClass}`}>
                   <div className="min-w-0">
@@ -444,8 +493,10 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles }: 
                 )}
               </div>
             ))}
-            {users.length === 0 && !usersLoading && (
-              <p className={`text-xs font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`}>No users found.</p>
+            {filteredUsers.length === 0 && !usersLoading && (
+              <p className={`text-xs font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                {users.length === 0 ? "No users found." : "No users match the current search/filters."}
+              </p>
             )}
           </div>
         </div>

@@ -671,6 +671,165 @@ function SheetTableView({
   );
 }
 
+const ROSTER_HEADERS = ["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"] as const;
+// Widths must sum to 100 — shared between the header table and the body
+// table in AdvisorRosterTable below (two separate <table> elements) so
+// their columns land in the same place. Approximate/hand-picked (Advisor
+// gets the lion's share since names vary most; the four repeated
+// "Instances" columns are kept equal and narrow).
+const ROSTER_COL_WIDTHS = ["5%", "32%", "8%", "7%", "8%", "7%", "9%", "7%", "10%", "7%"];
+
+function RosterColgroup() {
+  return (
+    <colgroup>
+      {ROSTER_COL_WIDTHS.map((w, i) => (
+        <col key={i} style={{ width: w }} />
+      ))}
+    </colgroup>
+  );
+}
+
+/**
+ * Advisor roster table — a frozen-header table: the header and body are two
+ * separate <table> elements (sharing one <colgroup> so their columns line
+ * up via table-layout: fixed), with only the body table sitting inside the
+ * scrolling div.
+ *
+ * The previous shape used one <table> with a `position: sticky` <thead>
+ * inside the same overflow-auto div as the body. That keeps the header
+ * visually pinned while scrolling, but the native scrollbar belongs to the
+ * overflow-auto BOX, not to "the body specifically" — so it still ran the
+ * box's full height, right alongside/through the header row too. That's
+ * what "the scroller extends into the title area" describes, and no amount
+ * of z-index or sticky positioning fixes it, because the header is still
+ * physically inside the same scrolling element. Moving the header into its
+ * own table, entirely outside the overflow-auto div that now wraps only the
+ * body table, makes it structurally impossible instead of just visually
+ * reduced — the scrollbar now belongs to a box that only ever contains body
+ * rows.
+ *
+ * table-layout: fixed + a shared <colgroup> is required for this split:
+ * two independent tables have no way to agree on column widths from
+ * content alone (each fixed table lays out its own columns independently
+ * of the other), so both must be told the same explicit widths.
+ */
+function AdvisorRosterTable({
+  rows,
+  dark,
+  onExport,
+  onAdvisorSelect,
+}: {
+  rows: AdvisorSummaryRow[];
+  dark: boolean;
+  onExport: () => void;
+  onAdvisorSelect: (tactId: string) => void;
+}) {
+  return (
+    <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
+      <table className="w-full text-xs border-collapse table-fixed">
+        <RosterColgroup />
+        <thead>
+          <tr>
+            {ROSTER_HEADERS.map((h, i, arr) => {
+              const isLast = i === arr.length - 1;
+              return (
+                <th
+                  key={`${h}-${i}`}
+                  className={`text-left py-2 font-bold whitespace-nowrap truncate border-b ${isLast ? "pl-3 pr-9 relative" : "px-3"} ${
+                    dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
+                  }`}
+                >
+                  {h}
+                  {/* Export icon lives directly in the header's own last
+                      cell — the table's "title row" — instead of a bar of
+                      its own above the table, so it adds no vertical space
+                      at all. Absolutely positioned within this cell (which
+                      reserves pr-9 of empty room for it) and vertically
+                      centered on the cell's own height. */}
+                  {isLast && (
+                    <button
+                      type="button"
+                      onClick={onExport}
+                      disabled={rows.length === 0}
+                      title="Export this table as a CSV file"
+                      className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md normal-case font-normal transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                        dark ? "text-slate-300 hover:bg-white/[0.12]" : "text-stone-600 hover:bg-black/[0.08]"
+                      }`}
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+      </table>
+      {/* Caps at 65vh (was row-capped via a ResizeObserver on the header
+          row measuring a fixed row count — e.g. 6 rows — regardless of
+          viewport size; briefly removed entirely per an earlier request,
+          but a fully unbounded table let ordinary page scrolling run on
+          indefinitely through a long roster). 65vh lets the table grow
+          with its own content up to roughly a full viewport's worth of
+          rows — short lists size naturally, well under that cap — and once
+          it hits the cap, this box's own overflow-y takes over: scrolling
+          while the table already fills the visible viewport scrolls its
+          rows instead of the page. */}
+      <div className="max-h-[65vh] overflow-auto">
+        <table className="w-full text-xs border-collapse table-fixed">
+          <RosterColgroup />
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={ROSTER_HEADERS.length} className="px-3 py-6 text-center text-content-muted">
+                  No advisors found.
+                </td>
+              </tr>
+            ) : (
+              rows.map((a, i) => (
+                <tr key={a.tactId} className={`transition-colors ${dark ? "hover:bg-white/[0.03]" : "odd:bg-black/[0.015] hover:bg-stone-50"}`}>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{i + 1}</td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
+                    <button
+                      onClick={() => onAdvisorSelect(a.tactId)}
+                      className={`w-full font-bold text-left cursor-pointer hover:underline ${dark ? "text-blue-300" : "text-blue-700"}`}
+                      title="Open this advisor's dashboard"
+                    >
+                      {/* truncate (not wrap) now that the column has a
+                          fixed width (table-layout: fixed) rather than
+                          growing to fit content — title attr on the span
+                          itself (separate from the button's own action
+                          title above) surfaces the full name on hover. */}
+                      <span className="block truncate" title={a.name || a.tactId}>
+                        {a.name || a.tactId}
+                      </span>
+                    </button>
+                  </td>
+                  {/* Chat/Call QA — plain text, deliberately no scoreFlagClasses:
+                      the red/amber highlighting is reserved for Payments and
+                      Lead Score, the two metrics QIP/PIP eligibility is based on. */}
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.chatAvg ?? "NA"}</td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.chatInstances}</td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.callAvg ?? "NA"}</td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.callInstances}</td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
+                    <div className={`inline-block pl-2.5 ${scoreFlagClasses(a.leadScoreAvg, dark)}`}>{a.leadScoreAvg ?? "NA"}</div>
+                  </td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.leadScoreInstances}</td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
+                    <div className={`inline-block pl-2.5 ${scoreFlagClasses(a.paymentsAvg, dark)}`}>{a.paymentsAvg ?? "NA"}</div>
+                  </td>
+                  <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.paymentsInstances}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 interface QaDashboardPageProps {
   theme: "light" | "dark";
 }
@@ -1263,113 +1422,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
         {advisorsSummary === null ? (
           <p className="text-xs text-content-muted py-6">Loading advisors…</p>
         ) : (
-          /* Outer div owns rounded-xl + overflow-hidden; the actual
-             scrolling happens on the PLAIN inner div below (max-h-[65vh]
-             overflow-auto, no rounding of its own) — same nested-container
-             split the QIP card above already uses. A single div carrying
-             both `rounded-xl` and `overflow-auto` (the previous shape here)
-             lets the browser's native scrollbar sit flush against — and
-             visually clip — the rounded corner, and the sticky header's
-             opaque background paints square-cornered right up against
-             that same corner. Splitting the rounding from the scrolling
-             fixes both: this outer box clips everything (table, sticky
-             header, scrollbar) to its own rounded shape, and the inner
-             div never has corners of its own to clip. See SheetTableView
-             above for the identical fix applied to the same defect. */
-          <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
-            {/* Caps at 65vh (was row-capped via a ResizeObserver on the
-                header row measuring a fixed row count — e.g. 6 rows —
-                regardless of viewport size; briefly removed entirely per
-                an earlier request, but a fully unbounded table let
-                ordinary page scrolling run on indefinitely through a long
-                roster). 65vh lets the table grow with its own content up
-                to roughly a full viewport's worth of rows — short lists
-                size naturally, well under that cap — and once it hits the
-                cap, this box's own overflow-y takes over: scrolling while
-                the table already fills the visible viewport scrolls its
-                rows instead of the page. */}
-            <div className="max-h-[65vh] overflow-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  {["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"].map((h, i, arr) => {
-                    const isLast = i === arr.length - 1;
-                    return (
-                      <th
-                        key={`${h}-${i}`}
-                        className={`sticky top-0 text-left py-2 font-bold whitespace-nowrap border-b ${isLast ? "pl-3 pr-9 relative" : "px-3"} ${
-                          dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
-                        }`}
-                      >
-                        {h}
-                        {/* Export icon lives directly in the header's own
-                            last cell — the table's "title row" — instead
-                            of a bar of its own above the table, so it adds
-                            no vertical space at all, not even a slim one.
-                            Absolutely positioned within this cell (which
-                            reserves pr-9 of empty room for it) and
-                            vertically centered on the cell's own height, so
-                            it's independent of how many body rows exist. */}
-                        {isLast && (
-                          <button
-                            type="button"
-                            onClick={exportSummaryCsv}
-                            disabled={filteredSummary.length === 0}
-                            title="Export this table as a CSV file"
-                            className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md normal-case font-normal transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                              dark ? "text-slate-300 hover:bg-white/[0.12]" : "text-stone-600 hover:bg-black/[0.08]"
-                            }`}
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSummary.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-3 py-6 text-center text-content-muted">
-                      No advisors found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSummary.map((a, i) => (
-                    <tr key={a.tactId} className={`transition-colors ${dark ? "hover:bg-white/[0.03]" : "odd:bg-black/[0.015] hover:bg-stone-50"}`}>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{i + 1}</td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
-                        <button
-                          onClick={() => handleAdvisorChange(a.tactId)}
-                          className={`font-bold text-left cursor-pointer hover:underline ${dark ? "text-blue-300" : "text-blue-700"}`}
-                          title="Open this advisor's dashboard"
-                        >
-                          {a.name || a.tactId}
-                        </button>
-                      </td>
-                      {/* Chat/Call QA — plain text, deliberately no scoreFlagClasses:
-                          the red/amber highlighting is reserved for Payments and
-                          Lead Score, the two metrics QIP/PIP eligibility is based on. */}
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.chatAvg ?? "NA"}</td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.chatInstances}</td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.callAvg ?? "NA"}</td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.callInstances}</td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
-                        <div className={`inline-block pl-2.5 ${scoreFlagClasses(a.leadScoreAvg, dark)}`}>{a.leadScoreAvg ?? "NA"}</div>
-                      </td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.leadScoreInstances}</td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
-                        <div className={`inline-block pl-2.5 ${scoreFlagClasses(a.paymentsAvg, dark)}`}>{a.paymentsAvg ?? "NA"}</div>
-                      </td>
-                      <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.paymentsInstances}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
+          <AdvisorRosterTable rows={filteredSummary} dark={dark} onExport={exportSummaryCsv} onAdvisorSelect={handleAdvisorChange} />
         )}
       </div>
     );

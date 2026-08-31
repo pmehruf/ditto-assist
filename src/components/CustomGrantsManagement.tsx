@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
-import { Plus, ShieldCheck, AlertTriangle, KeyRound, Undo2, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, ShieldCheck, AlertTriangle, KeyRound, Undo2, RefreshCw, Search } from "lucide-react";
 import { CustomAccessGrant } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { DEFAULT_FEATURE_PERMISSIONS } from "../constants/featurePermissions";
@@ -147,6 +147,22 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
   const activeGrants = grants.filter((g) => g.active);
   const revokedGrants = grants.filter((g) => !g.active);
 
+  const [grantSearch, setGrantSearch] = useState("");
+  const [grantFeatureFilter, setGrantFeatureFilter] = useState("");
+
+  const visibleActiveGrants = useMemo(() => {
+    const q = grantSearch.trim().toLowerCase();
+    return activeGrants.filter((g) => {
+      if (grantFeatureFilter && g.targetId !== grantFeatureFilter) return false;
+      if (q) {
+        const text = `${nameFor(g.userEmail) || ""} ${g.userEmail} ${featureLabel(g.targetId)}`.toLowerCase();
+        if (!text.includes(q)) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGrants, grantSearch, grantFeatureFilter, usersList]);
+
   return (
     <div className={`rounded-2xl border p-5 transition-all ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"}`}>
       <div className="space-y-4">
@@ -238,10 +254,41 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
             No active custom grants. {canEdit ? "Grant one to get started." : "The Developer hasn't granted any yet."}
           </p>
         ) : (
+          <>
+          {activeGrants.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint pointer-events-none" />
+                <input
+                  type="text"
+                  value={grantSearch}
+                  onChange={(e) => setGrantSearch(e.target.value)}
+                  placeholder="Search by name, email, or feature…"
+                  className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-[11px] font-semibold outline-none ${
+                    dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+                  }`}
+                />
+              </div>
+              <div className="min-w-[170px]">
+                <CustomSelect
+                  theme={theme}
+                  value={grantFeatureFilter}
+                  onChange={setGrantFeatureFilter}
+                  triggerClassName={selectTriggerClass}
+                  options={[{ value: "", label: "All features" }, ...DEFAULT_FEATURE_PERMISSIONS.map((p) => ({ value: p.id, label: p.name }))]}
+                />
+              </div>
+            </div>
+          )}
+          {visibleActiveGrants.length === 0 ? (
+            <p className={`px-3 py-8 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
+              No grants match the current search/filters.
+            </p>
+          ) : (
           <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
-                {activeGrants.map((grant, idx) => (
+                {visibleActiveGrants.map((grant, idx) => (
                   <tr key={grant.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
                     <td className="px-3 py-2.5 w-8">
                       <KeyRound className={`w-3.5 h-3.5 mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`} />
@@ -279,6 +326,8 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
               </tbody>
             </table>
           </div>
+          )}
+          </>
         )}
 
         {revokedGrants.length > 0 && (

@@ -499,7 +499,15 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
             {saveSuccess && <span className="text-[11px] font-bold whitespace-nowrap text-emerald-500">Saved.</span>}
           </div>
 
-          <div className="relative flex-1 min-w-[180px]">
+          {/* Search was flex-1 with no cap, so it soaked up all the leftover
+              row width and dwarfed the two selects next to it; Category was
+              a fixed w-52 (208px) — too narrow for this repository's longer
+              category names, which just clipped inside the trigger. Search
+              now caps out at max-w-xs so it can't keep growing indefinitely,
+              and Category is flex-1 with a wider floor (min-w-[220px]) so it
+              takes a fair, larger share of whatever room search gives up —
+              both still shrink to stack cleanly on narrow/mobile widths. */}
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
             <input
               type="text"
@@ -515,7 +523,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
             )}
           </div>
 
-          <div className="shrink-0 w-52">
+          <div className="flex-1 min-w-[220px] max-w-sm">
             <CustomSelect
               theme={theme}
               value={categoryFilter}

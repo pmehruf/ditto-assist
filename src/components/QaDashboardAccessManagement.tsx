@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, UserPlus, Trash2, RefreshCw, AlertTriangle, ShieldCheck, Download } from "lucide-react";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
@@ -190,6 +190,18 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
         ? "bg-violet-500/15 text-violet-400 border-violet-500/30"
         : "bg-teal-500/15 text-teal-400 border-teal-500/30";
 
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterRoleFilter, setRosterRoleFilter] = useState<QaRoleType | "">("");
+
+  const visibleRoles = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    return roles.filter((r) => {
+      if (rosterRoleFilter && r.role !== rosterRoleFilter) return false;
+      if (q && !r.email.toLowerCase().includes(q) && !(r.displayName || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [roles, rosterSearch, rosterRoleFilter]);
+
   return (
     <div className={`rounded-2xl border p-5 transition-all ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"}`}>
       <div className="space-y-4">
@@ -343,9 +355,41 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
           </div>
         )}
 
+        {roles.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-content-faint pointer-events-none" />
+              <input
+                type="text"
+                value={rosterSearch}
+                onChange={(e) => setRosterSearch(e.target.value)}
+                placeholder="Search by email or sheet name…"
+                className={`${inputClass} pl-7`}
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              {(["", "admin", "guide", "mentor"] as const).map((f) => (
+                <button
+                  key={f || "all"}
+                  type="button"
+                  onClick={() => setRosterRoleFilter(f)}
+                  className={`px-2.5 py-1.5 rounded-lg border text-[10.5px] font-bold cursor-pointer ${
+                    rosterRoleFilter === f
+                      ? "border-[var(--accent)] text-[var(--accent)]"
+                      : dark ? "border-stone-850 text-stone-400 hover:bg-white/[0.04]" : "border-stone-200 text-stone-500 hover:bg-stone-50"
+                  }`}
+                >
+                  {f ? ROLE_LABEL[f] : "All"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
           {ROLE_SECTIONS.map((section) => {
-            const sectionRows = roles.filter((r) => r.role === section.role);
+            const sectionRows = visibleRoles.filter((r) => r.role === section.role);
+            const hasAnyForRole = roles.some((r) => r.role === section.role);
             return (
               <div key={section.role} className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
                 <div className={`px-3 py-2 flex items-center justify-between gap-2 border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
@@ -358,7 +402,9 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
                   <span className={`text-[10.5px] font-bold ${dark ? "text-stone-400" : "text-stone-500"}`}>{sectionRows.length}</span>
                 </div>
                 {sectionRows.length === 0 ? (
-                  <p className={`px-3 py-4 text-xs ${dark ? "text-stone-500" : "text-stone-400"}`}>No one currently has {section.title.toLowerCase()} access.</p>
+                  <p className={`px-3 py-4 text-xs ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                    {hasAnyForRole ? "No matches in this section for the current search/filter." : `No one currently has ${section.title.toLowerCase()} access.`}
+                  </p>
                 ) : (
                   <table className="w-full border-collapse">
                     <tbody>

@@ -1573,7 +1573,18 @@ export function PlanManagementPage({
             )}
           </div>
 
-          {/* Category Mapping */}
+          {/* Category Mapping — full inline editor only while creating a
+              BRAND NEW plan (isNewPlan): the standalone Category Mapping
+              sub-tab (manageCatPlan et al., above) only works against a
+              plan that already has a DB row, so a not-yet-saved plan has no
+              other way to get its mapping set. Once a plan actually exists
+              (editing it here, isNewPlan false), showing the full editor a
+              second time — on top of the dedicated sub-tab that already
+              covers exactly this — was pure duplication with two places
+              that could drift out of sync; collapsed to the same "moved to
+              its own sub-tab" pointer card the Specific Illness List section
+              below already uses for the identical situation. */}
+          {isNewPlan ? (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className={`block text-[10px] font-bold uppercase tracking-wide ${dark ? "text-stone-400" : "text-stone-500"}`}>
@@ -1640,6 +1651,26 @@ export function PlanManagementPage({
               ))}
             </div>
           </div>
+          ) : (
+          <div className={`rounded-xl border p-3.5 flex items-center justify-between gap-3 ${
+            dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-150 bg-stone-50"
+          }`}>
+            <p className={`text-[11px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              Category Mapping management now lives on the <b className={dark ? "text-stone-200" : "text-stone-700"}>Category Mapping</b> sub-tab
+              {" "}— {Object.keys(categoryMap).length} of {Object.keys(CATEGORY_LABELS).length} categories currently mapped for this plan.
+            </p>
+            <ClippedButton
+              onClick={() => {
+                handleSelectManageCatPlan(originalPlanName);
+                setPlanMgmtView("category-mapping");
+              }}
+              cornerBg={dark ? "#0e2236" : "#ffffff"}
+              className={`shrink-0 text-[10px] font-bold uppercase tracking-wide px-3 py-2 ${dark ? "bg-blue-500/15 text-blue-300 hover:bg-blue-500/25" : "bg-blue-50 text-blue-700 hover:bg-blue-100"}`}
+            >
+              Manage Category Mapping
+            </ClippedButton>
+          </div>
+          )}
 
           {/* Specific Illness List — moved out of this wizard and into its
               own dedicated editor on the Specific Illness Ledger sub-tab
