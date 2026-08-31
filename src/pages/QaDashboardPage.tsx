@@ -1216,7 +1216,16 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           QA Dashboard
         </h1>
         {loading ? <p className="text-xs text-content-muted">Loading your metrics…</p> : null}
-        {error ? <p className="text-xs text-red-500">{error}</p> : null}
+        {error ? (
+          <div
+            className={`flex items-start gap-2 p-3 rounded-lg border text-xs font-semibold ${
+              dark ? "bg-red-500/10 border-red-500/30 text-red-300" : "bg-red-50 border-red-200 text-red-700"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        ) : null}
       </div>
     );
   }
