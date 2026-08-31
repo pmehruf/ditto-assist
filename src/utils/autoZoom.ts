@@ -65,19 +65,31 @@
  * apply no zoom at all) the UI at a plain 100% render felt congested;
  * a side-by-side comparison against the exact same pages at 80–90%
  * native browser zoom read as noticeably more spacious with no layout
- * change otherwise. Rather than retune every component's padding/font
- * sizes individually, this multiplies the *whole* curve — laptop
- * baseline and large-monitor scale-up alike — down by a flat 0.85
- * (the middle of that 80–90% range), so "100%" now renders the way the
- * old ~85% did, at every screen size, while the large-monitor ramp
- * above still scales up relative to that new, smaller baseline.
+ * change otherwise. This used to multiply the *whole* curve — laptop
+ * baseline and large-monitor scale-up alike — down by a flat 0.85 (the
+ * middle of that 80–90% range) so "100%" rendered the way the old ~85%
+ * did, at every screen size.
+ *
+ * Reverted to 1 (no extra shrink) — that flat 0.85 was compounding with
+ * index.css's own carefully-calibrated type scale (see its "Typography
+ * Scale" comment: fixed px values, deliberately NOT meant to scale with
+ * viewport or zoom) and with the large-monitor ramp above, so text that
+ * was already sized correctly by that scale ended up rendered ~15%
+ * smaller everywhere in the app, on every screen size — read as
+ * uncomfortably small rather than "more spacious." The large-monitor
+ * ramp (still 1 → ZOOM_CAP above LAPTOP_REFERENCE_WIDTH) is the part of
+ * this file actually solving a real problem (a monitor-only physical-
+ * size mismatch) and is untouched; only the flat, always-on shrink is
+ * gone. Kept as a named constant (not deleted outright) so this specific
+ * tradeoff — and the reasoning above for why it was reverted — has an
+ * obvious place to live if it's ever revisited.
  */
 
 const LAPTOP_REFERENCE_WIDTH = 1536;
 const MONITOR_REFERENCE_WIDTH = 2000;
 const MONITOR_REFERENCE_ZOOM = 1.25;
 const ZOOM_CAP = 1.35;
-const GLOBAL_DENSITY_SCALE = 0.85;
+const GLOBAL_DENSITY_SCALE = 1;
 
 const SLOPE = (MONITOR_REFERENCE_ZOOM - 1) / (MONITOR_REFERENCE_WIDTH - LAPTOP_REFERENCE_WIDTH);
 
