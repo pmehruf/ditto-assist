@@ -367,9 +367,9 @@ function StatRow({
   // vertical breathing room + an actual KPI-sized number fixes that.
   if (bold) {
     return (
-      <div className="flex justify-between items-baseline gap-2 pt-2.5 mt-1.5 border-t border-stone-200/60 dark:border-white/[0.08]">
+      <div className="flex justify-between items-baseline gap-2 pt-1.5 mt-1 border-t border-stone-200/60 dark:border-white/[0.08]">
         <span className="text-xs font-bold uppercase tracking-wide text-content-muted">{label}</span>
-        <span className={`text-3xl font-black leading-none tabular-nums ${isNa ? "text-content-faint" : ""} ${valueClassName}`}>
+        <span className={`text-2xl font-black leading-none tabular-nums ${isNa ? "text-content-faint" : ""} ${valueClassName}`}>
           {isNa ? "NA" : `${value}${suffix}`}
         </span>
       </div>
@@ -586,13 +586,13 @@ function QuickScoreCard({
   // modals use) for a very slight, smoothly-transitioned lift.
   return (
     <div
-      className={`rounded-2xl border ${borderWidthClass} p-7 space-y-2.5 ${
+      className={`rounded-2xl border ${borderWidthClass} p-4 space-y-1.5 ${
         dark
           ? "bg-white/[0.03] shadow-soft transition-all duration-200 hover:shadow-card"
           : "bg-surface shadow-card hover:shadow-overlay transition-shadow duration-200"
       } ${neutralBorderClasses} ${borderColorClass}`}
     >
-      <h2 className="text-lg font-bold uppercase tracking-wide text-content-muted">{title}</h2>
+      <h2 className="text-sm font-bold uppercase tracking-wide text-content-muted">{title}</h2>
       <StatRow label="Instances" value={instances} />
       <StatRow
         label="Average Score"
@@ -736,18 +736,15 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   const qipHeaderRowRef = useRef<HTMLTableRowElement>(null);
   const [qipNineRowMaxHeight, setQipNineRowMaxHeight] = useState<number | null>(null);
 
-  // Same row cap idea, applied to the full advisor roster table below the
-  // Overall Score/QIP row — see the effect right after filteredSummary is
-  // defined. Without a cap, that table's natural height (up to ~126 rows)
-  // pushed the whole roster page well past one viewport, so what should
-  // have been a "score cards + QIP table on one line" screen with the
-  // advisor list one small scroll below instead read as if the list and
-  // its Export CSV button had simply vanished — footer is always pinned
-  // to the bottom of the viewport regardless of scroll position, so a
-  // page that's taller than the screen just hides everything past the
-  // fold rather than visibly overflowing past the footer.
-  const summaryHeaderRowRef = useRef<HTMLTableRowElement>(null);
-  const [summaryTableMaxHeight, setSummaryTableMaxHeight] = useState<number | null>(null);
+  // The advisor roster table below the Overall Score/QIP row previously
+  // used this same row-cap-via-ResizeObserver pattern (5-6 rows, internal
+  // scroll) to keep the whole page inside one viewport — since the footer
+  // is always pinned to the bottom regardless of scroll position, a page
+  // taller than the screen used to just hide the list and its Export CSV
+  // button past the fold rather than visibly overflowing. Per explicit
+  // request this table now renders every row and lets the page itself
+  // scroll instead, so there's no ref/max-height state to measure here
+  // anymore — see the table's own render below.
 
   const loadDashboard = useCallback(async (dateFilters: DateFilters, requestedTactId: string | null, hasList: boolean) => {
     setLoading(true);
@@ -922,35 +919,22 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   // measuring one element to size a different one, which turned out
   // fragile in practice. This is simpler and self-contained: measure this
   // table's own header row height (all rows share the same
-  // px-3/py-2/text-xs padding and line-height, so one row's height stands
-  // in for any row), then cap the scroll area at 9 rows worth (header + 8
-  // data rows) via max-height. Fewer than 9 rows sizes naturally; more
-  // than 9 scrolls internally instead of growing the card.
+  // px-3/py-1.5/text-xs padding and line-height, so one row's height
+  // stands in for any row), then cap the scroll area at 5 rows worth
+  // (header + 4 data rows — was 9, taller than this card needs to be) via
+  // max-height. Fewer than 5 rows sizes naturally; more than 5 scrolls
+  // internally instead of growing the card. The state name kept its
+  // original "NineRow" wording rather than being renamed along with the
+  // value, to keep this diff to the one line that actually changed.
   useEffect(() => {
     const el = qipHeaderRowRef.current;
     if (!el) return;
-    const update = () => setQipNineRowMaxHeight(el.getBoundingClientRect().height * 9);
+    const update = () => setQipNineRowMaxHeight(el.getBoundingClientRect().height * 5);
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, [qipCandidates.length]);
-
-  // Same mechanism as the QIP cap above, sized to 6 rows instead of 9 —
-  // this table sits a third block down the page (below the header, the
-  // filter bar, and the Overall Score/QIP row already), so it gets a
-  // smaller share of the remaining viewport. Fewer than 6 advisors sizes
-  // naturally; more scrolls internally within this table's own box
-  // instead of growing the page past one screen.
-  useEffect(() => {
-    const el = summaryHeaderRowRef.current;
-    if (!el) return;
-    const update = () => setSummaryTableMaxHeight(el.getBoundingClientRect().height * 6);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [filteredSummary.length]);
 
   function avgOf(values: number[]): number | null {
     return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100 : null;
@@ -1154,7 +1138,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           /* Both columns use a proportional basis (40/60) so together they
              always span the row's full width. Their heights are no longer
              tied to each other — Overall Score sizes to its own 2x2 card
-             grid, and the QIP card below caps its own table to 9 rows (see
+             grid, and the QIP card below caps its own table to 5 rows (see
              qipNineRowMaxHeight) — so there's nothing left to keep in sync
              between two unrelated elements. */
           <div className="flex flex-col lg:flex-row gap-4">
@@ -1188,7 +1172,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
             </div>
 
             {/* QIP/PIP Candidates — the rest of the row (60% basis). Its own
-                height is capped to 9 rows (see qipNineRowMaxHeight below);
+                height is capped to 5 rows (see qipNineRowMaxHeight below);
                 it does not try to match the Overall Score column anymore. */}
             <div
               className={`lg:basis-3/5 lg:grow lg:shrink min-w-0 rounded-2xl overflow-hidden border flex flex-col ${
@@ -1211,7 +1195,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                   untouched); light gets a ~8% desaturated "#B06A24" burnt
                   amber and a softer-opacity border, per the final light-theme
                   polish pass — calmer without losing the amber identity. */}
-              <div className={`px-4 py-2.5 flex items-center justify-center gap-2 shrink-0 border-b ${
+              <div className={`px-4 py-2 flex items-center justify-center gap-2 shrink-0 border-b ${
                 dark ? "bg-[#B86A1C] border-[#B86A1C]" : "bg-[#B06A24] border-[#B06A24]"
               }`}>
                 <AlertTriangle className="w-4 h-4 shrink-0 text-[#FFF3D6]" />
@@ -1227,10 +1211,10 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                     ))}
                   </div>
                 ) : (
-                  // max-height caps the visible area to 9 rows worth
-                  // (qipNineRowMaxHeight = header-row height x 9, measured
+                  // max-height caps the visible area to 5 rows worth
+                  // (qipNineRowMaxHeight = header-row height x 5, measured
                   // off qipHeaderRowRef below); overflow-y scrolls the rest
-                  // internally instead of growing the card. With 9 or fewer
+                  // internally instead of growing the card. With 5 or fewer
                   // candidates this never kicks in — the box just sizes to
                   // its natural (shorter) content.
                   <div className="overflow-y-auto" style={qipNineRowMaxHeight ? { maxHeight: qipNineRowMaxHeight } : undefined}>
@@ -1240,7 +1224,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                           {["Advisor", "Payment QA", "Instances", "LeadScore", "Instances"].map((h, i) => (
                             <th
                               key={`${h}-${i}`}
-                              className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
+                              className={`sticky top-0 text-left px-3 py-1.5 font-bold whitespace-nowrap border-b ${
                                 dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
                               }`}
                             >
@@ -1252,15 +1236,15 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                       <tbody>
                         {qipCandidates.map((a) => (
                           <tr key={a.tactId} className={`transition-colors ${dark ? "hover:bg-white/[0.03]" : "odd:bg-black/[0.015] hover:bg-stone-50"}`}>
-                            <td className={`px-3 py-2 border-b font-semibold ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.name || a.tactId}</td>
-                            <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
+                            <td className={`px-3 py-1.5 border-b font-semibold ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>{a.name || a.tactId}</td>
+                            <td className={`px-3 py-1.5 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
                               <div className={`inline-block pl-2.5 ${scoreFlagClasses(a.paymentsAvg, dark)}`}>{a.paymentsAvg ?? "NA"}</div>
                             </td>
-                            <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05] text-slate-400" : "border-stone-100 text-stone-500"}`}>{a.paymentsInstances}</td>
-                            <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
+                            <td className={`px-3 py-1.5 border-b ${dark ? "border-white/[0.05] text-slate-400" : "border-stone-100 text-stone-500"}`}>{a.paymentsInstances}</td>
+                            <td className={`px-3 py-1.5 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`}>
                               <div className={`inline-block pl-2.5 ${scoreFlagClasses(a.leadScoreAvg, dark)}`}>{a.leadScoreAvg ?? "NA"}</div>
                             </td>
-                            <td className={`px-3 py-2 border-b ${dark ? "border-white/[0.05] text-slate-400" : "border-stone-100 text-stone-500"}`}>{a.leadScoreInstances}</td>
+                            <td className={`px-3 py-1.5 border-b ${dark ? "border-white/[0.05] text-slate-400" : "border-stone-100 text-stone-500"}`}>{a.leadScoreInstances}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1279,17 +1263,20 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           <div className="flex justify-end">
             <ExportCsvButton onClick={exportSummaryCsv} disabled={filteredSummary.length === 0} />
           </div>
-          <div
-            className={`overflow-auto rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}
-            style={summaryTableMaxHeight ? { maxHeight: summaryTableMaxHeight } : undefined}
-          >
+          {/* No max-height/internal scroll here (previously row-capped via a
+              ResizeObserver on the header row, same pattern as the QIP
+              table above) — per explicit request this table always renders
+              every filtered advisor, and the page itself scrolls once it
+              runs past one viewport instead of this box scrolling
+              internally. */}
+          <div className={`rounded-xl border ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
             <table className="w-full text-xs border-collapse">
               <thead>
-                <tr ref={summaryHeaderRowRef}>
+                <tr>
                   {["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"].map((h, i) => (
                     <th
                       key={`${h}-${i}`}
-                      className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
+                      className={`text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
                         dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
                       }`}
                     >
