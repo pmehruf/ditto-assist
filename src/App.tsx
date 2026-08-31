@@ -4490,27 +4490,30 @@ export default function App() {
           tabIndex={-1} 
           style={{
             color: "var(--text-primary)",
-            // Declaration Assist/Cover Projection Assist get their own,
-            // more generous top/bottom margin than the shared "6px"/"12px"
-            // other tabs use — that shared value read fine when this row
-            // was tightly squeezed to "whatever space is left" (its old
-            // lg:min-h-0 behavior), but now that the row has a real
-            // lg:min-h-fit floor at its own natural height (see
-            // LookupPage.tsx), it comfortably fills most of the available
-            // space on its own — without a deliberate margin here, that
-            // left nothing acting as breathing room from the header above
-            // or the pinned footer bar below, so content read as pinned
-            // edge-to-edge instead of sitting inside the page the way it
-            // does at a zoomed-out (e.g. 90%) view.
-            marginTop: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "6px",
-            marginBottom: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "12px",
+            // Declaration Assist/Cover Projection Assist keep their own
+            // larger 20px top/bottom margin (that row now sizes itself to
+            // its own natural height — lg:flex-1 lg:min-h-0, see
+            // LookupPage.tsx's comment on the items-stretch row — rather
+            // than being squeezed to "whatever space is left", so without a
+            // deliberate margin here it read as pinned edge-to-edge against
+            // the header/footer instead of sitting inside the page).
+            // Every other tab shares a smaller-but-still-real 10px/18px —
+            // bumped up from a bare 6px/12px, which combined with this
+            // element's own p-5 padding (see className below, also bumped
+            // to p-6) was reading as too little breathing room from the
+            // header and especially the footer on ordinary admin/reference
+            // pages (PED Repository, Access Control Center, QA Dashboard,
+            // etc.) that don't build their own extra spacing the way
+            // Declaration Assist does.
+            marginTop: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "10px",
+            marginBottom: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "18px",
           }}
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
               ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-start min-h-0"
               : (!showIntro && activeTab === "lookup") || activeTab === "product_assist"
               ? "lg:p-5 pt-1.5 sm:pt-2 lg:flex lg:flex-col lg:min-h-0"
-              : "lg:p-5 pt-1.5 sm:pt-2"
+              : "lg:p-6 pt-1.5 sm:pt-2"
           }`}
         >
           {/* Expanded premium layout container, reducing margin distance to human-optimal minimums */}
