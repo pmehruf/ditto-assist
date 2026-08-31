@@ -188,26 +188,33 @@ export function LookupPage({
               Manual card's bottom border to the same vertical level as the
               Input section's last element (Find a Match/Reset Fields), on
               every viewport.
-              lg:flex-1 lg:min-h-fit (was lg:min-h-0): flex-1 still lets the
-              row grow to fill leftover space in its flex-column ancestor
-              (so Instruction Manual's card still visually matches Input
-              section's height in the normal case), but min-h-fit gives the
-              row a real floor at its own natural/intrinsic height instead of
-              letting the flex algorithm shrink it to whatever's "left" —
-              which is what silently squeezed the Input section (title +
-              selectors + queue box + Find a Match/Reset Fields) shorter than
-              its own content needed on a denser viewport or higher zoom,
-              with the excess rendering past the row's compressed box instead
-              of pushing it visibly taller. The Instruction Manual card is
-              unaffected: its own overflow-y-auto list (see
-              InstructionManualPanel.tsx) still scrolls internally if its
-              5-item list is naturally taller than this now-protected row.
-              main-scrollable-body (App.tsx) is itself overflow-y-auto at
-              every breakpoint too, as a second-layer safety net for the
-              rarer case where even this row's natural height exceeds the
-              viewport outright. */}
+              lg:flex-1 lg:min-h-0: this row (and the Input section column
+              inside it, also min-h-0 below) is genuinely allowed to shrink
+              to fit whatever space is actually left above the footer — this
+              is back to the original design (a min-h-fit floor was tried in
+              between, but that just protected the WHOLE column's natural
+              height, including the title block's own vh-scaled text sizing
+              and the queue box's old 28vh-based minimum, and that combined
+              natural height could itself exceed the viewport, which is what
+              was pinning content edge-to-edge against the header/footer at
+              100% zoom). Instead, every element in the Input section that
+              must always render at full size — the title block, the plan/
+              PED selector grid, the hint text, and the Find a Match/Reset
+              Fields action row — is individually marked shrink-0 below, so
+              a real squeeze can never push them off-screen. The ONE
+              flexible element between them is the queue box (flex-1
+              min-h-0, with a smaller minHeight floor than before) — it's
+              what actually gives up space when the column is squeezed, and
+              it can never hide anything critical since its own content
+              (the empty-state mascot or the tag list) is either decorative
+              or already internally scrollable. Instruction Manual mirrors
+              this exact shape (header shrink-0, list flex-grow min-h-0
+              overflow-y-auto — see InstructionManualPanel.tsx), and
+              main-scrollable-body (App.tsx) stays overflow-y-auto at every
+              breakpoint as a last-resort safety net for a viewport too
+              short for even the shrink-0 elements alone. */}
           <div
-            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 lg:flex-1 lg:min-h-fit animate-fade-in ${
+            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 lg:flex-1 lg:min-h-0 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
@@ -219,7 +226,7 @@ export function LookupPage({
                 glow blobs already rendered behind every tab in App.tsx), so
                 it blends into the page instead of looking like its own panel. */}
             <div
-              className="flex-1 min-w-0 flex flex-col justify-start relative z-10"
+              className="flex-1 min-w-0 min-h-0 flex flex-col justify-start relative z-10"
             >
               {/* Title mapping section */}
               <div
@@ -228,7 +235,7 @@ export function LookupPage({
                   marginBottom: "0px",
                   marginTop: "0px",
                 }}
-                className={`flex flex-row justify-between items-start gap-4 pb-5 border-b ${
+                className={`shrink-0 flex flex-row justify-between items-start gap-4 pb-5 border-b ${
                   theme === "dark"
                     ? "border-white/[0.08]"
                     : "border-stone-400/60"
@@ -322,7 +329,7 @@ export function LookupPage({
               {/* Two boxed input sections, side by side — outlined only, no filled card background */}
               <div
                 style={{ marginTop: "1vh" }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                className="shrink-0 grid grid-cols-1 md:grid-cols-2 gap-4"
               >
                 {/* BOX A: Health Insurance Plan */}
                 <div className="rounded-2xl px-1 py-3 flex flex-col gap-3">
@@ -719,11 +726,27 @@ export function LookupPage({
                 </div>
               </div>
 
-              {/* QUEUE BOX — full width below the two boxes */}
+              {/* QUEUE BOX — full width below the two boxes. This is the ONE
+                  flexible region in this column (flex-1 min-h-0): every
+                  sibling around it (title block, plan/PED selector grid,
+                  hint text, action row below) is shrink-0 — always rendered
+                  at its full natural size, never squeezed — so this box is
+                  what absorbs the difference when the column's available
+                  height is tighter than everything's natural total. Its own
+                  minHeight is a real floor (not just a starting point), so
+                  it never collapses smaller than the mascot/empty-state
+                  content needs. Lowered from clamp(130px, 28vh, 300px):
+                  that 28vh was sized back when this row was squeezed to fit
+                  "whatever space is left" (its old lg:min-h-0 design), so a
+                  generous vh-based floor didn't cost anything extra — once
+                  every OTHER element here got its own protected shrink-0
+                  size, that same 28vh became actual added height on top of
+                  all of it, which is what was pushing the column past the
+                  viewport on a tall monitor. */}
               <div
                 style={{
                   borderWidth: "1.5px",
-                  minHeight: "clamp(130px, 28vh, 300px)",
+                  minHeight: "clamp(110px, 16vh, 210px)",
                   // Tightened (was clamp(10px, 1.5vh, 22px)) alongside the
                   // search box's pb-1 above — together they close the gap the
                   // new under-input hint line opened up.
@@ -738,7 +761,7 @@ export function LookupPage({
                   // unavailable", not "identify the plan".
                   borderColor: isSelectedPlanDisabled ? undefined : selectedPlan ? queueAccentHex : undefined,
                 }}
-                className={`rounded-2xl relative flex flex-col justify-between border overflow-hidden ${
+                className={`flex-1 min-h-0 rounded-2xl relative flex flex-col justify-between border overflow-hidden ${
                   isSelectedPlanDisabled
                     ? theme === "dark"
                       ? "border-amber-500/30 bg-amber-500/[0.06]"
@@ -908,7 +931,7 @@ export function LookupPage({
                   fontWeight: "bold",
                   fontSize: "11px",
                 }}
-                className={`opacity-80 select-none font-sans flex items-center gap-1.5 text-left ${
+                className={`shrink-0 opacity-80 select-none font-sans flex items-center gap-1.5 text-left ${
                   theme === "dark" ? "text-stone-400" : "text-stone-500"
                 }`}
               >
@@ -930,7 +953,7 @@ export function LookupPage({
                   90°-corner + single diagonal-clip button identity. */}
               <div
                 style={{ marginTop: "clamp(8px, 1.2vh, 18px)" }}
-                className="relative overflow-hidden"
+                className="shrink-0 relative overflow-hidden"
               >
                 <GridTexture theme={theme} zIndexClassName="z-0" />
                 <div
