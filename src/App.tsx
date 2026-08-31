@@ -4488,7 +4488,23 @@ export default function App() {
         <main 
           id="main-content" 
           tabIndex={-1} 
-          style={{ color: "var(--text-primary)", marginTop: showIntro && activeTab === "lookup" ? "2px" : "6px", marginBottom: showIntro && activeTab === "lookup" ? "2px" : "12px" }}
+          style={{
+            color: "var(--text-primary)",
+            // Declaration Assist/Cover Projection Assist get their own,
+            // more generous top/bottom margin than the shared "6px"/"12px"
+            // other tabs use — that shared value read fine when this row
+            // was tightly squeezed to "whatever space is left" (its old
+            // lg:min-h-0 behavior), but now that the row has a real
+            // lg:min-h-fit floor at its own natural height (see
+            // LookupPage.tsx), it comfortably fills most of the available
+            // space on its own — without a deliberate margin here, that
+            // left nothing acting as breathing room from the header above
+            // or the pinned footer bar below, so content read as pinned
+            // edge-to-edge instead of sitting inside the page the way it
+            // does at a zoomed-out (e.g. 90%) view.
+            marginTop: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "6px",
+            marginBottom: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "12px",
+          }}
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
               ? "lg:p-3 xl:p-4 pt-1 sm:pt-1.5 flex flex-col justify-start min-h-0"

@@ -55,29 +55,31 @@ export function InstructionManualPanel({
         </span>
       </div>
 
-      {/* Plain flex-col (no justify-evenly): that approach left each
-          divide-y border floating in blank space, disconnected from the
-          item below it, instead of sitting flush against it — looked just
-          as unfinished as the original top-stacked gap. Each of the 5 items
-          below now carries its own flex-1 instead, so they stay adjacent
-          (dividers touch normally) while collectively growing to absorb
-          whatever extra height the stretched card has — every item's own
-          justify-center then centers its text within its now-larger slot,
-          so the card reads as evenly filled at any height.
-          min-h-0 (paired with LookupPage.tsx's row now being lg:flex-1
-          lg:min-h-0 too): without it, this flex-grow region couldn't
-          shrink below the 5 items' natural/min-content height, so on a
-          shorter viewport the list silently pushed the whole card (and the
-          page around it) taller than the available space instead of
-          scrolling within itself, which is what overflow-y-auto here is
-          actually for. */}
+      {/* Plain flex-col (no justify-evenly, no per-item flex-1): items pack
+          at their own natural/compact height, immediately adjacent to one
+          another, so divide-y borders sit flush against real content on
+          both sides instead of floating in stretched blank space. An
+          earlier version gave each item its own flex-1 (+ justify-center)
+          specifically to absorb extra height when the card was stretched
+          taller than the list needed — but that meant every item's own
+          padding grew along with the card, reading as wasted whitespace
+          once LookupPage.tsx's row started sizing itself to Input section's
+          full natural height (lg:min-h-fit) rather than a squeezed-down
+          "available space" allotment. Any leftover height the stretched
+          card now has simply shows up as blank space after item 5, not
+          inflated gaps inside each item.
+          min-h-0 (paired with LookupPage.tsx's row min-h-fit): lets this
+          region still shrink below the 5 items' natural height on a
+          shorter viewport, scrolling within itself via overflow-y-auto
+          rather than pushing the whole card (and the page around it)
+          taller than the available space. */}
       <div
         className={`divide-y flex-grow flex flex-col min-h-0 overflow-y-auto ${
           theme === "dark" ? "divide-white/[0.08]" : "divide-[#a1b7c3]"
         }`}
       >
         {/* CARD 1 */}
-        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="shrink-0 flex flex-col justify-center py-2.5 sm:py-3 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -108,7 +110,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 2 */}
-        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="shrink-0 flex flex-col justify-center py-2.5 sm:py-3 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -133,7 +135,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 3 */}
-        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="shrink-0 flex flex-col justify-center py-2.5 sm:py-3 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -172,7 +174,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 4 */}
-        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="shrink-0 flex flex-col justify-center py-2.5 sm:py-3 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
@@ -197,7 +199,7 @@ export function InstructionManualPanel({
         </div>
 
         {/* CARD 5 */}
-        <div className="flex-1 flex flex-col justify-center py-2 sm:py-2.5 px-4 lg:px-5 text-left overflow-hidden">
+        <div className="shrink-0 flex flex-col justify-center py-2.5 sm:py-3 px-4 lg:px-5 text-left overflow-hidden">
           <span
             className={`block font-mono text-[9px] mb-0.5 ${
               theme === "dark" ? "text-[#00D3F3]" : "text-[#0754b7] font-bold"
