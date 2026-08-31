@@ -1277,26 +1277,6 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
              div never has corners of its own to clip. See SheetTableView
              above for the identical fix applied to the same defect. */
           <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
-            {/* Icon-only export — was a full ClippedButton with a text
-                label in its own flex row above this card (its own block-
-                level row plus the parent's space-y-3 gap before the table
-                even started). Folded into a slim bar inside the card
-                itself instead: no separate row's worth of vertical space,
-                and the icon alone is enough — the button's title attr
-                still spells out what it does for anyone hovering it. */}
-            <div className={`flex justify-end px-2 py-1 border-b ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
-              <button
-                type="button"
-                onClick={exportSummaryCsv}
-                disabled={filteredSummary.length === 0}
-                title="Export this table as a CSV file"
-                className={`p-1.5 rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                  dark ? "text-slate-300 hover:bg-white/[0.08]" : "text-stone-600 hover:bg-black/[0.05]"
-                }`}
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-            </div>
             {/* Caps at 65vh (was row-capped via a ResizeObserver on the
                 header row measuring a fixed row count — e.g. 6 rows —
                 regardless of viewport size; briefly removed entirely per
@@ -1312,16 +1292,40 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
-                  {["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"].map((h, i) => (
-                    <th
-                      key={`${h}-${i}`}
-                      className={`sticky top-0 text-left px-3 py-2 font-bold whitespace-nowrap border-b ${
-                        dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
-                      }`}
-                    >
-                      {h}
-                    </th>
-                  ))}
+                  {["Sl No", "Advisor", "Chat QA", "Instances", "Call QA", "Instances", "Lead Score", "Instances", "Payments QA", "Instances"].map((h, i, arr) => {
+                    const isLast = i === arr.length - 1;
+                    return (
+                      <th
+                        key={`${h}-${i}`}
+                        className={`sticky top-0 text-left py-2 font-bold whitespace-nowrap border-b ${isLast ? "pl-3 pr-9 relative" : "px-3"} ${
+                          dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
+                        }`}
+                      >
+                        {h}
+                        {/* Export icon lives directly in the header's own
+                            last cell — the table's "title row" — instead
+                            of a bar of its own above the table, so it adds
+                            no vertical space at all, not even a slim one.
+                            Absolutely positioned within this cell (which
+                            reserves pr-9 of empty room for it) and
+                            vertically centered on the cell's own height, so
+                            it's independent of how many body rows exist. */}
+                        {isLast && (
+                          <button
+                            type="button"
+                            onClick={exportSummaryCsv}
+                            disabled={filteredSummary.length === 0}
+                            title="Export this table as a CSV file"
+                            className={`absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md normal-case font-normal transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                              dark ? "text-slate-300 hover:bg-white/[0.12]" : "text-stone-600 hover:bg-black/[0.08]"
+                            }`}
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
