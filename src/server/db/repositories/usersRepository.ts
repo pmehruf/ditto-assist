@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, arrayOverlaps, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
+import { and, arrayOverlaps, asc, count, desc, eq, gte, ilike, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { users, type UserRow, type NewUserRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
@@ -32,6 +32,13 @@ export interface UserListOptions {
   /** Inclusive createdAt ("Joined") range — "YYYY-MM-DD" date strings. */
   dateFrom?: string;
   dateTo?: string;
+  /** Org-metadata filters (Directory's Team/Department/Role columns) — a
+   * numeric id as a string, or the sentinel "unassigned" for a NULL match
+   * (a user with no department/team/role set), same "Unassigned" convention
+   * as `tag` above. */
+  departmentId?: string;
+  orgTeamId?: string;
+  roleId?: string;
   /** Matches against name, email, or tactId (case-insensitive substring). */
   search?: string;
   /** Whitelisted to "name" | "email" | "tactId" | "tier" | "status" | "createdAt" | "lastLogin"; defaults to "createdAt". */
@@ -92,6 +99,21 @@ export class UsersRepository {
           : arrayOverlaps(users.tags, [options.tag])
       );
     }
+    if (options.departmentId) {
+      conditions.push(
+        options.departmentId === "unassigned" ? isNull(users.departmentId) : eq(users.departmentId, Number(options.departmentId))
+      );
+    }
+    if (options.orgTeamId) {
+      conditions.push(
+        options.orgTeamId === "unassigned" ? isNull(users.orgTeamId) : eq(users.orgTeamId, Number(options.orgTeamId))
+      );
+    }
+    if (options.roleId) {
+      conditions.push(
+        options.roleId === "unassigned" ? isNull(users.roleId) : eq(users.roleId, Number(options.roleId))
+      );
+    }
     if (options.dateFrom) conditions.push(gte(users.createdAt, new Date(options.dateFrom)));
     if (options.dateTo) {
       // Inclusive of the whole "to" day — a bare "YYYY-MM-DD" parses to
@@ -138,7 +160,7 @@ export class UsersRepository {
 
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * kept for parity with the other repositories' export path. */
-  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "tag" | "dateFrom" | "dateTo" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
+  async listMatching(options: Pick<UserListOptions, "tier" | "status" | "tag" | "departmentId" | "orgTeamId" | "roleId" | "dateFrom" | "dateTo" | "search" | "sortBy" | "sortDir"> = {}): Promise<UserRow[]> {
     const conditions = this.buildListConditions(options);
     const where = conditions.length ? and(...conditions) : undefined;
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? users.createdAt;

@@ -1304,9 +1304,14 @@ app.get("/api/users", requireAuth, async (req, res) => {
       const tier = pickEnumValue(req.query.tier, ["General", "Admin", "Platform Admin", "Developer"] as const);
       const status = pickEnumValue(req.query.status, ["Active", "Disabled"] as const);
       const tag = pickEnumValue(req.query.tag, [...ADVISOR_TAG_VALUES, "Unassigned"] as const);
+      // Numeric id as a string, or the "unassigned" sentinel — see
+      // usersRepository.ts's UserListOptions doc comment.
+      const departmentId = typeof req.query.departmentId === "string" && req.query.departmentId.trim() ? req.query.departmentId.trim() : undefined;
+      const orgTeamId = typeof req.query.orgTeamId === "string" && req.query.orgTeamId.trim() ? req.query.orgTeamId.trim() : undefined;
+      const roleId = typeof req.query.roleId === "string" && req.query.roleId.trim() ? req.query.roleId.trim() : undefined;
       const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
       const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
-      const listOptions = { page, pageSize, search, tier, status, tag, dateFrom, dateTo, sortBy, sortDir };
+      const listOptions = { page, pageSize, search, tier, status, tag, departmentId, orgTeamId, roleId, dateFrom, dateTo, sortBy, sortDir };
       if (req.query.export) {
         const rows = await usersRepo.listMatching(listOptions);
         return res.json({ entries: rows });
@@ -1443,6 +1448,9 @@ app.patch("/api/users/bulk", requireAuth, async (req, res) => {
           tier: pickEnumValue(filter.tier, ["General", "Admin", "Platform Admin", "Developer"] as const),
           status: pickEnumValue(filter.status, ["Active", "Disabled"] as const),
           tag: pickEnumValue(filter.tag, [...ADVISOR_TAG_VALUES, "Unassigned"] as const),
+          departmentId: typeof filter.departmentId === "string" && filter.departmentId.trim() ? filter.departmentId.trim() : undefined,
+          orgTeamId: typeof filter.orgTeamId === "string" && filter.orgTeamId.trim() ? filter.orgTeamId.trim() : undefined,
+          roleId: typeof filter.roleId === "string" && filter.roleId.trim() ? filter.roleId.trim() : undefined,
           dateFrom: typeof filter.dateFrom === "string" && filter.dateFrom.trim() ? filter.dateFrom.trim() : undefined,
           dateTo: typeof filter.dateTo === "string" && filter.dateTo.trim() ? filter.dateTo.trim() : undefined,
           search: typeof filter.search === "string" && filter.search.trim() ? filter.search.trim() : undefined,

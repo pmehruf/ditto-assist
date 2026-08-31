@@ -154,17 +154,27 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   const searchQuery = useDebouncedValue(searchInput, 350);
   const { sort: usersSort, toggleSort: toggleUsersSort } = useServerSort();
 
-  // Filter row — tag/tier/status/joined-date, all server-side (same
-  // paginated /api/users endpoint the search box already used). "" means
-  // "All" for every one of these.
+  // Filter row — tag/team/department/role/tier/status/joined-date, all
+  // server-side (same paginated /api/users endpoint the search box already
+  // used). "" means "All" for every one of these; team/department/role also
+  // accept the sentinel "unassigned" (matches a NULL value), same convention
+  // as tag's own "Unassigned" option.
   const [tagFilter, setTagFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
   const [tierFilter, setTierFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [joinedFrom, setJoinedFrom] = useState("");
   const [joinedTo, setJoinedTo] = useState("");
-  const hasActiveFilters = Boolean(tagFilter || tierFilter || statusFilter || joinedFrom || joinedTo);
+  const hasActiveFilters = Boolean(
+    tagFilter || teamFilter || departmentFilter || roleFilter || tierFilter || statusFilter || joinedFrom || joinedTo
+  );
   const resetFilters = () => {
     setTagFilter("");
+    setTeamFilter("");
+    setDepartmentFilter("");
+    setRoleFilter("");
     setTierFilter("");
     setStatusFilter("");
     setJoinedFrom("");
@@ -230,6 +240,9 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
   const buildFilterParams = (params: URLSearchParams) => {
     if (tagFilter) params.set("tag", tagFilter);
+    if (teamFilter) params.set("orgTeamId", teamFilter);
+    if (departmentFilter) params.set("departmentId", departmentFilter);
+    if (roleFilter) params.set("roleId", roleFilter);
     if (tierFilter) params.set("tier", tierFilter);
     if (statusFilter) params.set("status", statusFilter);
     if (joinedFrom) params.set("dateFrom", joinedFrom);
@@ -272,12 +285,12 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   // re-runs regardless (it depends on all of these plus `page`).
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, usersSort?.key, usersSort?.direction, tagFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
+  }, [searchQuery, usersSort?.key, usersSort?.direction, tagFilter, teamFilter, departmentFilter, roleFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
 
   useEffect(() => {
     loadEntries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchQuery, usersSort?.key, usersSort?.direction, tagFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
+  }, [page, searchQuery, usersSort?.key, usersSort?.direction, tagFilter, teamFilter, departmentFilter, roleFilter, tierFilter, statusFilter, joinedFrom, joinedTo]);
 
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
@@ -443,6 +456,9 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         body.filter = {
           search: searchQuery || undefined,
           tag: tagFilter || undefined,
+          orgTeamId: teamFilter || undefined,
+          departmentId: departmentFilter || undefined,
+          roleId: roleFilter || undefined,
           tier: tierFilter || undefined,
           status: statusFilter || undefined,
           dateFrom: joinedFrom || undefined,
@@ -538,6 +554,28 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       .map((r) => ({ value: String(r.id), label: r.active ? r.name : `${r.name} (Inactive)` })),
   ];
   const roleLabel = (id?: number | null) => roles.find((r) => r.id === id)?.name || null;
+
+  // Filter-dropdown variants of the three option lists above — "" means "All"
+  // here (not "Unassigned"), matching every other filter in this row, so
+  // "Unassigned" is its own explicit option using the "unassigned" sentinel
+  // usersRepository.ts's buildListConditions() already understands. Every
+  // team/department/role is listed (not just active ones) so a user still
+  // assigned to a since-deactivated one stays findable.
+  const departmentFilterOptions = [
+    { value: "", label: "All Departments" },
+    { value: "unassigned", label: "Unassigned" },
+    ...departments.map((d) => ({ value: String(d.id), label: d.active ? d.name : `${d.name} (Inactive)` })),
+  ];
+  const teamFilterOptions = [
+    { value: "", label: "All Teams" },
+    { value: "unassigned", label: "Unassigned" },
+    ...orgTeams.map((t) => ({ value: String(t.id), label: t.active ? t.name : `${t.name} (Inactive)` })),
+  ];
+  const roleFilterOptions = [
+    { value: "", label: "All Roles" },
+    { value: "unassigned", label: "Unassigned" },
+    ...roles.map((r) => ({ value: String(r.id), label: r.active ? r.name : `${r.name} (Inactive)` })),
+  ];
 
   const statusBadgeClass = (status: UserProfile["status"]) =>
     status === "Active"
@@ -682,6 +720,36 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 { value: "Unassigned", label: "Unassigned" },
                 ...ADVISOR_TAG_OPTIONS.map((t) => ({ value: t, label: t })),
               ]}
+            />
+          </div>
+          <div className="w-36 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Team</label>
+            <CustomSelect
+              theme={theme}
+              value={teamFilter}
+              onChange={setTeamFilter}
+              triggerClassName={selectTriggerClass}
+              options={teamFilterOptions}
+            />
+          </div>
+          <div className="w-36 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Department</label>
+            <CustomSelect
+              theme={theme}
+              value={departmentFilter}
+              onChange={setDepartmentFilter}
+              triggerClassName={selectTriggerClass}
+              options={departmentFilterOptions}
+            />
+          </div>
+          <div className="w-36 shrink-0">
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Role</label>
+            <CustomSelect
+              theme={theme}
+              value={roleFilter}
+              onChange={setRoleFilter}
+              triggerClassName={selectTriggerClass}
+              options={roleFilterOptions}
             />
           </div>
           <div className="w-36 shrink-0">
