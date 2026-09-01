@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   RefreshCw,
@@ -14,6 +15,9 @@ import {
   Trophy,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
+  Check,
+  Calendar,
   CircleOff,
   MessageCircle,
   Phone,
@@ -1017,22 +1021,16 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
                 <span>{pageTitle}</span>
               </h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <CustomSelect
+                <PeriodControl
                   theme={theme}
-                  value={period}
-                  onChange={(v) => setPeriod(v as Period)}
+                  period={period}
+                  customFrom={customFrom}
+                  customTo={customTo}
+                  onChangePeriod={setPeriod}
+                  onChangeCustomFrom={setCustomFrom}
+                  onChangeCustomTo={setCustomTo}
                   options={periodOptions}
-                  triggerClassName={`inline-flex items-center gap-2 pl-3 pr-8 py-1.5 rounded-lg border text-[13px] font-bold cursor-pointer relative ${
-                    dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
-                  }`}
                 />
-                {period === "custom" && (
-                  <>
-                    <input type="month" value={customFrom} max={customTo} onChange={(e) => setCustomFrom(e.target.value)} onClick={openNativePicker} className={inputClass(dark) + " cursor-pointer"} />
-                    <span className="text-[13px] text-content-muted">to</span>
-                    <input type="month" value={customTo} min={customFrom} onChange={(e) => setCustomTo(e.target.value)} onClick={openNativePicker} className={inputClass(dark) + " cursor-pointer"} />
-                  </>
-                )}
                 {tableLoading && (
                   <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-content-muted">
                     <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1223,6 +1221,191 @@ function SegmentedToggle<T extends string>({ value, onChange, options, dark }: {
   );
 }
 
+// ── Compact Period control — a single small trigger ("Period: Last 1
+// Year") that opens a floating popover instead of expanding a large
+// full-width row inline in the header. Deliberately its own component
+// (rather than reusing CustomSelect) because the popover needs to host
+// the Custom date-range inputs conditionally, which CustomSelect's
+// options-only panel doesn't support — but it copies CustomSelect's own
+// positioning/close behavior (portal into document.body, viewport-aware
+// up/down flip, --app-zoom correction, outside-click/Escape/scroll close)
+// so it behaves identically to every other dropdown in the app. ────────
+function PeriodControl({
+  theme,
+  period,
+  customFrom,
+  customTo,
+  onChangePeriod,
+  onChangeCustomFrom,
+  onChangeCustomTo,
+  options,
+}: {
+  theme: "light" | "dark";
+  period: Period;
+  customFrom: string;
+  customTo: string;
+  onChangePeriod: (p: Period) => void;
+  onChangeCustomFrom: (v: string) => void;
+  onChangeCustomTo: (v: string) => void;
+  options: CustomSelectOption[];
+}) {
+  const dark = theme === "dark";
+  const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
+  const [panelRect, setPanelRect] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const handleToggle = () => {
+    if (!open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      // Custom adds a date-range block below the option list, so the panel
+      // can be taller than a plain option list — estimate generously when
+      // deciding whether it fits below the trigger.
+      const estimatedHeight = period === "custom" ? 260 : 190;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setOpenUpward(spaceBelow < estimatedHeight && spaceAbove > spaceBelow);
+      // See CustomSelect's handleToggle for why every coordinate below is
+      // pre-divided by --app-zoom (Chromium re-multiplies position: fixed
+      // descendants of a zoomed <html> a second time at paint).
+      const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-zoom")) || 1;
+      const margin = 8;
+      const minWidth = 220;
+      const width = Math.max(rect.width, minWidth);
+      const clampedLeft = Math.min(Math.max(rect.left, margin), Math.max(margin, window.innerWidth - width - margin));
+      setPanelRect({
+        top: (rect.bottom + 6) / zoom,
+        bottom: (window.innerHeight - rect.top + 6) / zoom,
+        left: clampedLeft / zoom,
+        width: width / zoom,
+      });
+    }
+    setOpen((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (e: MouseEvent) => {
+      const target = e.target as unknown as Node;
+      const insideTrigger = containerRef.current?.contains(target);
+      const insidePanel = panelRef.current?.contains(target);
+      if (!insideTrigger && !insidePanel) setOpen(false);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const handleReposition = (e: Event) => {
+      const target = e.target as Node | null;
+      if (target && panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown as unknown as EventListener);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", handleReposition, true);
+    window.addEventListener("resize", handleReposition);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown as unknown as EventListener);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleReposition, true);
+      window.removeEventListener("resize", handleReposition);
+    };
+  }, [open, period]);
+
+  const selectedLabel = options.find((o) => o.value === period)?.label ?? "";
+
+  return (
+    <div ref={containerRef} className="relative inline-block">
+      <button
+        type="button"
+        onClick={handleToggle}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`inline-flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 rounded-lg border text-[13px] font-semibold cursor-pointer transition-colors ${
+          dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff] hover:bg-[#132a42]" : "bg-white border-stone-250 text-stone-850 hover:bg-stone-50"
+        } ${open ? (dark ? "ring-1 ring-[#117FDA]/50" : "ring-1 ring-[#117FDA]/30") : ""}`}
+      >
+        <Calendar className={`w-3.5 h-3.5 shrink-0 ${dark ? "text-slate-400" : "text-stone-400"}`} />
+        <span className={dark ? "text-slate-400" : "text-stone-500"}>Period:</span>
+        <span className="font-black">{selectedLabel}</span>
+        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${dark ? "text-slate-400" : "text-stone-400"}`} />
+      </button>
+
+      {open &&
+        panelRect &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="listbox"
+            className={`fixed z-50 rounded-xl border shadow-lg overflow-hidden ${
+              dark ? "bg-[#14181f] border-white/[0.08] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
+            }`}
+            style={{
+              left: panelRect.left,
+              width: panelRect.width,
+              ...(openUpward ? { bottom: panelRect.bottom } : { top: panelRect.top }),
+            }}
+          >
+            <div className="p-1.5 flex flex-col gap-0.5">
+              {options.map((opt) => {
+                const isSelected = opt.value === period;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => {
+                      onChangePeriod(opt.value as Period);
+                      if (opt.value !== "custom") setOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-[13px] font-semibold flex items-center justify-between gap-2 transition-colors ${
+                      isSelected
+                        ? dark
+                          ? "bg-[#117FDA]/20 text-[#7cc2f5]"
+                          : "bg-[#117FDA]/10 text-[#117FDA]"
+                        : dark
+                          ? "hover:bg-white/[0.05] text-slate-200"
+                          : "hover:bg-stone-100 text-stone-700"
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+            {period === "custom" && (
+              <div className={`px-3 py-2.5 border-t flex flex-col gap-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Custom Range</span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="month"
+                    value={customFrom}
+                    max={customTo}
+                    onChange={(e) => onChangeCustomFrom(e.target.value)}
+                    onClick={openNativePicker}
+                    className={inputClass(dark) + " cursor-pointer flex-1 min-w-0"}
+                  />
+                  <span className="text-[12px] text-content-muted shrink-0">to</span>
+                  <input
+                    type="month"
+                    value={customTo}
+                    min={customFrom}
+                    onChange={(e) => onChangeCustomTo(e.target.value)}
+                    onClick={openNativePicker}
+                    className={inputClass(dark) + " cursor-pointer flex-1 min-w-0"}
+                  />
+                </div>
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
 // ── Team insights ────────────────────────────────────────────────────────
 function TeamInsights({
   dark,
@@ -1282,11 +1465,11 @@ function TeamInsights({
             </span>
             <button
               onClick={() => insights.highest && onOpenAdvisor(insights.highest.tactId)}
-              className={`text-[15px] font-bold truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
+              className={`text-base font-black truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
             >
               {insights.highest ? insights.highest.name : "—"}
             </button>
-            {insights.highest && <span className="text-[13px] font-semibold text-emerald-500">{insights.highest.avgCumulative}</span>}
+            {insights.highest && <span className="text-xl font-black text-emerald-500">{insights.highest.avgCumulative}</span>}
           </div>
           <div className={card}>
             <span className={`${label} flex items-center gap-1`}>
@@ -1295,20 +1478,20 @@ function TeamInsights({
             </span>
             <button
               onClick={() => insights.lowest && onOpenAdvisor(insights.lowest.tactId)}
-              className={`text-[15px] font-bold truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
+              className={`text-base font-black truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
             >
               {insights.lowest ? insights.lowest.name : "—"}
             </button>
-            {insights.lowest && <span className={`text-[13px] font-semibold ${insights.lowest.avgCumulative! < SCORE_DANGER ? "text-red-500" : "text-content-muted"}`}>{insights.lowest.avgCumulative}</span>}
+            {insights.lowest && <span className={`text-xl font-black ${insights.lowest.avgCumulative! < SCORE_DANGER ? "text-red-500" : dark ? "text-slate-200" : "text-stone-700"}`}>{insights.lowest.avgCumulative}</span>}
           </div>
           <div className={card}>
             <span className={`${label} flex items-center gap-1`}>
               <TrendingUp className={`w-3.5 h-3.5 ${iconClass}`} />
-              Change (First → Latest)
+              Period Change
             </span>
             {insights.changeFirstLatest.delta !== null ? (
               <>
-                <span className={`flex items-center gap-1 text-xl font-black ${deltaTextClass(insights.changeFirstLatest.delta, dark)}`}>
+                <span className={`flex items-center gap-1 text-2xl font-black ${deltaTextClass(insights.changeFirstLatest.delta, dark)}`}>
                   <DeltaIcon delta={insights.changeFirstLatest.delta} />
                   {insights.changeFirstLatest.delta > 0 ? "+" : ""}
                   {insights.changeFirstLatest.delta}
@@ -1326,16 +1509,16 @@ function TeamInsights({
               {insights.bestMedium ? MEDIUM_ICONS[insights.bestMedium.key] : <Target className={`w-3.5 h-3.5 ${iconClass}`} />}
               Best Medium
             </span>
-            <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.bestMedium ? insights.bestMedium.label : "—"}</span>
-            {insights.bestMedium && <span className="text-[13px] font-semibold text-emerald-500">{insights.bestMedium.avg}</span>}
+            <span className={`text-base font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.bestMedium ? insights.bestMedium.label : "—"}</span>
+            {insights.bestMedium && <span className="text-xl font-black text-emerald-500">{insights.bestMedium.avg}</span>}
           </div>
           <div className={card}>
             <span className={`${label} flex items-center gap-1`}>
               {insights.weakestMedium ? MEDIUM_ICONS[insights.weakestMedium.key] : <Target className={`w-3.5 h-3.5 ${iconClass}`} />}
               Weakest Medium
             </span>
-            <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.weakestMedium ? insights.weakestMedium.label : "—"}</span>
-            {insights.weakestMedium && <span className={`text-[13px] font-semibold ${insights.weakestMedium.avg < SCORE_DANGER ? "text-red-500" : "text-content-muted"}`}>{insights.weakestMedium.avg}</span>}
+            <span className={`text-base font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.weakestMedium ? insights.weakestMedium.label : "—"}</span>
+            {insights.weakestMedium && <span className={`text-xl font-black ${insights.weakestMedium.avg < SCORE_DANGER ? "text-red-500" : dark ? "text-slate-200" : "text-stone-700"}`}>{insights.weakestMedium.avg}</span>}
           </div>
           <div className={card}>
             <span className={`${label} flex items-center gap-1`}>
@@ -1349,18 +1532,6 @@ function TeamInsights({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Trend &amp; Rankings</h3>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">Rank Top 5 / Bottom 5 by</span>
-          <SegmentedToggle
-            value={rankMode}
-            onChange={setRankMode}
-            options={[
-              { value: "current", label: "Current Month" },
-              { value: "period", label: "Selected Period" },
-            ]}
-            dark={dark}
-          />
-        </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-3">
         <div className={`rounded-xl border p-3 flex flex-col ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
@@ -1373,30 +1544,52 @@ function TeamInsights({
             <div className="flex-1 flex items-center justify-center py-10 text-[13px] text-content-muted">Not enough scored months yet.</div>
           )}
         </div>
-        <RankedList
-          title="Top 5 Performers"
-          icon={<Trophy className="w-3.5 h-3.5 text-amber-500" />}
-          entries={rankedTop5}
-          dark={dark}
-          tone="good"
-          onSelect={onOpenAdvisor}
-          emptyLabel={rankMode === "current" ? "No scores for the current month yet." : "No scored advisors yet."}
-        />
-        <RankedList
-          title="Bottom 5 Performers"
-          icon={<AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
-          entries={rankedBottom5}
-          dark={dark}
-          tone="poor"
-          onSelect={onOpenAdvisor}
-          emptyLabel={rankMode === "current" ? "No scores for the current month yet." : "No scored advisors yet."}
-        />
+        <div className="flex flex-col gap-2">
+          {/* The toggle sits directly above Top 5 / Bottom 5, with no extra
+              label — placement alone ties it to the two lists it controls
+              (see this section's request: remove the "Rank Top 5 / Bottom 5
+              by" text, keep the association obvious through layout). */}
+          <div className="flex justify-center lg:justify-start">
+            <SegmentedToggle
+              value={rankMode}
+              onChange={setRankMode}
+              options={[
+                { value: "current", label: "Current Month" },
+                { value: "period", label: "Selected Period" },
+              ]}
+              dark={dark}
+            />
+          </div>
+          <RankedList
+            title="Top 5 Performers"
+            icon={<Trophy className="w-3.5 h-3.5 text-amber-500" />}
+            entries={rankedTop5}
+            dark={dark}
+            tone="good"
+            onSelect={onOpenAdvisor}
+            emptyLabel={rankMode === "current" ? "No scores for the current month yet." : "No scored advisors yet."}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          {/* Spacer matching the toggle's own height above Top 5, so both
+              cards' tops line up even though only Top 5 needs the toggle
+              rendered above it. */}
+          <div className="h-[30px] shrink-0" aria-hidden="true" />
+          <RankedList
+            title="Bottom 5 Performers"
+            icon={<AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
+            entries={rankedBottom5}
+            dark={dark}
+            tone="poor"
+            onSelect={onOpenAdvisor}
+            emptyLabel={rankMode === "current" ? "No scores for the current month yet." : "No scored advisors yet."}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className={card}>
           <span className={label}>Most Improved</span>
-          <span className="text-[10px] text-content-muted -mt-0.5">Selected period, first vs. latest month</span>
           {insights.mostImproved ? (
             <button
               onClick={() => onOpenAdvisor(insights.mostImproved!.tactId)}
@@ -1413,7 +1606,6 @@ function TeamInsights({
         </div>
         <div className={card}>
           <span className={label}>Most Declined</span>
-          <span className="text-[10px] text-content-muted -mt-0.5">Selected period, first vs. latest month</span>
           {insights.mostDeclined ? (
             <button
               onClick={() => onOpenAdvisor(insights.mostDeclined!.tactId)}
