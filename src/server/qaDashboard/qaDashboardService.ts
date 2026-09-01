@@ -122,7 +122,7 @@ export async function getDashboardData(
 
     const advisor = await findAdvisorByTactId(targetTactId);
     const parsed = parseDateFilters(dateFilters);
-    const metrics = await getAdvisorMetrics(targetTactId, parsed);
+    const metrics = await getAdvisorMetrics(targetTactId, parsed, dateFilters);
 
     return { advisor, metrics, isAdmin: role.isAdmin, isGuide: role.isGuide, isMentor: role.isMentor };
   } catch (err: any) {
@@ -217,19 +217,23 @@ export async function getAdvisorsDashboardListFor(
 
     const tactIds = pool.map((a) => String(a.tactId).trim());
     const parsed = parseDateFilters(dateFilters);
-    const metricsByTact = await getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate);
+    const metricsByTact = await getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate, dateFilters);
 
     const advisors: AdvisorSummaryRow[] = pool.map((a) => {
       const tact = String(a.tactId).trim();
       const m = metricsByTact[tact] || {
         paymentsAvg: null,
         paymentsInstances: 0,
+        paymentsBlunders: 0,
         leadScoreAvg: null,
         leadScoreInstances: 0,
+        leadScoreBlunders: 0,
         chatAvg: null,
         chatInstances: 0,
+        chatBlunders: 0,
         callAvg: null,
         callInstances: 0,
+        callBlunders: 0,
       };
       return {
         tactId: a.tactId,
@@ -273,7 +277,7 @@ export async function getCompanyWideQaAggregateFor(
 
     const tactIds = pool.map((a) => String(a.tactId).trim());
     const parsed = parseDateFilters(dateFilters);
-    const metricsByTact = await getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate);
+    const metricsByTact = await getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate, dateFilters);
 
     const leadVals: number[] = [];
     const paymentsVals: number[] = [];

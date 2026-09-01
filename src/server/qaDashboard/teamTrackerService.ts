@@ -213,12 +213,18 @@ export interface MonthlyAdvisorRow {
   monthLabel: string;
   leadScoreAvg: number | null;
   leadScoreInstances: number;
+  /** Count of that month's Lead Score evaluations scored 1 or 2 — see
+   * qaDataEngine.ts's BLUNDER_MAX_SCORE. */
+  leadScoreBlunders: number;
   paymentsAvg: number | null;
   paymentsInstances: number;
+  paymentsBlunders: number;
   chatAvg: number | null;
   chatInstances: number;
+  chatBlunders: number;
   callAvg: number | null;
   callInstances: number;
+  callBlunders: number;
   /** average of Lead Score + Payment QA Score — null only when BOTH are
    * null (no Lead or Payment data that month at all), matching the same
    * null-tolerant averaging QaPerformancePeek.tsx's Consolidated Score
@@ -297,12 +303,16 @@ export async function getTeamTrackerTable(
           monthLabel: m.label,
           leadScoreAvg: mm?.leadScoreAvg ?? null,
           leadScoreInstances: mm?.leadScoreInstances ?? 0,
+          leadScoreBlunders: mm?.leadScoreBlunders ?? 0,
           paymentsAvg: mm?.paymentsAvg ?? null,
           paymentsInstances: mm?.paymentsInstances ?? 0,
+          paymentsBlunders: mm?.paymentsBlunders ?? 0,
           chatAvg: mm?.chatAvg ?? null,
           chatInstances: mm?.chatInstances ?? 0,
+          chatBlunders: mm?.chatBlunders ?? 0,
           callAvg: mm?.callAvg ?? null,
           callInstances: mm?.callInstances ?? 0,
+          callBlunders: mm?.callBlunders ?? 0,
           cumulativeScore: avgOf(mm?.leadScoreAvg ?? null, mm?.paymentsAvg ?? null),
         });
       }

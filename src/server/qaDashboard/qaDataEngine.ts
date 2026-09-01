@@ -23,7 +23,7 @@ import { fetchSheetValues, dateStringToSerial, serialToDMY } from "./sheetsClien
 import { QA_SCORE_DASHBOARD_TACT_IDS } from "../../constants/qaDashboardAdvisorAllowlist.js";
 import { getDb } from "../db/client.js";
 import { createRepositories } from "../db/repositories/index.js";
-import type { QaEvaluationHistoryRow } from "../db/schema.js";
+import type { QaEvaluationHistoryColumns } from "../db/repositories/index.js";
 
 const SHEETS = {
   QA_FEEDBACK: "qa_feedback",
@@ -126,7 +126,7 @@ async function getSheetDataCached(sheetName: string): Promise<{ headers: string[
  * up the same way a live Sheet edit is. */
 export function invalidateQaSheetCache(): void {
   sheetCache.clear();
-  historyCache = null;
+  historyCacheByRange.clear();
 }
 
 // ==================== ARCHIVE MERGE (qa_evaluation_history) ====================
@@ -140,22 +140,53 @@ export function invalidateQaSheetCache(): void {
 // works completely unmodified.
 
 interface HistoryCacheEntry {
-  rows: QaEvaluationHistoryRow[];
+  rows: QaEvaluationHistoryColumns[];
   expiresAt: number;
 }
-let historyCache: HistoryCacheEntry | null = null;
+// Keyed by checked_date range ("yyyy-MM-dd|yyyy-MM-dd", or "all" for the
+// unfiltered fetch) instead of a single shared entry — different callers
+// now ask for different SQL-pushed-down ranges (see getHistoryRowsCached),
+// so a single-entry cache would thrash between them. In practice this stays
+// cheap: both the Home page widget and the QA Dashboard page default to
+// "current month", so most concurrent traffic within the 5-minute TTL still
+// shares one entry, same as the old single-entry cache did.
+const historyCacheByRange = new Map<string, HistoryCacheEntry>();
 
-async function getHistoryRowsCached(): Promise<QaEvaluationHistoryRow[]> {
-  if (historyCache && historyCache.expiresAt > Date.now()) return historyCache.rows;
+function historyCacheKey(checkedFrom?: string, checkedTo?: string): string {
+  return checkedFrom && checkedTo ? `${checkedFrom}|${checkedTo}` : "all";
+}
+
+/** checkedFrom/checkedTo (when both given) push a `WHERE checked_date
+ * BETWEEN ...` down into SQL via listInRange(), using the existing
+ * qa_evaluation_history_checked_date_idx — the archive is a frozen,
+ * one-time import covering 2025-06-01..2026-05-31 (confirmed 2026-08-17),
+ * so most real callers asking for "this month"/"last month" now fetch 0
+ * rows instead of all ~54k. Omit both args for the pre-existing "give me
+ * everything" behavior (listAll()) — used by getAdvisorReviews, which
+ * filters by a different date column and can't safely narrow this fetch;
+ * see its comment below. */
+async function getHistoryRowsCached(checkedFrom?: string, checkedTo?: string): Promise<QaEvaluationHistoryColumns[]> {
+  const key = historyCacheKey(checkedFrom, checkedTo);
+  const hit = historyCacheByRange.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.rows;
   const { qaEvaluationHistory } = createRepositories(getDb());
-  const rows = await qaEvaluationHistory.listAll();
-  historyCache = { rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS };
+  const rows =
+    checkedFrom && checkedTo
+      ? await qaEvaluationHistory.listInRange(checkedFrom, checkedTo)
+      : await qaEvaluationHistory.listAll();
+  historyCacheByRange.set(key, { rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS });
   return rows;
 }
 
-async function getMergedFeedbackDumpRows(): Promise<{ headers: string[]; rows: unknown[][] }> {
+/** checkedFrom/checkedTo (optional, "yyyy-MM-dd") are forwarded straight to
+ * getHistoryRowsCached's SQL pushdown — pass both when the caller filters
+ * its OWN output by checked_date (getAdvisorMetrics, getAdvisorsBatchMetrics
+ * do); omit both when it doesn't (getAdvisorReviews), since narrowing the
+ * archive fetch by a date range the caller isn't actually filtering by
+ * would silently drop rows it needs. */
+async function getMergedFeedbackDumpRows(checkedFrom?: string, checkedTo?: string): Promise<{ headers: string[]; rows: unknown[][] }> {
   const live = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
-  const history = await getHistoryRowsCached();
+  const history = await getHistoryRowsCached(checkedFrom, checkedTo);
   if (history.length === 0 || live.headers.length === 0) return live;
 
   const iChecked = colIndex(live.headers, MASTER_DUMP_COLS.CHECKED_DATE);
@@ -453,8 +484,16 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export async function getAdvisorMetrics(tactId: string, dateFilters: ParsedDateFilters): Promise<AdvisorMetrics> {
-  const { headers, rows } = await getMergedFeedbackDumpRows();
+export async function getAdvisorMetrics(
+  tactId: string,
+  dateFilters: ParsedDateFilters,
+  rawRange: Pick<DateFilters, "checkedFrom" | "checkedTo">
+): Promise<AdvisorMetrics> {
+  // rawRange is the pre-parseDateFilters "yyyy-MM-dd" pair — needed
+  // verbatim for the archive's SQL pushdown (see getMergedFeedbackDumpRows);
+  // dateFilters/ParsedDateFilters below are the already-parsed serial
+  // numbers used for the in-memory checked/mistake comparisons, unchanged.
+  const { headers, rows } = await getMergedFeedbackDumpRows(rawRange.checkedFrom, rawRange.checkedTo);
   const iChecked = colIndex(headers, MASTER_DUMP_COLS.CHECKED_DATE);
   const iMistake = colIndex(headers, MASTER_DUMP_COLS.MISTAKE_DATE);
   const iTact = colIndex(headers, MASTER_DUMP_COLS.TACT_ID);
@@ -509,26 +548,45 @@ export async function getAdvisorMetrics(tactId: string, dateFilters: ParsedDateF
   };
 }
 
+/** A "blunder" is any evaluation scored 1 or 2 (out of 5) — the Team
+ * Tracker's per-medium blunder-% sections divide this count by the
+ * medium's own instance count. Kept as a named threshold rather than a
+ * bare literal so its meaning is discoverable from a single definition. */
+const BLUNDER_MAX_SCORE = 2;
+
 export interface BatchMetric {
   paymentsAvg: number | null;
   paymentsInstances: number;
+  /** Count of paymentsAvg's own scores that were 1 or 2 — see
+   * BLUNDER_MAX_SCORE. Always <= paymentsInstances. */
+  paymentsBlunders: number;
   leadScoreAvg: number | null;
   leadScoreInstances: number;
+  /** Count of the per-chat-id-min scores (same dedup as leadScoreAvg) that
+   * were 1 or 2. */
+  leadScoreBlunders: number;
   // Chat/Call QA scores — the plain per-domain average (like paymentsAvg),
   // distinct from leadScoreAvg's per-chat-id-min dedup across CHAT+CALL.
   chatAvg: number | null;
   chatInstances: number;
+  chatBlunders: number;
   callAvg: number | null;
   callInstances: number;
+  callBlunders: number;
 }
 
 export async function getAdvisorsBatchMetrics(
   tactIds: string[],
   checkedFrom: number,
   checkedTo: number,
-  tillDate: number
+  tillDate: number,
+  rawRange: Pick<DateFilters, "checkedFrom" | "checkedTo">
 ): Promise<Record<string, BatchMetric>> {
-  const { headers, rows } = await getMergedFeedbackDumpRows();
+  // See getAdvisorMetrics's comment — rawRange is the pre-parse string pair,
+  // passed through to the archive's SQL pushdown only; the numeric
+  // checkedFrom/checkedTo/tillDate params below (already-parsed serials)
+  // still drive every in-memory comparison, unchanged.
+  const { headers, rows } = await getMergedFeedbackDumpRows(rawRange.checkedFrom, rawRange.checkedTo);
   const iChecked = colIndex(headers, MASTER_DUMP_COLS.CHECKED_DATE);
   const iMistake = colIndex(headers, MASTER_DUMP_COLS.MISTAKE_DATE);
   const iTact = colIndex(headers, MASTER_DUMP_COLS.TACT_ID);
@@ -581,6 +639,9 @@ export async function getAdvisorsBatchMetrics(
   function avgOf(scores: number[]): number | null {
     return scores.length ? round2(sum(scores) / scores.length) : null;
   }
+  function blunderCount(scores: number[]): number {
+    return scores.filter((s) => s <= BLUNDER_MAX_SCORE).length;
+  }
 
   const result: Record<string, BatchMetric> = {};
   for (const id of tactIds) {
@@ -592,12 +653,16 @@ export async function getAdvisorsBatchMetrics(
     result[tact] = {
       paymentsAvg: avgOf(pScores),
       paymentsInstances: pScores.length,
+      paymentsBlunders: blunderCount(pScores),
       leadScoreAvg: avgOf(mins),
       leadScoreInstances: mins.length,
+      leadScoreBlunders: blunderCount(mins),
       chatAvg: avgOf(cScores),
       chatInstances: cScores.length,
+      chatBlunders: blunderCount(cScores),
       callAvg: avgOf(clScores),
       callInstances: clScores.length,
+      callBlunders: blunderCount(clScores),
     };
   }
   return result;
@@ -683,6 +748,11 @@ export async function getAdvisorReviews(
   const advisor = await findAdvisorByTactId(tactId);
   if (!advisor) return { headers: [], rows: [], error: "Advisor not found" };
 
+  // Deliberately called with NO range, even though this function has its
+  // own checkedFromStr/checkedToStr — those filter dispute_raised_at/
+  // escalation_raised_at below (a different column), not checked_date, so
+  // narrowing the archive fetch by them would silently drop legitimate
+  // rows. Always pulls the full archive; see getMergedFeedbackDumpRows.
   const { headers, rows } = await getMergedFeedbackDumpRows();
   if (headers.length === 0) return { headers: [], rows: [], sheetMissing: true };
 
