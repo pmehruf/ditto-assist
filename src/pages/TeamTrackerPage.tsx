@@ -377,7 +377,6 @@ interface TeamInsightsData {
   bottom5: AdvisorPivot[];
   mostImproved: AdvisorPivot | null;
   mostDeclined: AdvisorPivot | null;
-  noActivity: AdvisorPivot[];
   totalMapped: number;
   changeFirstLatest: { delta: number | null; firstLabel: string | null; latestLabel: string | null };
   bestMedium: { key: MediumKey; label: string; avg: number } | null;
@@ -399,8 +398,6 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
   const changeable = pivots.filter((p) => p.change !== null);
   const mostImproved = changeable.length ? changeable.reduce((a, b) => (b.change! > a.change! ? b : a)) : null;
   const mostDeclined = changeable.length ? changeable.reduce((a, b) => (b.change! < a.change! ? b : a)) : null;
-
-  const noActivity = pivots.filter((p) => !p.hasActivity);
 
   const monthlyTeamAvg = months.map((m) => ({
     monthKey: m.key,
@@ -440,7 +437,6 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
     bottom5,
     mostImproved: mostImproved && mostImproved.change! > 0 ? mostImproved : null,
     mostDeclined: mostDeclined && mostDeclined.change! < 0 ? mostDeclined : null,
-    noActivity,
     totalMapped: pivots.length,
     changeFirstLatest,
     bestMedium,
@@ -858,7 +854,7 @@ function TeamInsights({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
         <div className={card}>
           <span className={`${label} flex items-center gap-1`}>
             <Users2 className={`w-3.5 h-3.5 ${iconClass}`} />
@@ -943,24 +939,6 @@ function TeamInsights({
             Total Mapped Advisors
           </span>
           <span className={`text-2xl font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.totalMapped}</span>
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`} title="Mapped advisors with zero Chat, Call, or Payment evaluations in the selected period">
-            <CircleOff className={`w-3.5 h-3.5 ${iconClass}`} />
-            No QA Activity
-          </span>
-          <span className={`text-2xl font-black ${insights.noActivity.length > 0 ? "text-amber-500" : dark ? "text-white" : "text-stone-900"}`}>{insights.noActivity.length}</span>
-          <span
-            className="text-[11px] text-content-muted truncate"
-            title={insights.noActivity.length > 0 ? insights.noActivity.map((a) => a.name).join(", ") : undefined}
-          >
-            {insights.noActivity.length > 0
-              ? `${insights.noActivity
-                  .slice(0, 3)
-                  .map((a) => a.name)
-                  .join(", ")}${insights.noActivity.length > 3 ? ` +${insights.noActivity.length - 3} more` : ""}`
-              : `All ${insights.totalMapped} mapped advisors have evaluations`}
-          </span>
         </div>
       </div>
 
