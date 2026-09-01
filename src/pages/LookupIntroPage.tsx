@@ -405,15 +405,20 @@ export function LookupIntroPage({
           // grid above this render function) renders every tile compact,
           // keeping the merged section's authored height close to what it
           // was pre-merge — a shorter Workspace Tools section means the
-          // supporting cards below start higher on the page. Bumped
-          // slightly from `p-[clamp(8px,1.1vh,12px)]` — the tagline below
-          // no longer truncates to one line, so some tiles now wrap to two
-          // lines, and this gives that second line real padding instead of
-          // it reading cramped against the tile's border. The non-compact
-          // size below is kept for any future caller that needs the
-          // heavier look this originally shipped with (e.g. a single-row,
-          // few-tiles case) — not used by the current render path.
-          compact ? "p-[clamp(10px,1.3vh,14px)]" : "p-[clamp(14px,1.8vh,20px)]"
+          // supporting cards below start higher on the page. Back to
+          // `p-[clamp(8px,1.1vh,12px)]` (was briefly bumped up when the
+          // tagline below first stopped truncating) — these tiles are now
+          // wider (see the two-main-sections grid's column ratio below),
+          // which is what actually gives a wrapped tagline's second line
+          // room to breathe; the extra padding was compensating for the
+          // OLD, narrower tile width and just cost vertical space the
+          // supporting cards below needed back once QA Performance's real
+          // (loaded, taller-than-its-skeleton) content is on screen. The
+          // non-compact size below is kept for any future caller that
+          // needs the heavier look this originally shipped with (e.g. a
+          // single-row, few-tiles case) — not used by the current render
+          // path.
+          compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(14px,1.8vh,20px)]"
         } ${
           comingSoon
             ? theme === "dark"
@@ -547,11 +552,16 @@ export function LookupIntroPage({
           </div>
         </div>
 
-        {/* TWO MAIN SECTIONS — left 2/3 (Workspace Tools, QA Performance,
-            Announcement Counter, Did you know) and right 1/3 (Updates -
-            Live feed), side by side from `lg` up. Below `lg` they stack
-            (left column's pieces, then Updates) — completely unaffected by
+        {/* TWO MAIN SECTIONS — left (Workspace Tools, QA Performance,
+            Announcement Counter, Did you know) and right (Updates - Live
+            feed), side by side from `lg` up. Below `lg` they stack (left
+            column's pieces, then Updates) — completely unaffected by
             anything below.
+            Column ratio bumped from 2fr:1fr to 2.3fr:1fr (a modest ~3
+            percentage-point shift) — by explicit request, Updates gives up
+            a slice of its width to the left column, most of which reaches
+            the Workspace Tools tiles below (see renderTile — wider tiles
+            are what let a tagline fit without wrapping to a second line).
             `lg:items-start` — the left column sizes to its own natural
             content (Workspace Tools + the supporting row's own natural
             height) instead of being stretched to fill this row's full
@@ -568,7 +578,7 @@ export function LookupIntroPage({
             below) — so the two columns' bottoms land on exactly the same
             line, it's just that "the left column's height" now means its
             true natural content height, not an inflated stretched one. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
           {/* LEFT — 2/3: Workspace Tools, QA Performance, Did you know. */}
           <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
             {/* WORKSPACE TOOLS — the former "References" tier (Plan
@@ -600,17 +610,23 @@ export function LookupIntroPage({
 
             {/* DID YOU KNOW + (QA PERFORMANCE / ANNOUNCEMENT COUNTER) — side
                 by side from `lg` up (stacked below it). Did you know sits in
-                the fixed-260px narrow cell (was the Announcement Counter
-                card's slot) — its content is a single short Insight that
-                scrolls internally if too long (see DidYouKnowCard.tsx), so a
-                tall narrow column suits it far better than the Counter
+                the fixed-320px narrow cell (was the Announcement Counter
+                card's slot, and was 260px until explicit request bumped it
+                — QA Performance's own internal split (a "Consolidated
+                Score" block next to its 2x2 Lead/Payments/Chat/Call QA
+                grid) had more room than it needed, so its column — shared
+                with the Announcement Counter card stacked below it — gives
+                up some width here) — its content is a single short Insight
+                that scrolls internally if too long (see DidYouKnowCard.tsx),
+                so a tall narrow column suits it far better than the Counter
                 card's inherently-horizontal strip of stat numbers ever did.
                 QA Performance and the Announcement Counter are stacked in
-                the wide `minmax(0,1fr)` cell instead — the Counter card is
-                now a wide, horizontal layout (3-up stat grid + a Last 30
-                Days strip, see AnnouncementCounterCard.tsx) matching QA
-                Performance's own full width, rather than the narrow stacked
-                card it used to be.
+                the (now slightly narrower) wide `minmax(0,1fr)` cell
+                instead — the Counter card is a wide, horizontal layout
+                (3-up stat grid + a Last 30 Days strip, see
+                AnnouncementCounterCard.tsx) matching QA Performance's own
+                full width, rather than the narrow stacked card it used to
+                be.
                 `lg:items-start` — without it, CSS Grid's default
                 `items-stretch` (plus `align-content: stretch` on a single
                 auto row inside this row's own `flex-1 min-h-0` — i.e. a
@@ -629,7 +645,7 @@ export function LookupIntroPage({
                 either card. Below `lg`, neither items-start nor the height
                 style applies — natural height, stacked, exactly as
                 before. */}
-            <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
               <div
                 className="min-w-0"
                 style={isDesktop && didYouKnowHeightPx ? { height: didYouKnowHeightPx } : undefined}
