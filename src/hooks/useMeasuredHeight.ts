@@ -35,7 +35,13 @@ export function useMeasuredHeight(active: boolean): [RefObject<HTMLDivElement>, 
       const entry = entries[0];
       if (!entry) return;
       const box = entry.contentBoxSize?.[0];
-      setHeightPx(box ? box.blockSize : entry.contentRect.height);
+      const raw = box ? box.blockSize : entry.contentRect.height;
+      // Rounded — ResizeObserver reports fractional (sub-pixel) heights,
+      // and setting a fractional `height` style on the target element can
+      // round differently than the source did, showing up as a visible
+      // ~1px seam between the two elements' bottom edges at some zoom
+      // levels even though they're "the same" height by construction.
+      setHeightPx(Math.round(raw));
     });
     ro.observe(el);
     return () => ro.disconnect();

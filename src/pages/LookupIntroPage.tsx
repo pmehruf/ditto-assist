@@ -392,8 +392,12 @@ export function LookupIntroPage({
         // more width than a small stacked block needs, which read as a
         // mostly-empty card. A horizontal row naturally uses the tile's
         // full assigned width at every breakpoint instead of only its
-        // top-left corner.
-        className={`group relative flex items-center gap-3 text-left rounded-xl border transition-all duration-200 min-w-0 ${
+        // top-left corner. `items-start` (was `items-center`) — now that
+        // the tagline below can wrap to two lines instead of always
+        // truncating to one, top-aligning the icon with the title's own
+        // line reads better than centering it against a now-variable-height
+        // text block.
+        className={`group relative flex items-start gap-3 text-left rounded-xl border transition-all duration-200 min-w-0 ${
           comingSoon ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:-translate-y-0.5"
         } ${
           // The single Workspace Tools grid (Advisory Workspace + the
@@ -401,12 +405,15 @@ export function LookupIntroPage({
           // grid above this render function) renders every tile compact,
           // keeping the merged section's authored height close to what it
           // was pre-merge — a shorter Workspace Tools section means the
-          // supporting cards below start higher on the page. The
-          // non-compact size below is kept for any future caller that
-          // needs the heavier look this originally shipped with (e.g. a
-          // single-row, few-tiles case) — not used by the current render
-          // path.
-          compact ? "p-[clamp(8px,1.1vh,12px)]" : "p-[clamp(14px,1.8vh,20px)]"
+          // supporting cards below start higher on the page. Bumped
+          // slightly from `p-[clamp(8px,1.1vh,12px)]` — the tagline below
+          // no longer truncates to one line, so some tiles now wrap to two
+          // lines, and this gives that second line real padding instead of
+          // it reading cramped against the tile's border. The non-compact
+          // size below is kept for any future caller that needs the
+          // heavier look this originally shipped with (e.g. a single-row,
+          // few-tiles case) — not used by the current render path.
+          compact ? "p-[clamp(10px,1.3vh,14px)]" : "p-[clamp(14px,1.8vh,20px)]"
         } ${
           comingSoon
             ? theme === "dark"
@@ -454,7 +461,12 @@ export function LookupIntroPage({
           >
             {comingSoon ? "Coming Soon" : mod.title}
           </h3>
-          <p className={`font-semibold leading-snug truncate mt-0.5 ${compact ? "text-[11px]" : "text-[12px]"} ${theme === "dark" ? "text-white/50" : "text-stone-500"}`}>
+          {/* No more `truncate` — some taglines were getting clipped with
+              an ellipsis at this tile's width even though the full text is
+              short enough to just wrap onto a second line (see this tile's
+              own bumped padding above, which gives that second line
+              room). */}
+          <p className={`font-semibold leading-snug mt-0.5 ${compact ? "text-[11px]" : "text-[12px]"} ${theme === "dark" ? "text-white/50" : "text-stone-500"}`}>
             {comingSoon ? "A new tool is on the way" : mod.tag}
           </p>
         </div>
@@ -512,7 +524,12 @@ export function LookupIntroPage({
         // fit — see this component's doc comment) — `max-w-[1900px]` just
         // keeps line/card widths from growing unreasonably wide on an
         // ultra-wide monitor, same cap at every size.
-        className={`w-full max-w-[1900px] mx-auto font-sans flex flex-col flex-1 min-h-0 gap-[clamp(10px,1.8vh,24px)] pb-[clamp(4px,0.6vh,12px)] ${
+        // pb-6 (was a `clamp(4px,0.6vh,12px)` that bottomed out at a bare
+        // 4px on a short viewport) — a plain fixed bottom margin per
+        // explicit request, so the page's content never reads as pinned
+        // edge-to-edge against the footer bar below it, regardless of how
+        // tall the viewport is.
+        className={`w-full max-w-[1900px] mx-auto font-sans flex flex-col flex-1 min-h-0 gap-[clamp(10px,1.8vh,24px)] pb-6 ${
           theme === "dark" ? "text-[#FFFFFF]" : "text-stone-900"
         }`}
       >
@@ -531,21 +548,27 @@ export function LookupIntroPage({
         </div>
 
         {/* TWO MAIN SECTIONS — left 2/3 (Workspace Tools, QA Performance,
-            Did you know) and right 1/3 (Announcements), side by side from
-            `lg` up. Below `lg` they stack (left column's pieces, then
-            Announcements) — completely unaffected by anything below.
-            At `lg`+: this grid stretches (default `items-stretch`, no
-            more `items-start`) to the full height of its own flex-1
-            parent, so the left column is a real, definite height rather
-            than just its natural content height — the supporting row
-            below (Announcement Counter / QA Performance / Did you know)
-            and the Did you know card within it absorb that extra space
-            via `flex-1` (see below) instead of leaving it as dead space
-            under the cards. The Announcement/Updates card's height is
-            then set to the left column's own measured total height (via
-            `leftColRef` below) — so the two columns' bottoms land on
-            exactly the same line, by construction. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
+            Announcement Counter, Did you know) and right 1/3 (Updates -
+            Live feed), side by side from `lg` up. Below `lg` they stack
+            (left column's pieces, then Updates) — completely unaffected by
+            anything below.
+            `lg:items-start` — the left column sizes to its own natural
+            content (Workspace Tools + the supporting row's own natural
+            height) instead of being stretched to fill this row's full
+            flex-1 height (the previous default `items-stretch` behavior).
+            That stretch used to be load-bearing — the supporting row and
+            its cards absorbed the extra space via `flex-1` so it wouldn't
+            sit as dead space below the cards — but it's exactly what made
+            the Announcement Counter card (and, transitively, Did you know,
+            matched to a sibling cell's now-inflated height) read as
+            oversized relative to its actual content (see the supporting
+            row's own `lg:items-start` comment below for the matching fix
+            one level down). The Updates card's height is still set to the
+            left column's own measured total height (via `leftColRef`
+            below) — so the two columns' bottoms land on exactly the same
+            line, it's just that "the left column's height" now means its
+            true natural content height, not an inflated stretched one. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
           {/* LEFT — 2/3: Workspace Tools, QA Performance, Did you know. */}
           <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
             {/* WORKSPACE TOOLS — the former "References" tier (Plan
@@ -588,20 +611,25 @@ export function LookupIntroPage({
                 Days strip, see AnnouncementCounterCard.tsx) matching QA
                 Performance's own full width, rather than the narrow stacked
                 card it used to be.
-                Did you know's height is set to `didYouKnowHeightPx` — the
-                RIGHT cell's own measured total height (QA Performance +
-                Announcement Counter, via `supportingRowRightCellRef` /
-                `useMeasuredHeight` above) — so its bottom edge lands on
+                `lg:items-start` — without it, CSS Grid's default
+                `items-stretch` (plus `align-content: stretch` on a single
+                auto row inside this row's own `flex-1 min-h-0` — i.e. a
+                definite-height container) stretches the RIGHT cell to fill
+                the ENTIRE leftover space in the left column, not just its
+                own QA Performance + Counter content — which is exactly
+                what made the Counter card read as oversized/dominant
+                before (and, via `supportingRowRightCellRef` below, would
+                have fed that same inflated number into Did you know's
+                height too). With `items-start`, the right cell sizes to
+                its own natural content, and Did you know's height is set
+                to `didYouKnowHeightPx` — that cell's own measured (now
+                accurate) height — so its bottom edge still lands on
                 exactly the same line as that cell's, forming one clean
-                rectangle instead of the mismatched heights a plain
-                `items-stretch` grid would produce (QA Performance stays its
-                own deliberately compact, natural height; the Counter card
-                is natural height too — see its own cardClass comment; only
-                Did you know is explicitly sized, matching the "Updates -
-                Live feed" card's own height-matching pattern below). Below
-                `lg`, neither height style applies — natural height,
-                stacked, exactly as before. */}
-            <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
+                rectangle, just no longer forcing extra dead space into
+                either card. Below `lg`, neither items-start nor the height
+                style applies — natural height, stacked, exactly as
+                before. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
               <div
                 className="min-w-0"
                 style={isDesktop && didYouKnowHeightPx ? { height: didYouKnowHeightPx } : undefined}
