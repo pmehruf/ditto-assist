@@ -53,6 +53,7 @@ import { ProductAssistUserQuotaOverridesRepository } from "./productAssistUserQu
 import { ProductAssistExtraCreditGrantsRepository } from "./productAssistExtraCreditGrantsRepository.js";
 import { ProductAssistUsageLedgerRepository } from "./productAssistUsageLedgerRepository.js";
 import { AdvisorDirectorySyncStateRepository } from "./advisorDirectorySyncStateRepository.js";
+import { CoachingRepository } from "./coachingRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -261,6 +262,7 @@ export interface Repositories {
   productAssistExtraCreditGrants: ProductAssistExtraCreditGrantsRepository;
   productAssistUsageLedger: ProductAssistUsageLedgerRepository;
   advisorDirectorySyncState: AdvisorDirectorySyncStateRepository;
+  coaching: CoachingRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -314,5 +316,6 @@ export function createRepositories(db: AnyDb): Repositories {
     productAssistExtraCreditGrants: new ProductAssistExtraCreditGrantsRepository(db),
     productAssistUsageLedger: new ProductAssistUsageLedgerRepository(db),
     advisorDirectorySyncState: new AdvisorDirectorySyncStateRepository(db),
+    coaching: new CoachingRepository(db),
   };
 }

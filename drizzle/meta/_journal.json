@@ -365,6 +365,13 @@
       "when": 1788600000000,
       "tag": "0051_advisor_directory_sync_state",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0052_coaching_workspace",
+      "breakpoints": true
     }
   ]
 }

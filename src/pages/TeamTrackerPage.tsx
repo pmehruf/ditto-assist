@@ -19,6 +19,8 @@ import {
   Phone,
   Wallet,
   Target,
+  ClipboardList,
+  X,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { CustomSelect, type CustomSelectOption } from "../components/CustomSelect";
@@ -317,6 +319,129 @@ function rankEntries(pivots: AdvisorPivot[], valueOf: (p: AdvisorPivot) => numbe
   return { top5, bottom5 };
 }
 
+// ── Advisor Insights — QA Feedback / Disputes & Escalations / Coaching
+// History (Task 2). Feedback and Reviews reuse the QA Dashboard's own
+// existing endpoints/data (getAdvisorFeedback/getAdvisorReviews via
+// qaDashboardService.ts) rather than a parallel data source — see this
+// section's fetch helpers below. Headers are whatever the source sheet/
+// query returns, so rows are read by header name rather than a fixed
+// shape. ────────────────────────────────────────────────────────────────
+interface SheetTableLike {
+  headers: string[];
+  rows: Record<string, unknown>[];
+  error?: string;
+  message?: string;
+}
+function fmtCell(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  return String(v);
+}
+function scoreChipClass(score: unknown, dark: boolean): string {
+  const n = typeof score === "number" ? score : Number(score);
+  if (!Number.isFinite(n)) return dark ? "bg-white/10 text-slate-300" : "bg-stone-100 text-stone-600";
+  if (n <= 2) return dark ? "bg-red-500/20 text-red-300" : "bg-red-50 text-red-700";
+  if (n <= 3) return dark ? "bg-amber-500/20 text-amber-300" : "bg-amber-50 text-amber-700";
+  return dark ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-50 text-emerald-700";
+}
+async function fetchQaFeedback(tactId: string): Promise<SheetTableLike> {
+  return fetchJson<SheetTableLike>(`/api/qa-dashboard/feedback?${qs({ tactId })}`);
+}
+async function fetchQaReviews(tactId: string): Promise<SheetTableLike> {
+  return fetchJson<SheetTableLike>(`/api/qa-dashboard/reviews?${qs({ tactId })}`);
+}
+
+// ── Coaching Workspace — draft (localStorage, per-advisor) + saved history
+// (DB, via /api/qa-dashboard/team-tracker/coaching/*). See this file's
+// header comment: a session is written ONLY on explicit Save. ───────────
+type ActionableStatus = "Open" | "In Progress" | "Completed";
+interface CoachingActionableDraft {
+  id: string; // client-only React key, not persisted as-is
+  description: string;
+  dueDate: string; // "yyyy-MM-dd", "" = none
+  status: ActionableStatus;
+}
+interface CoachingDraft {
+  meetingDate: string; // "yyyy-MM-dd"
+  discussionPoints: string;
+  meetingNotes: string;
+  actionables: CoachingActionableDraft[];
+}
+function emptyCoachingDraft(): CoachingDraft {
+  const d = new Date();
+  return { meetingDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, discussionPoints: "", meetingNotes: "", actionables: [] };
+}
+function coachingDraftKey(tactId: string): string {
+  return `ditto_coaching_draft_${tactId}`;
+}
+/** Reading/writing localStorage can throw (private browsing, storage full,
+ * disabled) — every call site treats that as "no draft available" rather
+ * than crashing the page. */
+function loadCoachingDraft(tactId: string): CoachingDraft {
+  try {
+    const raw = window.localStorage.getItem(coachingDraftKey(tactId));
+    if (!raw) return emptyCoachingDraft();
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.actionables)) return parsed as CoachingDraft;
+  } catch {
+    /* corrupt/unreadable draft — start fresh rather than crash */
+  }
+  return emptyCoachingDraft();
+}
+function saveCoachingDraftToStorage(tactId: string, draft: CoachingDraft) {
+  try {
+    window.localStorage.setItem(coachingDraftKey(tactId), JSON.stringify(draft));
+  } catch {
+    /* storage full/unavailable — draft just won't survive a refresh */
+  }
+}
+function clearCoachingDraft(tactId: string) {
+  try {
+    window.localStorage.removeItem(coachingDraftKey(tactId));
+  } catch {
+    /* ignore */
+  }
+}
+function isDraftEmpty(d: CoachingDraft): boolean {
+  return !d.discussionPoints.trim() && !d.meetingNotes.trim() && d.actionables.every((a) => !a.description.trim());
+}
+
+interface CoachingHistoryActionable {
+  id: number;
+  description: string;
+  dueDate: string | null;
+  status: ActionableStatus;
+}
+interface CoachingHistoryEntry {
+  id: number;
+  tactId: string;
+  advisorName: string;
+  authorName: string;
+  meetingDate: string;
+  discussionPoints: string | null;
+  meetingNotes: string | null;
+  createdAt: string;
+  actionables: CoachingHistoryActionable[];
+}
+async function fetchCoachingHistory(tactId: string): Promise<CoachingHistoryEntry[]> {
+  return fetchJson<CoachingHistoryEntry[]>(`/api/qa-dashboard/team-tracker/coaching/history?${qs({ tactId })}`);
+}
+async function postCoachingSession(payload: {
+  tactId: string;
+  meetingDate: string;
+  discussionPoints: string;
+  meetingNotes: string;
+  actionables: { description: string; dueDate: string | null; status: ActionableStatus }[];
+}): Promise<CoachingHistoryEntry> {
+  const res = await fetch("/api/qa-dashboard/team-tracker/coaching/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
+  return body as CoachingHistoryEntry;
+}
+
 // ── Pivoted, one-row-per-advisor shape + period-level insights ────────────
 // Pure client-side reshape of the server's (advisor, month) rows — see this
 // file's header comment. Every mapped advisor gets an entry here (the
@@ -599,6 +724,19 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
   const [openAdvisorTactId, setOpenAdvisorTactId] = useState<string | null>(null);
   const openAdvisor = useCallback((tactId: string) => setOpenAdvisorTactId(tactId), []);
 
+  // Performance/Insights toggle (Task 2) — resets to Performance whenever a
+  // different advisor is opened; switching between the two while the SAME
+  // advisor stays open otherwise leaves everything else (advisor, team,
+  // period) untouched, since this is independent page state.
+  const [advisorViewMode, setAdvisorViewMode] = useState<"performance" | "insights">("performance");
+  useEffect(() => {
+    setAdvisorViewMode("performance");
+  }, [openAdvisorTactId]);
+
+  // Bumped after a Coaching Workspace Save so the open advisor's Coaching
+  // History (Insights view) refetches without a full page reload.
+  const [coachingRefreshSignal, setCoachingRefreshSignal] = useState(0);
+
   const loadContext = useCallback(async (guide: string, mentor: string) => {
     setContextLoading(true);
     setContextError("");
@@ -826,16 +964,37 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="space-y-5"
           >
-            <div>
-              <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
-                <Users2 className="w-5 h-5" />
-                <span>{openPivot.name}</span>
-              </h1>
-              <p className="text-[13px] mt-1 font-semibold text-content-muted">
-                Team Tracker · {context.scopeLabel} · {periodOptions.find((o) => o.value === period)?.label}
-              </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
+                  <Users2 className="w-5 h-5" />
+                  <span>{openPivot.name}</span>
+                </h1>
+                <p className="text-[13px] mt-1 font-semibold text-content-muted">
+                  Team Tracker · {context.scopeLabel} · {periodOptions.find((o) => o.value === period)?.label}
+                </p>
+              </div>
+              <SegmentedToggle
+                value={advisorViewMode}
+                onChange={setAdvisorViewMode}
+                options={[
+                  { value: "performance", label: "Performance" },
+                  { value: "insights", label: "Insights" },
+                ]}
+                dark={dark}
+              />
             </div>
-            <AdvisorDetailView dark={dark} theme={theme} pivot={openPivot} orderedRows={openPivotRows} prevMonthKeyOf={prevMonthKeyOf} />
+            {advisorViewMode === "performance" ? (
+              <AdvisorDetailView dark={dark} theme={theme} pivot={openPivot} orderedRows={openPivotRows} prevMonthKeyOf={prevMonthKeyOf} />
+            ) : (
+              <AdvisorInsightsView
+                dark={dark}
+                pivot={openPivot}
+                orderedRows={openPivotRows}
+                prevMonthKeyOf={prevMonthKeyOf}
+                coachingRefreshSignal={coachingRefreshSignal}
+              />
+            )}
           </motion.div>
         ) : (
           <motion.div
@@ -906,6 +1065,20 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Floating Coaching Workspace — available on both the Performance and
+          Insights advisor sub-views (it lives outside the AnimatePresence
+          swap above, so toggling between them doesn't remount it), hidden
+          on the team-wide main view where there's no single advisor to
+          attach a draft to. */}
+      {openPivot && (
+        <CoachingWorkspace
+          dark={dark}
+          tactId={openPivot.tactId}
+          advisorName={openPivot.name}
+          teamLabel={context.scopeLabel}
+          onSaved={() => setCoachingRefreshSignal((v) => v + 1)}
+        />
+      )}
     </div>
   );
 }
@@ -1664,5 +1837,487 @@ function AdvisorDetailView({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Advisor Insights (Task 2) — Latest QA Performance, QA Feedback,
+// Disputes & Escalations, and Coaching History for one advisor. Every
+// number/record here is either the same Current Month snapshot the
+// Performance view uses, or an actual source record from the QA
+// Dashboard's existing Feedback/Reviews endpoints or this file's own
+// Coaching Workspace — nothing here is AI-generated or reinterpreted, per
+// this file's header comment. ──────────────────────────────────────────
+function SectionCard({ dark, title, action, children }: { dark: boolean; title: string; action?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={`rounded-xl border p-3 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>{title}</h3>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ViewAllToggle({ dark, expanded, total, onToggle }: { dark: boolean; expanded: boolean; total: number; onToggle: () => void }) {
+  if (total <= 5) return null;
+  return (
+    <button type="button" onClick={onToggle} className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}>
+      {expanded ? "Show less" : `View all ${total}`}
+    </button>
+  );
+}
+
+function QaFeedbackSection({ dark, data, loading, error }: { dark: boolean; data: SheetTableLike | null; loading: boolean; error: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = data?.rows || [];
+  const shown = expanded ? rows : rows.slice(0, 5);
+  return (
+    <SectionCard dark={dark} title="QA Feedback" action={<ViewAllToggle dark={dark} expanded={expanded} total={rows.length} onToggle={() => setExpanded((v) => !v)} />}>
+      {loading ? (
+        <p className="text-[13px] text-content-muted py-2">Loading…</p>
+      ) : error || data?.error ? (
+        <p className="text-[13px] text-red-500 py-2">{error || data?.message || "Failed to load QA feedback."}</p>
+      ) : rows.length === 0 ? (
+        <p className="text-[13px] text-content-muted py-2">No QA feedback records yet.</p>
+      ) : (
+        <ul className="space-y-1.5 max-h-[50vh] overflow-auto">
+          {shown.map((r, i) => (
+            <li key={i} className={`rounded-lg border px-2.5 py-2 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="flex items-center gap-2 font-bold">
+                  <span className={dark ? "text-slate-300" : "text-stone-600"}>{fmtCell(r["Checked Date"])}</span>
+                  <span className={dark ? "text-slate-500" : "text-stone-400"}>·</span>
+                  <span>{fmtCell(r["Domain"])}</span>
+                </span>
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${scoreChipClass(r["Score"], dark)}`}>{fmtCell(r["Score"])}</span>
+              </div>
+              {(r["Red Flags"] || r["Orange Flags"] || r["Green Flags"]) && (
+                <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold">
+                  {r["Red Flags"] ? <span className="text-red-500">Red: {String(r["Red Flags"])}</span> : null}
+                  {r["Orange Flags"] ? <span className="text-amber-500">Orange: {String(r["Orange Flags"])}</span> : null}
+                  {r["Green Flags"] ? <span className="text-emerald-500">Green: {String(r["Green Flags"])}</span> : null}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function DisputesEscalationsSection({ dark, data, loading, error }: { dark: boolean; data: SheetTableLike | null; loading: boolean; error: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = data?.rows || [];
+  const shown = expanded ? rows : rows.slice(0, 5);
+  return (
+    <SectionCard dark={dark} title="Disputes & Escalations" action={<ViewAllToggle dark={dark} expanded={expanded} total={rows.length} onToggle={() => setExpanded((v) => !v)} />}>
+      {loading ? (
+        <p className="text-[13px] text-content-muted py-2">Loading…</p>
+      ) : error || data?.error ? (
+        <p className="text-[13px] text-red-500 py-2">{error || data?.message || "Failed to load disputes & escalations."}</p>
+      ) : rows.length === 0 ? (
+        <p className="text-[13px] text-content-muted py-2">No disputes or escalations on record.</p>
+      ) : (
+        <ul className="space-y-1.5 max-h-[50vh] overflow-auto">
+          {shown.map((r, i) => (
+            <li key={i} className={`rounded-lg border px-2.5 py-2 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="flex items-center gap-2 font-bold flex-wrap">
+                  <span className={dark ? "text-slate-300" : "text-stone-600"}>{fmtCell(r["Raised"])}</span>
+                  <span className={dark ? "text-slate-500" : "text-stone-400"}>·</span>
+                  <span>{fmtCell(r["Domain"])}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
+                      r["Type"] === "Dispute" ? (dark ? "bg-blue-500/20 text-blue-300" : "bg-blue-50 text-blue-700") : dark ? "bg-violet-500/20 text-violet-300" : "bg-violet-50 text-violet-700"
+                    }`}
+                  >
+                    {fmtCell(r["Type"])}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${scoreChipClass(r["Score"], dark)}`}>{fmtCell(r["Score"])}</span>
+                  <span className={`text-[11px] font-bold ${dark ? "text-slate-300" : "text-stone-600"}`}>{fmtCell(r["Status"])}</span>
+                </span>
+              </div>
+              {(r["Comment"] || r["QA Response"]) && (
+                <div className="mt-1 space-y-0.5 text-[11px]">
+                  {r["Comment"] ? (
+                    <p>
+                      <span className="font-bold text-content-muted">Advisor: </span>
+                      {String(r["Comment"])}
+                    </p>
+                  ) : null}
+                  {r["QA Response"] ? (
+                    <p>
+                      <span className="font-bold text-content-muted">QA Response: </span>
+                      {String(r["QA Response"])}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function ActionableStatusChip({ status, dark }: { status: ActionableStatus; dark: boolean }) {
+  const cls =
+    status === "Completed"
+      ? dark
+        ? "bg-emerald-500/20 text-emerald-300"
+        : "bg-emerald-50 text-emerald-700"
+      : status === "In Progress"
+        ? dark
+          ? "bg-amber-500/20 text-amber-300"
+          : "bg-amber-50 text-amber-700"
+        : dark
+          ? "bg-white/10 text-slate-300"
+          : "bg-stone-100 text-stone-600";
+  return <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase shrink-0 ${cls}`}>{status}</span>;
+}
+
+function CoachingHistorySection({ dark, entries, loading, error }: { dark: boolean; entries: CoachingHistoryEntry[] | null; loading: boolean; error: string }) {
+  return (
+    <SectionCard dark={dark} title="Coaching History">
+      {loading ? (
+        <p className="text-[13px] text-content-muted py-2">Loading…</p>
+      ) : error ? (
+        <p className="text-[13px] text-red-500 py-2">{error}</p>
+      ) : !entries || entries.length === 0 ? (
+        <p className="text-[13px] text-content-muted py-2">No coaching sessions logged yet.</p>
+      ) : (
+        <ul className="space-y-2 max-h-[50vh] overflow-auto">
+          {entries.map((s) => (
+            <li key={s.id} className={`rounded-lg border p-2.5 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`font-bold ${dark ? "text-white" : "text-stone-900"}`}>{s.meetingDate}</span>
+                <span className={dark ? "text-slate-400" : "text-stone-500"}>{s.authorName}</span>
+              </div>
+              {s.discussionPoints && (
+                <p className="mt-1">
+                  <span className="font-bold text-content-muted">Discussion: </span>
+                  {s.discussionPoints}
+                </p>
+              )}
+              {s.meetingNotes && (
+                <p className="mt-1">
+                  <span className="font-bold text-content-muted">Notes: </span>
+                  {s.meetingNotes}
+                </p>
+              )}
+              {s.actionables.length > 0 && (
+                <ul className="mt-1.5 space-y-1">
+                  {s.actionables.map((a) => (
+                    <li key={a.id} className="flex items-center gap-2 flex-wrap">
+                      <ActionableStatusChip status={a.status} dark={dark} />
+                      <span>{a.description}</span>
+                      {a.dueDate && <span className="text-content-muted">(due {a.dueDate})</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function AdvisorInsightsView({
+  dark,
+  pivot,
+  orderedRows,
+  prevMonthKeyOf,
+  coachingRefreshSignal,
+}: {
+  dark: boolean;
+  pivot: AdvisorPivot;
+  orderedRows: MonthlyAdvisorRow[];
+  prevMonthKeyOf: Record<string, string | undefined>;
+  coachingRefreshSignal: number;
+}) {
+  const latest = pivot.latestScoredRow;
+  const latestDelta = useMemo(() => {
+    if (!latest) return null;
+    const prevRow = orderedRows.find((r) => r.monthKey === prevMonthKeyOf[latest.monthKey]);
+    return prevRow && latest.cumulativeScore !== null && prevRow.cumulativeScore !== null ? round2(latest.cumulativeScore - prevRow.cumulativeScore) : null;
+  }, [latest, orderedRows, prevMonthKeyOf]);
+
+  const [feedback, setFeedback] = useState<SheetTableLike | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(true);
+  const [feedbackError, setFeedbackError] = useState("");
+  const [reviews, setReviews] = useState<SheetTableLike | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsError, setReviewsError] = useState("");
+  const [history, setHistory] = useState<CoachingHistoryEntry[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setFeedbackLoading(true);
+    setFeedbackError("");
+    fetchQaFeedback(pivot.tactId)
+      .then((r) => {
+        if (!cancelled) setFeedback(r);
+      })
+      .catch((err) => {
+        if (!cancelled) setFeedbackError(err.message || "Failed to load QA feedback.");
+      })
+      .finally(() => {
+        if (!cancelled) setFeedbackLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pivot.tactId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReviewsLoading(true);
+    setReviewsError("");
+    fetchQaReviews(pivot.tactId)
+      .then((r) => {
+        if (!cancelled) setReviews(r);
+      })
+      .catch((err) => {
+        if (!cancelled) setReviewsError(err.message || "Failed to load disputes & escalations.");
+      })
+      .finally(() => {
+        if (!cancelled) setReviewsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pivot.tactId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError("");
+    fetchCoachingHistory(pivot.tactId)
+      .then((r) => {
+        if (!cancelled) setHistory(r);
+      })
+      .catch((err) => {
+        if (!cancelled) setHistoryError(err.message || "Failed to load coaching history.");
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pivot.tactId, coachingRefreshSignal]);
+
+  return (
+    <div className="space-y-4">
+      <CurrentMonthKpiRow
+        dark={dark}
+        monthLabel={latest?.monthLabel ?? null}
+        cumulative={latest?.cumulativeScore ?? null}
+        cumulativeDelta={latestDelta}
+        lead={{ avg: latest?.leadScoreAvg ?? null, instances: latest?.leadScoreInstances ?? 0 }}
+        payment={{ avg: latest?.paymentsAvg ?? null, instances: latest?.paymentsInstances ?? 0 }}
+        chat={{ avg: latest?.chatAvg ?? null, instances: latest?.chatInstances ?? 0 }}
+        call={{ avg: latest?.callAvg ?? null, instances: latest?.callInstances ?? 0 }}
+      />
+      <QaFeedbackSection dark={dark} data={feedback} loading={feedbackLoading} error={feedbackError} />
+      <DisputesEscalationsSection dark={dark} data={reviews} loading={reviewsLoading} error={reviewsError} />
+      <CoachingHistorySection dark={dark} entries={history} loading={historyLoading} error={historyError} />
+    </div>
+  );
+}
+
+// ── Floating Coaching Workspace (Task 2) — a persistent button + panel
+// bound to whichever advisor is currently open (see this file's header
+// comment / CoachingWorkspace's render site). Draft state lives in
+// localStorage, keyed per advisor tactId, so switching advisors,
+// collapsing the panel, toggling Performance/Insights, or an accidental
+// refresh never loses or cross-contaminates an unsaved note. ────────────
+function CoachingWorkspace({
+  dark,
+  tactId,
+  advisorName,
+  teamLabel,
+  onSaved,
+}: {
+  dark: boolean;
+  tactId: string;
+  advisorName: string;
+  teamLabel: string;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<CoachingDraft>(() => loadCoachingDraft(tactId));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  // A new tactId (the advisor changed) loads THAT advisor's own draft —
+  // the previous advisor's draft stays exactly where it was in
+  // localStorage, never merged into this one or discarded (Task 2 item 7).
+  useEffect(() => {
+    setDraft(loadCoachingDraft(tactId));
+    setSaveError("");
+    setSavedFlash(false);
+  }, [tactId]);
+
+  // Persisted on every change — cheap (localStorage, not the DB) and is
+  // what makes an accidental refresh non-destructive (Task 2 item 6).
+  useEffect(() => {
+    saveCoachingDraftToStorage(tactId, draft);
+  }, [tactId, draft]);
+
+  const addActionable = () =>
+    setDraft((d) => ({ ...d, actionables: [...d.actionables, { id: `${Date.now()}-${d.actionables.length}`, description: "", dueDate: "", status: "Open" }] }));
+  const updateActionable = (id: string, patch: Partial<CoachingActionableDraft>) =>
+    setDraft((d) => ({ ...d, actionables: d.actionables.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+  const removeActionable = (id: string) => setDraft((d) => ({ ...d, actionables: d.actionables.filter((a) => a.id !== id) }));
+
+  const handleSave = async () => {
+    if (isDraftEmpty(draft)) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await postCoachingSession({
+        tactId,
+        meetingDate: draft.meetingDate,
+        discussionPoints: draft.discussionPoints,
+        meetingNotes: draft.meetingNotes,
+        actionables: draft.actionables.filter((a) => a.description.trim()).map((a) => ({ description: a.description.trim(), dueDate: a.dueDate || null, status: a.status })),
+      });
+      clearCoachingDraft(tactId);
+      setDraft(emptyCoachingDraft());
+      setSavedFlash(true);
+      onSaved();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to save coaching note.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = `w-full rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"}`;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg font-bold text-[13px] text-white cursor-pointer hover:brightness-110 transition"
+        style={{ background: "#117FDA" }}
+        title="Coaching Workspace"
+      >
+        <ClipboardList className="w-4 h-4" />
+        Coaching
+        {!isDraftEmpty(draft) && <span className="w-2 h-2 rounded-full bg-amber-400" title="Unsaved draft" />}
+      </button>
+
+      {open && (
+        <div
+          className={`fixed bottom-20 right-5 z-40 w-[380px] max-w-[calc(100vw-2.5rem)] max-h-[75vh] overflow-auto rounded-2xl border shadow-2xl p-4 space-y-3 ${
+            dark ? "bg-[#0b1830] border-white/[0.12]" : "bg-white border-stone-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className={`text-[13px] font-black ${dark ? "text-white" : "text-[#111827]"}`}>Coaching Workspace</h3>
+              <p className="text-[11px] text-content-muted mt-0.5">
+                Advisor: <span className="font-bold">{advisorName}</span>
+                <br />
+                Team: <span className="font-bold">{teamLabel}</span>
+              </p>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} className={`cursor-pointer shrink-0 ${dark ? "text-slate-400 hover:text-white" : "text-stone-400 hover:text-stone-800"}`}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Date</span>
+            <input type="date" value={draft.meetingDate} onChange={(e) => setDraft((d) => ({ ...d, meetingDate: e.target.value }))} className={inputCls} />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Discussion Points</span>
+            <textarea
+              rows={3}
+              value={draft.discussionPoints}
+              onChange={(e) => setDraft((d) => ({ ...d, discussionPoints: e.target.value }))}
+              className={inputCls}
+              placeholder="What to bring up in this session…"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Notes</span>
+            <textarea
+              rows={3}
+              value={draft.meetingNotes}
+              onChange={(e) => setDraft((d) => ({ ...d, meetingNotes: e.target.value }))}
+              className={inputCls}
+              placeholder="What was actually discussed…"
+            />
+          </label>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Actionables</span>
+              <button type="button" onClick={addActionable} className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}>
+                + Add
+              </button>
+            </div>
+            {draft.actionables.length === 0 ? (
+              <p className="text-[11px] text-content-muted">No actionables yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {draft.actionables.map((a) => (
+                  <div key={a.id} className={`rounded-lg border p-2 space-y-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+                    <div className="flex items-start gap-1.5">
+                      <input value={a.description} onChange={(e) => updateActionable(a.id, { description: e.target.value })} placeholder="Description" className={inputCls + " flex-1"} />
+                      <button
+                        type="button"
+                        onClick={() => removeActionable(a.id)}
+                        className={`cursor-pointer shrink-0 mt-1.5 ${dark ? "text-slate-400 hover:text-red-400" : "text-stone-400 hover:text-red-500"}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input type="date" value={a.dueDate} onChange={(e) => updateActionable(a.id, { dueDate: e.target.value })} className={inputCls} />
+                      <select value={a.status} onChange={(e) => updateActionable(a.id, { status: e.target.value as ActionableStatus })} className={inputCls}>
+                        <option value="Open">Open</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {saveError && <p className="text-[11px] text-red-500 font-semibold">{saveError}</p>}
+          {savedFlash && !saving && isDraftEmpty(draft) && <p className="text-[11px] text-emerald-500 font-semibold">Saved to Coaching History.</p>}
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || isDraftEmpty(draft)}
+            className="w-full rounded-lg py-2 text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition"
+            style={{ background: "#1f2d3d" }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      )}
+    </>
   );
 }

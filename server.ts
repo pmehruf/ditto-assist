@@ -63,6 +63,7 @@ import {
   getTeamTrackerContext,
   getTeamTrackerTable,
 } from "./src/server/qaDashboard/teamTrackerService.js";
+import { saveCoachingSession, getCoachingHistory } from "./src/server/coaching/coachingService.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
@@ -5392,6 +5393,56 @@ app.get("/api/qa-dashboard/team-tracker/table", requireAuth, async (req, res) =>
   } catch (err: any) {
     console.error("Team Tracker: failed to load table:", err);
     return res.status(500).json({ error: `Failed to load Team Tracker table: ${err.message}` });
+  }
+});
+
+// --- Team Tracker: Coaching Workspace ---
+// Access control reuses teamTrackerService.ts's own Guide/Mentor/Admin
+// scope (see canAccessAdvisorForCoaching) via coachingService.ts — same
+// "no plain-Advisor access" rule as the rest of Team Tracker. A session is
+// only ever written on an explicit Save from the client; there is no
+// autosave route (drafts live in the browser's own localStorage).
+
+app.post("/api/qa-dashboard/team-tracker/coaching/sessions", requireAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const actionables = Array.isArray(body.actionables)
+      ? body.actionables.map((a: any) => ({
+          description: typeof a?.description === "string" ? a.description : "",
+          dueDate: typeof a?.dueDate === "string" && a.dueDate ? a.dueDate : null,
+          status: a?.status === "In Progress" || a?.status === "Completed" ? a.status : "Open",
+        }))
+      : [];
+    const result = await saveCoachingSession(req.user!.email, {
+      tactId: typeof body.tactId === "string" ? body.tactId : "",
+      meetingDate: typeof body.meetingDate === "string" ? body.meetingDate : "",
+      discussionPoints: typeof body.discussionPoints === "string" ? body.discussionPoints : "",
+      meetingNotes: typeof body.meetingNotes === "string" ? body.meetingNotes : "",
+      actionables,
+    });
+    if (result && typeof result === "object" && "error" in result) {
+      const status = result.error === "FORBIDDEN" ? 403 : result.error === "NOT_FOUND" ? 404 : result.error === "INVALID_INPUT" ? 400 : 500;
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to save coaching session:", err);
+    return res.status(500).json({ error: `Failed to save coaching session: ${err.message}` });
+  }
+});
+
+app.get("/api/qa-dashboard/team-tracker/coaching/history", requireAuth, async (req, res) => {
+  try {
+    const tactId = typeof req.query.tactId === "string" ? req.query.tactId : "";
+    const result = await getCoachingHistory(req.user!.email, tactId);
+    if (!Array.isArray(result) && result && typeof result === "object" && "error" in result) {
+      const status = result.error === "FORBIDDEN" ? 403 : result.error === "INVALID_INPUT" ? 400 : 500;
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to load coaching history:", err);
+    return res.status(500).json({ error: `Failed to load coaching history: ${err.message}` });
   }
 });
 

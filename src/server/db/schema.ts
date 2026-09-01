@@ -1946,3 +1946,66 @@ export const advisorDirectorySyncState = pgTable("advisor_directory_sync_state",
 
 export type AdvisorDirectorySyncStateRow = typeof advisorDirectorySyncState.$inferSelect;
 export type NewAdvisorDirectorySyncStateRow = typeof advisorDirectorySyncState.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// coaching_sessions / coaching_actionables — Team Tracker's Coaching
+// Workspace (src/pages/TeamTrackerPage.tsx's floating "Coaching" panel). A
+// row here is created ONLY when a Guide/Mentor/Admin explicitly clicks
+// Save on a draft coaching note for one advisor — unsaved drafts live
+// entirely in the browser's own localStorage and never reach this table
+// (see coachingService.ts). Once saved, a session is an append-only entry
+// in that advisor's permanent Coaching History — the current UI never
+// edits or deletes one after the fact.
+//
+// authorEmail/authorName are plain text, NOT a users.email foreign key —
+// same choice change_logs (userName, above) already makes for this kind of
+// append-only meeting log: it must stay legible even if the author's
+// account is later renamed or removed, rather than cascading away with it.
+//
+// Access control (who can save/read a given advisor's sessions) is not
+// enforced here at the schema level — it's the same Guide-owns-their-team /
+// Mentor-owns-their-mentees / Admin-sees-everyone scope teamTrackerService's
+// resolvePool() already computes for the rest of Team Tracker, reused
+// as-is by coachingService.ts rather than duplicated.
+// ─────────────────────────────────────────────────────────────────────────
+export const coachingActionableStatusEnum = pgEnum("coaching_actionable_status", ["Open", "In Progress", "Completed"]);
+
+export const coachingSessions = pgTable(
+  "coaching_sessions",
+  {
+    id: serial("id").primaryKey(),
+    tactId: text("tact_id").notNull(),
+    advisorName: text("advisor_name").notNull(),
+    authorEmail: varchar("author_email", { length: 320 }).notNull(),
+    authorName: text("author_name").notNull(),
+    // Defaults to the day it was saved; not editable by the current UI, but
+    // kept as its own field (rather than reusing createdAt) since a future
+    // "log this meeting for an earlier date" flow would only need a form
+    // field, not a schema change.
+    meetingDate: date("meeting_date").notNull(),
+    discussionPoints: text("discussion_points"),
+    meetingNotes: text("meeting_notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("coaching_sessions_tact_id_idx").on(table.tactId)]
+);
+
+export const coachingActionables = pgTable(
+  "coaching_actionables",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => coachingSessions.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    dueDate: date("due_date"),
+    status: coachingActionableStatusEnum("status").notNull().default("Open"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("coaching_actionables_session_id_idx").on(table.sessionId)]
+);
+
+export type CoachingSessionRow = typeof coachingSessions.$inferSelect;
+export type NewCoachingSessionRow = typeof coachingSessions.$inferInsert;
+export type CoachingActionableRow = typeof coachingActionables.$inferSelect;
+export type NewCoachingActionableRow = typeof coachingActionables.$inferInsert;

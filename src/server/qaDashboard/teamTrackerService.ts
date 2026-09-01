@@ -158,6 +158,33 @@ async function resolvePool(
   return { error: "FORBIDDEN", message: "Team Tracker is only available to Admins, Guides, and Mentors." };
 }
 
+/** Whether `email` (a Team Tracker Admin/Guide/Mentor) is allowed to see or
+ * coach one specific advisor by tactId — the exact same scope this page's
+ * own pivot table uses (Guide: only their own team via
+ * getAdvisorsForGuide, Mentor: only their own mentees via
+ * getAdvisorsForMentor, Admin: everyone via getAllAdvisors), reused as-is
+ * by src/server/coaching/coachingService.ts rather than duplicated. A
+ * plain Advisor is never allowed here, even for their own tactId — Team
+ * Tracker (and therefore its Coaching Workspace) is manager-of-others
+ * only, see this file's header comment. */
+export async function canAccessAdvisorForCoaching(email: string, tactId: string): Promise<{ allowed: boolean; callerName: string; callerIsAdmin: boolean }> {
+  const role = await resolveQaCallerRole(email);
+  const target = String(tactId).trim().toLowerCase();
+  if (role.isAdmin) {
+    const all = await getAllAdvisors();
+    return { allowed: all.some((a) => String(a.tactId).trim().toLowerCase() === target), callerName: role.callerName, callerIsAdmin: true };
+  }
+  if (role.isGuide) {
+    const team = await getAdvisorsForGuide(role.callerName);
+    return { allowed: team.some((a) => String(a.tactId).trim().toLowerCase() === target), callerName: role.callerName, callerIsAdmin: false };
+  }
+  if (role.isMentor) {
+    const mentees = await getAdvisorsForMentor(role.callerName);
+    return { allowed: mentees.some((a) => String(a.tactId).trim().toLowerCase() === target), callerName: role.callerName, callerIsAdmin: false };
+  }
+  return { allowed: false, callerName: role.callerName, callerIsAdmin: false };
+}
+
 /** "Who am I, and what can I see" — used both to gate the sidebar nav item
  * (App.tsx probes this once and treats a FORBIDDEN response as "hide the
  * link") and to populate the page's own filters (advisor list, and for an
