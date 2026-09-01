@@ -130,6 +130,16 @@ const MEDIUM_ICONS: Record<MediumKey, ReactNode> = {
   chat: <MessageCircle className="w-3.5 h-3.5" />,
   call: <Phone className="w-3.5 h-3.5" />,
 };
+// Lead Score is a derived composite (the per-chat-id minimum of that chat's
+// own Chat/Call scores — see teamTrackerService.ts), not an independent QA
+// channel the way Chat/Call/Payment are: every Lead Score evaluation is
+// already counted once under Chat or Call. It still gets its own stat card
+// (the redesign explicitly asked for Lead alongside Chat/Call/Payment), but
+// it's excluded from "Best/Weakest Medium" comparisons and from activity
+// totals — both are about the three actual evaluation channels, and
+// including Lead would double-count and could never legitimately win/lose
+// against itself as a "medium".
+const REAL_MEDIUM_KEYS: MediumKey[] = ["payment", "chat", "call"];
 
 // Same danger/warn thresholds and treatment QaDashboardPage.tsx's
 // scoreFlagClasses uses, reproduced locally (this file intentionally
@@ -304,10 +314,11 @@ function buildPivots(rows: MonthlyAdvisorRow[]): AdvisorPivot[] {
     const monthly: Record<string, MonthlyAdvisorRow> = {};
     for (const r of advisorRows) monthly[r.monthKey] = r;
 
-    const totalInstances = advisorRows.reduce(
-      (sum, r) => sum + r.leadScoreInstances + r.paymentsInstances + r.chatInstances + r.callInstances,
-      0
-    );
+    // Lead Score instances are excluded here — they're the same underlying
+    // Chat/Call evaluations counted a second time (see REAL_MEDIUM_KEYS'
+    // comment), so including them would inflate "had activity" for
+    // advisors who only ever got Chat/Call evaluations.
+    const totalInstances = advisorRows.reduce((sum, r) => sum + r.paymentsInstances + r.chatInstances + r.callInstances, 0);
 
     const withScore = advisorRows.filter((r) => r.cumulativeScore !== null);
     const avgCumulative = avgArr(advisorRows.map((r) => r.cumulativeScore));
@@ -327,9 +338,9 @@ function buildPivots(rows: MonthlyAdvisorRow[]): AdvisorPivot[] {
       chat: buildMediumStat(advisorRows.map((r) => r.chatAvg), advisorRows.map((r) => r.chatInstances), advisorRows.map((r) => r.chatBlunders)),
       call: buildMediumStat(advisorRows.map((r) => r.callAvg), advisorRows.map((r) => r.callInstances), advisorRows.map((r) => r.callBlunders)),
     };
-    const scoredMediums = (Object.keys(mediumStats) as MediumKey[])
-      .map((key) => ({ key, label: MEDIUM_LABELS[key], avg: mediumStats[key].avg }))
-      .filter((m): m is { key: MediumKey; label: string; avg: number } => m.avg !== null);
+    const scoredMediums = REAL_MEDIUM_KEYS.map((key) => ({ key, label: MEDIUM_LABELS[key], avg: mediumStats[key].avg })).filter(
+      (m): m is { key: MediumKey; label: string; avg: number } => m.avg !== null
+    );
     const bestMedium = scoredMediums.length ? scoredMediums.reduce((a, b) => (b.avg > a.avg ? b : a)) : null;
     const weakestMedium = scoredMediums.length ? scoredMediums.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
 
@@ -414,9 +425,9 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
         }
       : { delta: null, firstLabel: null, latestLabel: null };
 
-  const teamMediumAvgs = (Object.keys(MEDIUM_LABELS) as MediumKey[])
-    .map((key) => ({ key, label: MEDIUM_SHORT_LABELS[key], avg: avgArr(pivots.map((p) => p.mediumStats[key].avg)) }))
-    .filter((m): m is { key: MediumKey; label: string; avg: number } => m.avg !== null);
+  const teamMediumAvgs = REAL_MEDIUM_KEYS.map((key) => ({ key, label: MEDIUM_SHORT_LABELS[key], avg: avgArr(pivots.map((p) => p.mediumStats[key].avg)) })).filter(
+    (m): m is { key: MediumKey; label: string; avg: number } => m.avg !== null
+  );
   const bestMedium = teamMediumAvgs.length ? teamMediumAvgs.reduce((a, b) => (b.avg > a.avg ? b : a)) : null;
   const weakestMedium = teamMediumAvgs.length ? teamMediumAvgs.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
 
@@ -934,20 +945,22 @@ function TeamInsights({
           <span className={`text-2xl font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.totalMapped}</span>
         </div>
         <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
+          <span className={`${label} flex items-center gap-1`} title="Mapped advisors with zero Chat, Call, or Payment evaluations in the selected period">
             <CircleOff className={`w-3.5 h-3.5 ${iconClass}`} />
             No QA Activity
           </span>
           <span className={`text-2xl font-black ${insights.noActivity.length > 0 ? "text-amber-500" : dark ? "text-white" : "text-stone-900"}`}>{insights.noActivity.length}</span>
-          {insights.noActivity.length > 0 && (
-            <span className="text-[11px] text-content-muted truncate" title={insights.noActivity.map((a) => a.name).join(", ")}>
-              {insights.noActivity
-                .slice(0, 3)
-                .map((a) => a.name)
-                .join(", ")}
-              {insights.noActivity.length > 3 ? ` +${insights.noActivity.length - 3} more` : ""}
-            </span>
-          )}
+          <span
+            className="text-[11px] text-content-muted truncate"
+            title={insights.noActivity.length > 0 ? insights.noActivity.map((a) => a.name).join(", ") : undefined}
+          >
+            {insights.noActivity.length > 0
+              ? `${insights.noActivity
+                  .slice(0, 3)
+                  .map((a) => a.name)
+                  .join(", ")}${insights.noActivity.length > 3 ? ` +${insights.noActivity.length - 3} more` : ""}`
+              : `All ${insights.totalMapped} mapped advisors have evaluations`}
+          </span>
         </div>
       </div>
 
