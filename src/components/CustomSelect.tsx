@@ -107,7 +107,34 @@ export function CustomSelect({
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
       setOpenUpward(spaceBelow < maxPanelHeightPx + 24 && spaceAbove > spaceBelow);
-      setPanelRect({ top: rect.bottom, bottom: window.innerHeight - rect.top, left: rect.left, width: rect.width });
+      // getBoundingClientRect() reports true, on-screen pixel coordinates —
+      // already scaled by the app-wide --app-zoom the large-monitor auto-
+      // scale applies to <html> (see autoZoom.ts). But that same zoom is a
+      // well-known trigger for a Chromium/Blink quirk: an element with
+      // `zoom` set becomes a new containing block for `position: fixed`
+      // descendants, same as `transform` would, instead of the true
+      // viewport — so this portaled panel (a fixed-position descendant of
+      // the zoomed <html>, via document.body) gets its top/left/width
+      // RE-multiplied by zoom a second time when painted. Left uncorrected,
+      // that renders the panel visibly offset from its trigger and wider
+      // than intended on any screen where --app-zoom > 1 — exactly the
+      // "detached, overflowing" symptom this fixes. Pre-dividing every
+      // value by zoom here cancels the second multiplication out, so the
+      // panel lands at its true, correct on-screen position either way.
+      const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-zoom")) || 1;
+      // Also keep the panel's left edge on-screen: a trigger near the
+      // right edge of a wide table (e.g. DA Mapping Config's category
+      // mapping grid) would otherwise still open flush with the trigger's
+      // own left edge and run its full (untruncated by the panel's own
+      // width) option labels off the right side of the viewport.
+      const margin = 8;
+      const clampedLeft = Math.min(Math.max(rect.left, margin), Math.max(margin, window.innerWidth - rect.width - margin));
+      setPanelRect({
+        top: (rect.bottom + 6) / zoom,
+        bottom: (window.innerHeight - rect.top + 6) / zoom,
+        left: clampedLeft / zoom,
+        width: rect.width / zoom,
+      });
     }
     setOpen((v) => !v);
   };
@@ -159,7 +186,7 @@ export function CustomSelect({
   const selected = options.find((o) => o.value === value);
 
   // Cross-app UI consistency pass (2026-08): rebuilt to match Product
-  // Assist's own dropdown trigger (its insurer selector on QueryAssistPage,
+  // Assist's own dropdown trigger (its insurer selector on ProductAssistPage,
   // which passes a custom triggerClassName rather than using this default)
   // — py-2/rounded-lg instead of py-3/rounded-xl (this default was
   // noticeably taller/larger-radius than every other control in the app,
@@ -225,9 +252,7 @@ export function CustomSelect({
             style={{
               left: panelRect.left,
               width: panelRect.width,
-              ...(openUpward
-                ? { bottom: panelRect.bottom + 6 }
-                : { top: panelRect.top + 6 }),
+              ...(openUpward ? { bottom: panelRect.bottom } : { top: panelRect.top }),
             }}
           >
             <div className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>
