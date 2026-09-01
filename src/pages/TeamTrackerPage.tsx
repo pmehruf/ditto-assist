@@ -15,15 +15,13 @@ import {
   AlertTriangle,
   ChevronRight,
   CircleOff,
-  Pencil,
   MessageCircle,
   Phone,
   Wallet,
   Target,
 } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { CustomSelect, type CustomSelectOption } from "../components/CustomSelect";
-import { ClippedButton } from "../components/ClippedButton";
 
 /**
  * TEAM QA PERFORMANCE TRACKER ("Team Tracker")
@@ -42,14 +40,21 @@ import { ClippedButton } from "../components/ClippedButton";
  * The server still answers with one row per (advisor, month) — see
  * MonthlyAdvisorRow below, unchanged from the server's own shape. Every
  * pivot/insight computed in this file (one-row-per-advisor table, team and
- * per-advisor Top 5/Bottom 5/Best-Weakest Medium/blunder rates, etc.) is a
- * pure client-side reshape of those same numbers; nothing here recomputes a
- * QA score.
+ * per-advisor Top 5/Bottom 5/Best-Weakest Medium/blunder rates, "Current
+ * Month" snapshots, etc.) is a pure client-side reshape of those same
+ * numbers; nothing here recomputes a QA score.
  *
  * Visible only to Admin/Guide/Mentor (App.tsx gates the sidebar link on the
  * same /team-tracker/context probe this page itself uses) — a plain
  * Advisor has no team to track, so unlike the QA Dashboard there is no
  * "see your own record" fallback here.
+ *
+ * Only Period remains as a page-level control (Advisor/Medium filters and
+ * the Admin "Change team" card were deliberately removed — see the header
+ * row below); picking a Period auto-reloads the table, and for an Admin
+ * the app-wide header back button steps back to the Guide/Mentor picker
+ * before leaving the tab (registerSubPageBack), so "change team" is still
+ * reachable without a dedicated on-page control.
  *
  * Advisor analysis opens as its own full-width view (openAdvisorTactId
  * below) rather than expanding inline under the table row, with a slide/
@@ -111,8 +116,8 @@ interface TeamTrackerTableResult {
 }
 
 type Period = "3m" | "6m" | "1y" | "custom";
-type Medium = "all" | "lead" | "payment" | "chat" | "call";
 type MediumKey = "lead" | "payment" | "chat" | "call";
+type RankMode = "current" | "period";
 
 const SCORE_DANGER = 3.5;
 const SCORE_WARN = 3.75;
@@ -135,10 +140,9 @@ const MEDIUM_ICONS: Record<MediumKey, ReactNode> = {
 // channel the way Chat/Call/Payment are: every Lead Score evaluation is
 // already counted once under Chat or Call. It still gets its own stat card
 // (the redesign explicitly asked for Lead alongside Chat/Call/Payment), but
-// it's excluded from "Best/Weakest Medium" comparisons and from activity
-// totals — both are about the three actual evaluation channels, and
-// including Lead would double-count and could never legitimately win/lose
-// against itself as a "medium".
+// it's excluded from "Best/Weakest Medium" comparisons and from activity/
+// "Total QA Instances" totals — both are about the three actual evaluation
+// channels, and including Lead would double-count.
 const REAL_MEDIUM_KEYS: MediumKey[] = ["payment", "chat", "call"];
 
 // Same danger/warn thresholds and treatment QaDashboardPage.tsx's
@@ -148,12 +152,13 @@ const REAL_MEDIUM_KEYS: MediumKey[] = ["payment", "chat", "call"];
 // quality (this) is a deliberately separate signal from month-over-month
 // trend (see TrendArrow below) — a cell can be a "good" 4.2 that just
 // dropped from 4.6, or a "poor" 3.1 that just climbed from 2.8.
-// Used for compact, inline table cells (adds a left-border accent).
+// Text-color only (no border accent) — used for both compact table cells
+// and standalone stat-card numbers.
 function scoreFlagClasses(value: number | null | undefined, dark: boolean): string {
-  if (value === null || value === undefined) return "border-l-4 border-l-transparent";
-  if (value < SCORE_DANGER) return dark ? "border-l-4 border-l-red-500 text-red-300 font-bold" : "border-l-4 border-l-red-500 text-red-700 font-bold";
-  if (value < SCORE_WARN) return dark ? "border-l-4 border-l-amber-500 text-amber-300 font-bold" : "border-l-4 border-l-amber-500 text-amber-700 font-bold";
-  return "border-l-4 border-l-transparent";
+  if (value === null || value === undefined) return "";
+  if (value < SCORE_DANGER) return dark ? "text-red-300 font-bold" : "text-red-700 font-bold";
+  if (value < SCORE_WARN) return dark ? "text-amber-300 font-bold" : "text-amber-700 font-bold";
+  return "";
 }
 // Same thresholds, for a standalone big number (stat cards) — just a text
 // color, no border accent.
@@ -217,6 +222,15 @@ function periodToRange(period: Exclude<Period, "custom">): { fromMonth: string; 
   return { fromMonth: ymOf(from), toMonth: ymOf(now) };
 }
 
+/** Strips teamTrackerService.ts's trailing "'s Team"/"'s Mentees" off a
+ * scopeLabel ("Priya's Team" -> "Priya") — used to show the team owner's
+ * bare name in the page title for an Admin (see this file's header
+ * comment; a Guide/Mentor viewing their own team already knows whose it
+ * is, so their title stays plain "Team Tracker"). */
+function ownerNameFromScope(scopeLabel: string): string {
+  return scopeLabel.replace(/'s (Team|Mentees)$/, "");
+}
+
 function avgArr(vals: (number | null)[]): number | null {
   const nums = vals.filter((v): v is number => v !== null);
   if (nums.length === 0) return null;
@@ -276,6 +290,33 @@ function buildMediumStat(avgs: (number | null)[], instancesArr: number[], blunde
   };
 }
 
+/** Avg + instance count for one medium in one specific month, team-wide —
+ * feeds the "Current Month" KPI row (see computeInsights). */
+interface MediumSnapshot {
+  avg: number | null;
+  instances: number;
+}
+const EMPTY_MEDIUM_SNAPSHOT: MediumSnapshot = { avg: null, instances: 0 };
+
+/** One ranked advisor for a Top 5 / Bottom 5 list — the number displayed
+ * IS the value it was ranked by, so the same component works for either
+ * the Current Month or Selected Period ranking mode (see the toggle in
+ * TeamInsights). */
+interface RankedEntry {
+  tactId: string;
+  name: string;
+  value: number;
+}
+function rankEntries(pivots: AdvisorPivot[], valueOf: (p: AdvisorPivot) => number | null): { top5: RankedEntry[]; bottom5: RankedEntry[] } {
+  const withVal = pivots
+    .map((p) => ({ tactId: p.tactId, name: p.name, value: valueOf(p) }))
+    .filter((e): e is RankedEntry => e.value !== null);
+  const ranked = [...withVal].sort((a, b) => b.value - a.value);
+  const top5 = ranked.slice(0, 5);
+  const bottom5 = ranked.length > 5 ? [...ranked].slice(-5).reverse() : [...ranked].reverse();
+  return { top5, bottom5 };
+}
+
 // ── Pivoted, one-row-per-advisor shape + period-level insights ────────────
 // Pure client-side reshape of the server's (advisor, month) rows — see this
 // file's header comment. Every mapped advisor gets an entry here (the
@@ -287,9 +328,10 @@ interface AdvisorPivot {
   tactId: string;
   name: string;
   monthly: Record<string, MonthlyAdvisorRow>;
-  /** Sum of Lead+Payment+Chat+Call instances across the whole period —
-   * zero means genuinely no QA activity at all in the selected period,
-   * distinct from "had activity but scored low". */
+  /** Sum of Payment+Chat+Call instances across the whole period (Lead
+   * excluded — see REAL_MEDIUM_KEYS' comment). Zero means genuinely no QA
+   * activity at all in the selected period, distinct from "had activity
+   * but scored low". */
   totalInstances: number;
   hasActivity: boolean;
   avgCumulative: number | null;
@@ -300,6 +342,14 @@ interface AdvisorPivot {
   firstScore: number | null;
   lastScore: number | null;
   change: number | null;
+  /** This advisor's own most recent month with a Cumulative Score, within
+   * the selected period — the "actual QA data" latest month, per this
+   * file's header comment, which may differ per advisor if some have gone
+   * quiet more recently than others. null when nobody has scored them at
+   * all in the period. Feeds the advisor detail page's own Current Month
+   * KPI row (a team-wide "Current Month" instead uses one shared month —
+   * see computeInsights). */
+  latestScoredRow: MonthlyAdvisorRow | null;
   mediumStats: Record<MediumKey, MediumStat>;
   bestMedium: { key: MediumKey; label: string; avg: number } | null;
   weakestMedium: { key: MediumKey; label: string; avg: number } | null;
@@ -335,6 +385,10 @@ function buildPivots(rows: MonthlyAdvisorRow[]): AdvisorPivot[] {
     const firstScore = withScore.length ? withScore[0].cumulativeScore : null;
     const lastScore = withScore.length ? withScore[withScore.length - 1].cumulativeScore : null;
     const change = firstScore !== null && lastScore !== null && withScore.length > 1 ? round2(lastScore - firstScore) : null;
+    // advisorRows (and therefore withScore) is sorted ascending by
+    // monthKey, so the last entry is this advisor's own most recent
+    // scored month.
+    const latestScoredRow = withScore.length ? withScore[withScore.length - 1] : null;
 
     const mediumStats: Record<MediumKey, MediumStat> = {
       lead: buildMediumStat(advisorRows.map((r) => r.leadScoreAvg), advisorRows.map((r) => r.leadScoreInstances), advisorRows.map((r) => r.leadScoreBlunders)),
@@ -360,6 +414,7 @@ function buildPivots(rows: MonthlyAdvisorRow[]): AdvisorPivot[] {
       firstScore,
       lastScore,
       change,
+      latestScoredRow,
       mediumStats,
       bestMedium,
       weakestMedium,
@@ -370,34 +425,64 @@ function buildPivots(rows: MonthlyAdvisorRow[]): AdvisorPivot[] {
   return pivots;
 }
 
+/** Team-wide avg + instance total for one medium in one specific month —
+ * the "Current Month" KPI row's per-medium cards. */
+function teamMediumSnapshot(pivots: AdvisorPivot[], monthKey: string, avgField: keyof MonthlyAdvisorRow, instField: keyof MonthlyAdvisorRow): MediumSnapshot {
+  const avg = avgArr(pivots.map((p) => (p.monthly[monthKey]?.[avgField] as number | null | undefined) ?? null));
+  const instances = pivots.reduce((sum, p) => sum + ((p.monthly[monthKey]?.[instField] as number | undefined) ?? 0), 0);
+  return { avg, instances };
+}
+
+interface CurrentMonthSnapshot {
+  monthKey: string;
+  monthLabel: string;
+  cumulative: number | null;
+  cumulativeDelta: number | null;
+  lead: MediumSnapshot;
+  payment: MediumSnapshot;
+  chat: MediumSnapshot;
+  call: MediumSnapshot;
+}
+
 interface TeamInsightsData {
   teamAvg: number | null;
   /** Latest scored month vs the one right before it — a short-term
-   * momentum read, distinct from changeFirstLatest's whole-period view. */
+   * momentum read, distinct from changeFirstLatest's whole-period view.
+   * Doubles as the Current Month KPI row's month-over-month delta. */
   momentum: { delta: number | null; latestLabel: string | null; prevLabel: string | null };
+  /** The team's own single latest-scored-month snapshot — see this file's
+   * header comment on "actual QA data" determining the month, not the
+   * current calendar date. null only when nothing in the period has a
+   * Cumulative Score yet. */
+  currentMonth: CurrentMonthSnapshot | null;
   highest: AdvisorPivot | null;
   lowest: AdvisorPivot | null;
-  top5: AdvisorPivot[];
-  bottom5: AdvisorPivot[];
+  top5Period: RankedEntry[];
+  bottom5Period: RankedEntry[];
+  /** Ranked by currentMonth's month specifically (same month for every
+   * advisor), not each advisor's own individually-latest month — so the
+   * ranking compares everyone on equal footing. Empty when currentMonth
+   * is null. */
+  top5CurrentMonth: RankedEntry[];
+  bottom5CurrentMonth: RankedEntry[];
   mostImproved: AdvisorPivot | null;
   mostDeclined: AdvisorPivot | null;
   totalMapped: number;
   changeFirstLatest: { delta: number | null; firstLabel: string | null; latestLabel: string | null };
   bestMedium: { key: MediumKey; label: string; avg: number } | null;
   weakestMedium: { key: MediumKey; label: string; avg: number } | null;
-  /** Team-wide average Cumulative Score per month, chronological — feeds
-   * the team trend chart. */
-  chartData: { month: string; score: number | null }[];
+  /** Team-wide average Cumulative Score + total QA instances per month,
+   * chronological — feeds the dual-axis team trend chart. */
+  chartData: { month: string; score: number | null; instances: number }[];
 }
 
 function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsightsData {
   const scored = pivots.filter((p) => p.avgCumulative !== null);
   const teamAvg = avgArr(scored.map((p) => p.avgCumulative));
+  const { top5: top5Period, bottom5: bottom5Period } = rankEntries(pivots, (p) => p.avgCumulative);
   const ranked = [...scored].sort((a, b) => b.avgCumulative! - a.avgCumulative!);
   const highest = ranked.length ? ranked[0] : null;
   const lowest = ranked.length ? ranked[ranked.length - 1] : null;
-  const top5 = ranked.slice(0, 5);
-  const bottom5 = ranked.length > 5 ? [...ranked].slice(-5).reverse() : [...ranked].reverse();
 
   const changeable = pivots.filter((p) => p.change !== null);
   const mostImproved = changeable.length ? changeable.reduce((a, b) => (b.change! > a.change! ? b : a)) : null;
@@ -426,26 +511,58 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
         }
       : { delta: null, firstLabel: null, latestLabel: null };
 
+  // "The latest available month" (this file's Current Month sections) is
+  // the most recent month, WITHIN THE LOADED PERIOD, that has a team
+  // Cumulative Score — i.e. the last entry of scoredMonths above — rather
+  // than assuming the current calendar month has data yet.
+  const currentMonthKey = scoredMonths.length ? scoredMonths[scoredMonths.length - 1].monthKey : null;
+  const currentMonth: CurrentMonthSnapshot | null = currentMonthKey
+    ? {
+        monthKey: currentMonthKey,
+        monthLabel: scoredMonths[scoredMonths.length - 1].monthLabel,
+        cumulative: scoredMonths[scoredMonths.length - 1].avg,
+        cumulativeDelta: momentum.delta,
+        lead: teamMediumSnapshot(pivots, currentMonthKey, "leadScoreAvg", "leadScoreInstances"),
+        payment: teamMediumSnapshot(pivots, currentMonthKey, "paymentsAvg", "paymentsInstances"),
+        chat: teamMediumSnapshot(pivots, currentMonthKey, "chatAvg", "chatInstances"),
+        call: teamMediumSnapshot(pivots, currentMonthKey, "callAvg", "callInstances"),
+      }
+    : null;
+  const { top5: top5CurrentMonth, bottom5: bottom5CurrentMonth } = currentMonthKey
+    ? rankEntries(pivots, (p) => p.monthly[currentMonthKey]?.cumulativeScore ?? null)
+    : { top5: [] as RankedEntry[], bottom5: [] as RankedEntry[] };
+
   const teamMediumAvgs = REAL_MEDIUM_KEYS.map((key) => ({ key, label: MEDIUM_SHORT_LABELS[key], avg: avgArr(pivots.map((p) => p.mediumStats[key].avg)) })).filter(
     (m): m is { key: MediumKey; label: string; avg: number } => m.avg !== null
   );
   const bestMedium = teamMediumAvgs.length ? teamMediumAvgs.reduce((a, b) => (b.avg > a.avg ? b : a)) : null;
   const weakestMedium = teamMediumAvgs.length ? teamMediumAvgs.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
 
+  // Total QA Instances (chart's second line) — Payment+Chat+Call only, same
+  // Lead-exclusion rule as totalInstances/REAL_MEDIUM_KEYS above.
+  const chartData = monthlyTeamAvg.map((m) => ({
+    month: m.monthLabel,
+    score: m.avg,
+    instances: pivots.reduce((sum, p) => sum + (p.monthly[m.monthKey]?.paymentsInstances ?? 0) + (p.monthly[m.monthKey]?.chatInstances ?? 0) + (p.monthly[m.monthKey]?.callInstances ?? 0), 0),
+  }));
+
   return {
     teamAvg,
     momentum,
+    currentMonth,
     highest,
     lowest,
-    top5,
-    bottom5,
+    top5Period,
+    bottom5Period,
+    top5CurrentMonth,
+    bottom5CurrentMonth,
     mostImproved: mostImproved && mostImproved.change! > 0 ? mostImproved : null,
     mostDeclined: mostDeclined && mostDeclined.change! < 0 ? mostDeclined : null,
     totalMapped: pivots.length,
     changeFirstLatest,
     bestMedium,
     weakestMedium,
-    chartData: monthlyTeamAvg.map((m) => ({ month: m.monthLabel, score: m.avg })),
+    chartData,
   };
 }
 
@@ -472,8 +589,6 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
   const [period, setPeriod] = useState<Period>("1y");
   const [customFrom, setCustomFrom] = useState(() => periodToRange("1y").fromMonth);
   const [customTo, setCustomTo] = useState(() => periodToRange("1y").toMonth);
-  const [advisorFilter, setAdvisorFilter] = useState(""); // "" = All
-  const [mediumFilter, setMediumFilter] = useState<Medium>("all");
 
   const [table, setTable] = useState<TeamTrackerTableResult | null>(null);
   const [tableLoading, setTableLoading] = useState(false);
@@ -513,7 +628,6 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
         `/api/qa-dashboard/team-tracker/table?${qs({
           guide: selectedGuide,
           mentor: selectedMentor,
-          tactId: advisorFilter,
           fromMonth,
           toMonth,
         })}`
@@ -526,11 +640,10 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     } finally {
       setTableLoading(false);
     }
-  }, [context, period, customFrom, customTo, advisorFilter, selectedGuide, selectedMentor]);
+  }, [context, period, customFrom, customTo, selectedGuide, selectedMentor]);
 
   // Auto-load once a scope is resolved (Guide/Mentor immediately; Admin
-  // right after picking) — mirrors the QA Dashboard's own "loads on entry,
-  // Load/Refresh button for subsequent changes" convention.
+  // right after picking).
   useEffect(() => {
     if (context && !context.needsSelection) {
       loadTable();
@@ -538,16 +651,24 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [context?.scopeLabel]);
 
+  // Period is now the only page-level control (see this file's header
+  // comment) — picking a new value (or editing a Custom range) auto-reloads
+  // the table instead of requiring a separate "Load Dashboard" click. A
+  // no-op via loadTable's own guard until context resolves, so this never
+  // double-fires the context-triggered load above.
+  useEffect(() => {
+    loadTable();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, customFrom, customTo]);
+
   const handlePickGuide = (guide: string) => {
     setSelectedGuide(guide);
     setSelectedMentor("");
-    setAdvisorFilter("");
     loadContext(guide, "");
   };
   const handlePickMentor = (mentor: string) => {
     setSelectedMentor(mentor);
     setSelectedGuide("");
-    setAdvisorFilter("");
     loadContext("", mentor);
   };
 
@@ -557,17 +678,6 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     { value: "1y", label: "Last 1 Year" },
     { value: "custom", label: "Custom" },
   ];
-  const mediumOptions: CustomSelectOption[] = [
-    { value: "all", label: "All (Cumulative)" },
-    { value: "lead", label: "Lead" },
-    { value: "payment", label: "Payment" },
-    { value: "chat", label: "Chat" },
-    { value: "call", label: "Call" },
-  ];
-  const advisorOptions: CustomSelectOption[] = useMemo(
-    () => [{ value: "", label: "All mapped advisors" }, ...(context?.advisors || []).map((a) => ({ value: a.tactId, label: a.name || a.tactId }))],
-    [context]
-  );
   const guideOptions: CustomSelectOption[] = useMemo(() => (context?.guides || []).map((g) => ({ value: g, label: g })), [context]);
   const mentorOptions: CustomSelectOption[] = useMemo(() => (context?.mentors || []).map((m) => ({ value: m, label: m })), [context]);
 
@@ -593,31 +703,28 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     return map;
   }, [table]);
 
-  // The metric each month's pivot cell shows — Cumulative by default, or a
-  // single medium's own average when the Medium filter narrows to one.
-  // Field key on MonthlyAdvisorRow the metric comes from.
-  const metricField: keyof MonthlyAdvisorRow =
-    mediumFilter === "lead" ? "leadScoreAvg" : mediumFilter === "payment" ? "paymentsAvg" : mediumFilter === "chat" ? "chatAvg" : mediumFilter === "call" ? "callAvg" : "cumulativeScore";
-  const metricLabel = mediumFilter === "all" ? "Cumulative Score" : mediumOptions.find((o) => o.value === mediumFilter)?.label + " QA";
-
   const cellClass = `px-3 py-2 border-b ${dark ? "border-white/[0.05]" : "border-stone-100"}`;
   const headClass = `sticky top-0 z-10 text-left py-2 px-3 font-bold whitespace-nowrap border-b ${
     dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
   }`;
 
-  // Register/clear the "close advisor view" handler with the app-wide
-  // header back button whenever the advisor view opens/closes — see this
-  // file's header comment and App.tsx's goBack.
+  // Register/clear the app-wide header back button's job whenever the
+  // advisor view opens/closes, or (with nothing else registered) let an
+  // Admin step back to the Guide/Mentor picker before leaving the tab —
+  // the only remaining way to change team now that the on-page "Change"
+  // control is gone (see this file's header comment).
   useEffect(() => {
     if (!registerSubPageBack) return;
     if (openPivot) {
       registerSubPageBack(() => setOpenAdvisorTactId(null));
+    } else if (context?.isAdmin && !context.needsSelection) {
+      registerSubPageBack(() => loadContext("", ""));
     } else {
       registerSubPageBack(null);
     }
     return () => registerSubPageBack(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPivot]);
+  }, [openPivot, context?.isAdmin, context?.needsSelection]);
 
   // Opening/closing the advisor detail view swaps content in place (no
   // activeTab change), so App.tsx's own "scroll to top on tab switch"
@@ -704,6 +811,8 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     );
   }
 
+  const pageTitle = context.isAdmin ? `Team Tracker – ${ownerNameFromScope(context.scopeLabel)}` : "Team Tracker";
+
   // ── Main view / advisor detail — same tab, animated swap ───────────────
   return (
     <div className="space-y-5 pb-6">
@@ -737,58 +846,41 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="space-y-5"
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
-                  <Users2 className="w-5 h-5" />
-                  <span>Team Tracker</span>
-                </h1>
-                <p className="text-[13px] mt-1 font-semibold text-content-muted">
-                  {context.scopeLabel}
-                  {context.isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => loadContext("", "")}
-                      className={`ml-2 inline-flex items-center gap-1 underline cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}
-                    >
-                      <Pencil className="w-3 h-3" />
-                      Change
-                    </button>
-                  )}
-                </p>
-              </div>
-            </div>
-
-            {/* FILTERS */}
-            <div className={`flex flex-wrap items-end gap-3 rounded-2xl border p-4 ${dark ? "bg-white/[0.05] border-white/[0.10]" : "bg-surface-elevated border-[var(--border-strong)]"}`}>
-              <label className="flex flex-col gap-1 w-44">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">Period</span>
-                <CustomSelect theme={theme} value={period} onChange={(v) => setPeriod(v as Period)} options={periodOptions} triggerClassName={inputClass(dark) + " w-full flex items-center justify-between gap-2 pr-8 cursor-pointer relative"} />
-              </label>
-              {period === "custom" && (
-                <>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">From</span>
+            {/* Title + the one remaining page-level control (Period) sit
+                where the old "<scope> · Change" line used to be — see this
+                file's header comment. CustomSelect already opens as a
+                floating panel and closes itself the moment a value is
+                picked, so it satisfies "a controller that collapses once
+                the required change is made" without any extra state. */}
+            <div>
+              <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
+                <Users2 className="w-5 h-5" />
+                <span>{pageTitle}</span>
+              </h1>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <CustomSelect
+                  theme={theme}
+                  value={period}
+                  onChange={(v) => setPeriod(v as Period)}
+                  options={periodOptions}
+                  triggerClassName={`inline-flex items-center gap-2 pl-3 pr-8 py-1.5 rounded-lg border text-[13px] font-bold cursor-pointer relative ${
+                    dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                  }`}
+                />
+                {period === "custom" && (
+                  <>
                     <input type="month" value={customFrom} max={customTo} onChange={(e) => setCustomFrom(e.target.value)} onClick={openNativePicker} className={inputClass(dark) + " cursor-pointer"} />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">To</span>
+                    <span className="text-[13px] text-content-muted">to</span>
                     <input type="month" value={customTo} min={customFrom} onChange={(e) => setCustomTo(e.target.value)} onClick={openNativePicker} className={inputClass(dark) + " cursor-pointer"} />
-                  </label>
-                </>
-              )}
-              <label className="flex flex-col gap-1 w-56">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">Advisor</span>
-                <CustomSelect theme={theme} value={advisorFilter} onChange={setAdvisorFilter} options={advisorOptions} triggerClassName={inputClass(dark) + " w-full flex items-center justify-between gap-2 pr-8 cursor-pointer relative"} />
-              </label>
-              <label className="flex flex-col gap-1 w-44">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">Medium</span>
-                <CustomSelect theme={theme} value={mediumFilter} onChange={(v) => setMediumFilter(v as Medium)} options={mediumOptions} triggerClassName={inputClass(dark) + " w-full flex items-center justify-between gap-2 pr-8 cursor-pointer relative"} />
-              </label>
-              <ClippedButton onClick={loadTable} size="md" className="h-8 gap-2 px-4 text-[13px] font-bold text-white hover:brightness-110 shrink-0" style={{ background: "#1f2d3d" }}>
-                <RefreshCw className="w-3 h-3" />
-                {tableLoading ? "Loading…" : "Load Dashboard"}
-              </ClippedButton>
+                  </>
+                )}
+                {tableLoading && (
+                  <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-content-muted">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Loading…
+                  </span>
+                )}
+              </div>
             </div>
 
             {tableError ? (
@@ -798,17 +890,12 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
               </div>
             ) : (
               <>
-                {/* Team-wide aggregate insights only make sense when looking
-                    at more than one advisor — hidden once the Advisor filter
-                    narrows the view to a single person. */}
-                {advisorFilter === "" && <TeamInsights dark={dark} theme={theme} insights={insights} onOpenAdvisor={openAdvisor} />}
+                <TeamInsights dark={dark} theme={theme} insights={insights} onOpenAdvisor={openAdvisor} />
                 <TeamPivotTable
                   dark={dark}
                   pivots={pivots}
                   months={displayMonths}
                   prevMonthKeyOf={prevMonthKeyOf}
-                  metricField={metricField}
-                  metricLabel={metricLabel || "Cumulative Score"}
                   loading={tableLoading}
                   onOpenAdvisor={openAdvisor}
                   cellClass={cellClass}
@@ -823,30 +910,143 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
   );
 }
 
-// ── Shared score trend line chart — used at both team and advisor level ──
-function ScoreTrendChart({ dark, theme, data }: { dark: boolean; theme: "light" | "dark"; data: { month: string; score: number | null }[] }) {
+// ── Shared score trend line chart — used at both team and advisor level.
+// Dual-axis: Cumulative Score (0–5, left, visually primary) plus a second
+// "QA Instances" line/axis when the data includes it — see Task 1 item 6.
+// A data point with `instances` omitted/undefined (never produced by this
+// file today, but kept optional so the single-axis shape still typechecks
+// anywhere this gets reused) simply draws no instances line. ────────────
+function ScoreTrendChart({ dark, theme, data }: { dark: boolean; theme: "light" | "dark"; data: { month: string; score: number | null; instances?: number }[] }) {
+  const hasInstances = data.some((d) => typeof d.instances === "number");
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
+      <LineChart data={data} margin={{ top: 8, right: hasInstances ? 8 : 16, left: -12, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#1F2937" : "#E5E7EB"} />
         <XAxis dataKey="month" stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
-        <YAxis domain={[0, 5]} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
+        <YAxis yAxisId="score" domain={[0, 5]} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
+        {hasInstances && (
+          <YAxis yAxisId="instances" orientation="right" allowDecimals={false} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
+        )}
         <Tooltip
           content={({ active, payload, label }) => {
             if (active && payload && payload.length) {
               return (
                 <div className={`p-2 rounded-lg border text-[11px] font-sans shadow-lg font-bold ${dark ? "bg-stone-900 border-stone-800 text-zinc-100" : "bg-white border-stone-200 text-stone-950"}`}>
                   <p className="opacity-75 mb-0.5">{label}</p>
-                  <p className="font-black">{payload[0].value ?? "NA"}</p>
+                  {payload.map((p) => (
+                    <p key={p.dataKey as string} className="font-black">
+                      {p.dataKey === "score" ? "Score: " : "Instances: "}
+                      {p.value ?? "NA"}
+                    </p>
+                  ))}
                 </div>
               );
             }
             return null;
           }}
         />
-        <Line type="monotone" dataKey="score" stroke="#117FDA" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        {hasInstances && <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />}
+        <Line yAxisId="score" type="monotone" dataKey="score" name="Cumulative Score" stroke="#117FDA" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        {hasInstances && <Line yAxisId="instances" type="monotone" dataKey="instances" name="QA Instances" stroke="#9CA3AF" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2 }} />}
       </LineChart>
     </ResponsiveContainer>
+  );
+}
+
+// ── Current Month KPI row — the "actual QA data" latest-scored-month
+// snapshot (Task 1 item 3), shared by the team main view and the advisor
+// detail view. `monthLabel: null` means nothing in the loaded period has a
+// Cumulative Score yet. ────────────────────────────────────────────────
+function CurrentMonthKpiRow({
+  dark,
+  monthLabel,
+  cumulative,
+  cumulativeDelta,
+  lead,
+  payment,
+  chat,
+  call,
+}: {
+  dark: boolean;
+  monthLabel: string | null;
+  cumulative: number | null;
+  cumulativeDelta: number | null;
+  lead: MediumSnapshot;
+  payment: MediumSnapshot;
+  chat: MediumSnapshot;
+  call: MediumSnapshot;
+}) {
+  const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
+  const label = "text-[10px] font-bold uppercase tracking-wider text-content-muted";
+
+  if (!monthLabel) {
+    return (
+      <div className={`rounded-xl border p-4 text-[13px] font-semibold text-content-muted ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
+        No scored months in the selected period yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className={`flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>
+        <span>Current Month</span>
+        <span className={`font-semibold normal-case tracking-normal ${dark ? "text-slate-400" : "text-stone-500"}`}>· {monthLabel}</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className={card}>
+          <span className={label}>Cumulative Score</span>
+          <span className={`text-2xl font-black ${scoreTextClass(cumulative, dark)}`}>{cumulative ?? "—"}</span>
+          {cumulativeDelta !== null ? (
+            <span className={`flex items-center gap-1 text-[11px] font-bold ${deltaTextClass(cumulativeDelta, dark)}`}>
+              <DeltaIcon delta={cumulativeDelta} />
+              {cumulativeDelta > 0 ? "+" : ""}
+              {cumulativeDelta} MoM
+            </span>
+          ) : (
+            <span className="text-[11px] text-content-muted">No prior month to compare</span>
+          )}
+        </div>
+        <MediumKpiCard dark={dark} label="Lead Score" icon={MEDIUM_ICONS.lead} stat={lead} />
+        <MediumKpiCard dark={dark} label="Payment QA" icon={MEDIUM_ICONS.payment} stat={payment} />
+        <MediumKpiCard dark={dark} label="Chat QA" icon={MEDIUM_ICONS.chat} stat={chat} />
+        <MediumKpiCard dark={dark} label="Call QA" icon={MEDIUM_ICONS.call} stat={call} />
+      </div>
+    </div>
+  );
+}
+function MediumKpiCard({ dark, label, icon, stat }: { dark: boolean; label: string; icon: ReactNode; stat: MediumSnapshot }) {
+  const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
+  return (
+    <div className={card}>
+      <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-content-muted`}>
+        {icon}
+        {label}
+      </span>
+      <span className={`text-2xl font-black ${scoreTextClass(stat.avg, dark)}`}>{stat.avg ?? "—"}</span>
+      <span className="text-[11px] text-content-muted">
+        {stat.instances} instance{stat.instances === 1 ? "" : "s"}
+      </span>
+    </div>
+  );
+}
+
+function SegmentedToggle<T extends string>({ value, onChange, options, dark }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; dark: boolean }) {
+  return (
+    <div className={`inline-flex rounded-lg border p-0.5 ${dark ? "bg-white/[0.04] border-white/[0.10]" : "bg-stone-100 border-stone-200"}`}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+            value === o.value ? "bg-[#117FDA] text-white" : dark ? "text-slate-300 hover:text-white" : "text-stone-500 hover:text-stone-800"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -862,104 +1062,136 @@ function TeamInsights({
   insights: TeamInsightsData;
   onOpenAdvisor: (tactId: string) => void;
 }) {
+  const [rankMode, setRankMode] = useState<RankMode>("current");
   const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
   const label = "text-[11px] font-bold uppercase tracking-wider text-content-muted";
   const iconClass = dark ? "text-slate-400" : "text-stone-400";
   const hasChartData = insights.chartData.filter((d) => d.score !== null).length > 1;
+  const rankedTop5 = rankMode === "current" ? insights.top5CurrentMonth : insights.top5Period;
+  const rankedBottom5 = rankMode === "current" ? insights.bottom5CurrentMonth : insights.bottom5Period;
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            <Users2 className={`w-3.5 h-3.5 ${iconClass}`} />
-            Team Average QA
-          </span>
-          <span className={`text-2xl font-black ${scoreTextClass(insights.teamAvg, dark)}`}>{insights.teamAvg ?? "—"}</span>
-          {insights.momentum.delta !== null ? (
-            <span className={`flex items-center gap-1 text-[11px] font-bold ${deltaTextClass(insights.momentum.delta, dark)}`}>
-              <DeltaIcon delta={insights.momentum.delta} />
-              {insights.momentum.delta > 0 ? "+" : ""}
-              {insights.momentum.delta} vs {insights.momentum.prevLabel}
+      <CurrentMonthKpiRow
+        dark={dark}
+        monthLabel={insights.currentMonth?.monthLabel ?? null}
+        cumulative={insights.currentMonth?.cumulative ?? null}
+        cumulativeDelta={insights.currentMonth?.cumulativeDelta ?? null}
+        lead={insights.currentMonth?.lead ?? EMPTY_MEDIUM_SNAPSHOT}
+        payment={insights.currentMonth?.payment ?? EMPTY_MEDIUM_SNAPSHOT}
+        chat={insights.currentMonth?.chat ?? EMPTY_MEDIUM_SNAPSHOT}
+        call={insights.currentMonth?.call ?? EMPTY_MEDIUM_SNAPSHOT}
+      />
+
+      <div className="space-y-2">
+        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Selected Period</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              <Users2 className={`w-3.5 h-3.5 ${iconClass}`} />
+              Cumulative Score
             </span>
-          ) : (
-            <span className="text-[11px] text-content-muted">Not enough data yet</span>
-          )}
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            <Trophy className={`w-3.5 h-3.5 ${iconClass}`} />
-            Highest Performer
-          </span>
-          <button
-            onClick={() => insights.highest && onOpenAdvisor(insights.highest.tactId)}
-            className={`text-[15px] font-bold truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
-          >
-            {insights.highest ? insights.highest.name : "—"}
-          </button>
-          {insights.highest && <span className="text-[13px] font-semibold text-emerald-500">{insights.highest.avgCumulative}</span>}
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            <TrendingDown className={`w-3.5 h-3.5 ${iconClass}`} />
-            Lowest Performer
-          </span>
-          <button
-            onClick={() => insights.lowest && onOpenAdvisor(insights.lowest.tactId)}
-            className={`text-[15px] font-bold truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
-          >
-            {insights.lowest ? insights.lowest.name : "—"}
-          </button>
-          {insights.lowest && <span className={`text-[13px] font-semibold ${insights.lowest.avgCumulative! < SCORE_DANGER ? "text-red-500" : "text-content-muted"}`}>{insights.lowest.avgCumulative}</span>}
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            <TrendingUp className={`w-3.5 h-3.5 ${iconClass}`} />
-            Change (First → Latest)
-          </span>
-          {insights.changeFirstLatest.delta !== null ? (
-            <>
-              <span className={`flex items-center gap-1 text-xl font-black ${deltaTextClass(insights.changeFirstLatest.delta, dark)}`}>
-                <DeltaIcon delta={insights.changeFirstLatest.delta} />
-                {insights.changeFirstLatest.delta > 0 ? "+" : ""}
-                {insights.changeFirstLatest.delta}
+            <span className={`text-2xl font-black ${scoreTextClass(insights.teamAvg, dark)}`}>{insights.teamAvg ?? "—"}</span>
+            {insights.momentum.delta !== null ? (
+              <span className={`flex items-center gap-1 text-[11px] font-bold ${deltaTextClass(insights.momentum.delta, dark)}`}>
+                <DeltaIcon delta={insights.momentum.delta} />
+                {insights.momentum.delta > 0 ? "+" : ""}
+                {insights.momentum.delta} vs {insights.momentum.prevLabel}
               </span>
-              <span className="text-[11px] text-content-muted">
-                {insights.changeFirstLatest.firstLabel} → {insights.changeFirstLatest.latestLabel}
-              </span>
-            </>
-          ) : (
-            <span className="text-[13px] text-content-muted">Not enough data yet</span>
-          )}
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            {insights.bestMedium ? MEDIUM_ICONS[insights.bestMedium.key] : <Target className={`w-3.5 h-3.5 ${iconClass}`} />}
-            Best Medium
-          </span>
-          <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.bestMedium ? insights.bestMedium.label : "—"}</span>
-          {insights.bestMedium && <span className="text-[13px] font-semibold text-emerald-500">{insights.bestMedium.avg}</span>}
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            {insights.weakestMedium ? MEDIUM_ICONS[insights.weakestMedium.key] : <Target className={`w-3.5 h-3.5 ${iconClass}`} />}
-            Weakest Medium
-          </span>
-          <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.weakestMedium ? insights.weakestMedium.label : "—"}</span>
-          {insights.weakestMedium && <span className={`text-[13px] font-semibold ${insights.weakestMedium.avg < SCORE_DANGER ? "text-red-500" : "text-content-muted"}`}>{insights.weakestMedium.avg}</span>}
-        </div>
-        <div className={card}>
-          <span className={`${label} flex items-center gap-1`}>
-            <Users2 className={`w-3.5 h-3.5 ${iconClass}`} />
-            Total Mapped Advisors
-          </span>
-          <span className={`text-2xl font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.totalMapped}</span>
+            ) : (
+              <span className="text-[11px] text-content-muted">Not enough data yet</span>
+            )}
+          </div>
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              <Trophy className={`w-3.5 h-3.5 ${iconClass}`} />
+              Highest Performer
+            </span>
+            <button
+              onClick={() => insights.highest && onOpenAdvisor(insights.highest.tactId)}
+              className={`text-[15px] font-bold truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
+            >
+              {insights.highest ? insights.highest.name : "—"}
+            </button>
+            {insights.highest && <span className="text-[13px] font-semibold text-emerald-500">{insights.highest.avgCumulative}</span>}
+          </div>
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              <TrendingDown className={`w-3.5 h-3.5 ${iconClass}`} />
+              Lowest Performer
+            </span>
+            <button
+              onClick={() => insights.lowest && onOpenAdvisor(insights.lowest.tactId)}
+              className={`text-[15px] font-bold truncate text-left cursor-pointer hover:underline ${dark ? "text-white" : "text-stone-900"}`}
+            >
+              {insights.lowest ? insights.lowest.name : "—"}
+            </button>
+            {insights.lowest && <span className={`text-[13px] font-semibold ${insights.lowest.avgCumulative! < SCORE_DANGER ? "text-red-500" : "text-content-muted"}`}>{insights.lowest.avgCumulative}</span>}
+          </div>
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              <TrendingUp className={`w-3.5 h-3.5 ${iconClass}`} />
+              Change (First → Latest)
+            </span>
+            {insights.changeFirstLatest.delta !== null ? (
+              <>
+                <span className={`flex items-center gap-1 text-xl font-black ${deltaTextClass(insights.changeFirstLatest.delta, dark)}`}>
+                  <DeltaIcon delta={insights.changeFirstLatest.delta} />
+                  {insights.changeFirstLatest.delta > 0 ? "+" : ""}
+                  {insights.changeFirstLatest.delta}
+                </span>
+                <span className="text-[11px] text-content-muted">
+                  {insights.changeFirstLatest.firstLabel} → {insights.changeFirstLatest.latestLabel}
+                </span>
+              </>
+            ) : (
+              <span className="text-[13px] text-content-muted">Not enough data yet</span>
+            )}
+          </div>
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              {insights.bestMedium ? MEDIUM_ICONS[insights.bestMedium.key] : <Target className={`w-3.5 h-3.5 ${iconClass}`} />}
+              Best Medium
+            </span>
+            <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.bestMedium ? insights.bestMedium.label : "—"}</span>
+            {insights.bestMedium && <span className="text-[13px] font-semibold text-emerald-500">{insights.bestMedium.avg}</span>}
+          </div>
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              {insights.weakestMedium ? MEDIUM_ICONS[insights.weakestMedium.key] : <Target className={`w-3.5 h-3.5 ${iconClass}`} />}
+              Weakest Medium
+            </span>
+            <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.weakestMedium ? insights.weakestMedium.label : "—"}</span>
+            {insights.weakestMedium && <span className={`text-[13px] font-semibold ${insights.weakestMedium.avg < SCORE_DANGER ? "text-red-500" : "text-content-muted"}`}>{insights.weakestMedium.avg}</span>}
+          </div>
+          <div className={card}>
+            <span className={`${label} flex items-center gap-1`}>
+              <Users2 className={`w-3.5 h-3.5 ${iconClass}`} />
+              Total Mapped Advisors
+            </span>
+            <span className={`text-2xl font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.totalMapped}</span>
+          </div>
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Trend &amp; Rankings</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-content-muted">Rank Top 5 / Bottom 5 by</span>
+          <SegmentedToggle
+            value={rankMode}
+            onChange={setRankMode}
+            options={[
+              { value: "current", label: "Current Month" },
+              { value: "period", label: "Selected Period" },
+            ]}
+            dark={dark}
+          />
+        </div>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-3">
         <div className={`rounded-xl border p-3 flex flex-col ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
-          <h3 className={`text-[11px] font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-[#111827]"}`}>Cumulative Score Trend</h3>
+          <h4 className={`text-[11px] font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-[#111827]"}`}>Cumulative Score &amp; QA Instances Trend</h4>
           {hasChartData ? (
             <div className="w-full h-48 font-sans text-[11px] font-bold">
               <ScoreTrendChart dark={dark} theme={theme} data={insights.chartData} />
@@ -968,16 +1200,36 @@ function TeamInsights({
             <div className="flex-1 flex items-center justify-center py-10 text-[13px] text-content-muted">Not enough scored months yet.</div>
           )}
         </div>
-        <RankedList title="Top 5 Performers" icon={<Trophy className="w-3.5 h-3.5 text-amber-500" />} entries={insights.top5} dark={dark} tone="good" onSelect={onOpenAdvisor} />
-        <RankedList title="Bottom 5 Performers" icon={<AlertTriangle className="w-3.5 h-3.5 text-red-500" />} entries={insights.bottom5} dark={dark} tone="poor" onSelect={onOpenAdvisor} />
+        <RankedList
+          title="Top 5 Performers"
+          icon={<Trophy className="w-3.5 h-3.5 text-amber-500" />}
+          entries={rankedTop5}
+          dark={dark}
+          tone="good"
+          onSelect={onOpenAdvisor}
+          emptyLabel={rankMode === "current" ? "No scores for the current month yet." : "No scored advisors yet."}
+        />
+        <RankedList
+          title="Bottom 5 Performers"
+          icon={<AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
+          entries={rankedBottom5}
+          dark={dark}
+          tone="poor"
+          onSelect={onOpenAdvisor}
+          emptyLabel={rankMode === "current" ? "No scores for the current month yet." : "No scored advisors yet."}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className={card}>
           <span className={label}>Most Improved</span>
+          <span className="text-[10px] text-content-muted -mt-0.5">Selected period, first vs. latest month</span>
           {insights.mostImproved ? (
-            <button onClick={() => onOpenAdvisor(insights.mostImproved!.tactId)} className="flex items-center justify-between gap-2 cursor-pointer">
-              <span className={`text-[15px] font-bold hover:underline ${dark ? "text-white" : "text-stone-900"}`}>{insights.mostImproved.name}</span>
+            <button
+              onClick={() => onOpenAdvisor(insights.mostImproved!.tactId)}
+              className={`flex items-center justify-between gap-2 -mx-2 px-2 py-1.5 mt-0.5 rounded-lg cursor-pointer transition-colors ${dark ? "hover:bg-white/[0.05]" : "hover:bg-stone-50"}`}
+            >
+              <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.mostImproved.name}</span>
               <span className="flex items-center gap-1 text-[13px] font-black text-emerald-500">
                 <TrendingUp className="w-3.5 h-3.5" />+{insights.mostImproved.change}
               </span>
@@ -988,9 +1240,13 @@ function TeamInsights({
         </div>
         <div className={card}>
           <span className={label}>Most Declined</span>
+          <span className="text-[10px] text-content-muted -mt-0.5">Selected period, first vs. latest month</span>
           {insights.mostDeclined ? (
-            <button onClick={() => onOpenAdvisor(insights.mostDeclined!.tactId)} className="flex items-center justify-between gap-2 cursor-pointer">
-              <span className={`text-[15px] font-bold hover:underline ${dark ? "text-white" : "text-stone-900"}`}>{insights.mostDeclined.name}</span>
+            <button
+              onClick={() => onOpenAdvisor(insights.mostDeclined!.tactId)}
+              className={`flex items-center justify-between gap-2 -mx-2 px-2 py-1.5 mt-0.5 rounded-lg cursor-pointer transition-colors ${dark ? "hover:bg-white/[0.05]" : "hover:bg-stone-50"}`}
+            >
+              <span className={`text-[15px] font-bold ${dark ? "text-white" : "text-stone-900"}`}>{insights.mostDeclined.name}</span>
               <span className="flex items-center gap-1 text-[13px] font-black text-red-500">
                 <TrendingDown className="w-3.5 h-3.5" />
                 {insights.mostDeclined.change}
@@ -1012,13 +1268,15 @@ function RankedList({
   dark,
   tone,
   onSelect,
+  emptyLabel,
 }: {
   title: string;
   icon: ReactNode;
-  entries: AdvisorPivot[];
+  entries: RankedEntry[];
   dark: boolean;
   tone: "good" | "poor";
   onSelect: (tactId: string) => void;
+  emptyLabel?: string;
 }) {
   return (
     <div className={`rounded-xl border p-3 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
@@ -1027,20 +1285,20 @@ function RankedList({
         <h3 className={`text-[13px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>{title}</h3>
       </div>
       {entries.length === 0 ? (
-        <p className="text-[13px] text-content-muted py-2">No scored advisors yet.</p>
+        <p className="text-[13px] text-content-muted py-2">{emptyLabel || "No scored advisors yet."}</p>
       ) : (
         <ol className="space-y-1">
-          {entries.map((a, i) => (
-            <li key={a.tactId}>
+          {entries.map((e, i) => (
+            <li key={e.tactId}>
               <button
-                onClick={() => onSelect(a.tactId)}
+                onClick={() => onSelect(e.tactId)}
                 className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${dark ? "hover:bg-white/[0.05]" : "hover:bg-stone-50"}`}
               >
                 <span className="flex items-center gap-2 min-w-0">
                   <span className="text-[11px] font-bold text-content-muted w-4 shrink-0">{i + 1}</span>
-                  <span className={`text-[13px] font-bold truncate ${dark ? "text-white" : "text-stone-900"}`}>{a.name}</span>
+                  <span className={`text-[13px] font-bold truncate ${dark ? "text-white" : "text-stone-900"}`}>{e.name}</span>
                 </span>
-                <span className={`text-[13px] font-black shrink-0 ${tone === "good" ? "text-emerald-500" : "text-red-500"}`}>{a.avgCumulative}</span>
+                <span className={`text-[13px] font-black shrink-0 ${tone === "good" ? "text-emerald-500" : "text-red-500"}`}>{e.value}</span>
               </button>
             </li>
           ))}
@@ -1051,14 +1309,14 @@ function RankedList({
 }
 
 // ── Team pivot table — one row per advisor, months as columns (newest
-// first — see the header comment on displayMonths/prevMonthKeyOf) ────────
+// first — see the header comment on displayMonths/prevMonthKeyOf). Always
+// shows Cumulative Score (the Medium filter that used to switch this was
+// removed — see this file's header comment). ─────────────────────────────
 function TeamPivotTable({
   dark,
   pivots,
   months,
   prevMonthKeyOf,
-  metricField,
-  metricLabel,
   loading,
   onOpenAdvisor,
   cellClass,
@@ -1068,8 +1326,6 @@ function TeamPivotTable({
   pivots: AdvisorPivot[];
   months: MonthSpec[];
   prevMonthKeyOf: Record<string, string | undefined>;
-  metricField: keyof MonthlyAdvisorRow;
-  metricLabel: string;
   loading: boolean;
   onOpenAdvisor: (tactId: string) => void;
   cellClass: string;
@@ -1078,8 +1334,10 @@ function TeamPivotTable({
   return (
     <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08]" : "border-[var(--border)]"}`}>
       <div className="flex items-center justify-between px-3 py-2 border-b text-[11px] font-bold uppercase tracking-wider text-content-muted border-inherit">
-        <span>Showing: {metricLabel}</span>
-        <span>{pivots.length} advisor{pivots.length === 1 ? "" : "s"}</span>
+        <span>Cumulative Score — Selected Period, by Month</span>
+        <span>
+          {pivots.length} advisor{pivots.length === 1 ? "" : "s"}
+        </span>
       </div>
       {/* Own scroll container, capped well below the viewport so the table
           never grows the page itself — every mapped advisor is reachable
@@ -1110,7 +1368,7 @@ function TeamPivotTable({
             ) : (
               pivots.map((p) => (
                 <Fragment key={p.tactId}>
-                  <PivotAdvisorRow dark={dark} pivot={p} months={months} prevMonthKeyOf={prevMonthKeyOf} metricField={metricField} onOpen={() => onOpenAdvisor(p.tactId)} cellClass={cellClass} />
+                  <PivotAdvisorRow dark={dark} pivot={p} months={months} prevMonthKeyOf={prevMonthKeyOf} onOpen={() => onOpenAdvisor(p.tactId)} cellClass={cellClass} />
                 </Fragment>
               ))
             )}
@@ -1126,7 +1384,6 @@ function PivotAdvisorRow({
   pivot,
   months,
   prevMonthKeyOf,
-  metricField,
   onOpen,
   cellClass,
 }: {
@@ -1134,7 +1391,6 @@ function PivotAdvisorRow({
   pivot: AdvisorPivot;
   months: MonthSpec[];
   prevMonthKeyOf: Record<string, string | undefined>;
-  metricField: keyof MonthlyAdvisorRow;
   onOpen: () => void;
   cellClass: string;
 }) {
@@ -1164,17 +1420,17 @@ function PivotAdvisorRow({
       </td>
       {months.map((m) => {
         const row = pivot.monthly[m.key];
-        const val = row ? (row[metricField] as number | null) : null;
+        const val = row ? row.cumulativeScore : null;
         const prevKey = prevMonthKeyOf[m.key];
         const prevRow = prevKey ? pivot.monthly[prevKey] : undefined;
-        const prevVal = prevRow ? (prevRow[metricField] as number | null) : null;
+        const prevVal = prevRow ? prevRow.cumulativeScore : null;
         return (
           <td key={m.key} className={cellClass + " text-center"}>
             {val === null ? (
               <span className="text-content-muted italic">NA</span>
             ) : (
               <span className="inline-flex items-center gap-1 justify-center">
-                <span className={`inline-block pl-2 ${scoreFlagClasses(val, dark)}`}>{val}</span>
+                <span className={scoreFlagClasses(val, dark)}>{val}</span>
                 <TrendArrow curr={val} prev={prevVal} />
               </span>
             )}
@@ -1210,7 +1466,9 @@ function MediumStatCard({ dark, mediumKey, stat }: { dark: boolean; mediumKey: M
           <span className={`text-xl font-black ${blunderTextClass(stat.blunderPct, dark)}`}>{stat.blunderPct === null ? "—" : `${stat.blunderPct}%`}</span>
         </div>
       </div>
-      <span className="text-[11px] text-content-muted">{stat.instances} evaluation{stat.instances === 1 ? "" : "s"}</span>
+      <span className="text-[11px] text-content-muted">
+        {stat.instances} evaluation{stat.instances === 1 ? "" : "s"}
+      </span>
     </div>
   );
 }
@@ -1230,7 +1488,7 @@ function AdvisorDetailView({
   orderedRows: MonthlyAdvisorRow[];
   prevMonthKeyOf: Record<string, string | undefined>;
 }) {
-  const chartData = orderedRows.map((r) => ({ month: r.monthLabel, score: r.cumulativeScore }));
+  const chartData = orderedRows.map((r) => ({ month: r.monthLabel, score: r.cumulativeScore, instances: r.paymentsInstances + r.chatInstances + r.callInstances }));
   const hasChartData = chartData.filter((d) => d.score !== null).length > 1;
   const displayRows = useMemo(() => [...orderedRows].reverse(), [orderedRows]);
 
@@ -1244,6 +1502,15 @@ function AdvisorDetailView({
     return map;
   }, [orderedRows]);
 
+  // This advisor's own latest-scored-month snapshot (see AdvisorPivot's
+  // latestScoredRow comment) — independent of the team-wide "Current
+  // Month" the main page uses, since one advisor can be missing more
+  // recent data than the team overall.
+  const latest = pivot.latestScoredRow;
+  const latestPrevRow = latest ? rowsByMonthKey[prevMonthKeyOf[latest.monthKey] ?? ""] : undefined;
+  const latestCumulativeDelta =
+    latest && latestPrevRow && latest.cumulativeScore !== null && latestPrevRow.cumulativeScore !== null ? round2(latest.cumulativeScore - latestPrevRow.cumulativeScore) : null;
+
   const groupHeadClass = `sticky top-0 z-10 text-center py-1.5 px-2 font-bold whitespace-nowrap border-b ${
     dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
   }`;
@@ -1254,42 +1521,56 @@ function AdvisorDetailView({
 
   return (
     <div className="space-y-4">
-      {/* Period-level insights */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div className={card}>
-          <span className={statLabel}>Period Avg</span>
-          <span className={`${statValue} ${scoreTextClass(pivot.avgCumulative, dark)}`}>{pivot.avgCumulative ?? "—"}</span>
-        </div>
-        <div className={card}>
-          <span className={statLabel}>Highest Month</span>
-          <span className={`${statValue} text-emerald-500`}>{pivot.highest ? `${pivot.highest.score} (${pivot.highest.monthLabel})` : "—"}</span>
-        </div>
-        <div className={card}>
-          <span className={statLabel}>Lowest Month</span>
-          <span className={`${statValue} ${pivot.lowest && pivot.lowest.score < SCORE_DANGER ? "text-red-500" : ""}`}>{pivot.lowest ? `${pivot.lowest.score} (${pivot.lowest.monthLabel})` : "—"}</span>
-        </div>
-        <div className={card}>
-          <span className={statLabel}>Change (First → Latest)</span>
-          <span className={`${statValue} flex items-center gap-1 ${deltaTextClass(pivot.change, dark)}`}>
-            <DeltaIcon delta={pivot.change} />
-            {pivot.change === null ? "—" : `${pivot.change > 0 ? "+" : ""}${pivot.change}`}
-          </span>
-        </div>
-        <div className={card}>
-          <span className={statLabel}>Best Medium</span>
-          <span className={`${statValue} text-emerald-500`}>{pivot.bestMedium ? `${pivot.bestMedium.label} (${pivot.bestMedium.avg})` : "—"}</span>
-        </div>
-        <div className={card}>
-          <span className={statLabel}>Weakest Medium</span>
-          <span className={`${statValue} ${pivot.weakestMedium && pivot.weakestMedium.avg < SCORE_DANGER ? "text-red-500" : ""}`}>{pivot.weakestMedium ? `${pivot.weakestMedium.label} (${pivot.weakestMedium.avg})` : "—"}</span>
-        </div>
-        <div className={card}>
-          <span className={statLabel}>Total Evaluations</span>
-          <span className={statValue}>{pivot.totalInstances}</span>
+      <CurrentMonthKpiRow
+        dark={dark}
+        monthLabel={latest?.monthLabel ?? null}
+        cumulative={latest?.cumulativeScore ?? null}
+        cumulativeDelta={latestCumulativeDelta}
+        lead={{ avg: latest?.leadScoreAvg ?? null, instances: latest?.leadScoreInstances ?? 0 }}
+        payment={{ avg: latest?.paymentsAvg ?? null, instances: latest?.paymentsInstances ?? 0 }}
+        chat={{ avg: latest?.chatAvg ?? null, instances: latest?.chatInstances ?? 0 }}
+        call={{ avg: latest?.callAvg ?? null, instances: latest?.callInstances ?? 0 }}
+      />
+
+      {/* Selected-period insights */}
+      <div className="space-y-2">
+        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Selected Period</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div className={card}>
+            <span className={statLabel}>Period Avg</span>
+            <span className={`${statValue} ${scoreTextClass(pivot.avgCumulative, dark)}`}>{pivot.avgCumulative ?? "—"}</span>
+          </div>
+          <div className={card}>
+            <span className={statLabel}>Highest Month</span>
+            <span className={`${statValue} text-emerald-500`}>{pivot.highest ? `${pivot.highest.score} (${pivot.highest.monthLabel})` : "—"}</span>
+          </div>
+          <div className={card}>
+            <span className={statLabel}>Lowest Month</span>
+            <span className={`${statValue} ${pivot.lowest && pivot.lowest.score < SCORE_DANGER ? "text-red-500" : ""}`}>{pivot.lowest ? `${pivot.lowest.score} (${pivot.lowest.monthLabel})` : "—"}</span>
+          </div>
+          <div className={card}>
+            <span className={statLabel}>Change (First → Latest)</span>
+            <span className={`${statValue} flex items-center gap-1 ${deltaTextClass(pivot.change, dark)}`}>
+              <DeltaIcon delta={pivot.change} />
+              {pivot.change === null ? "—" : `${pivot.change > 0 ? "+" : ""}${pivot.change}`}
+            </span>
+          </div>
+          <div className={card}>
+            <span className={statLabel}>Best Medium</span>
+            <span className={`${statValue} text-emerald-500`}>{pivot.bestMedium ? `${pivot.bestMedium.label} (${pivot.bestMedium.avg})` : "—"}</span>
+          </div>
+          <div className={card}>
+            <span className={statLabel}>Weakest Medium</span>
+            <span className={`${statValue} ${pivot.weakestMedium && pivot.weakestMedium.avg < SCORE_DANGER ? "text-red-500" : ""}`}>{pivot.weakestMedium ? `${pivot.weakestMedium.label} (${pivot.weakestMedium.avg})` : "—"}</span>
+          </div>
+          <div className={card}>
+            <span className={statLabel}>Total Evaluations</span>
+            <span className={statValue}>{pivot.totalInstances}</span>
+          </div>
         </div>
       </div>
 
-      {/* Per-medium QA Score + Blunder % */}
+      {/* Per-medium QA Score + Blunder % (whole selected period) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MediumStatCard dark={dark} mediumKey="lead" stat={pivot.mediumStats.lead} />
         <MediumStatCard dark={dark} mediumKey="payment" stat={pivot.mediumStats.payment} />
@@ -1299,7 +1580,7 @@ function AdvisorDetailView({
 
       {hasChartData && (
         <div className={`rounded-xl border p-4 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
-          <h4 className={`text-[11px] font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-[#111827]"}`}>Cumulative Score Trend</h4>
+          <h4 className={`text-[11px] font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-[#111827]"}`}>Cumulative Score &amp; QA Instances Trend</h4>
           <div className="w-full h-64 font-sans text-[11px] font-bold">
             <ScoreTrendChart dark={dark} theme={theme} data={chartData} />
           </div>
@@ -1357,19 +1638,19 @@ function AdvisorDetailView({
                       </span>
                     </td>
                     <td className={bodyCell}>
-                      <span className={`inline-block pl-2.5 ${scoreFlagClasses(r.leadScoreAvg, dark)}`}>{r.leadScoreAvg ?? "NA"}</span>
+                      <span className={scoreFlagClasses(r.leadScoreAvg, dark)}>{r.leadScoreAvg ?? "NA"}</span>
                     </td>
                     <td className={bodyCell}>{r.leadScoreInstances}</td>
                     <td className={bodyCell}>
-                      <span className={`inline-block pl-2.5 ${scoreFlagClasses(r.paymentsAvg, dark)}`}>{r.paymentsAvg ?? "NA"}</span>
+                      <span className={scoreFlagClasses(r.paymentsAvg, dark)}>{r.paymentsAvg ?? "NA"}</span>
                     </td>
                     <td className={bodyCell}>{r.paymentsInstances}</td>
                     <td className={bodyCell}>
-                      <span className={`inline-block pl-2.5 ${scoreFlagClasses(r.chatAvg, dark)}`}>{r.chatAvg ?? "NA"}</span>
+                      <span className={scoreFlagClasses(r.chatAvg, dark)}>{r.chatAvg ?? "NA"}</span>
                     </td>
                     <td className={bodyCell}>{r.chatInstances}</td>
                     <td className={bodyCell}>
-                      <span className={`inline-block pl-2.5 ${scoreFlagClasses(r.callAvg, dark)}`}>{r.callAvg ?? "NA"}</span>
+                      <span className={scoreFlagClasses(r.callAvg, dark)}>{r.callAvg ?? "NA"}</span>
                     </td>
                     <td className={bodyCell}>{r.callInstances}</td>
                     <td className={bodyCell}>
