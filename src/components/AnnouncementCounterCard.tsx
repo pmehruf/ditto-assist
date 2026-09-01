@@ -93,7 +93,15 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
     };
   }, [allAnnouncements]);
 
-  const cardClass = `relative rounded-2xl border px-4 sm:px-5 py-[clamp(10px,1.6vh,20px)] lg:h-full flex flex-col ${
+  // No more `lg:h-full` — this card used to be stretched to match its
+  // sibling cell (QA Performance + Did You Know)'s height, but that cell's
+  // height has nothing to do with how much content THIS card actually has,
+  // so the leftover room just sat empty (dead padding, most visibly inside
+  // the Last 30 Days block below). Sizing to its own natural content
+  // instead (paired with `lg:self-start` on this card's wrapper in
+  // LookupIntroPage.tsx, which stops the grid row from stretching it) means
+  // every section here is only ever as tall as what it's actually showing.
+  const cardClass = `relative rounded-2xl border px-4 sm:px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
@@ -145,19 +153,15 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
         </span>
       </div>
 
-      {/* Everything below the header scrolls internally once this card's
-          stretched/allotted height (see LookupIntroPage.tsx's `lg:h-full`
-          comment — the right cell it's matched to can end up taller than
-          this card's own content needs, or shorter than its minimum) can't
-          fit the stat row + Last 30 Days breakdown — same safety-net
-          pattern as DidYouKnowCard/HomeAnnouncementCard use, so this card
-          clips and scrolls in place instead of spilling past its own
-          border and pushing the rest of the page (and the viewport) down.
-          `min-h-0` is what actually lets a flex child shrink below its
-          content's natural size and get a real scrollable region instead
-          of just growing. */}
+      {/* No `flex-1`/stretch below — this card now sizes to its own
+          content (see cardClass's comment). `overflow-y-auto` stays as a
+          pure safety net: on a very short viewport where even the natural
+          content doesn't fit, this scrolls in place instead of spilling
+          past its own border and the page's viewport — same pattern
+          DidYouKnowCard/HomeAnnouncementCard use, it just isn't the
+          primary sizing mechanism anymore. */}
       <div
-        className="flex flex-col flex-1 min-h-0 overflow-y-auto pr-0.5"
+        className="flex flex-col min-h-0 overflow-y-auto pr-0.5"
         style={{
           scrollbarWidth: "thin",
           scrollbarColor: theme === "dark" ? "#475569 transparent" : "#94A3B8 transparent",
@@ -166,9 +170,7 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
         {/* Three stat blocks — a single compact ROW each (icon, label,
             count) instead of the old stacked icon-on-top block, which took
             roughly 2-3x the vertical space per tile for the same
-            information. `shrink-0` (natural content height, not stretched)
-            — the Last 30 Days breakdown below is what absorbs any leftover
-            room. */}
+            information. */}
         <div className="flex flex-col gap-[clamp(4px,0.8vh,8px)] shrink-0">
           {statTiles.map((stat) => (
             <button
@@ -209,16 +211,14 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
           ))}
         </div>
 
-        {/* Last 30 Days breakdown — fills the space the stat tiles above
-            used to stretch into. Total across every type (see the useMemo
+        {/* Last 30 Days breakdown. Total across every type (see the useMemo
             above), then a line each for the three real, selectable types —
             QA Announcement, Product Announcement, Insurance Operations
             (legacy/unreclassified General Announcement rows still count
             toward the total but have no line of their own; see migration
-            0056). `justify-center` keeps the rows vertically centered in
-            whatever leftover height this card ends up with instead of
-            always pinning to the top. */}
-        <div className={`mt-[clamp(4px,0.8vh,8px)] flex-1 min-h-[100px] flex flex-col justify-center gap-[clamp(5px,0.8vh,8px)] p-2.5 rounded-xl border ${
+            0056). Sized to its own content now (no `flex-1`/`justify-center`
+            stretch) — see cardClass's comment. */}
+        <div className={`mt-[clamp(4px,0.8vh,8px)] shrink-0 flex flex-col gap-[clamp(5px,0.8vh,8px)] p-2.5 rounded-xl border ${
           theme === "dark" ? "border-white/[0.08] bg-white/[0.03]" : "border-stone-200 bg-stone-50/70"
         }`}>
           <div className="flex items-baseline justify-between gap-2">

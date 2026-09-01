@@ -596,25 +596,25 @@ export function LookupIntroPage({
                 (alignment/typography/spacing/comparison visuals) is
                 completely untouched, same as it already adapts to any
                 container width.
-                `flex-1 min-h-0` (was `shrink-0`) — now that the left
-                column above this is a real, definite height (see this
-                page's own comment on the two-main-sections grid), this row
-                grows to absorb whatever room is left below Workspace
-                Tools instead of leaving it blank at the bottom of the
-                page. QA Performance stays `shrink-0` (its own deliberately
-                compact, natural height — see QaPerformancePeek.tsx); Did
-                you know is `flex-1 min-h-0` so IT is what actually grows
-                (see DidYouKnowCard.tsx). The Counter card sits at
-                `lg:h-full`, stretched by this row's default
-                `items-stretch` to match the right cell's now-taller total
-                height — that combined height anchors the row; the Counter
-                card just fills it, its own stat tiles dividing the extra
-                room evenly (see AnnouncementCounterCard.tsx). Below `lg`,
-                nothing here has an ancestor stretching it taller than its
-                content, so this is a no-op there — everything renders at
-                natural height, stacked, exactly as before. */}
+                `flex-1 min-h-0` (was `shrink-0`) — this row still grows to
+                absorb whatever room is left below Workspace Tools instead
+                of leaving it blank at the bottom of the page. QA
+                Performance stays `shrink-0` (its own deliberately compact,
+                natural height — see QaPerformancePeek.tsx); Did you know is
+                `flex-1 min-h-0` so IT is what actually grows (see
+                DidYouKnowCard.tsx). The Counter card USED to stretch
+                (`lg:h-full`) to match the right cell's height, but that
+                left the Counter card's own sections padded out with dead
+                space whenever the right cell ended up taller than the
+                Counter card's actual content needed (see
+                AnnouncementCounterCard.tsx's cardClass comment) — so its
+                wrapper below is `lg:self-start` instead, letting it size to
+                its own natural content and simply not fill this row's full
+                height. Below `lg`, nothing here has an ancestor stretching
+                it taller than its content anyway, so this is a no-op
+                there — everything renders at natural height, stacked. */}
             <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
-              <div className="min-w-0">
+              <div className="min-w-0 lg:self-start">
                 <AnnouncementCounterCard
                   theme={theme}
                   allAnnouncements={allAnnouncements}
