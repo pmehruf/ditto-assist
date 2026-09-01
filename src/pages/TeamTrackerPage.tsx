@@ -7,6 +7,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Mouse
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowLeft,
   RefreshCw,
   Users2,
   TrendingUp,
@@ -55,20 +56,16 @@ import { CustomSelect, type CustomSelectOption } from "../components/CustomSelec
  * Advisor has no team to track, so unlike the QA Dashboard there is no
  * "see your own record" fallback here.
  *
- * Only Period remains as a page-level control (Advisor/Medium filters and
- * the Admin "Change team" card were deliberately removed — see the header
- * row below); picking a Period auto-reloads the table, and for an Admin
- * the app-wide header back button steps back to the Guide/Mentor picker
- * before leaving the tab (registerSubPageBack), so "change team" is still
- * reachable without a dedicated on-page control.
+ * Only Period remains as a page-level control (Advisor/Medium filters were
+ * deliberately removed — see the header row below); picking a Period
+ * auto-reloads the table. A small "Change Team" link next to the title lets
+ * an Admin step back to the Guide/Mentor picker.
  *
  * Advisor analysis opens as its own full-width view (openAdvisorTactId
  * below) rather than expanding inline under the table row, with a slide/
- * fade transition (AnimatePresence) between the two — this page registers
- * a "close the advisor view" handler with the app-wide header back button
- * (registerSubPageBack, from App.tsx) instead of drawing its own back
- * button, so one back control does both jobs everywhere in the app — see
- * App.tsx's goBack.
+ * fade transition (AnimatePresence) between the two — this page draws its
+ * own local "Back" button in that view rather than relying on any shared
+ * app-wide control, since there is no global header anymore (App.tsx).
  */
 
 // ── Types (mirror teamTrackerService.ts's response shapes) ────────────────
@@ -697,15 +694,9 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
 
 interface TeamTrackerPageProps {
   theme: "light" | "dark";
-  /** Registers/clears this page's "close the advisor detail view" handler
-   * with the app-wide header back button (App.tsx), so a single back
-   * control both leaves the tab AND steps out of the advisor view — see
-   * App.tsx's goBack. Called with null whenever no advisor view is open
-   * (or on unmount) so the header falls back to normal tab history. */
-  registerSubPageBack?: (handler: (() => void) | null) => void;
 }
 
-export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageProps) {
+export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
   const dark = theme === "dark";
 
   const [context, setContext] = useState<TeamTrackerContext | null>(null);
@@ -850,24 +841,6 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     dark ? "bg-[#0d1c3f] border-white/[0.16] text-slate-300" : "bg-[#f5f5f4] border-stone-200 text-stone-700"
   }`;
 
-  // Register/clear the app-wide header back button's job whenever the
-  // advisor view opens/closes, or (with nothing else registered) let an
-  // Admin step back to the Guide/Mentor picker before leaving the tab —
-  // the only remaining way to change team now that the on-page "Change"
-  // control is gone (see this file's header comment).
-  useEffect(() => {
-    if (!registerSubPageBack) return;
-    if (openPivot) {
-      registerSubPageBack(() => setOpenAdvisorTactId(null));
-    } else if (context?.isAdmin && !context.needsSelection) {
-      registerSubPageBack(() => loadContext("", ""));
-    } else {
-      registerSubPageBack(null);
-    }
-    return () => registerSubPageBack(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openPivot, context?.isAdmin, context?.needsSelection]);
-
   // Opening/closing the advisor detail view swaps content in place (no
   // activeTab change), so App.tsx's own "scroll to top on tab switch"
   // effect never fires for it — without this, the advisor view could open
@@ -969,14 +942,30 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
             className="space-y-5"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
-                  <Users2 className="w-5 h-5" />
-                  <span>{openPivot.name}</span>
-                </h1>
-                <p className="text-[13px] mt-1 font-semibold text-content-muted">
-                  Team Tracker · {context.scopeLabel} · {periodOptions.find((o) => o.value === period)?.label}
-                </p>
+              <div className="flex items-start gap-3">
+                {/* Local back button — closes the advisor detail view.
+                    Previously routed through the app-wide header back
+                    arrow (registerSubPageBack); now a plain page-owned
+                    control since that shared header no longer exists. */}
+                <button
+                  onClick={() => setOpenAdvisorTactId(null)}
+                  className={`mt-1 p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer ${
+                    dark ? "hover:bg-white/10 text-slate-300" : "hover:bg-stone-100 text-stone-600"
+                  }`}
+                  title="Back to team"
+                  aria-label="Back to team"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                <div>
+                  <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
+                    <Users2 className="w-5 h-5" />
+                    <span>{openPivot.name}</span>
+                  </h1>
+                  <p className="text-[13px] mt-1 font-semibold text-content-muted">
+                    Team Tracker · {context.scopeLabel} · {periodOptions.find((o) => o.value === period)?.label}
+                  </p>
+                </div>
               </div>
               <SegmentedToggle
                 value={advisorViewMode}
@@ -1019,6 +1008,22 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
               <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
                 <Users2 className="w-5 h-5" />
                 <span>{pageTitle}</span>
+                {/* Admin-only "change team" control — previously reached via
+                    the app-wide header back button stepping to the Guide/
+                    Mentor picker (see loadContext below); restored as a
+                    small local control now that the shared header is gone. */}
+                {context.isAdmin && (
+                  <button
+                    onClick={() => loadContext("", "")}
+                    className={`ml-1 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg cursor-pointer transition-colors ${
+                      dark ? "text-slate-300 hover:bg-white/10" : "text-stone-500 hover:bg-stone-100"
+                    }`}
+                    title="Change Guide/Mentor team"
+                  >
+                    <ArrowLeft className="w-3 h-3" />
+                    Change Team
+                  </button>
+                )}
               </h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <PeriodControl

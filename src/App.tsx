@@ -16,13 +16,11 @@ import {
   Sun,
   Moon,
   User,
-  ArrowLeft,
   PanelLeftOpen,
   PanelLeftClose,
   Clock,
   Flag,
   History,
-  Home,
   Megaphone,
   Link2,
   Pencil,
@@ -498,11 +496,17 @@ export default function App() {
     }
   };
 
-  // External resource links (Payment SOP, QA Dashboard, etc.) shown in the
-  // Workspace Controls drawer's Resources section — readable by every
-  // signed-in user, writable by Admin/Developer only (enforced server-side).
+  // External resource links (Payment SOP, QA Dashboard, etc.) — shown as an
+  // expandable "External Resources" disclosure inside the sidebar's
+  // Reference group (see renderSidebarContent's reference-group rendering).
+  // Previously lived in a separate "Quick Access" drawer opened from the
+  // now-removed global header; folded into the sidebar instead of getting
+  // its own trigger, since the header that opened it no longer exists.
+  // Readable by every signed-in user, writable by Admin/Developer only
+  // (enforced server-side).
   const [externalResources, setExternalResources] = useState<ExternalResource[]>([]);
   const [externalResourcesLoadError, setExternalResourcesLoadError] = useState<string | null>(null);
+  const [showResourceLinks, setShowResourceLinks] = useState(false);
 
   const mapExternalResourceRow = (row: any): ExternalResource => ({
     id: String(row.id),
@@ -847,55 +851,11 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isMobileWindow, setIsMobileWindow] = useState<boolean>(typeof window !== "undefined" ? window.innerWidth < 768 : false);
 
-  // ── Back navigation (header ArrowLeft) ───────────────────────────────────
-  // The app has no router (activeTab/showIntro are the only "location"), so
-  // "back" is a small in-memory LIFO stack of every {tab, showIntro} pair
-  // this session has moved away from, popped one at a time — NOT a
-  // hardcoded return to Home. A page that has its own internal sub-view
-  // (e.g. QA Dashboard's advisor drilldown, Team Tracker's advisor detail
-  // page) registers a close handler via registerSubPageBack below; when one
-  // is registered, back closes that sub-view first instead of leaving the
-  // tab, so a single header control does both jobs and no page needs its
-  // own separate back button.
-  const [subPageBack, setSubPageBack] = useState<(() => void) | null>(null);
-  const registerSubPageBack = React.useCallback((handler: (() => void) | null) => {
-    setSubPageBack(() => handler);
-  }, []);
-  const navHistoryRef = useRef<Array<{ tab: typeof activeTab; showIntro: boolean }>>([]);
-  const prevLocationRef = useRef<{ tab: typeof activeTab; showIntro: boolean } | null>(null);
-  const isBackNavigationRef = useRef(false);
-  // Mirrors navHistoryRef's length into render-visible state — refs can't
-  // be read during render (React flags it), so the header's "is there
-  // anything to go back to" check below reads this instead of the ref.
-  const [navHistoryLength, setNavHistoryLength] = useState(0);
-  useEffect(() => {
-    const prev = prevLocationRef.current;
-    if (prev && (prev.tab !== activeTab || prev.showIntro !== showIntro)) {
-      if (!isBackNavigationRef.current) {
-        navHistoryRef.current.push(prev);
-        if (navHistoryRef.current.length > 30) navHistoryRef.current.shift();
-        setNavHistoryLength(navHistoryRef.current.length);
-      }
-      isBackNavigationRef.current = false;
-    }
-    prevLocationRef.current = { tab: activeTab, showIntro };
-  }, [activeTab, showIntro]);
-  const goBack = () => {
-    if (subPageBack) {
-      subPageBack();
-      return;
-    }
-    const prev = navHistoryRef.current.pop();
-    setNavHistoryLength(navHistoryRef.current.length);
-    if (prev) {
-      isBackNavigationRef.current = true;
-      setActiveTab(prev.tab);
-      setShowIntro(prev.showIntro);
-    } else {
-      setActiveTab("lookup");
-      setShowIntro(true);
-    }
-  };
+  // Sub-page back navigation (Team Tracker/QA Dashboard advisor drilldowns)
+  // used to route through a shared header back-arrow (registerSubPageBack);
+  // now that the global header is gone, each of those pages owns a local
+  // "Back" button that calls its own close-the-drilldown handler directly
+  // — see TeamTrackerPage.tsx/QaDashboardPage.tsx.
 
   // Sidebar information architecture — functional groupings (see the
   // renderSidebarContent expanded nav below). Advisor Workspace is the only
@@ -971,7 +931,6 @@ export default function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState<boolean>(false);
   const [profileOpen, setProfileOpen] = useState<boolean>(false);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const [profileMenuPos, setProfileMenuPos] = useState<{ bottom: number; left: number } | null>(null);
@@ -1046,10 +1005,13 @@ export default function App() {
   }, [currentUser?.email]);
 
   // Accessibility: trap keyboard focus within an open drawer; Escape closes; restore focus on close.
+  // (Only the mobile left-nav drawer remains — the right "Quick Access"
+  // drawer was removed along with the global header; its Resources link
+  // list moved into the sidebar's Reference group instead.)
   useEffect(() => {
-    const drawerId = isMenuOpen ? "left-nav-drawer" : isRightSidebarOpen ? "right-controls-drawer" : null;
+    const drawerId = isMenuOpen ? "left-nav-drawer" : null;
     if (!drawerId) return;
-    const closeDrawer = isMenuOpen ? () => setIsMenuOpen(false) : () => setIsRightSidebarOpen(false);
+    const closeDrawer = () => setIsMenuOpen(false);
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const getFocusable = (): HTMLElement[] => {
       const container = document.getElementById(drawerId);
@@ -1095,7 +1057,7 @@ export default function App() {
         previouslyFocused.focus();
       }
     };
-  }, [isMenuOpen, isRightSidebarOpen]);
+  }, [isMenuOpen]);
 
   // Production plans list (persisted dynamically)
   const [productionPlans, setProductionPlans] = usePersistentState<string[]>(
@@ -3368,6 +3330,221 @@ export default function App() {
     </button>
   );
 
+  /** External Resources — the link list (Payment SOP, QA Dashboard, etc.)
+   * that used to live in a separate "Quick Access" drawer opened from the
+   * now-removed global header. Folded into the Reference group as its own
+   * expand/collapse disclosure instead of getting a new trigger of its own
+   * — same row styling/type-scale renderNavPageRow uses (the drawer already
+   * matched the sidebar's chrome exactly, so this carries over unchanged).
+   * Readable by every signed-in user; the "Manage Resources" edit affordance
+   * stays gated on hasAccess("resources", "Editor"), same as before. */
+  const renderResourceLinksSection = () => (
+    <div key="external-resources">
+      <button
+        type="button"
+        onClick={() => setShowResourceLinks(v => !v)}
+        className="w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium rounded-r-lg border-y-transparent border-r-transparent"
+        aria-expanded={showResourceLinks}
+      >
+        <Link2 className="w-4 h-4 shrink-0" style={{ color: RAIL_ICON_REST }} />
+        <span className="flex-1">External Resources</span>
+        <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${showResourceLinks ? "" : "-rotate-90"}`} />
+      </button>
+
+      {showResourceLinks && (
+        <div className="pl-2 pt-1 pb-1 space-y-1.5">
+          <div className="flex items-center justify-between px-2 mb-1">
+            <span className="block text-[10px] font-bold tracking-wider text-[#C4CDD8]">Resource Links</span>
+            {hasAccess("resources", "Editor") && (
+              <button
+                onClick={() => {
+                  setIsManagingResources((prev) => !prev);
+                  setEditingResourceId(null);
+                  setResourceFormError(null);
+                }}
+                className={`flex items-center gap-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
+                  isManagingResources ? "text-blue-300" : "text-[#C4CDD8] hover:text-[#F5F7FA]"
+                }`}
+              >
+                <Pencil className="w-2.5 h-2.5" />
+                {isManagingResources ? "Done" : "Manage"}
+              </button>
+            )}
+          </div>
+
+          {externalResourcesLoadError && (
+            <p className="text-[10px] font-semibold text-red-400 px-2">{externalResourcesLoadError}</p>
+          )}
+          {externalResources.length === 0 && !externalResourcesLoadError && (
+            <p className="text-xs text-[#C4CDD8] italic px-3 py-2">No resource links added yet.</p>
+          )}
+          {externalResources.map((resource, resIdx) => {
+            const ResourceIcon = resolveResourceIcon(resource);
+            return (
+              <div key={resource.id}>
+                {editingResourceId === resource.id ? (
+                  <div className="p-2 rounded-md border border-white/[0.08] bg-white/[0.03] space-y-1.5 mx-0.5">
+                    <input
+                      type="text"
+                      value={editResourceTitle}
+                      onChange={(e) => setEditResourceTitle(e.target.value)}
+                      placeholder="Title"
+                      className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+                    />
+                    <input
+                      type="text"
+                      value={editResourceUrl}
+                      onChange={(e) => setEditResourceUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+                    />
+                    <div className="space-y-1">
+                      <span className="block text-[9px] font-bold uppercase tracking-wider text-[#8B98AC]">Icon</span>
+                      <div className="flex items-center gap-2">
+                        <div className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
+                          {(() => {
+                            const PreviewIcon = editResourceIcon
+                              ? RESOURCE_ICON_MAP[editResourceIcon] || getResourceIcon(editResourceTitle)
+                              : getResourceIcon(editResourceTitle);
+                            return <PreviewIcon className="w-3.5 h-3.5 text-blue-300" />;
+                          })()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <CustomSelect
+                            theme="dark"
+                            value={editResourceIcon}
+                            onChange={setEditResourceIcon}
+                            placeholder="Auto (guess from title)"
+                            triggerClassName="w-full flex items-center justify-between gap-1 text-xs pl-1.5 pr-6 py-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20 cursor-pointer relative"
+                            options={RESOURCE_ICON_OPTIONS.map(({ name, label }) => ({ value: name, label }))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-0.5">
+                      <button
+                        onClick={() => setEditingResourceId(null)}
+                        className="text-[10px] font-bold uppercase text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer px-1.5 py-1"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleUpdateResource(resource.id)}
+                        className="text-[10px] font-bold uppercase text-blue-300 hover:text-blue-200 cursor-pointer px-1.5 py-1"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`w-full flex items-center justify-between gap-1.5 px-3 py-2 text-xs font-medium transition-all border-l-2 border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] rounded-r-lg border-y-transparent border-r-transparent`}
+                  >
+                    <a
+                      href={resource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 min-w-0 hover:text-[#F5F7FA] transition-colors"
+                      title={resource.url}
+                    >
+                      <ResourceIcon className="w-4 h-4 shrink-0 text-blue-300" />
+                      <span className="truncate">{resource.title}</span>
+                    </a>
+                    {isManagingResources && hasAccess("resources", "Editor") && (
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          onClick={() => handleMoveResource(resource.id, "up")}
+                          disabled={resIdx === 0}
+                          className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          title="Move up"
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleMoveResource(resource.id, "down")}
+                          disabled={resIdx === externalResources.length - 1}
+                          className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          title="Move down"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => startEditingResource(resource)}
+                          className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer"
+                          title="Edit resource link"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteResource(resource.id, resource.title)}
+                          className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-red-400 cursor-pointer"
+                          title="Delete resource link"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {isManagingResources && hasAccess("resources", "Editor") && (
+            <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5 px-0.5">
+              {resourceFormError && <p className="text-[10px] font-semibold text-red-400">{resourceFormError}</p>}
+              <input
+                type="text"
+                value={newResourceTitle}
+                onChange={(e) => setNewResourceTitle(e.target.value)}
+                placeholder="Title (e.g. Payment SOP)"
+                className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+              />
+              <input
+                type="text"
+                value={newResourceUrl}
+                onChange={(e) => setNewResourceUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
+              />
+              <div className="space-y-1">
+                <span className="block text-[9px] font-bold uppercase tracking-wider text-[#8B98AC]">Icon</span>
+                <div className="flex items-center gap-2">
+                  <div className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
+                    {(() => {
+                      const PreviewIcon = newResourceIcon
+                        ? RESOURCE_ICON_MAP[newResourceIcon] || getResourceIcon(newResourceTitle)
+                        : getResourceIcon(newResourceTitle);
+                      return <PreviewIcon className="w-3.5 h-3.5 text-blue-300" />;
+                    })()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <CustomSelect
+                      theme="dark"
+                      value={newResourceIcon}
+                      onChange={setNewResourceIcon}
+                      placeholder="Auto (guess from title)"
+                      triggerClassName="w-full flex items-center justify-between gap-1 text-xs pl-1.5 pr-6 py-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20 cursor-pointer relative"
+                      options={RESOURCE_ICON_OPTIONS.map(({ name, label }) => ({ value: name, label }))}
+                    />
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleAddResource}
+                disabled={isAddingResource}
+                className="w-full py-1.5 px-3 text-xs font-medium rounded-md border transition-all cursor-pointer flex items-center justify-center gap-1.5 bg-transparent border-white/[0.08] text-[#C4CDD8] hover:border-white/20 hover:text-[#F5F7FA] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-3.5 h-3.5 text-blue-300" />
+                <span>{isAddingResource ? "Adding..." : "Add Resource Link"}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   const renderSidebarContent = (isMobile: boolean = false) => {
     return (
       <div className={`h-full flex flex-col text-[#F5F7FA] ${
@@ -3428,6 +3605,30 @@ export default function App() {
           </button>
         </div>
 
+        {/* Dashboard / Home — a dedicated, always-visible entry point now
+            that the global header (whose wordmark used to double as one) is
+            gone. Sits above the collapsible Zone groups since it isn't part
+            of any of them; the branding block above still navigates Home
+            too, this just makes it an explicit, unmissable menu item. */}
+        <div className="px-4 pt-4 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("lookup");
+              setShowIntro(true);
+              if (isMobile) setIsMenuOpen(false);
+            }}
+            className={`w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 rounded-r-lg border-y-transparent border-r-transparent ${
+              activeTab === "lookup" && showIntro
+                ? "border-l-blue-600 bg-white/[0.06] text-white font-bold"
+                : "border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium"
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4 shrink-0" style={{ color: activeTab === "lookup" && showIntro ? RAIL_PAGE_ACTIVE : RAIL_ICON_REST }} />
+            <span>Dashboard</span>
+          </button>
+        </div>
+
         {/* Categories / Navigation items */}
         <div role="navigation" aria-label="Workspace navigation" className="flex-grow p-4 space-y-1.5 overflow-y-auto">
           {/* Zone -> Functional Group -> Page, driven entirely by the
@@ -3467,6 +3668,7 @@ export default function App() {
                       {openSections[group.key] && (
                         <div className="space-y-1.5 mb-1 pl-2">
                           {group.pages.map(page => renderNavPageRow(page, () => { if (isMobile) setIsMenuOpen(false); }))}
+                          {group.key === "reference" && renderResourceLinksSection()}
                         </div>
                       )}
                     </div>
@@ -3476,6 +3678,26 @@ export default function App() {
 
             </React.Fragment>
           ))}
+        </div>
+
+        {/* Theme toggle — kept near the bottom of the sidebar, just above
+            the profile area (previously lived in the now-removed global
+            header). */}
+        <div className="px-3 pt-3 shrink-0">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full text-left px-3 py-2 text-xs flex items-center gap-3 transition-all cursor-pointer border-l-2 border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] font-medium rounded-r-lg border-y-transparent border-r-transparent"
+            title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"}
+            aria-pressed={theme === "dark"}
+          >
+            {theme === "dark" ? (
+              <Sun className="w-4 h-4 shrink-0" style={{ color: "#ffb700" }} />
+            ) : (
+              <Moon className="w-4 h-4 shrink-0" style={{ color: "#93c5fd" }} />
+            )}
+            <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+          </button>
         </div>
 
         {/* Bottom Profile Tab — DP picture + name, tab-styled to match the
@@ -3543,6 +3765,28 @@ export default function App() {
         : "bg-[#F1F6FB] text-stone-900"
     } w-full overflow-hidden`}>
 
+      {/* Mobile menu-open trigger — on a mobile-width viewport the
+          collapsed sidebar is fully hidden (width 0, see the aside below),
+          unlike desktop's always-visible 60px icon rail with its own
+          "Click to expand" button. This was previously reachable via the
+          global header's page-title badge (tap to toggle isMenuOpen); now
+          that the header is gone, this small fixed button is the only way
+          back into the nav drawer on mobile. Hidden the instant the drawer
+          opens (that view has its own collapse control in its header). */}
+      {isMobileWindow && !isMenuOpen && (
+        <button
+          type="button"
+          onClick={() => setIsMenuOpen(true)}
+          className={`fixed top-3 left-3 z-[60] w-10 h-10 rounded-xl shadow-lg flex items-center justify-center cursor-pointer transition-all ${
+            isDark ? "bg-[#03101a] border border-white/[0.12] hover:bg-[#0a1a2e]" : "bg-[var(--sidebar-bg)] border border-white/[0.12] hover:opacity-90"
+          }`}
+          title="Open navigation menu"
+          aria-label="Open navigation menu"
+        >
+          <PanelLeftOpen className="w-5 h-5" style={{ color: "#9a9c9e" }} />
+        </button>
+      )}
+
       {/* EXPANDABLE LEFT SIDEBAR WITH MOTION WIDTH ANIMATION */}
       <motion.aside 
         animate={{ width: isMenuOpen ? 260 : (isMobileWindow ? 0 : 60) }}
@@ -3577,6 +3821,27 @@ export default function App() {
             </button>
 
             <div className="w-10 border-b border-white/[0.08] my-1 shrink-0" />
+
+            {/* Dashboard / Home icon — collapsed-rail counterpart to the
+                expanded sidebar's standalone Dashboard row above (see
+                renderSidebarContent). Sits above the zone group icons since
+                it isn't part of any group. */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("lookup");
+                setShowIntro(true);
+              }}
+              className="relative w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all hover:bg-white/5"
+              title="Dashboard"
+            >
+              {activeTab === "lookup" && showIntro && (
+                <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: RAIL_PAGE_ACTIVE }} />
+              )}
+              <LayoutDashboard style={{ width: "18px", height: "18px", color: activeTab === "lookup" && showIntro ? RAIL_PAGE_ACTIVE : RAIL_ICON_REST }} />
+            </button>
+
+            <div className="w-10 border-t-2 border-white/[0.12] my-1 opacity-70 shrink-0" />
 
             {/* Collapsed Menu Items of Active Tools */}
             <div
@@ -3754,10 +4019,29 @@ export default function App() {
 
             </div>
 
+            {/* Theme toggle — icon-only rail counterpart to the expanded
+                sidebar's labeled toggle, kept just above the profile
+                avatar (previously lived in the now-removed global header). */}
+            <div className="mt-auto pt-3 w-full flex justify-center shrink-0">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all hover:bg-white/5"
+                title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"}
+                aria-pressed={theme === "dark"}
+              >
+                {theme === "dark" ? (
+                  <Sun style={{ width: "18px", height: "18px", color: "#ffb700" }} />
+                ) : (
+                  <Moon style={{ width: "18px", height: "18px", color: "#93c5fd" }} />
+                )}
+              </button>
+            </div>
+
             {/* Bottom Profile Action */}
-            <div 
+            <div
               style={{ borderWidth: "0px", paddingTop: "0px" }}
-              className="relative mt-auto pt-4 border-t border-white/[0.05] w-full flex justify-center shrink-0"
+              className="relative pt-4 border-t border-white/[0.05] w-full flex justify-center shrink-0"
             >
               <button
                 ref={profileButtonRef}
@@ -4039,496 +4323,26 @@ export default function App() {
           keeps it identical to how it renders in dark theme. */}
       <GridTexture theme={activeTab === "smoke_test" ? "dark" : theme} zIndexClassName="z-0" />
 
-      <a href="#main-content" className="skip-to-content">Skip to main content</a> {/* HEADER BAR: Frosted floating glass compliance console bar */}
-      <div className="p-4 pb-0 shrink-0 select-none relative z-40 w-full lg:w-[99%] xl:w-[98%] max-w-[var(--container-shell)] mx-auto">
-        <header className={`rounded-2xl border transition-all duration-300 ${
-          activeTab === "smoke_test"
-            ? "border-[rgba(224,141,75,0.12)] bg-[rgba(8,8,8,0.90)] backdrop-blur-md text-white shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:border-[rgba(224,141,75,0.40)] hover:shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
-            : theme === "dark"
-            ? "border-white/[0.08] bg-[#03101a] text-white shadow-[0_8px_32px_rgba(0,0,0,0.55)] hover:border-white/[0.12]"
-            : "border-white/[0.08] bg-[var(--header-bg)] text-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] hover:border-white/[0.12]"
-        }`}>
-          <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: activeTab === "smoke_test" ? "transparent" : "var(--header-bg)", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
-          
-          {/* Back arrow — goes to whichever page/sub-view was open
-              immediately before this one (goBack, defined above), not a
-              hardcoded return to Home. Hidden only when there's truly
-              nothing to go back to: on the Home page itself
-              (lookup+showIntro) with an empty nav history and no page-level
-              sub-view registered. */}
-          <div className="flex items-center gap-3.5 shrink-0 z-10">
-            {(subPageBack || navHistoryLength > 0 || !(activeTab === "lookup" && showIntro)) && (
-              <button
-                onClick={goBack}
-                className="p-1.5 -mr-1 rounded transition-all cursor-pointer hover:bg-white/10"
-                title="Back"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-4 h-4 text-white/70" aria-hidden="true" style={{ width: "18px", height: "18px" }} />
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setActiveTab("lookup");
-                setShowIntro(true);
-              }}
-              className="text-left cursor-pointer hover:opacity-85 transition-opacity focus:outline-none select-none"
-              title="Home (Go to Compliance & Policy Mapping Engine)" aria-label="Go to home — Ditto Assist"
-            >
-              <div className="flex items-center gap-2">
-                <DittoWordmark className="text-lg" isWhite style={{ backgroundColor: "transparent" }} imgStyle={{ marginLeft: "-6px", marginBottom: "5px", width: "55px", height: "20px", paddingLeft: "0px" }} />
-              </div>
-            </button>
-          </div>
+      {/* Global top header removed — page titles/context now live within
+          each page (see e.g. TeamTrackerPage.tsx/QaDashboardPage.tsx's own
+          <h1> blocks), Home/Dashboard is reached via the sidebar (branding
+          block + dedicated Dashboard entry — see renderSidebarContent),
+          theme toggle + Logout live in the sidebar footer, and the
+          External Resources link list moved into the sidebar's Reference
+          group (renderResourceLinksSection). Sub-page back navigation
+          (Team Tracker/QA Dashboard advisor drilldowns) is now a local
+          button on those pages instead of routing through a shared header
+          control — see their own "Back" buttons. */}
+      <a href="#main-content" className="skip-to-content">Skip to main content</a>
 
-          {/* TAB CONTROLS (Page Context Breadcrumb) - Absolutely Centered on Desktop */}
-          <div className="md:absolute md:left-1/2 md:-translate-x-1/2 flex items-center gap-2 z-10 pointer-events-auto">
-            {(() => {
-              if (activeTab === "lookup" && showIntro) {
-                return (
-                  <button
-                    onClick={() => setIsMenuOpen(prev => !prev)}
-                    style={{
-                      backgroundColor: "transparent",
-                      borderColor: "transparent",
-                      color: "#ffffff",
-                      borderWidth: "0px",
-                      boxShadow: "none",
-                      borderRadius: "12px"
-                    }}
-                    className="title-badge-btn px-6 py-2 justify-center text-xs sm:text-sm font-black uppercase tracking-widest border-0 duration-300 transition-all flex items-center gap-2.5 cursor-pointer whitespace-nowrap active:scale-95 hover:scale-[1.02]"
-                    title="Current workspace tab view"
-                  >
-                    <Home className="title-badge-icon w-4 h-4 shrink-0 text-cyan-400" style={{ color: "#fafafa", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }} />
-                    <span style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }} className="title-badge-text font-sans font-black uppercase tracking-wider">
-                      Home
-                    </span>
-                  </button>
-                );
-              }
-              const tabMeta = {
-                lookup: { label: "Declaration Assist", icon: <Sparkles className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                my_activity: { label: "My Activity", icon: <History className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                resources: { label: "Declaration Map", icon: <DeclarationMapIcon color="currentColor" className="w-4.5 h-4.5 shrink-0 text-cyan-400" style={{ filter: "drop-shadow(0 0 0.4px currentColor)" }} /> },
-                audit: { label: "Activity Log", icon: <Clock className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                flagged_responses: { label: "Flagged Responses", icon: <Flag className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                profile_access: { label: "Access Control Center", icon: <User className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                qa_announcement_log: { label: "Announcement Manager", icon: <Megaphone className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                plan_scope: { label: "DA Mapping Config", icon: <Waypoints className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                advisory_zone: { label: "Plan Reference", icon: <BookOpen className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                announcement_archive: { label: "Announcements", icon: <Newspaper className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                coverage_projection: { label: "Cover Projection Assist", icon: <FileSpreadsheet className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                specific_illness_check: { label: "Specific Illness Assist", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                product_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                team_tracker: { label: "Team Tracker", icon: <Users2 className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                owner_controls: { label: "Feature Visibility", icon: <ShieldAlert className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
-                connections: { label: "Connections", icon: <Link2 className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> }
-              };
-              const meta = tabMeta[activeTab] || tabMeta.lookup;
-              return (
-                <button
-                  onClick={() => setIsMenuOpen(prev => !prev)}
-                  style={{
-                    backgroundColor: "transparent",
-                    borderColor: "transparent",
-                    color: "#ffffff",
-                    borderWidth: "0px",
-                    boxShadow: "none"
-                  }}
-                  className="title-badge-btn px-6 py-2 justify-center text-xs sm:text-sm font-black uppercase tracking-widest border-0 duration-300 transition-all flex items-center gap-2.5 cursor-pointer whitespace-nowrap active:scale-95 hover:scale-[1.02]"
-                  title="Current workspace tab view"
-                >
-                  {/* Merge (not replace) className/style onto the icon —
-                      cloneElement's second argument overwrites both props
-                      wholesale by default. That was harmless for every
-                      lucide SVG icon here (their sizing comes from SVG
-                      width/height attributes, not this style object), but it
-                      silently wiped out the CSS-mask icon's own style
-                      (backgroundColor + mask-image), which is ALL inline
-                      style with nothing else to fall back on — that's why
-                      Coverage Projection Studio's badge icon wasn't
-                      rendering. Spreading the icon's own className/style
-                      first keeps that intact while these badge-specific
-                      overrides (size, color, margins) still win where they
-                      overlap. */}
-                  {React.cloneElement(meta.icon, {
-                    className: `title-badge-icon w-4.5 h-4.5 shrink-0 text-cyan-400 ${(meta.icon.props as { className?: string }).className || ""}`,
-                    style: { ...(meta.icon.props as { style?: React.CSSProperties }).style, color: "#fafafa", borderColor: "transparent", paddingRight: "0px", marginRight: "-6px", width: "15px", height: "15px", marginBottom: "2px", marginTop: "1px" }
-                  })}
-                  <span
-                    style={{ fontSize: "13px", color: "#f9f9fc", paddingTop: "0px", paddingBottom: "0px", lineHeight: "13px", marginLeft: "2px", marginTop: "1px" }}
-                    className="title-badge-text font-sans font-black uppercase tracking-wider"
-                  >
-                    {meta.label}
-                  </span>
-                </button>
-              );
-            })()}
-          </div>
-
-          {/* ACTIVE USER INFO & HEADER NAVIGATION CONTROLS */}
-          <div className="flex items-center gap-2.5 shrink-0 z-10">
-            {/* Theme Toggle & Direct Log Out */}
-            <div 
-              className="flex items-center justify-center gap-1.5 p-1" 
-              style={{
-                backgroundColor: "transparent",
-                borderColor: "transparent"
-              }}
-            >
-                {/* Quick Access drawer trigger — open to every signed-in
-                    user now that the drawer includes the Resources link
-                    list (readable by everyone). The View As simulator
-                    stays gated to Developer/Admin, tucked in the footer. */}
-                <button
-                  onClick={(e) => {
-                    setIsRightSidebarOpen(true);
-                    e.currentTarget.blur();
-                  }}
-                  className="p-1.5 rounded transition-all cursor-pointer inline-flex items-center justify-center"
-                  title="Quick Access"
-                  aria-label="Open quick access panel"
-                >
-                  {/* Sun/Moon/LogOut are lucide SVGs at a 20px box, but
-                      lucide's 24x24 viewBox reserves ~2px of internal
-                      padding on every edge, so their actual ink is only
-                      ~83% of that box. This PNG's artwork (like the prior
-                      accessible.png) fills its canvas edge-to-edge with no
-                      such padding, so matching the literal 20px box would
-                      make it read heavier/larger than its siblings —
-                      sized to 17px to match their visual (ink) weight
-                      instead of their box size. Button stays inline-flex +
-                      items-center/justify-center so the masked span (a
-                      display:inline-block box whose default baseline sits
-                      at its own bottom edge) is truly centered rather than
-                      relying on baseline alignment. */}
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: "17px",
-                      height: "17px",
-                      backgroundColor: "#00D3F3",
-                      WebkitMaskImage: "url(/assets/.aistudio/portal-enter.png)",
-                      maskImage: "url(/assets/.aistudio/portal-enter.png)",
-                      WebkitMaskSize: "contain",
-                      maskSize: "contain",
-                      WebkitMaskRepeat: "no-repeat",
-                      maskRepeat: "no-repeat",
-                      WebkitMaskPosition: "center",
-                      maskPosition: "center",
-                    }}
-                  />
-                </button>
-
-                {/* Dark / Light theme toggle */}
-                <button
-                  onClick={(e) => {
-                    toggleTheme();
-                    e.currentTarget.blur();
-                  }}
-                  className="p-1.5 rounded transition-all cursor-pointer"
-                  title={theme === "dark" ? "Switch to Light mode" : "Switch to Dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={theme === "dark"}
-                >
-                  {theme === "dark"
-                    ? <Sun className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#ffb700" }} />
-                    : <Moon className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#93c5fd" }} />
-                  }
-                </button>
-
-                {/* Direct Logout (Request 2) */}
-                <button
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    handleLogout();
-                  }}
-                  className="p-1.5 rounded transition-all cursor-pointer text-red-500 hover:text-red-400"
-                  title="Direct Logout"
-                  aria-label="Direct logout"
-                >
-                  <LogOut className="w-4 h-4" aria-hidden="true" style={{ width: "20px", height: "20px", color: "#9a9c9e" }} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
-    </div>
-
-      {/* RIGHT CONTROLS DRAWER PANEL */}
-      <AnimatePresence>
-        {isRightSidebarOpen && (
-          <>
-            {/* Backdrop overlay */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsRightSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs cursor-pointer"
-            />
-
-            {/* Drawer Container */}
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              id="right-controls-drawer" role="dialog" aria-modal="true" aria-label="Quick access"
-              // Mirrors the left sidebar's chrome and type scale exactly
-              // (see renderSidebarContent above) rather than its own
-              // one-off card styling — same bg, same header block, same
-              // text-[10px]/text-xs sizes, same #F5F7FA/#C4CDD8 text
-              // colors and blue-300 icon accent, same flat (unboxed)
-              // nav-row treatment for list items.
-              className={`fixed top-0 right-0 h-full w-80 border-l z-54 shadow-2xl flex flex-col font-sans text-left text-[#F5F7FA] ${
-                theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
-              } border-white/[0.08]`}
-            >
-              {/* Header — identical structure to the sidebar's own header */}
-              <div
-                className={`p-5 border-b border-white/[0.08] flex items-center justify-between ${
-                  theme === "dark" ? "bg-[#03101a]" : "bg-[var(--sidebar-bg)]"
-                }`}
-              >
-                <div className="flex flex-col">
-                  {/* Inline color (not just the text-[#F5F7FA] class) since a
-                      global CSS sweep rule elsewhere in the app has, more
-                      than once, silently overridden a bracket color class on
-                      an uppercase heading like this one — inline style always
-                      wins over any class-based rule, so this is immune to it
-                      regardless of which rule it turns out to be. */}
-                  <span style={{ color: "#F5F7FA" }} className="text-xs font-bold uppercase tracking-wider">Quick Access</span>
-                  <span style={{ color: "#C4CDD8" }} className="text-[10px] font-medium">Resources &amp; Preview Controls</span>
-                </div>
-                <button
-                  onClick={() => setIsRightSidebarOpen(false)}
-                  className="p-1.5 rounded-lg transition-all cursor-pointer hover:bg-white/5 text-[#C4CDD8] hover:text-[#F5F7FA]"
-                  title="Close panel"
-                >
-                  <XCircle className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Controls Stack: Resources (View As lives in the footer) */}
-              <div className="flex-grow p-4 space-y-1.5 overflow-y-auto">
-
-                {/* Resources — external link list (Payment SOP, QA Dashboard,
-                    etc.). Visible/clickable for every signed-in user by
-                    default. Gated on hasAccess("resources", "Editor") — see
-                    featurePermissions.ts's "resources" entry (shipped
-                    generalAccess: "Viewer", adminAccess: "Editor") — so the
-                    "Manage Resources" toggle that reveals add/edit/delete
-                    controls tracks the same registry/override/Custom-Grant
-                    resolution the matching server routes now enforce
-                    (requireFeatureAccess("resources", "Editor", ...) in
-                    server.ts), instead of a hardcoded tier check the two
-                    could silently drift out of sync on. */}
-                <div className="flex items-center justify-between px-2 mb-2">
-                  <span className="block text-[10px] font-bold tracking-wider text-[#C4CDD8]">
-                    Resources
-                  </span>
-                  {hasAccess("resources", "Editor") && (
-                    <button
-                      onClick={() => {
-                        setIsManagingResources((prev) => !prev);
-                        setEditingResourceId(null);
-                        setResourceFormError(null);
-                      }}
-                      className={`flex items-center gap-1 text-[10px] font-bold tracking-wide cursor-pointer transition-colors ${
-                        isManagingResources ? "text-blue-300" : "text-[#C4CDD8] hover:text-[#F5F7FA]"
-                      }`}
-                    >
-                      <Pencil className="w-2.5 h-2.5" />
-                      {isManagingResources ? "Done" : "Manage Resources"}
-                    </button>
-                  )}
-                </div>
-
-                {externalResourcesLoadError && (
-                  <p className="text-[10px] font-semibold text-red-400 px-2">{externalResourcesLoadError}</p>
-                )}
-                {externalResources.length === 0 && !externalResourcesLoadError && (
-                  <p className="text-xs text-[#C4CDD8] italic px-3 py-2">No resource links added yet.</p>
-                )}
-                {externalResources.map((resource, resIdx) => {
-                  const ResourceIcon = resolveResourceIcon(resource);
-                  return (
-                  <div key={resource.id}>
-                    {editingResourceId === resource.id ? (
-                      <div className="p-2 rounded-md border border-white/[0.08] bg-white/[0.03] space-y-1.5 mx-0.5">
-                        <input
-                          type="text"
-                          value={editResourceTitle}
-                          onChange={(e) => setEditResourceTitle(e.target.value)}
-                          placeholder="Title"
-                          className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
-                        />
-                        <input
-                          type="text"
-                          value={editResourceUrl}
-                          onChange={(e) => setEditResourceUrl(e.target.value)}
-                          placeholder="https://..."
-                          className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
-                        />
-                        <div className="space-y-1">
-                          <span className="block text-[9px] font-bold uppercase tracking-wider text-[#8B98AC]">Icon</span>
-                          <div className="flex items-center gap-2">
-                            <div className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
-                              {(() => {
-                                const PreviewIcon = editResourceIcon
-                                  ? RESOURCE_ICON_MAP[editResourceIcon] || getResourceIcon(editResourceTitle)
-                                  : getResourceIcon(editResourceTitle);
-                                return <PreviewIcon className="w-3.5 h-3.5 text-blue-300" />;
-                              })()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <CustomSelect
-                                theme="dark"
-                                value={editResourceIcon}
-                                onChange={setEditResourceIcon}
-                                placeholder="Auto (guess from title)"
-                                triggerClassName="w-full flex items-center justify-between gap-1 text-xs pl-1.5 pr-6 py-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20 cursor-pointer relative"
-                                options={RESOURCE_ICON_OPTIONS.map(({ name, label }) => ({ value: name, label }))}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex justify-end gap-2 pt-0.5">
-                          <button
-                            onClick={() => setEditingResourceId(null)}
-                            className="text-[10px] font-bold uppercase text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer px-1.5 py-1"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => handleUpdateResource(resource.id)}
-                            className="text-[10px] font-bold uppercase text-blue-300 hover:text-blue-200 cursor-pointer px-1.5 py-1"
-                          >
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        className={`w-full flex items-center justify-between gap-1.5 px-3 py-2 text-xs font-medium transition-all border-l-2 border-l-transparent text-[#C4CDD8] hover:bg-stone-800/15 hover:text-[#F5F7FA] rounded-r-lg border-y-transparent border-r-transparent`}
-                      >
-                        <a
-                          href={resource.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 min-w-0 hover:text-[#F5F7FA] transition-colors"
-                          title={resource.url}
-                        >
-                          <ResourceIcon className="w-4 h-4 shrink-0 text-blue-300" />
-                          <span className="truncate">{resource.title}</span>
-                        </a>
-                        {isManagingResources && hasAccess("resources", "Editor") && (
-                          <div className="flex items-center gap-0.5 shrink-0">
-                            <button
-                              onClick={() => handleMoveResource(resource.id, "up")}
-                              disabled={resIdx === 0}
-                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                              title="Move up"
-                            >
-                              <ChevronUp className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => handleMoveResource(resource.id, "down")}
-                              disabled={resIdx === externalResources.length - 1}
-                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-                              title="Move down"
-                            >
-                              <ChevronDown className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => startEditingResource(resource)}
-                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-[#F5F7FA] cursor-pointer"
-                              title="Edit resource link"
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteResource(resource.id, resource.title)}
-                              className="p-1 rounded hover:bg-white/10 text-[#C4CDD8] hover:text-red-400 cursor-pointer"
-                              title="Delete resource link"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  );
-                })}
-
-                {isManagingResources && hasAccess("resources", "Editor") && (
-                  <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5 px-0.5">
-                    {resourceFormError && (
-                      <p className="text-[10px] font-semibold text-red-400">{resourceFormError}</p>
-                    )}
-                    <input
-                      type="text"
-                      value={newResourceTitle}
-                      onChange={(e) => setNewResourceTitle(e.target.value)}
-                      placeholder="Title (e.g. Payment SOP)"
-                      className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
-                    />
-                    <input
-                      type="text"
-                      value={newResourceUrl}
-                      onChange={(e) => setNewResourceUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full text-xs p-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20"
-                    />
-                    <div className="space-y-1">
-                      <span className="block text-[9px] font-bold uppercase tracking-wider text-[#8B98AC]">Icon</span>
-                      <div className="flex items-center gap-2">
-                        <div className="shrink-0 w-7 h-7 rounded-md border border-white/[0.08] bg-white/[0.04] flex items-center justify-center">
-                          {(() => {
-                            const PreviewIcon = newResourceIcon
-                              ? RESOURCE_ICON_MAP[newResourceIcon] || getResourceIcon(newResourceTitle)
-                              : getResourceIcon(newResourceTitle);
-                            return <PreviewIcon className="w-3.5 h-3.5 text-blue-300" />;
-                          })()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <CustomSelect
-                            theme="dark"
-                            value={newResourceIcon}
-                            onChange={setNewResourceIcon}
-                            placeholder="Auto (guess from title)"
-                            triggerClassName="w-full flex items-center justify-between gap-1 text-xs pl-1.5 pr-6 py-1.5 rounded border outline-none bg-transparent border-white/[0.08] text-[#F5F7FA] focus:border-white/20 cursor-pointer relative"
-                            options={RESOURCE_ICON_OPTIONS.map(({ name, label }) => ({ value: name, label }))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleAddResource}
-                      disabled={isAddingResource}
-                      className="w-full py-1.5 px-3 text-xs font-medium rounded-md border transition-all cursor-pointer flex items-center justify-center gap-1.5 bg-transparent border-white/[0.08] text-[#C4CDD8] hover:border-white/20 hover:text-[#F5F7FA] disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-blue-300" />
-                      <span>{isAddingResource ? "Adding..." : "Add Resource Link"}</span>
-                    </button>
-                  </div>
-                )}
-
-              </div>
-
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* SCROLLABLE BODY AREA */}
+      {/* SCROLLABLE BODY AREA — pt-3/sm:pt-4 gives pages a small amount of
+          breathing room at the very top now that the global header (which
+          used to sit above this and supply that gap on its own) is gone;
+          each page's own content/title starts right below it rather than
+          leaving a large empty area. */}
       <div
         id="main-scrollable-body"
-        className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 ${
+        className={`flex-grow flex flex-col min-w-0 bg-transparent relative z-10 pt-3 sm:pt-4 ${
           activeTab === "lookup" && showIntro
             ? // Previously `lg:overflow-hidden overflow-y-auto` — desktop
               // relied entirely on LookupIntroPage's ScaleToFit to guarantee
@@ -4952,7 +4766,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="QA Dashboard">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <QaDashboardPage theme={theme} registerSubPageBack={registerSubPageBack} />
+              <QaDashboardPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4976,7 +4790,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Team Tracker">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <TeamTrackerPage theme={theme} registerSubPageBack={registerSubPageBack} />
+              <TeamTrackerPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
