@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, RefreshCw, ArrowLeft, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download } from "lucide-react";
+import { Search, RefreshCw, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download } from "lucide-react";
 import { QaDashboardIcon } from "../components/icons";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
@@ -832,9 +832,15 @@ function AdvisorRosterTable({
 
 interface QaDashboardPageProps {
   theme: "light" | "dark";
+  /** Registers/clears this page's "close the current sub-view" handler with
+   * the app-wide header back button (App.tsx), so a single back control can
+   * both leave the tab AND step out of an internal sub-view — see
+   * App.tsx's goBack. Called with null whenever there's no sub-view open
+   * (or on unmount) so the header falls back to normal tab history. */
+  registerSubPageBack?: (handler: (() => void) | null) => void;
 }
 
-export function QaDashboardPage({ theme }: QaDashboardPageProps) {
+export function QaDashboardPage({ theme, registerSubPageBack }: QaDashboardPageProps) {
   const dark = theme === "dark";
   // Matches the px-2.5/py-1.5/text-xs sizing of the plain <input> filters
   // beside it — CustomSelect's own default trigger uses much larger py-3
@@ -1005,6 +1011,24 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
     setTabLoading({});
     setTabError({});
   }
+
+  // Register/clear this page's "back out of the advisor drilldown" handler
+  // with the app-wide header back button (App.tsx) — replaces this page's
+  // own local back-arrow button, which duplicated it. Only registers when
+  // there's actually a list to go back to (Admin/Guide/Mentor viewing an
+  // advisor); a plain Advisor viewing their own dashboard has no list, same
+  // condition the old local button used (canBrowseOthers).
+  useEffect(() => {
+    if (!registerSubPageBack) return;
+    const canBrowseOthers = !!dashboard && (dashboard.isAdmin || dashboard.isGuide || dashboard.isMentor);
+    if (dashboard?.advisor && canBrowseOthers) {
+      registerSubPageBack(handleBackToList);
+    } else {
+      registerSubPageBack(null);
+    }
+    return () => registerSubPageBack(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboard?.advisor, dashboard?.isAdmin, dashboard?.isGuide, dashboard?.isMentor]);
 
   function handleTabClick(tabId: "score" | "feedback" | "reviews") {
     setActiveTab(tabId);
@@ -1445,17 +1469,9 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
     <div className="space-y-5 pb-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
         <div className="flex items-start gap-3">
-          {canBrowseOthers && (
-            <button
-              onClick={handleBackToList}
-              title="Back to advisor list"
-              className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 cursor-pointer ${
-                dark ? "bg-white/[0.03] border-white/10 text-blue-300" : "bg-white border-stone-250 text-blue-700"
-              }`}
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-          )}
+          {/* Local back-to-list button removed — the app-wide header back
+              arrow now closes this drilldown too (registerSubPageBack
+              above), so a second back affordance here was redundant. */}
           <div>
             <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${dark ? "text-white" : "text-[#111827]"}`}>
               <QaDashboardIcon className="w-5 h-5" />

@@ -847,6 +847,56 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isMobileWindow, setIsMobileWindow] = useState<boolean>(typeof window !== "undefined" ? window.innerWidth < 768 : false);
 
+  // ── Back navigation (header ArrowLeft) ───────────────────────────────────
+  // The app has no router (activeTab/showIntro are the only "location"), so
+  // "back" is a small in-memory LIFO stack of every {tab, showIntro} pair
+  // this session has moved away from, popped one at a time — NOT a
+  // hardcoded return to Home. A page that has its own internal sub-view
+  // (e.g. QA Dashboard's advisor drilldown, Team Tracker's advisor detail
+  // page) registers a close handler via registerSubPageBack below; when one
+  // is registered, back closes that sub-view first instead of leaving the
+  // tab, so a single header control does both jobs and no page needs its
+  // own separate back button.
+  const [subPageBack, setSubPageBack] = useState<(() => void) | null>(null);
+  const registerSubPageBack = React.useCallback((handler: (() => void) | null) => {
+    setSubPageBack(() => handler);
+  }, []);
+  const navHistoryRef = useRef<Array<{ tab: typeof activeTab; showIntro: boolean }>>([]);
+  const prevLocationRef = useRef<{ tab: typeof activeTab; showIntro: boolean } | null>(null);
+  const isBackNavigationRef = useRef(false);
+  // Mirrors navHistoryRef's length into render-visible state — refs can't
+  // be read during render (React flags it), so the header's "is there
+  // anything to go back to" check below reads this instead of the ref.
+  const [navHistoryLength, setNavHistoryLength] = useState(0);
+  useEffect(() => {
+    const prev = prevLocationRef.current;
+    if (prev && (prev.tab !== activeTab || prev.showIntro !== showIntro)) {
+      if (!isBackNavigationRef.current) {
+        navHistoryRef.current.push(prev);
+        if (navHistoryRef.current.length > 30) navHistoryRef.current.shift();
+        setNavHistoryLength(navHistoryRef.current.length);
+      }
+      isBackNavigationRef.current = false;
+    }
+    prevLocationRef.current = { tab: activeTab, showIntro };
+  }, [activeTab, showIntro]);
+  const goBack = () => {
+    if (subPageBack) {
+      subPageBack();
+      return;
+    }
+    const prev = navHistoryRef.current.pop();
+    setNavHistoryLength(navHistoryRef.current.length);
+    if (prev) {
+      isBackNavigationRef.current = true;
+      setActiveTab(prev.tab);
+      setShowIntro(prev.showIntro);
+    } else {
+      setActiveTab("lookup");
+      setShowIntro(true);
+    }
+  };
+
   // Sidebar information architecture — functional groupings (see the
   // renderSidebarContent expanded nav below). Advisor Workspace is the only
   // section open by default (the advisor's daily-use tools); every other
@@ -4000,23 +4050,19 @@ export default function App() {
         }`}>
           <div className="w-full flex items-center justify-between relative gap-4" style={{ backgroundColor: activeTab === "smoke_test" ? "transparent" : "var(--header-bg)", height: "54px", borderRadius: "16px", borderColor: "transparent", borderStyle: "none", borderWidth: "0px", paddingLeft: "20px", paddingRight: "20px", marginLeft: "0px", marginRight: "0px", marginTop: "-5px", marginBottom: "0px", paddingTop: "0px", paddingBottom: "0px" }}>
           
-          {/* Back/Home arrow — restored per explicit request; a prior pass
-              had removed this as functionally redundant with the wordmark
-              button below (both just go Home), but its absence read as a
-              missing navigation affordance rather than an intentional
-              simplification, so it's back. Same action as the wordmark.
-              Hidden specifically on the Home page itself (lookup+showIntro)
-              since there it has nowhere meaningful left to go back to. */}
+          {/* Back arrow — goes to whichever page/sub-view was open
+              immediately before this one (goBack, defined above), not a
+              hardcoded return to Home. Hidden only when there's truly
+              nothing to go back to: on the Home page itself
+              (lookup+showIntro) with an empty nav history and no page-level
+              sub-view registered. */}
           <div className="flex items-center gap-3.5 shrink-0 z-10">
-            {!(activeTab === "lookup" && showIntro) && (
+            {(subPageBack || navHistoryLength > 0 || !(activeTab === "lookup" && showIntro)) && (
               <button
-                onClick={() => {
-                  setActiveTab("lookup");
-                  setShowIntro(true);
-                }}
+                onClick={goBack}
                 className="p-1.5 -mr-1 rounded transition-all cursor-pointer hover:bg-white/10"
-                title="Back to Home"
-                aria-label="Go back to home"
+                title="Back"
+                aria-label="Go back"
               >
                 <ArrowLeft className="w-4 h-4 text-white/70" aria-hidden="true" style={{ width: "18px", height: "18px" }} />
               </button>
@@ -4906,7 +4952,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="QA Dashboard">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <QaDashboardPage theme={theme} />
+              <QaDashboardPage theme={theme} registerSubPageBack={registerSubPageBack} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4930,7 +4976,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Team Tracker">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <TeamTrackerPage theme={theme} />
+              <TeamTrackerPage theme={theme} registerSubPageBack={registerSubPageBack} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
