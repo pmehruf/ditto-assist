@@ -1968,7 +1968,7 @@ export type NewAdvisorDirectorySyncStateRow = typeof advisorDirectorySyncState.$
 // resolvePool() already computes for the rest of Team Tracker, reused
 // as-is by coachingService.ts rather than duplicated.
 // ─────────────────────────────────────────────────────────────────────────
-export const coachingActionableStatusEnum = pgEnum("coaching_actionable_status", ["Open", "In Progress", "Completed"]);
+export const coachingActionableStatusEnum = pgEnum("coaching_actionable_status", ["Open", "In Progress", "Completed", "Failed"]);
 
 export const coachingSessions = pgTable(
   "coaching_sessions",

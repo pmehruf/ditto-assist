@@ -63,7 +63,7 @@ import {
   getTeamTrackerContext,
   getTeamTrackerTable,
 } from "./src/server/qaDashboard/teamTrackerService.js";
-import { saveCoachingSession, getCoachingHistory } from "./src/server/coaching/coachingService.js";
+import { saveCoachingSession, getCoachingHistory, updateActionableStatus } from "./src/server/coaching/coachingService.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
@@ -5443,6 +5443,29 @@ app.get("/api/qa-dashboard/team-tracker/coaching/history", requireAuth, async (r
   } catch (err: any) {
     console.error("Team Tracker: failed to load coaching history:", err);
     return res.status(500).json({ error: `Failed to load coaching history: ${err.message}` });
+  }
+});
+
+// Feedback Summary's own status control (Advisor QA Dashboard) — moves one
+// actionable along Open -> In Progress -> Completed/Failed. New
+// actionables from the Session Feedback form always start "Open"; this is
+// the only route that changes status after that.
+app.patch("/api/qa-dashboard/team-tracker/coaching/actionables/:id/status", requireAuth, async (req, res) => {
+  try {
+    const actionableId = Number(req.params.id);
+    const status = req.body?.status;
+    if (status !== "Open" && status !== "In Progress" && status !== "Completed" && status !== "Failed") {
+      return res.status(400).json({ error: "INVALID_INPUT", message: "status must be one of Open, In Progress, Completed, Failed" });
+    }
+    const result = await updateActionableStatus(req.user!.email, actionableId, status);
+    if (result && typeof result === "object" && "error" in result) {
+      const httpStatus = result.error === "FORBIDDEN" ? 403 : result.error === "NOT_FOUND" ? 404 : result.error === "INVALID_INPUT" ? 400 : 500;
+      return res.status(httpStatus).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("QA Dashboard: failed to update actionable status:", err);
+    return res.status(500).json({ error: `Failed to update actionable status: ${err.message}` });
   }
 });
 

@@ -4,7 +4,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, RefreshCw, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download, ArrowLeft } from "lucide-react";
+import { Search, RefreshCw, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download, ArrowLeft, ClipboardList } from "lucide-react";
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { QaDashboardIcon } from "../components/icons";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
@@ -88,6 +89,147 @@ const REVIEW_COLUMNS = [
 
 const SCORE_DANGER = 3.5;
 const SCORE_WARN = 3.75;
+
+// ── Historical trend chart + metric selector (Task 3 item 3) — same
+// shape/behavior as Team Tracker's own (see TeamTrackerPage.tsx), kept as
+// a small local copy here rather than a shared import since this page's
+// data source (one advisor's monthly rows) is simpler than Team
+// Tracker's multi-advisor pivot. ──────────────────────────────────────
+type MetricKey = "cumulative" | "lead" | "payment" | "chat" | "call";
+interface MetricPoint {
+  score: number | null;
+  instances: number;
+}
+const METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
+  { value: "cumulative", label: "Cumulative" },
+  { value: "lead", label: "Lead" },
+  { value: "payment", label: "Payment" },
+  { value: "chat", label: "Chat" },
+  { value: "call", label: "Call" },
+];
+const METRIC_LABELS: Record<MetricKey, string> = { cumulative: "Cumulative Score", lead: "Lead Score", payment: "Payment QA", chat: "Chat QA", call: "Call QA" };
+
+/** One advisor's own monthly row — mirrors TeamTrackerPage.tsx's
+ * MonthlyAdvisorRow (same /api/qa-dashboard/team-tracker/table response),
+ * trimmed to the fields the trend chart actually needs. */
+interface AdvisorMonthlyRow {
+  monthKey: string;
+  monthLabel: string;
+  cumulativeScore: number | null;
+  leadScoreAvg: number | null;
+  leadScoreInstances: number;
+  paymentsAvg: number | null;
+  paymentsInstances: number;
+  chatAvg: number | null;
+  chatInstances: number;
+  callAvg: number | null;
+  callInstances: number;
+}
+
+// ── Session Feedback (formerly Team Tracker's "Coaching Workspace") —
+// relocated here per requirement #15: it belongs with the individual
+// advisor's QA Dashboard, not Team Tracker. Draft persistence (browser
+// localStorage, per-advisor) + saved history (DB, via the same
+// /api/qa-dashboard/team-tracker/coaching/* routes Team Tracker used) —
+// a session is written ONLY on explicit Save, same as before. ──────────
+type ActionableStatus = "Open" | "In Progress" | "Completed" | "Failed";
+interface SessionFeedbackActionableDraft {
+  id: string; // client-only React key, not persisted as-is
+  description: string;
+  dueDate: string; // "yyyy-MM-dd", "" = none
+}
+interface SessionFeedbackDraft {
+  meetingDate: string; // "yyyy-MM-dd"
+  discussionPoints: string;
+  meetingNotes: string;
+  actionables: SessionFeedbackActionableDraft[];
+}
+function emptySessionFeedbackDraft(): SessionFeedbackDraft {
+  const d = new Date();
+  return { meetingDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, discussionPoints: "", meetingNotes: "", actionables: [] };
+}
+function sessionFeedbackDraftKey(tactId: string): string {
+  return `ditto_session_feedback_draft_${tactId}`;
+}
+/** Reading/writing localStorage can throw (private browsing, storage full,
+ * disabled) — every call site treats that as "no draft available" rather
+ * than crashing the page. */
+function loadSessionFeedbackDraft(tactId: string): SessionFeedbackDraft {
+  try {
+    const raw = window.localStorage.getItem(sessionFeedbackDraftKey(tactId));
+    if (!raw) return emptySessionFeedbackDraft();
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.actionables)) return parsed as SessionFeedbackDraft;
+  } catch {
+    /* corrupt/unreadable draft — start fresh rather than crash */
+  }
+  return emptySessionFeedbackDraft();
+}
+function saveSessionFeedbackDraftToStorage(tactId: string, draft: SessionFeedbackDraft) {
+  try {
+    window.localStorage.setItem(sessionFeedbackDraftKey(tactId), JSON.stringify(draft));
+  } catch {
+    /* storage full/unavailable — draft just won't survive a refresh */
+  }
+}
+function clearSessionFeedbackDraft(tactId: string) {
+  try {
+    window.localStorage.removeItem(sessionFeedbackDraftKey(tactId));
+  } catch {
+    /* ignore */
+  }
+}
+function isSessionFeedbackDraftEmpty(d: SessionFeedbackDraft): boolean {
+  return !d.discussionPoints.trim() && !d.meetingNotes.trim() && d.actionables.every((a) => !a.description.trim());
+}
+
+interface FeedbackSummaryActionable {
+  id: number;
+  description: string;
+  dueDate: string | null;
+  status: ActionableStatus;
+}
+interface FeedbackSummaryEntry {
+  id: number;
+  tactId: string;
+  advisorName: string;
+  authorName: string;
+  meetingDate: string;
+  discussionPoints: string | null;
+  meetingNotes: string | null;
+  createdAt: string;
+  actionables: FeedbackSummaryActionable[];
+}
+async function fetchFeedbackSummary(tactId: string): Promise<FeedbackSummaryEntry[]> {
+  return fetchJson<FeedbackSummaryEntry[]>(`/api/qa-dashboard/team-tracker/coaching/history?${qs({ tactId })}`);
+}
+async function postSessionFeedback(payload: {
+  tactId: string;
+  meetingDate: string;
+  discussionPoints: string;
+  meetingNotes: string;
+  actionables: { description: string; dueDate: string | null; status: "Open" }[];
+}): Promise<FeedbackSummaryEntry> {
+  const res = await fetch("/api/qa-dashboard/team-tracker/coaching/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
+  return body as FeedbackSummaryEntry;
+}
+/** Feedback Summary's own status control — the only place an
+ * actionable's status changes after it's created (see requirement #16). */
+async function patchActionableStatus(actionableId: number, status: ActionableStatus): Promise<void> {
+  const res = await fetch(`/api/qa-dashboard/team-tracker/coaching/actionables/${actionableId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
+}
 
 function norm(s: string): string {
   return s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -830,6 +972,437 @@ function AdvisorRosterTable({
   );
 }
 
+// ── Compact metric selector for the trend chart — a small pill row that
+// reads as part of the chart card rather than another large filter
+// section (Task 3 item 3). ────────────────────────────────────────────
+function MetricSelector({ value, onChange, dark }: { value: MetricKey; onChange: (v: MetricKey) => void; dark: boolean }) {
+  return (
+    <div className={`inline-flex flex-wrap rounded-lg border p-0.5 gap-0.5 ${dark ? "bg-white/[0.04] border-white/[0.10]" : "bg-stone-100 border-stone-200"}`}>
+      {METRIC_OPTIONS.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+            value === o.value ? "bg-[#117FDA] text-white" : dark ? "text-slate-300 hover:text-white" : "text-stone-500 hover:text-stone-800"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AdvisorTrendChart({ dark, theme, data, scoreLabel }: { dark: boolean; theme: "light" | "dark"; data: { month: string; score: number | null; instances: number }[]; scoreLabel: string }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#1F2937" : "#E5E7EB"} />
+        <XAxis dataKey="month" stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
+        <YAxis yAxisId="score" domain={[0, 5]} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
+        <YAxis yAxisId="instances" orientation="right" allowDecimals={false} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
+        <Tooltip
+          content={({ active, payload, label }) => {
+            if (active && payload && payload.length) {
+              return (
+                <div className={`p-2 rounded-lg border text-[11px] font-sans shadow-lg font-bold ${dark ? "bg-stone-900 border-stone-800 text-zinc-100" : "bg-white border-stone-200 text-stone-950"}`}>
+                  <p className="opacity-75 mb-0.5">{label}</p>
+                  {payload.map((p) => (
+                    <p key={p.dataKey as string} className="font-black">
+                      {p.dataKey === "score" ? `${scoreLabel}: ` : "Instances: "}
+                      {p.value ?? "NA"}
+                    </p>
+                  ))}
+                </div>
+              );
+            }
+            return null;
+          }}
+        />
+        <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+        <Line yAxisId="score" type="monotone" dataKey="score" name={scoreLabel} stroke="#117FDA" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        <Line yAxisId="instances" type="monotone" dataKey="instances" name="QA Instances" stroke="#9CA3AF" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2 }} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Historical trend section — Guide/Mentor/Admin only (same scope Team
+// Tracker's own table endpoint already enforces; see this page's
+// canBrowseOthers). A plain Advisor's own self-view keeps the existing
+// Score Dashboard scorecards unchanged (guardrail: "Existing QA Dashboard
+// scorecards and calculations must remain unchanged") rather than gaining
+// a chart that reuses an endpoint they aren't authorized to call. ──────
+function AdvisorTrendSection({ dark, theme, tactId }: { dark: boolean; theme: "light" | "dark"; tactId: string }) {
+  const [metric, setMetric] = useState<MetricKey>("cumulative");
+  const [rows, setRows] = useState<AdvisorMonthlyRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    // Last 12 months through the current month — enough to show a
+    // meaningful trend without a separate period control on this page.
+    const now = new Date();
+    const toYm = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+    const fromDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const fromYm = `${fromDate.getFullYear()}-${pad(fromDate.getMonth() + 1)}`;
+    fetchJson<{ rows: AdvisorMonthlyRow[] }>(`/api/qa-dashboard/team-tracker/table?${qs({ tactId, fromMonth: fromYm, toMonth: toYm })}`)
+      .then((r) => {
+        if (!cancelled) setRows(r.rows);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "Failed to load historical trend.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tactId]);
+
+  const chartData = useMemo(() => {
+    if (!rows) return [];
+    return rows.map((r) => {
+      const point: Record<MetricKey, MetricPoint> = {
+        cumulative: { score: r.cumulativeScore, instances: r.paymentsInstances + r.chatInstances + r.callInstances },
+        lead: { score: r.leadScoreAvg, instances: r.leadScoreInstances },
+        payment: { score: r.paymentsAvg, instances: r.paymentsInstances },
+        chat: { score: r.chatAvg, instances: r.chatInstances },
+        call: { score: r.callAvg, instances: r.callInstances },
+      };
+      return { month: r.monthLabel, ...point[metric] };
+    });
+  }, [rows, metric]);
+  const hasChartData = chartData.filter((d) => d.score !== null).length > 1;
+
+  return (
+    <div className={`rounded-xl border p-3 flex flex-col ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Historical Trend</h4>
+        <MetricSelector value={metric} onChange={setMetric} dark={dark} />
+      </div>
+      {loading ? (
+        <p className="text-[13px] text-content-muted py-6 text-center">Loading…</p>
+      ) : error ? (
+        <p className="text-[13px] text-red-500 py-6 text-center">{error}</p>
+      ) : hasChartData ? (
+        <div className="w-full h-48 font-sans text-[11px] font-bold">
+          <AdvisorTrendChart dark={dark} theme={theme} data={chartData} scoreLabel={METRIC_LABELS[metric]} />
+        </div>
+      ) : (
+        <div className="py-10 text-center text-[13px] text-content-muted">Not enough scored months yet.</div>
+      )}
+    </div>
+  );
+}
+
+function ActionableStatusChip({ status, dark }: { status: ActionableStatus; dark: boolean }) {
+  const cls =
+    status === "Completed"
+      ? dark
+        ? "bg-emerald-500/20 text-emerald-300"
+        : "bg-emerald-50 text-emerald-700"
+      : status === "Failed"
+        ? dark
+          ? "bg-red-500/20 text-red-300"
+          : "bg-red-50 text-red-700"
+        : status === "In Progress"
+          ? dark
+            ? "bg-amber-500/20 text-amber-300"
+            : "bg-amber-50 text-amber-700"
+          : dark
+            ? "bg-white/10 text-slate-300"
+            : "bg-stone-100 text-stone-600";
+  return <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase shrink-0 ${cls}`}>{status}</span>;
+}
+
+/** Feedback Summary's own status control (Task 3 item 16) — Open -> In
+ * Progress -> Completed/Failed, editable inline. Optimistic update with
+ * rollback on failure so the dropdown feels immediate. */
+function ActionableStatusSelect({ actionableId, status, dark, onChanged }: { actionableId: number; status: ActionableStatus; dark: boolean; onChanged: (next: ActionableStatus) => void }) {
+  const [saving, setSaving] = useState(false);
+  const cls = `text-[10px] font-black uppercase rounded px-1 py-0.5 border cursor-pointer outline-none ${
+    dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+  } ${saving ? "opacity-50" : ""}`;
+  return (
+    <select
+      value={status}
+      disabled={saving}
+      onChange={async (e) => {
+        const next = e.target.value as ActionableStatus;
+        const prev = status;
+        onChanged(next);
+        setSaving(true);
+        try {
+          await patchActionableStatus(actionableId, next);
+        } catch {
+          onChanged(prev); // roll back on failure
+        } finally {
+          setSaving(false);
+        }
+      }}
+      className={cls}
+    >
+      <option value="Open">Open</option>
+      <option value="In Progress">In Progress</option>
+      <option value="Completed">Completed</option>
+      <option value="Failed">Failed</option>
+    </select>
+  );
+}
+
+// ── Feedback Summary (formerly Team Tracker's "Coaching History") — the
+// longitudinal record of session feedback for this advisor (Task 3 items
+// 14 &amp; 15). Scannable list, newest meeting first; each actionable's
+// status is editable right here rather than only settable at creation. ──
+function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean; tactId: string; refreshSignal: number }) {
+  const [entries, setEntries] = useState<FeedbackSummaryEntry[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    fetchFeedbackSummary(tactId)
+      .then((r) => {
+        if (!cancelled) setEntries(r);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "Failed to load feedback summary.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tactId, refreshSignal]);
+
+  const setActionableStatus = (sessionId: number, actionableId: number, next: ActionableStatus) => {
+    setEntries((prev) => (prev ? prev.map((s) => (s.id !== sessionId ? s : { ...s, actionables: s.actionables.map((a) => (a.id === actionableId ? { ...a, status: next } : a)) })) : prev));
+  };
+
+  return (
+    <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08] bg-white/[0.03]" : "border-[var(--border)] bg-white"}`}>
+      <div className={`px-3 py-2.5 border-b ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+        <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Feedback Summary</h4>
+      </div>
+      <div className="p-3">
+        {loading ? (
+          <p className="text-[13px] text-content-muted py-2">Loading…</p>
+        ) : error ? (
+          <p className="text-[13px] text-red-500 py-2">{error}</p>
+        ) : !entries || entries.length === 0 ? (
+          <p className="text-[13px] text-content-muted py-2">No session feedback logged yet.</p>
+        ) : (
+          <ul className="space-y-2 max-h-[50vh] overflow-auto">
+            {entries.map((s) => (
+              <li key={s.id} className={`rounded-lg border p-2.5 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`font-bold ${dark ? "text-white" : "text-stone-900"}`}>{s.meetingDate}</span>
+                  <span className={dark ? "text-slate-400" : "text-stone-500"}>{s.authorName}</span>
+                </div>
+                {s.discussionPoints && (
+                  <p className="mt-1">
+                    <span className="font-bold text-content-muted">Discussion: </span>
+                    {s.discussionPoints}
+                  </p>
+                )}
+                {s.meetingNotes && (
+                  <p className="mt-1">
+                    <span className="font-bold text-content-muted">Notes: </span>
+                    {s.meetingNotes}
+                  </p>
+                )}
+                {s.actionables.length > 0 && (
+                  <ul className="mt-1.5 space-y-1">
+                    {s.actionables.map((a) => (
+                      <li key={a.id} className="flex items-center gap-2 flex-wrap">
+                        <ActionableStatusChip status={a.status} dark={dark} />
+                        <span className="flex-1 min-w-[120px]">{a.description}</span>
+                        {a.dueDate && <span className="text-content-muted">(due {a.dueDate})</span>}
+                        <ActionableStatusSelect actionableId={a.id} status={a.status} dark={dark} onChanged={(next) => setActionableStatus(s.id, a.id, next)} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Floating Session Feedback workspace (formerly Team Tracker's
+// "Coaching Workspace", relocated here per requirement #15) — icon-only
+// button positioned above the app's pinned footer bar (Task 3 item 9),
+// panel renamed and stripped of the Advisor/Team info the old panel
+// showed (redundant here — the page itself is already that advisor's
+// dashboard). New actionables always start "Open"; status is only ever
+// changed afterward, from Feedback Summary's own control. ──────────────
+function SessionFeedbackWorkspace({ dark, tactId, advisorName, onSaved }: { dark: boolean; tactId: string; advisorName: string; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<SessionFeedbackDraft>(() => loadSessionFeedbackDraft(tactId));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    setDraft(loadSessionFeedbackDraft(tactId));
+    setSaveError("");
+    setSavedFlash(false);
+  }, [tactId]);
+
+  useEffect(() => {
+    saveSessionFeedbackDraftToStorage(tactId, draft);
+  }, [tactId, draft]);
+
+  const addActionable = () => setDraft((d) => ({ ...d, actionables: [...d.actionables, { id: `${Date.now()}-${d.actionables.length}`, description: "", dueDate: "" }] }));
+  const updateActionable = (id: string, patch: Partial<SessionFeedbackActionableDraft>) =>
+    setDraft((d) => ({ ...d, actionables: d.actionables.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+  const removeActionable = (id: string) => setDraft((d) => ({ ...d, actionables: d.actionables.filter((a) => a.id !== id) }));
+
+  const handleSave = async () => {
+    if (isSessionFeedbackDraftEmpty(draft)) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await postSessionFeedback({
+        tactId,
+        meetingDate: draft.meetingDate,
+        discussionPoints: draft.discussionPoints,
+        meetingNotes: draft.meetingNotes,
+        actionables: draft.actionables.filter((a) => a.description.trim()).map((a) => ({ description: a.description.trim(), dueDate: a.dueDate || null, status: "Open" as const })),
+      });
+      clearSessionFeedbackDraft(tactId);
+      setDraft(emptySessionFeedbackDraft());
+      setSavedFlash(true);
+      onSaved();
+    } catch (err: any) {
+      setSaveError(err.message || "Failed to save session feedback.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputCls = `w-full rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"}`;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        // bottom-16 (not the old bottom-5) clears the app's own pinned
+        // footer bar — at bottom-5 this button sat on top of/overlapped
+        // the footer's right-aligned "©BLISS GUIDES.DITTO" text.
+        className="fixed bottom-16 right-5 z-40 inline-flex items-center justify-center w-11 h-11 rounded-full shadow-lg text-white cursor-pointer hover:brightness-110 transition"
+        style={{ background: "#117FDA" }}
+        title={`Session Feedback — ${advisorName}`}
+        aria-label={`Session Feedback for ${advisorName}`}
+      >
+        <ClipboardList className="w-5 h-5" />
+        {!isSessionFeedbackDraftEmpty(draft) && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-400" title="Unsaved draft" />}
+      </button>
+
+      {open && (
+        <div
+          className={`fixed bottom-[4.75rem] right-5 z-40 w-[380px] max-w-[calc(100vw-2.5rem)] max-h-[75vh] overflow-auto rounded-2xl border shadow-2xl p-4 space-y-3 ${
+            dark ? "bg-[#0b1830] border-white/[0.12]" : "bg-white border-stone-200"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <h3 className={`text-[13px] font-black ${dark ? "text-white" : "text-[#111827]"}`}>Session Feedback</h3>
+            <button type="button" onClick={() => setOpen(false)} className={`cursor-pointer shrink-0 ${dark ? "text-slate-400 hover:text-white" : "text-stone-400 hover:text-stone-800"}`}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Date</span>
+            <input type="date" value={draft.meetingDate} onChange={(e) => setDraft((d) => ({ ...d, meetingDate: e.target.value }))} className={inputCls} />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Discussion Points</span>
+            <textarea
+              rows={3}
+              value={draft.discussionPoints}
+              onChange={(e) => setDraft((d) => ({ ...d, discussionPoints: e.target.value }))}
+              className={inputCls}
+              placeholder="What to bring up in this session…"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Notes</span>
+            <textarea
+              rows={3}
+              value={draft.meetingNotes}
+              onChange={(e) => setDraft((d) => ({ ...d, meetingNotes: e.target.value }))}
+              className={inputCls}
+              placeholder="What was actually discussed…"
+            />
+          </label>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Actionables</span>
+              <button type="button" onClick={addActionable} className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}>
+                + Add
+              </button>
+            </div>
+            {draft.actionables.length === 0 ? (
+              <p className="text-[11px] text-content-muted">No actionables yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {draft.actionables.map((a) => (
+                  <div key={a.id} className={`rounded-lg border p-2 space-y-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+                    <div className="flex items-start gap-1.5">
+                      <input value={a.description} onChange={(e) => updateActionable(a.id, { description: e.target.value })} placeholder="Description" className={inputCls + " flex-1"} />
+                      <button
+                        type="button"
+                        onClick={() => removeActionable(a.id)}
+                        className={`cursor-pointer shrink-0 mt-1.5 ${dark ? "text-slate-400 hover:text-red-400" : "text-stone-400 hover:text-red-500"}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {/* No status picker here — new actionables always start
+                        "Open" (requirement #16); status is only ever
+                        changed afterward, from Feedback Summary. */}
+                    <input type="date" value={a.dueDate} onChange={(e) => updateActionable(a.id, { dueDate: e.target.value })} className={inputCls} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {saveError && <p className="text-[11px] text-red-500 font-semibold">{saveError}</p>}
+          {savedFlash && !saving && isSessionFeedbackDraftEmpty(draft) && <p className="text-[11px] text-emerald-500 font-semibold">Saved to Feedback Summary.</p>}
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || isSessionFeedbackDraftEmpty(draft)}
+            className="w-full rounded-lg py-2 text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition"
+            style={{ background: "#1f2d3d" }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 interface QaDashboardPageProps {
   theme: "light" | "dark";
 }
@@ -871,6 +1444,9 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   const [tabData, setTabData] = useState<Record<string, SheetTable | undefined>>({});
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
   const [tabError, setTabError] = useState<Record<string, string>>({});
+  // Bumped after a Session Feedback Save so the open advisor's Feedback
+  // Summary refetches without a full page reload.
+  const [feedbackRefreshSignal, setFeedbackRefreshSignal] = useState(0);
 
   const [advisorsSummary, setAdvisorsSummary] = useState<AdvisorSummaryRow[] | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -1584,6 +2160,17 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
         </div>
       )}
 
+      {/* Historical Trend + Feedback Summary — below the existing
+          scorecard, Guide/Mentor/Admin only (requirement #15: existing QA
+          Dashboard scorecards/calculations above are unchanged). A plain
+          Advisor's own self-view stops at the scorecard above. */}
+      {activeTab === "score" && canBrowseOthers && advisor && (
+        <div className="space-y-3.5">
+          <AdvisorTrendSection dark={dark} theme={theme} tactId={advisor.tactId} />
+          <FeedbackSummarySection dark={dark} tactId={advisor.tactId} refreshSignal={feedbackRefreshSignal} />
+        </div>
+      )}
+
       {activeTab === "feedback" && (
         <>
           <div className={`flex flex-wrap items-end gap-3 rounded-2xl border p-4 ${dark ? "bg-white/[0.05] border-white/[0.10]" : "bg-surface-elevated border-[var(--border-strong)]"}`}>
@@ -1698,6 +2285,12 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           </div>
           <SheetTableView table={filteredReviewTable ?? null} loading={!!tabLoading.reviews} error={tabError.reviews || ""} columns={REVIEW_COLUMNS} theme={theme} />
         </>
+      )}
+
+      {/* Floating Session Feedback — Guide/Mentor/Admin only, same scope
+          as Historical Trend/Feedback Summary above (requirement #15). */}
+      {canBrowseOthers && advisor && (
+        <SessionFeedbackWorkspace dark={dark} tactId={advisor.tactId} advisorName={advisor.name || advisor.tactId} onSaved={() => setFeedbackRefreshSignal((v) => v + 1)} />
       )}
     </div>
   );

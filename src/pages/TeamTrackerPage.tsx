@@ -24,8 +24,6 @@ import {
   Phone,
   Wallet,
   Target,
-  ClipboardList,
-  X,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { CustomSelect, type CustomSelectOption } from "../components/CustomSelect";
@@ -147,6 +145,25 @@ const MEDIUM_ICONS: Record<MediumKey, ReactNode> = {
 // "Total QA Instances" totals — both are about the three actual evaluation
 // channels, and including Lead would double-count.
 const REAL_MEDIUM_KEYS: MediumKey[] = ["payment", "chat", "call"];
+
+// ── Trend chart metric selector (Task 3 item 3) — lets the shared trend
+// chart switch between Cumulative Score and any one medium, on both Team
+// Tracker's main page and the Advisor QA Dashboard. One point per month
+// carries all five metrics (MetricPoint), so switching is a pure
+// client-side pick with no refetch. ──────────────────────────────────────
+type MetricKey = "cumulative" | MediumKey;
+interface MetricPoint {
+  score: number | null;
+  instances: number;
+}
+const METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
+  { value: "cumulative", label: "Cumulative" },
+  { value: "lead", label: "Lead" },
+  { value: "payment", label: "Payment" },
+  { value: "chat", label: "Chat" },
+  { value: "call", label: "Call" },
+];
+const METRIC_LABELS: Record<MetricKey, string> = { cumulative: "Cumulative Score", lead: "Lead Score", payment: "Payment QA", chat: "Chat QA", call: "Call QA" };
 
 // Same danger/warn thresholds and treatment QaDashboardPage.tsx's
 // scoreFlagClasses uses, reproduced locally (this file intentionally
@@ -293,13 +310,9 @@ function buildMediumStat(avgs: (number | null)[], instancesArr: number[], blunde
   };
 }
 
-/** Avg + instance count for one medium in one specific month, team-wide —
- * feeds the "Current Month" KPI row (see computeInsights). */
-interface MediumSnapshot {
-  avg: number | null;
-  instances: number;
-}
-const EMPTY_MEDIUM_SNAPSHOT: MediumSnapshot = { avg: null, instances: 0 };
+/** Empty placeholder for a medium with no data yet — the "Current Month"
+ * KPI row falls back to this when insights.currentMonth is null. */
+const EMPTY_MEDIUM_STAT: MediumStat = { avg: null, instances: 0, blunders: 0, blunderPct: null };
 
 /** One ranked advisor for a Top 5 / Bottom 5 list — the number displayed
  * IS the value it was ranked by, so the same component works for either
@@ -351,97 +364,10 @@ async function fetchQaReviews(tactId: string): Promise<SheetTableLike> {
   return fetchJson<SheetTableLike>(`/api/qa-dashboard/reviews?${qs({ tactId })}`);
 }
 
-// ── Coaching Workspace — draft (localStorage, per-advisor) + saved history
-// (DB, via /api/qa-dashboard/team-tracker/coaching/*). See this file's
-// header comment: a session is written ONLY on explicit Save. ───────────
-type ActionableStatus = "Open" | "In Progress" | "Completed";
-interface CoachingActionableDraft {
-  id: string; // client-only React key, not persisted as-is
-  description: string;
-  dueDate: string; // "yyyy-MM-dd", "" = none
-  status: ActionableStatus;
-}
-interface CoachingDraft {
-  meetingDate: string; // "yyyy-MM-dd"
-  discussionPoints: string;
-  meetingNotes: string;
-  actionables: CoachingActionableDraft[];
-}
-function emptyCoachingDraft(): CoachingDraft {
-  const d = new Date();
-  return { meetingDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, discussionPoints: "", meetingNotes: "", actionables: [] };
-}
-function coachingDraftKey(tactId: string): string {
-  return `ditto_coaching_draft_${tactId}`;
-}
-/** Reading/writing localStorage can throw (private browsing, storage full,
- * disabled) — every call site treats that as "no draft available" rather
- * than crashing the page. */
-function loadCoachingDraft(tactId: string): CoachingDraft {
-  try {
-    const raw = window.localStorage.getItem(coachingDraftKey(tactId));
-    if (!raw) return emptyCoachingDraft();
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.actionables)) return parsed as CoachingDraft;
-  } catch {
-    /* corrupt/unreadable draft — start fresh rather than crash */
-  }
-  return emptyCoachingDraft();
-}
-function saveCoachingDraftToStorage(tactId: string, draft: CoachingDraft) {
-  try {
-    window.localStorage.setItem(coachingDraftKey(tactId), JSON.stringify(draft));
-  } catch {
-    /* storage full/unavailable — draft just won't survive a refresh */
-  }
-}
-function clearCoachingDraft(tactId: string) {
-  try {
-    window.localStorage.removeItem(coachingDraftKey(tactId));
-  } catch {
-    /* ignore */
-  }
-}
-function isDraftEmpty(d: CoachingDraft): boolean {
-  return !d.discussionPoints.trim() && !d.meetingNotes.trim() && d.actionables.every((a) => !a.description.trim());
-}
-
-interface CoachingHistoryActionable {
-  id: number;
-  description: string;
-  dueDate: string | null;
-  status: ActionableStatus;
-}
-interface CoachingHistoryEntry {
-  id: number;
-  tactId: string;
-  advisorName: string;
-  authorName: string;
-  meetingDate: string;
-  discussionPoints: string | null;
-  meetingNotes: string | null;
-  createdAt: string;
-  actionables: CoachingHistoryActionable[];
-}
-async function fetchCoachingHistory(tactId: string): Promise<CoachingHistoryEntry[]> {
-  return fetchJson<CoachingHistoryEntry[]>(`/api/qa-dashboard/team-tracker/coaching/history?${qs({ tactId })}`);
-}
-async function postCoachingSession(payload: {
-  tactId: string;
-  meetingDate: string;
-  discussionPoints: string;
-  meetingNotes: string;
-  actionables: { description: string; dueDate: string | null; status: ActionableStatus }[];
-}): Promise<CoachingHistoryEntry> {
-  const res = await fetch("/api/qa-dashboard/team-tracker/coaching/sessions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
-  return body as CoachingHistoryEntry;
-}
+// Session Feedback (formerly "Coaching Workspace") — draft persistence,
+// history types, and save/fetch helpers — has moved to the Advisor QA
+// Dashboard (QaDashboardPage.tsx), per requirement #15. Team Tracker no
+// longer has any coaching/session-feedback code of its own.
 
 // ── Pivoted, one-row-per-advisor shape + period-level insights ────────────
 // Pure client-side reshape of the server's (advisor, month) rows — see this
@@ -551,12 +477,21 @@ function buildPivots(rows: MonthlyAdvisorRow[]): AdvisorPivot[] {
   return pivots;
 }
 
-/** Team-wide avg + instance total for one medium in one specific month —
- * the "Current Month" KPI row's per-medium cards. */
-function teamMediumSnapshot(pivots: AdvisorPivot[], monthKey: string, avgField: keyof MonthlyAdvisorRow, instField: keyof MonthlyAdvisorRow): MediumSnapshot {
-  const avg = avgArr(pivots.map((p) => (p.monthly[monthKey]?.[avgField] as number | null | undefined) ?? null));
-  const instances = pivots.reduce((sum, p) => sum + ((p.monthly[monthKey]?.[instField] as number | undefined) ?? 0), 0);
-  return { avg, instances };
+/** Team-wide avg + instance total + blunder% for one medium in one
+ * specific month — the "Current Month" KPI row's per-medium cards (Task
+ * 3 item 1 adds Blunder % here alongside the avg/instances this already
+ * had, reusing MediumStat's shape rather than inventing a new one). */
+function teamMediumSnapshot(
+  pivots: AdvisorPivot[],
+  monthKey: string,
+  avgField: keyof MonthlyAdvisorRow,
+  instField: keyof MonthlyAdvisorRow,
+  blunderField: keyof MonthlyAdvisorRow
+): MediumStat {
+  const avgs = pivots.map((p) => (p.monthly[monthKey]?.[avgField] as number | null | undefined) ?? null);
+  const instancesArr = pivots.map((p) => (p.monthly[monthKey]?.[instField] as number | undefined) ?? 0);
+  const blundersArr = pivots.map((p) => (p.monthly[monthKey]?.[blunderField] as number | undefined) ?? 0);
+  return buildMediumStat(avgs, instancesArr, blundersArr);
 }
 
 interface CurrentMonthSnapshot {
@@ -564,10 +499,10 @@ interface CurrentMonthSnapshot {
   monthLabel: string;
   cumulative: number | null;
   cumulativeDelta: number | null;
-  lead: MediumSnapshot;
-  payment: MediumSnapshot;
-  chat: MediumSnapshot;
-  call: MediumSnapshot;
+  lead: MediumStat;
+  payment: MediumStat;
+  chat: MediumStat;
+  call: MediumStat;
 }
 
 interface TeamInsightsData {
@@ -595,11 +530,17 @@ interface TeamInsightsData {
   mostDeclined: AdvisorPivot | null;
   totalMapped: number;
   changeFirstLatest: { delta: number | null; firstLabel: string | null; latestLabel: string | null };
+  /** Team-wide whole-period avg/instances/blunder% per medium — the
+   * Historical Performance section's four tiles (Task 2 item 2). */
+  historicalMediumStats: Record<MediumKey, MediumStat>;
   bestMedium: { key: MediumKey; label: string; avg: number } | null;
   weakestMedium: { key: MediumKey; label: string; avg: number } | null;
-  /** Team-wide average Cumulative Score + total QA instances per month,
-   * chronological — feeds the dual-axis team trend chart. */
-  chartData: { month: string; score: number | null; instances: number }[];
+  /** Team-wide average score + instance count per month, chronological,
+   * broken out per metric (Cumulative + each medium) — feeds the team
+   * trend chart's metric selector (Task 3 item 3). Each month carries
+   * all five metrics so switching the selector is a pure client-side
+   * pick, no refetch. */
+  chartData: { month: string; cumulative: MetricPoint; lead: MetricPoint; payment: MetricPoint; chat: MetricPoint; call: MetricPoint }[];
 }
 
 function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsightsData {
@@ -648,10 +589,10 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
         monthLabel: scoredMonths[scoredMonths.length - 1].monthLabel,
         cumulative: scoredMonths[scoredMonths.length - 1].avg,
         cumulativeDelta: momentum.delta,
-        lead: teamMediumSnapshot(pivots, currentMonthKey, "leadScoreAvg", "leadScoreInstances"),
-        payment: teamMediumSnapshot(pivots, currentMonthKey, "paymentsAvg", "paymentsInstances"),
-        chat: teamMediumSnapshot(pivots, currentMonthKey, "chatAvg", "chatInstances"),
-        call: teamMediumSnapshot(pivots, currentMonthKey, "callAvg", "callInstances"),
+        lead: teamMediumSnapshot(pivots, currentMonthKey, "leadScoreAvg", "leadScoreInstances", "leadScoreBlunders"),
+        payment: teamMediumSnapshot(pivots, currentMonthKey, "paymentsAvg", "paymentsInstances", "paymentsBlunders"),
+        chat: teamMediumSnapshot(pivots, currentMonthKey, "chatAvg", "chatInstances", "chatBlunders"),
+        call: teamMediumSnapshot(pivots, currentMonthKey, "callAvg", "callInstances", "callBlunders"),
       }
     : null;
   const { top5: top5CurrentMonth, bottom5: bottom5CurrentMonth } = currentMonthKey
@@ -664,13 +605,40 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
   const bestMedium = teamMediumAvgs.length ? teamMediumAvgs.reduce((a, b) => (b.avg > a.avg ? b : a)) : null;
   const weakestMedium = teamMediumAvgs.length ? teamMediumAvgs.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
 
-  // Total QA Instances (chart's second line) — Payment+Chat+Call only, same
-  // Lead-exclusion rule as totalInstances/REAL_MEDIUM_KEYS above.
-  const chartData = monthlyTeamAvg.map((m) => ({
+  // One point per month, every metric attached (Task 3 item 3's metric
+  // selector picks among these client-side — see MetricPoint's comment).
+  // Cumulative's own "instances" reuses the same Payment+Chat+Call-only
+  // total every other instance count in this file uses (Lead excluded —
+  // see REAL_MEDIUM_KEYS' comment); each medium's own instances is just
+  // that medium's count.
+  const teamMonthlyMediumAvg = (key: MediumKey, avgField: keyof MonthlyAdvisorRow) => monthlyTeamAvg.map((m) => avgArr(pivots.map((p) => (p.monthly[m.monthKey]?.[avgField] as number | null | undefined) ?? null)));
+  const teamMonthlyMediumInstances = (instField: keyof MonthlyAdvisorRow) => monthlyTeamAvg.map((m) => pivots.reduce((sum, p) => sum + ((p.monthly[m.monthKey]?.[instField] as number | undefined) ?? 0), 0));
+  const leadAvgs = teamMonthlyMediumAvg("lead", "leadScoreAvg");
+  const paymentAvgs = teamMonthlyMediumAvg("payment", "paymentsAvg");
+  const chatAvgs = teamMonthlyMediumAvg("chat", "chatAvg");
+  const callAvgs = teamMonthlyMediumAvg("call", "callAvg");
+  const leadInst = teamMonthlyMediumInstances("leadScoreInstances");
+  const paymentInst = teamMonthlyMediumInstances("paymentsInstances");
+  const chatInst = teamMonthlyMediumInstances("chatInstances");
+  const callInst = teamMonthlyMediumInstances("callInstances");
+  const chartData = monthlyTeamAvg.map((m, i) => ({
     month: m.monthLabel,
-    score: m.avg,
-    instances: pivots.reduce((sum, p) => sum + (p.monthly[m.monthKey]?.paymentsInstances ?? 0) + (p.monthly[m.monthKey]?.chatInstances ?? 0) + (p.monthly[m.monthKey]?.callInstances ?? 0), 0),
+    cumulative: { score: m.avg, instances: paymentInst[i] + chatInst[i] + callInst[i] },
+    lead: { score: leadAvgs[i], instances: leadInst[i] },
+    payment: { score: paymentAvgs[i], instances: paymentInst[i] },
+    chat: { score: chatAvgs[i], instances: chatInst[i] },
+    call: { score: callAvgs[i], instances: callInst[i] },
   }));
+
+  // Team-wide whole-period stat per medium (avg + instances + blunder%) —
+  // Task 2 item 2's four historical medium tiles, alongside the trend
+  // chart rather than folded into the rankings area.
+  const historicalMediumStats: Record<MediumKey, MediumStat> = {
+    lead: buildMediumStat(pivots.map((p) => p.mediumStats.lead.avg), pivots.map((p) => p.mediumStats.lead.instances), pivots.map((p) => p.mediumStats.lead.blunders)),
+    payment: buildMediumStat(pivots.map((p) => p.mediumStats.payment.avg), pivots.map((p) => p.mediumStats.payment.instances), pivots.map((p) => p.mediumStats.payment.blunders)),
+    chat: buildMediumStat(pivots.map((p) => p.mediumStats.chat.avg), pivots.map((p) => p.mediumStats.chat.instances), pivots.map((p) => p.mediumStats.chat.blunders)),
+    call: buildMediumStat(pivots.map((p) => p.mediumStats.call.avg), pivots.map((p) => p.mediumStats.call.instances), pivots.map((p) => p.mediumStats.call.blunders)),
+  };
 
   return {
     teamAvg,
@@ -686,6 +654,7 @@ function computeInsights(pivots: AdvisorPivot[], months: MonthSpec[]): TeamInsig
     mostDeclined: mostDeclined && mostDeclined.change! < 0 ? mostDeclined : null,
     totalMapped: pivots.length,
     changeFirstLatest,
+    historicalMediumStats,
     bestMedium,
     weakestMedium,
     chartData,
@@ -728,9 +697,6 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
     setAdvisorViewMode("performance");
   }, [openAdvisorTactId]);
 
-  // Bumped after a Coaching Workspace Save so the open advisor's Coaching
-  // History (Insights view) refetches without a full page reload.
-  const [coachingRefreshSignal, setCoachingRefreshSignal] = useState(0);
 
   const loadContext = useCallback(async (guide: string, mentor: string) => {
     setContextLoading(true);
@@ -980,13 +946,7 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
             {advisorViewMode === "performance" ? (
               <AdvisorDetailView dark={dark} theme={theme} pivot={openPivot} orderedRows={openPivotRows} prevMonthKeyOf={prevMonthKeyOf} />
             ) : (
-              <AdvisorInsightsView
-                dark={dark}
-                pivot={openPivot}
-                orderedRows={openPivotRows}
-                prevMonthKeyOf={prevMonthKeyOf}
-                coachingRefreshSignal={coachingRefreshSignal}
-              />
+              <AdvisorInsightsView dark={dark} pivot={openPivot} orderedRows={openPivotRows} prevMonthKeyOf={prevMonthKeyOf} />
             )}
           </motion.div>
         ) : (
@@ -1068,20 +1028,6 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* Floating Coaching Workspace — available on both the Performance and
-          Insights advisor sub-views (it lives outside the AnimatePresence
-          swap above, so toggling between them doesn't remount it), hidden
-          on the team-wide main view where there's no single advisor to
-          attach a draft to. */}
-      {openPivot && (
-        <CoachingWorkspace
-          dark={dark}
-          tactId={openPivot.tactId}
-          advisorName={openPivot.name}
-          teamLabel={context.scopeLabel}
-          onSaved={() => setCoachingRefreshSignal((v) => v + 1)}
-        />
-      )}
     </div>
   );
 }
@@ -1092,7 +1038,20 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
 // A data point with `instances` omitted/undefined (never produced by this
 // file today, but kept optional so the single-axis shape still typechecks
 // anywhere this gets reused) simply draws no instances line. ────────────
-function ScoreTrendChart({ dark, theme, data }: { dark: boolean; theme: "light" | "dark"; data: { month: string; score: number | null; instances?: number }[] }) {
+function ScoreTrendChart({
+  dark,
+  theme,
+  data,
+  scoreLabel = "Cumulative Score",
+}: {
+  dark: boolean;
+  theme: "light" | "dark";
+  data: { month: string; score: number | null; instances?: number }[];
+  /** Line/tooltip label for the score series — defaults to "Cumulative
+   * Score" for every pre-existing call site; the metric-selector call
+   * sites pass the currently-selected metric's own label instead. */
+  scoreLabel?: string;
+}) {
   const hasInstances = data.some((d) => typeof d.instances === "number");
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -1111,7 +1070,7 @@ function ScoreTrendChart({ dark, theme, data }: { dark: boolean; theme: "light" 
                   <p className="opacity-75 mb-0.5">{label}</p>
                   {payload.map((p) => (
                     <p key={p.dataKey as string} className="font-black">
-                      {p.dataKey === "score" ? "Score: " : "Instances: "}
+                      {p.dataKey === "score" ? `${scoreLabel}: ` : "Instances: "}
                       {p.value ?? "NA"}
                     </p>
                   ))}
@@ -1122,10 +1081,33 @@ function ScoreTrendChart({ dark, theme, data }: { dark: boolean; theme: "light" 
           }}
         />
         {hasInstances && <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />}
-        <Line yAxisId="score" type="monotone" dataKey="score" name="Cumulative Score" stroke="#117FDA" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        <Line yAxisId="score" type="monotone" dataKey="score" name={scoreLabel} stroke="#117FDA" strokeWidth={2} dot={{ r: 3 }} connectNulls />
         {hasInstances && <Line yAxisId="instances" type="monotone" dataKey="instances" name="QA Instances" stroke="#9CA3AF" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2 }} />}
       </LineChart>
     </ResponsiveContainer>
+  );
+}
+
+// ── Compact metric selector for the trend chart — a small pill row that
+// reads as part of the chart card rather than another large filter
+// section (Task 3 item 3). Reused by both Team Tracker's main page and
+// the Advisor QA Dashboard. ──────────────────────────────────────────────
+function MetricSelector({ value, onChange, dark }: { value: MetricKey; onChange: (v: MetricKey) => void; dark: boolean }) {
+  return (
+    <div className={`inline-flex flex-wrap rounded-lg border p-0.5 gap-0.5 ${dark ? "bg-white/[0.04] border-white/[0.10]" : "bg-stone-100 border-stone-200"}`}>
+      {METRIC_OPTIONS.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
+            value === o.value ? "bg-[#117FDA] text-white" : dark ? "text-slate-300 hover:text-white" : "text-stone-500 hover:text-stone-800"
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1147,10 +1129,10 @@ function CurrentMonthKpiRow({
   monthLabel: string | null;
   cumulative: number | null;
   cumulativeDelta: number | null;
-  lead: MediumSnapshot;
-  payment: MediumSnapshot;
-  chat: MediumSnapshot;
-  call: MediumSnapshot;
+  lead: MediumStat;
+  payment: MediumStat;
+  chat: MediumStat;
+  call: MediumStat;
 }) {
   const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
   const label = "text-[10px] font-bold uppercase tracking-wider text-content-muted";
@@ -1182,6 +1164,9 @@ function CurrentMonthKpiRow({
           ) : (
             <span className="text-[11px] text-content-muted">No prior month to compare</span>
           )}
+          {/* Secondary supporting tagline — visually subordinate to the
+              score itself, just clarifying what feeds it. */}
+          <span className="text-[10px] font-semibold text-content-faint">Lead Score + Payment Score</span>
         </div>
         <MediumKpiCard dark={dark} label="Lead Score" icon={MEDIUM_ICONS.lead} stat={lead} />
         <MediumKpiCard dark={dark} label="Payment QA" icon={MEDIUM_ICONS.payment} stat={payment} />
@@ -1191,7 +1176,7 @@ function CurrentMonthKpiRow({
     </div>
   );
 }
-function MediumKpiCard({ dark, label, icon, stat }: { dark: boolean; label: string; icon: ReactNode; stat: MediumSnapshot }) {
+function MediumKpiCard({ dark, label, icon, stat }: { dark: boolean; label: string; icon: ReactNode; stat: MediumStat }) {
   const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
   return (
     <div className={card}>
@@ -1200,9 +1185,12 @@ function MediumKpiCard({ dark, label, icon, stat }: { dark: boolean; label: stri
         {label}
       </span>
       <span className={`text-2xl font-black ${scoreTextClass(stat.avg, dark)}`}>{stat.avg ?? "—"}</span>
-      <span className="text-[11px] text-content-muted">
-        {stat.instances} instance{stat.instances === 1 ? "" : "s"}
-      </span>
+      <div className="flex items-center gap-2 text-[11px] font-semibold">
+        <span className="text-content-muted">
+          {stat.instances} instance{stat.instances === 1 ? "" : "s"}
+        </span>
+        <span className={blunderTextClass(stat.blunderPct, dark)}>{stat.blunderPct === null ? "—" : `${stat.blunderPct}% blunder`}</span>
+      </div>
     </div>
   );
 }
@@ -1424,10 +1412,15 @@ function TeamInsights({
   onOpenAdvisor: (tactId: string) => void;
 }) {
   const [rankMode, setRankMode] = useState<RankMode>("current");
+  const [chartMetric, setChartMetric] = useState<MetricKey>("cumulative");
   const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
   const label = "text-[11px] font-bold uppercase tracking-wider text-content-muted";
   const iconClass = dark ? "text-slate-400" : "text-stone-400";
-  const hasChartData = insights.chartData.filter((d) => d.score !== null).length > 1;
+  // Client-side pick of the selected metric out of each month's full
+  // MetricPoint set (see TeamInsightsData.chartData's comment) — no
+  // refetch when the selector changes.
+  const chartSeriesData = insights.chartData.map((d) => ({ month: d.month, score: d[chartMetric].score, instances: d[chartMetric].instances }));
+  const hasChartData = chartSeriesData.filter((d) => d.score !== null).length > 1;
   const rankedTop5 = rankMode === "current" ? insights.top5CurrentMonth : insights.top5Period;
   const rankedBottom5 = rankMode === "current" ? insights.bottom5CurrentMonth : insights.bottom5Period;
 
@@ -1438,10 +1431,10 @@ function TeamInsights({
         monthLabel={insights.currentMonth?.monthLabel ?? null}
         cumulative={insights.currentMonth?.cumulative ?? null}
         cumulativeDelta={insights.currentMonth?.cumulativeDelta ?? null}
-        lead={insights.currentMonth?.lead ?? EMPTY_MEDIUM_SNAPSHOT}
-        payment={insights.currentMonth?.payment ?? EMPTY_MEDIUM_SNAPSHOT}
-        chat={insights.currentMonth?.chat ?? EMPTY_MEDIUM_SNAPSHOT}
-        call={insights.currentMonth?.call ?? EMPTY_MEDIUM_SNAPSHOT}
+        lead={insights.currentMonth?.lead ?? EMPTY_MEDIUM_STAT}
+        payment={insights.currentMonth?.payment ?? EMPTY_MEDIUM_STAT}
+        chat={insights.currentMonth?.chat ?? EMPTY_MEDIUM_STAT}
+        call={insights.currentMonth?.call ?? EMPTY_MEDIUM_STAT}
       />
 
       <div className="space-y-2">
@@ -1535,20 +1528,40 @@ function TeamInsights({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Trend &amp; Rankings</h3>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-3">
-        <div className={`rounded-xl border p-3 flex flex-col ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
-          <h4 className={`text-[11px] font-black uppercase tracking-wider mb-2 ${dark ? "text-white" : "text-[#111827]"}`}>Cumulative Score &amp; QA Instances Trend</h4>
-          {hasChartData ? (
-            <div className="w-full h-48 font-sans text-[11px] font-bold">
-              <ScoreTrendChart dark={dark} theme={theme} data={insights.chartData} />
+      {/* Historical Performance — deliberately its own section, separate
+          from Rankings below, so it doesn't visually compete with Current
+          Month above it (Task 3 items 2 &amp; 5). Balanced two-up: trend
+          chart on one side, the four historical medium tiles on the
+          other — instead of one full-width chart dominating the page. */}
+      <div className="space-y-2">
+        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Historical Performance</h3>
+        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-3">
+          <div className={`rounded-xl border p-3 flex flex-col ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Trend</h4>
+              <MetricSelector value={chartMetric} onChange={setChartMetric} dark={dark} />
             </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center py-10 text-[13px] text-content-muted">Not enough scored months yet.</div>
-          )}
+            {hasChartData ? (
+              <div className="w-full h-48 font-sans text-[11px] font-bold">
+                <ScoreTrendChart dark={dark} theme={theme} data={chartSeriesData} scoreLabel={METRIC_LABELS[chartMetric]} />
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center py-10 text-[13px] text-content-muted">Not enough scored months yet.</div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <MediumStatCard dark={dark} mediumKey="lead" stat={insights.historicalMediumStats.lead} />
+            <MediumStatCard dark={dark} mediumKey="payment" stat={insights.historicalMediumStats.payment} />
+            <MediumStatCard dark={dark} mediumKey="chat" stat={insights.historicalMediumStats.chat} />
+            <MediumStatCard dark={dark} mediumKey="call" stat={insights.historicalMediumStats.call} />
+          </div>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Rankings</h3>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="flex flex-col gap-2">
           {/* The toggle sits directly above Top 5 / Bottom 5, with no extra
               label — placement alone ties it to the two lists it controls
@@ -1896,10 +1909,10 @@ function AdvisorDetailView({
         monthLabel={latest?.monthLabel ?? null}
         cumulative={latest?.cumulativeScore ?? null}
         cumulativeDelta={latestCumulativeDelta}
-        lead={{ avg: latest?.leadScoreAvg ?? null, instances: latest?.leadScoreInstances ?? 0 }}
-        payment={{ avg: latest?.paymentsAvg ?? null, instances: latest?.paymentsInstances ?? 0 }}
-        chat={{ avg: latest?.chatAvg ?? null, instances: latest?.chatInstances ?? 0 }}
-        call={{ avg: latest?.callAvg ?? null, instances: latest?.callInstances ?? 0 }}
+        lead={buildMediumStat([latest?.leadScoreAvg ?? null], [latest?.leadScoreInstances ?? 0], [latest?.leadScoreBlunders ?? 0])}
+        payment={buildMediumStat([latest?.paymentsAvg ?? null], [latest?.paymentsInstances ?? 0], [latest?.paymentsBlunders ?? 0])}
+        chat={buildMediumStat([latest?.chatAvg ?? null], [latest?.chatInstances ?? 0], [latest?.chatBlunders ?? 0])}
+        call={buildMediumStat([latest?.callAvg ?? null], [latest?.callInstances ?? 0], [latest?.callBlunders ?? 0])}
       />
 
       {/* Selected-period insights */}
@@ -2065,6 +2078,38 @@ function ViewAllToggle({ dark, expanded, total, onToggle }: { dark: boolean; exp
   );
 }
 
+// ── Chat ID link + flag-severity dot line — shared by QA Feedback and
+// Disputes & Escalations (Task 3 items 11 &amp; 12). A Chat ID only ever
+// renders as a link when the record actually has one — never fabricated
+// for records without one. ────────────────────────────────────────────
+function chatIdLink(chatId: string): string {
+  return `https://dittohq.in/whatsapp/chats?chat=${encodeURIComponent(chatId)}`;
+}
+function ChatIdLink({ value, dark }: { value: unknown; dark: boolean }) {
+  const chatId = value === null || value === undefined || value === "" ? "" : String(value);
+  if (!chatId) return null;
+  return (
+    <a
+      href={chatIdLink(chatId)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={`text-[11px] font-bold underline underline-offset-2 shrink-0 ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
+      title="Open chat"
+    >
+      {chatId}
+    </a>
+  );
+}
+function FlagLine({ dot, text }: { dot: string; text: string }) {
+  return (
+    <div className="flex items-start gap-1.5">
+      <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+      <span>{text}</span>
+    </div>
+  );
+}
+
 function QaFeedbackSection({ dark, data, loading, error }: { dark: boolean; data: SheetTableLike | null; loading: boolean; error: string }) {
   const [expanded, setExpanded] = useState(false);
   const rows = data?.rows || [];
@@ -2087,13 +2132,16 @@ function QaFeedbackSection({ dark, data, loading, error }: { dark: boolean; data
                   <span className={dark ? "text-slate-500" : "text-stone-400"}>·</span>
                   <span>{fmtCell(r["Domain"])}</span>
                 </span>
-                <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${scoreChipClass(r["Score"], dark)}`}>{fmtCell(r["Score"])}</span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${scoreChipClass(r["Score"], dark)}`}>{fmtCell(r["Score"])}</span>
+                  <ChatIdLink value={r["Chat ID"]} dark={dark} />
+                </span>
               </div>
               {(r["Red Flags"] || r["Orange Flags"] || r["Green Flags"]) && (
-                <div className="mt-1 flex items-center gap-3 text-[11px] font-semibold">
-                  {r["Red Flags"] ? <span className="text-red-500">Red: {String(r["Red Flags"])}</span> : null}
-                  {r["Orange Flags"] ? <span className="text-amber-500">Orange: {String(r["Orange Flags"])}</span> : null}
-                  {r["Green Flags"] ? <span className="text-emerald-500">Green: {String(r["Green Flags"])}</span> : null}
+                <div className="mt-1.5 space-y-1 text-[11px]">
+                  {r["Red Flags"] ? <FlagLine dot="bg-red-500" text={String(r["Red Flags"])} /> : null}
+                  {r["Orange Flags"] ? <FlagLine dot="bg-amber-500" text={String(r["Orange Flags"])} /> : null}
+                  {r["Green Flags"] ? <FlagLine dot="bg-emerald-500" text={String(r["Green Flags"])} /> : null}
                 </div>
               )}
             </li>
@@ -2127,7 +2175,7 @@ function DisputesEscalationsSection({ dark, data, loading, error }: { dark: bool
                   <span>{fmtCell(r["Domain"])}</span>
                   <span
                     className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase ${
-                      r["Type"] === "Dispute" ? (dark ? "bg-blue-500/20 text-blue-300" : "bg-blue-50 text-blue-700") : dark ? "bg-violet-500/20 text-violet-300" : "bg-violet-50 text-violet-700"
+                      r["Type"] === "Dispute" ? (dark ? "bg-blue-500/20 text-blue-300" : "bg-blue-50 text-blue-700") : dark ? "bg-amber-500/20 text-amber-300" : "bg-amber-50 text-amber-700"
                     }`}
                   >
                     {fmtCell(r["Type"])}
@@ -2136,6 +2184,7 @@ function DisputesEscalationsSection({ dark, data, loading, error }: { dark: bool
                 <span className="flex items-center gap-2 shrink-0">
                   <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${scoreChipClass(r["Score"], dark)}`}>{fmtCell(r["Score"])}</span>
                   <span className={`text-[11px] font-bold ${dark ? "text-slate-300" : "text-stone-600"}`}>{fmtCell(r["Status"])}</span>
+                  <ChatIdLink value={r["Chat ID"]} dark={dark} />
                 </span>
               </div>
               {(r["Comment"] || r["QA Response"]) && (
@@ -2162,82 +2211,16 @@ function DisputesEscalationsSection({ dark, data, loading, error }: { dark: bool
   );
 }
 
-function ActionableStatusChip({ status, dark }: { status: ActionableStatus; dark: boolean }) {
-  const cls =
-    status === "Completed"
-      ? dark
-        ? "bg-emerald-500/20 text-emerald-300"
-        : "bg-emerald-50 text-emerald-700"
-      : status === "In Progress"
-        ? dark
-          ? "bg-amber-500/20 text-amber-300"
-          : "bg-amber-50 text-amber-700"
-        : dark
-          ? "bg-white/10 text-slate-300"
-          : "bg-stone-100 text-stone-600";
-  return <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase shrink-0 ${cls}`}>{status}</span>;
-}
-
-function CoachingHistorySection({ dark, entries, loading, error }: { dark: boolean; entries: CoachingHistoryEntry[] | null; loading: boolean; error: string }) {
-  return (
-    <SectionCard dark={dark} title="Coaching History">
-      {loading ? (
-        <p className="text-[13px] text-content-muted py-2">Loading…</p>
-      ) : error ? (
-        <p className="text-[13px] text-red-500 py-2">{error}</p>
-      ) : !entries || entries.length === 0 ? (
-        <p className="text-[13px] text-content-muted py-2">No coaching sessions logged yet.</p>
-      ) : (
-        <ul className="space-y-2 max-h-[50vh] overflow-auto">
-          {entries.map((s) => (
-            <li key={s.id} className={`rounded-lg border p-2.5 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
-              <div className="flex items-center justify-between gap-2">
-                <span className={`font-bold ${dark ? "text-white" : "text-stone-900"}`}>{s.meetingDate}</span>
-                <span className={dark ? "text-slate-400" : "text-stone-500"}>{s.authorName}</span>
-              </div>
-              {s.discussionPoints && (
-                <p className="mt-1">
-                  <span className="font-bold text-content-muted">Discussion: </span>
-                  {s.discussionPoints}
-                </p>
-              )}
-              {s.meetingNotes && (
-                <p className="mt-1">
-                  <span className="font-bold text-content-muted">Notes: </span>
-                  {s.meetingNotes}
-                </p>
-              )}
-              {s.actionables.length > 0 && (
-                <ul className="mt-1.5 space-y-1">
-                  {s.actionables.map((a) => (
-                    <li key={a.id} className="flex items-center gap-2 flex-wrap">
-                      <ActionableStatusChip status={a.status} dark={dark} />
-                      <span>{a.description}</span>
-                      {a.dueDate && <span className="text-content-muted">(due {a.dueDate})</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </SectionCard>
-  );
-}
-
 function AdvisorInsightsView({
   dark,
   pivot,
   orderedRows,
   prevMonthKeyOf,
-  coachingRefreshSignal,
 }: {
   dark: boolean;
   pivot: AdvisorPivot;
   orderedRows: MonthlyAdvisorRow[];
   prevMonthKeyOf: Record<string, string | undefined>;
-  coachingRefreshSignal: number;
 }) {
   const latest = pivot.latestScoredRow;
   const latestDelta = useMemo(() => {
@@ -2252,9 +2235,6 @@ function AdvisorInsightsView({
   const [reviews, setReviews] = useState<SheetTableLike | null>(null);
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewsError, setReviewsError] = useState("");
-  const [history, setHistory] = useState<CoachingHistoryEntry[] | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -2294,25 +2274,6 @@ function AdvisorInsightsView({
     };
   }, [pivot.tactId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setHistoryLoading(true);
-    setHistoryError("");
-    fetchCoachingHistory(pivot.tactId)
-      .then((r) => {
-        if (!cancelled) setHistory(r);
-      })
-      .catch((err) => {
-        if (!cancelled) setHistoryError(err.message || "Failed to load coaching history.");
-      })
-      .finally(() => {
-        if (!cancelled) setHistoryLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pivot.tactId, coachingRefreshSignal]);
-
   return (
     <div className="space-y-4">
       <CurrentMonthKpiRow
@@ -2320,201 +2281,18 @@ function AdvisorInsightsView({
         monthLabel={latest?.monthLabel ?? null}
         cumulative={latest?.cumulativeScore ?? null}
         cumulativeDelta={latestDelta}
-        lead={{ avg: latest?.leadScoreAvg ?? null, instances: latest?.leadScoreInstances ?? 0 }}
-        payment={{ avg: latest?.paymentsAvg ?? null, instances: latest?.paymentsInstances ?? 0 }}
-        chat={{ avg: latest?.chatAvg ?? null, instances: latest?.chatInstances ?? 0 }}
-        call={{ avg: latest?.callAvg ?? null, instances: latest?.callInstances ?? 0 }}
+        lead={buildMediumStat([latest?.leadScoreAvg ?? null], [latest?.leadScoreInstances ?? 0], [latest?.leadScoreBlunders ?? 0])}
+        payment={buildMediumStat([latest?.paymentsAvg ?? null], [latest?.paymentsInstances ?? 0], [latest?.paymentsBlunders ?? 0])}
+        chat={buildMediumStat([latest?.chatAvg ?? null], [latest?.chatInstances ?? 0], [latest?.chatBlunders ?? 0])}
+        call={buildMediumStat([latest?.callAvg ?? null], [latest?.callInstances ?? 0], [latest?.callBlunders ?? 0])}
       />
       <QaFeedbackSection dark={dark} data={feedback} loading={feedbackLoading} error={feedbackError} />
       <DisputesEscalationsSection dark={dark} data={reviews} loading={reviewsLoading} error={reviewsError} />
-      <CoachingHistorySection dark={dark} entries={history} loading={historyLoading} error={historyError} />
     </div>
   );
 }
 
-// ── Floating Coaching Workspace (Task 2) — a persistent button + panel
-// bound to whichever advisor is currently open (see this file's header
-// comment / CoachingWorkspace's render site). Draft state lives in
-// localStorage, keyed per advisor tactId, so switching advisors,
-// collapsing the panel, toggling Performance/Insights, or an accidental
-// refresh never loses or cross-contaminates an unsaved note. ────────────
-function CoachingWorkspace({
-  dark,
-  tactId,
-  advisorName,
-  teamLabel,
-  onSaved,
-}: {
-  dark: boolean;
-  tactId: string;
-  advisorName: string;
-  teamLabel: string;
-  onSaved: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<CoachingDraft>(() => loadCoachingDraft(tactId));
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [savedFlash, setSavedFlash] = useState(false);
-
-  // A new tactId (the advisor changed) loads THAT advisor's own draft —
-  // the previous advisor's draft stays exactly where it was in
-  // localStorage, never merged into this one or discarded (Task 2 item 7).
-  useEffect(() => {
-    setDraft(loadCoachingDraft(tactId));
-    setSaveError("");
-    setSavedFlash(false);
-  }, [tactId]);
-
-  // Persisted on every change — cheap (localStorage, not the DB) and is
-  // what makes an accidental refresh non-destructive (Task 2 item 6).
-  useEffect(() => {
-    saveCoachingDraftToStorage(tactId, draft);
-  }, [tactId, draft]);
-
-  const addActionable = () =>
-    setDraft((d) => ({ ...d, actionables: [...d.actionables, { id: `${Date.now()}-${d.actionables.length}`, description: "", dueDate: "", status: "Open" }] }));
-  const updateActionable = (id: string, patch: Partial<CoachingActionableDraft>) =>
-    setDraft((d) => ({ ...d, actionables: d.actionables.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
-  const removeActionable = (id: string) => setDraft((d) => ({ ...d, actionables: d.actionables.filter((a) => a.id !== id) }));
-
-  const handleSave = async () => {
-    if (isDraftEmpty(draft)) return;
-    setSaving(true);
-    setSaveError("");
-    try {
-      await postCoachingSession({
-        tactId,
-        meetingDate: draft.meetingDate,
-        discussionPoints: draft.discussionPoints,
-        meetingNotes: draft.meetingNotes,
-        actionables: draft.actionables.filter((a) => a.description.trim()).map((a) => ({ description: a.description.trim(), dueDate: a.dueDate || null, status: a.status })),
-      });
-      clearCoachingDraft(tactId);
-      setDraft(emptyCoachingDraft());
-      setSavedFlash(true);
-      onSaved();
-    } catch (err: any) {
-      setSaveError(err.message || "Failed to save coaching note.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const inputCls = `w-full rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"}`;
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg font-bold text-[13px] text-white cursor-pointer hover:brightness-110 transition"
-        style={{ background: "#117FDA" }}
-        title="Coaching Workspace"
-      >
-        <ClipboardList className="w-4 h-4" />
-        Coaching
-        {!isDraftEmpty(draft) && <span className="w-2 h-2 rounded-full bg-amber-400" title="Unsaved draft" />}
-      </button>
-
-      {open && (
-        <div
-          className={`fixed bottom-20 right-5 z-40 w-[380px] max-w-[calc(100vw-2.5rem)] max-h-[75vh] overflow-auto rounded-2xl border shadow-2xl p-4 space-y-3 ${
-            dark ? "bg-[#0b1830] border-white/[0.12]" : "bg-white border-stone-200"
-          }`}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h3 className={`text-[13px] font-black ${dark ? "text-white" : "text-[#111827]"}`}>Coaching Workspace</h3>
-              <p className="text-[11px] text-content-muted mt-0.5">
-                Advisor: <span className="font-bold">{advisorName}</span>
-                <br />
-                Team: <span className="font-bold">{teamLabel}</span>
-              </p>
-            </div>
-            <button type="button" onClick={() => setOpen(false)} className={`cursor-pointer shrink-0 ${dark ? "text-slate-400 hover:text-white" : "text-stone-400 hover:text-stone-800"}`}>
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Date</span>
-            <input type="date" value={draft.meetingDate} onChange={(e) => setDraft((d) => ({ ...d, meetingDate: e.target.value }))} className={inputCls} />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Discussion Points</span>
-            <textarea
-              rows={3}
-              value={draft.discussionPoints}
-              onChange={(e) => setDraft((d) => ({ ...d, discussionPoints: e.target.value }))}
-              className={inputCls}
-              placeholder="What to bring up in this session…"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Notes</span>
-            <textarea
-              rows={3}
-              value={draft.meetingNotes}
-              onChange={(e) => setDraft((d) => ({ ...d, meetingNotes: e.target.value }))}
-              className={inputCls}
-              placeholder="What was actually discussed…"
-            />
-          </label>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Actionables</span>
-              <button type="button" onClick={addActionable} className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}>
-                + Add
-              </button>
-            </div>
-            {draft.actionables.length === 0 ? (
-              <p className="text-[11px] text-content-muted">No actionables yet.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {draft.actionables.map((a) => (
-                  <div key={a.id} className={`rounded-lg border p-2 space-y-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
-                    <div className="flex items-start gap-1.5">
-                      <input value={a.description} onChange={(e) => updateActionable(a.id, { description: e.target.value })} placeholder="Description" className={inputCls + " flex-1"} />
-                      <button
-                        type="button"
-                        onClick={() => removeActionable(a.id)}
-                        className={`cursor-pointer shrink-0 mt-1.5 ${dark ? "text-slate-400 hover:text-red-400" : "text-stone-400 hover:text-red-500"}`}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <input type="date" value={a.dueDate} onChange={(e) => updateActionable(a.id, { dueDate: e.target.value })} className={inputCls} />
-                      <select value={a.status} onChange={(e) => updateActionable(a.id, { status: e.target.value as ActionableStatus })} className={inputCls}>
-                        <option value="Open">Open</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Completed">Completed</option>
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {saveError && <p className="text-[11px] text-red-500 font-semibold">{saveError}</p>}
-          {savedFlash && !saving && isDraftEmpty(draft) && <p className="text-[11px] text-emerald-500 font-semibold">Saved to Coaching History.</p>}
-
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || isDraftEmpty(draft)}
-            className="w-full rounded-lg py-2 text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition"
-            style={{ background: "#1f2d3d" }}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      )}
-    </>
-  );
-}
+// Session Feedback (formerly "Coaching Workspace") has moved to the
+// Advisor QA Dashboard (QaDashboardPage.tsx) — see requirement #15. It no
+// longer lives here; TeamTrackerPage.tsx keeps only the QA
+// Feedback/Disputes & Escalations sections in AdvisorInsightsView above.

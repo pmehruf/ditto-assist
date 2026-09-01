@@ -12,10 +12,12 @@ import {
   type CoachingActionableRow,
 } from "../schema.js";
 
+export type CoachingActionableStatus = "Open" | "In Progress" | "Completed" | "Failed";
+
 export interface NewCoachingActionable {
   description: string;
   dueDate: string | null; // "yyyy-MM-dd"
-  status: "Open" | "In Progress" | "Completed";
+  status: CoachingActionableStatus;
 }
 
 export interface NewCoachingSession {
@@ -104,5 +106,33 @@ export class CoachingRepository {
       bySession.get(row.sessionId)!.push(row);
     }
     return sessions.map((s) => ({ ...s, actionables: bySession.get(s.id) || [] }));
+  }
+
+  /** Resolves the tactId that owns a given actionable, via its parent
+   * session — actionables don't carry tactId directly (see schema.ts),
+   * so a status-update's authorization check joins through here first.
+   * null when the actionable doesn't exist. */
+  async getActionableTactId(actionableId: number): Promise<string | null> {
+    const [row] = await this.db
+      .select({ tactId: coachingSessions.tactId })
+      .from(coachingActionables)
+      .innerJoin(coachingSessions, eq(coachingActionables.sessionId, coachingSessions.id))
+      .where(eq(coachingActionables.id, actionableId))
+      .limit(1);
+    return row?.tactId ?? null;
+  }
+
+  /** Feedback Summary's own status control — Open -> In Progress ->
+   * Completed/Failed. Actionables created via the Session Feedback form
+   * always start "Open"; this is the only place status changes after
+   * that. Returns the updated row, or null if the actionable doesn't
+   * exist. */
+  async updateActionableStatus(actionableId: number, status: CoachingActionableStatus): Promise<CoachingActionableRow | null> {
+    const [row] = await this.db
+      .update(coachingActionables)
+      .set({ status })
+      .where(eq(coachingActionables.id, actionableId))
+      .returning();
+    return row ?? null;
   }
 }
