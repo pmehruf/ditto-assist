@@ -544,13 +544,18 @@ export function LookupIntroPage({
             Did you know) and right 1/3 (Announcements), side by side from
             `lg` up. Below `lg` they stack (left column's pieces, then
             Announcements) — completely unaffected by anything below.
-            At `lg`+: every left-column card sizes to its own natural
-            content height, and the Announcement card's height is set to
-            the left column's own measured total height (via `leftColRef`
-            below) — so the two columns' bottoms land on exactly the same
-            line, by construction, without forcing any card to a fixed
-            height. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0 lg:items-start">
+            At `lg`+: this grid stretches (default `items-stretch`, no
+            more `items-start`) to the full height of its own flex-1
+            parent, so the left column is a real, definite height rather
+            than just its natural content height — the supporting row
+            below (Announcement Counter / QA Performance / Did you know)
+            and the Did you know card within it absorb that extra space
+            via `flex-1` (see below) instead of leaving it as dead space
+            under the cards. The Announcement/Updates card's height is
+            then set to the left column's own measured total height (via
+            `leftColRef` below) — so the two columns' bottoms land on
+            exactly the same line, by construction. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
           {/* LEFT — 2/3: Workspace Tools, QA Performance, Did you know. */}
           <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
             {/* WORKSPACE TOOLS — the former "References" tier (Plan
@@ -590,29 +595,43 @@ export function LookupIntroPage({
                 `minmax(0,1fr)` column) — QA Performance's own design
                 (alignment/typography/spacing/comparison visuals) is
                 completely untouched, same as it already adapts to any
-                container width. The Counter card sits at `lg:h-full`,
-                stretched by this row's default `items-stretch` to match
-                the right cell's total natural height (QA Performance + Did
-                you know, both now natural-height — see their own files) —
-                that combined height anchors the row; the Counter card just
-                fills it. Below `lg`, everything is natural height,
-                stacked. */}
-            <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] shrink-0">
+                container width.
+                `flex-1 min-h-0` (was `shrink-0`) — now that the left
+                column above this is a real, definite height (see this
+                page's own comment on the two-main-sections grid), this row
+                grows to absorb whatever room is left below Workspace
+                Tools instead of leaving it blank at the bottom of the
+                page. QA Performance stays `shrink-0` (its own deliberately
+                compact, natural height — see QaPerformancePeek.tsx); Did
+                you know is `flex-1 min-h-0` so IT is what actually grows
+                (see DidYouKnowCard.tsx). The Counter card sits at
+                `lg:h-full`, stretched by this row's default
+                `items-stretch` to match the right cell's now-taller total
+                height — that combined height anchors the row; the Counter
+                card just fills it, its own stat tiles dividing the extra
+                room evenly (see AnnouncementCounterCard.tsx). Below `lg`,
+                nothing here has an ancestor stretching it taller than its
+                content, so this is a no-op there — everything renders at
+                natural height, stacked, exactly as before. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
               <div className="min-w-0">
                 <AnnouncementCounterCard
                   theme={theme}
                   allAnnouncements={allAnnouncements}
-                  onViewAll={() => setActiveTab("announcement_archive")}
                   onOpenStat={(title, list) => setOpenStat({ title, list })}
                 />
               </div>
               <div className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)]">
-                <QaPerformancePeek
-                  theme={theme}
-                  userEmail={currentUser?.email || ""}
-                  onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
-                />
-                <DidYouKnowCard theme={theme} />
+                <div className="shrink-0">
+                  <QaPerformancePeek
+                    theme={theme}
+                    userEmail={currentUser?.email || ""}
+                    onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
+                  />
+                </div>
+                <div className="flex-1 min-h-0">
+                  <DidYouKnowCard theme={theme} />
+                </div>
               </div>
             </div>
           </div>

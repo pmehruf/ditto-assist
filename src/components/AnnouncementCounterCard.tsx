@@ -4,7 +4,7 @@
  */
 
 import { useMemo } from "react";
-import { Megaphone, ArrowUpRight, Sparkles, CheckCircle2, Zap } from "lucide-react";
+import { Megaphone, Sparkles, CheckCircle2, Zap } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
 
 interface AnnouncementCounterCardProps {
@@ -13,7 +13,6 @@ interface AnnouncementCounterCardProps {
    * state — not the capped `activeAnnouncements` HomeAnnouncementCard uses,
    * so these counts stay accurate past 8 active announcements. */
   allAnnouncements: QAAnnouncement[];
-  onViewAll: () => void;
   onOpenStat: (title: string, list: QAAnnouncement[]) => void;
 }
 
@@ -43,7 +42,7 @@ function parseDateOnly(s: string | null | undefined): Date | null {
  * since a horizontal 3-up strip has nowhere near enough width in a 1-of-3
  * column.
  */
-export function AnnouncementCounterCard({ theme, allAnnouncements, onViewAll, onOpenStat }: AnnouncementCounterCardProps) {
+export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }: AnnouncementCounterCardProps) {
   const { newThisWeekList, wentLiveThisWeekList, liveTodayList } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -103,25 +102,17 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onViewAll, on
 
   return (
     <div className={cardClass}>
-      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] lg:shrink-0 gap-2">
-        <div className="flex items-center gap-2 select-none min-w-0">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
-            <Megaphone className="w-4 h-4" />
-          </div>
-          <span className={`text-[13px] sm:text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-            Announcements
-          </span>
+      {/* No "View all" link here — it was competing with the title for
+          this narrow card's width and forcing it to truncate. Announcements
+          are still fully reachable via the "Announcements" tile in
+          Workspace Tools above. */}
+      <div className="flex items-center gap-2 select-none mb-[clamp(6px,1vh,14px)] lg:shrink-0 min-w-0">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
+          <Megaphone className="w-4 h-4" />
         </div>
-        <button
-          type="button"
-          onClick={onViewAll}
-          className={`flex items-center gap-0.5 text-[12px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
-            theme === "dark" ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-800"
-          }`}
-        >
-          View all
-          <ArrowUpRight className="w-3 h-3" />
-        </button>
+        <span className={`text-[13px] sm:text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+          Announcements
+        </span>
       </div>
 
       {/* Three stat blocks, stacked vertically (not the old horizontal 3-up
