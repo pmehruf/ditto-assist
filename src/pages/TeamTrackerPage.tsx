@@ -310,9 +310,9 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
   const [selectedGuide, setSelectedGuide] = useState("");
   const [selectedMentor, setSelectedMentor] = useState("");
 
-  const [period, setPeriod] = useState<Period>("3m");
-  const [customFrom, setCustomFrom] = useState(() => periodToRange("3m").fromMonth);
-  const [customTo, setCustomTo] = useState(() => periodToRange("3m").toMonth);
+  const [period, setPeriod] = useState<Period>("1y");
+  const [customFrom, setCustomFrom] = useState(() => periodToRange("1y").fromMonth);
+  const [customTo, setCustomTo] = useState(() => periodToRange("1y").toMonth);
   const [advisorFilter, setAdvisorFilter] = useState(""); // "" = All
   const [mediumFilter, setMediumFilter] = useState<Medium>("all");
 
