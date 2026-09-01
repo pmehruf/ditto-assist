@@ -59,6 +59,10 @@ import {
   getCompanyWideQaAggregateFor as getQaCompanyWideAggregateFor,
 } from "./src/server/qaDashboard/qaDashboardService.js";
 import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDataEngine.js";
+import {
+  getTeamTrackerContext,
+  getTeamTrackerTable,
+} from "./src/server/qaDashboard/teamTrackerService.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
 import { invalidateQaSheetsAuthCache, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
@@ -5350,6 +5354,44 @@ app.get("/api/qa-dashboard/company-summary", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("QA Dashboard: failed to load company-wide aggregate:", err);
     return res.status(500).json({ error: `Failed to load company-wide aggregate: ${err.message}` });
+  }
+});
+
+// --- Team QA Performance Tracker ("Team Tracker") ---
+// Separate, additive page — reuses qaDataEngine.ts's existing scoring math
+// (getAdvisorsBatchMetrics, same function the QA Dashboard's own roster
+// view calls) via teamTrackerService.ts, which does not modify
+// qaDashboardService.ts or qaDataEngine.ts. Admin/Guide/Mentor only (no
+// plain-Advisor "own record" view here, unlike the QA Dashboard) — see
+// teamTrackerService.ts's header comment.
+
+app.get("/api/qa-dashboard/team-tracker/context", requireAuth, async (req, res) => {
+  try {
+    const guide = typeof req.query.guide === "string" && req.query.guide.trim() ? req.query.guide.trim() : null;
+    const mentor = typeof req.query.mentor === "string" && req.query.mentor.trim() ? req.query.mentor.trim() : null;
+    const result = await getTeamTrackerContext(req.user!.email, guide, mentor);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to load context:", err);
+    return res.status(500).json({ error: `Failed to load Team Tracker: ${err.message}` });
+  }
+});
+
+app.get("/api/qa-dashboard/team-tracker/table", requireAuth, async (req, res) => {
+  try {
+    const guide = typeof req.query.guide === "string" && req.query.guide.trim() ? req.query.guide.trim() : null;
+    const mentor = typeof req.query.mentor === "string" && req.query.mentor.trim() ? req.query.mentor.trim() : null;
+    const tactId = typeof req.query.tactId === "string" && req.query.tactId.trim() ? req.query.tactId.trim() : null;
+    const fromYm = typeof req.query.fromMonth === "string" ? req.query.fromMonth.trim() : "";
+    const toYm = typeof req.query.toMonth === "string" ? req.query.toMonth.trim() : "";
+    if (!/^\d{4}-\d{2}$/.test(fromYm) || !/^\d{4}-\d{2}$/.test(toYm)) {
+      return res.status(400).json({ error: "fromMonth and toMonth (yyyy-MM) are required." });
+    }
+    const result = await getTeamTrackerTable(req.user!.email, guide, mentor, tactId, fromYm, toYm);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to load table:", err);
+    return res.status(500).json({ error: `Failed to load Team Tracker table: ${err.message}` });
   }
 });
 

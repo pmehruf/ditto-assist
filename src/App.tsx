@@ -53,7 +53,8 @@ import {
   ShieldUser,
   Terminal,
   Settings2,
-  Waypoints
+  Waypoints,
+  Users2
 } from "lucide-react";
 
 import {
@@ -129,6 +130,9 @@ const SpecificIllnessCheckPage = lazy(() =>
 );
 const QaDashboardPage = lazy(() =>
   import("./pages/QaDashboardPage").then((m) => ({ default: m.QaDashboardPage }))
+);
+const TeamTrackerPage = lazy(() =>
+  import("./pages/TeamTrackerPage").then((m) => ({ default: m.TeamTrackerPage }))
 );
 const ProfileAccessPage = lazy(() =>
   import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
@@ -262,7 +266,7 @@ const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "qa_dashboard" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -309,6 +313,14 @@ export default function App() {
   const [orgTeamsList, setOrgTeamsList] = useState<OrgTeam[]>([]);
   const [rolesList, setRolesList] = useState<AppRole[]>([]);
   const [, setAnnouncementsLoadError] = useState<string | null>(null);
+  // Team Tracker sidebar-link gate — a cheap, no-args probe of the same
+  // /team-tracker/context endpoint the page itself calls (see
+  // teamTrackerService.ts): a FORBIDDEN body means this signed-in user
+  // holds no QA Dashboard Admin/Guide/Mentor role, so the nav link stays
+  // hidden (the page has no "see your own record" fallback the way the QA
+  // Dashboard does — nothing to show a plain Advisor). Purely a UX
+  // convenience; the real enforcement is server-side in that same route.
+  const [qaTeamTrackerAllowed, setQaTeamTrackerAllowed] = useState<boolean>(false);
 
   const mapAnnouncementRow = (row: any): QAAnnouncement => ({
     id: String(row.id),
@@ -350,6 +362,18 @@ export default function App() {
     } catch (_) {
       // Never block the app on this — worst case every feature falls back to
       // its shipped default, same as before this table existed.
+    }
+  };
+
+  const fetchQaTeamTrackerAccess = async () => {
+    try {
+      const res = await fetch("/api/qa-dashboard/team-tracker/context");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) { setQaTeamTrackerAllowed(false); return; }
+      const body = await res.json().catch(() => ({}));
+      setQaTeamTrackerAllowed(!body?.error);
+    } catch (_) {
+      setQaTeamTrackerAllowed(false);
     }
   };
 
@@ -832,7 +856,7 @@ export default function App() {
   type SidebarSectionKey = "advisorWorkspace" | "quality" | "reference" | "appOpsControls" | "administration" | "developer";
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
     advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist"],
-    quality: ["qa_dashboard"],
+    quality: ["qa_dashboard", "team_tracker"],
     reference: ["advisory_zone", "announcement_archive", "resources", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
     administration: ["profile_access", "audit", "flagged_responses"],
@@ -955,6 +979,7 @@ export default function App() {
       fetchPedSuggestions();
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
+      fetchQaTeamTrackerAccess();
       fetchMyAccessGrants();
       // Fetched for every tier (2026-08-25) — previously General-only,
       // since Access Control Center is Admin/Developer-only and this data
@@ -3132,12 +3157,19 @@ export default function App() {
       onSelect?: () => void;
       badge?: React.ReactNode;
       hasAlertDot?: boolean;
+      /** ANDed with the normal tier-based hasAccess() check — for a page
+       * gated by something hasAccess() doesn't know about (e.g. Team
+       * Tracker's QA Dashboard Admin/Guide/Mentor role, resolved
+       * server-side, not this app's own General/Admin/Developer tiers).
+       * Omitted (undefined) behaves exactly like every existing call site:
+       * visible is just hasAccess(tab, tier), unchanged. */
+      visibleOverride?: boolean;
     } = {}
   ): NavPage => ({
     tab,
     label,
     Icon,
-    visible: hasAccess(tab, tier),
+    visible: hasAccess(tab, tier) && (extra.visibleOverride ?? true),
     iconStyle: extra.iconStyle,
     iconColorClass: extra.iconColorClass ?? (() => RAIL_ICON_REST),
     isActive: extra.isActive ?? activeTab === tab,
@@ -3169,7 +3201,10 @@ export default function App() {
           key: "quality",
           label: "Quality",
           GroupIcon: Award,
-          pages: [navPage("qa_dashboard", "QA Dashboard", QaDashboardIcon, "Viewer")],
+          pages: [
+            navPage("qa_dashboard", "QA Dashboard", QaDashboardIcon, "Viewer"),
+            navPage("team_tracker", "Team Tracker", Users2, "Viewer", { visibleOverride: qaTeamTrackerAllowed }),
+          ],
         },
         {
           key: "reference",
@@ -4040,6 +4075,7 @@ export default function App() {
                 specific_illness_check: { label: "Specific Illness Assist", icon: <ClipboardCheck className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 product_assist: { label: "Product Assist", icon: <ProductAssistIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 qa_dashboard: { label: "QA Dashboard", icon: <QaDashboardIcon className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
+                team_tracker: { label: "Team Tracker", icon: <Users2 className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 ped_suggestions: { label: "PED Repository", icon: <Stethoscope className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 knowledge_base: { label: "Knowledge Base", icon: <Database className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
                 smoke_test: { label: "Smoke Test", icon: <Flame className="w-4.5 h-4.5 shrink-0 text-cyan-400" /> },
@@ -4871,6 +4907,30 @@ export default function App() {
               <ErrorBoundary theme={theme} label="QA Dashboard">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <QaDashboardPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* TEAM TRACKER — manager-facing monthly QA performance view,
+              reusing the QA Dashboard's own scoring (see
+              teamTrackerService.ts). Admin/Guide/Mentor only — the sidebar
+              link itself is additionally gated on qaTeamTrackerAllowed
+              above; hasAccess("team_tracker", tier) alone (featurePermissions.ts)
+              stays open to every tier the same as qa_dashboard, since the
+              real role check happens server-side. */}
+          {activeTab === "team_tracker" && (
+            <motion.div
+              key="team_tracker"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Team Tracker">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <TeamTrackerPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

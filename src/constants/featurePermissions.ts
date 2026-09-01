@@ -126,6 +126,22 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     adminAccess: "Viewer"
   },
   {
+    // TEAM TRACKER — month-by-month QA performance view for a Guide's team
+    // or a Mentor's mentees (Admin picks either). Same "Viewer for every
+    // tier" posture as qa_dashboard above: this app's General/Admin/
+    // Developer tiers don't gate it at all — the real gate is the QA
+    // Dashboard Admin/Guide/Mentor role (qa_dashboard_roles DB table,
+    // src/server/qaDashboard/teamTrackerService.ts), which decides both
+    // whether the sidebar link even shows (App.tsx's qaTeamTrackerAllowed
+    // probe) and whether the page's own data routes answer at all.
+    id: "team_tracker",
+    name: "Team Tracker",
+    description: "Month-by-month QA performance tracker for a Guide's team or a Mentor's mentees, reusing the QA Dashboard's own scoring",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer"
+  },
+  {
     id: "smoke_test",
     name: "Smoke Test",
     description: "Run the deterministic mapping engine against a curated list of common PEDs, per plan, to catch classification regressions",
