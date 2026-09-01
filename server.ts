@@ -2075,7 +2075,10 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
 
     if (req.query.paginated) {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
-      const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement", "Insight"] as const);
+      // "General Announcement" stays in this whitelist for legacy rows that
+      // migration 0056 couldn't reclassify (see schema.ts's announcementTypeEnum)
+      // — it's just no longer creatable via the form.
+      const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement", "Product Announcement", "Insurance Operations", "Insight"] as const);
       const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
       const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
       const effectiveDateFrom = typeof req.query.effectiveDateFrom === "string" && req.query.effectiveDateFrom.trim() ? req.query.effectiveDateFrom.trim() : undefined;
@@ -2121,9 +2124,26 @@ app.get("/api/announcements/insight", requireAuth, async (req, res) => {
 app.post("/api/announcements", requireAuth, async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "qa_announcement_log", "Editor", "Creating announcements"))) return;
-    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate, team } = req.body;
-    const resolvedType = type === "Insight" ? "Insight" : type === "General Announcement" ? "General Announcement" : "QA Announcement";
+    const { announcement, effectiveDate, category, rating, type, validTillDate, title, announcementDate, team } = req.body;
+    // "General Announcement" is deliberately NOT reachable here — the form
+    // no longer offers it (see QAAnnouncementForm.tsx's Type dropdown), so
+    // any unrecognized/omitted type falls back to QA Announcement, same as
+    // before. Product Announcement / Insurance Operations are the two real
+    // non-QA, non-Insight types now.
+    const resolvedType =
+      type === "Insight" ? "Insight" :
+      type === "Product Announcement" ? "Product Announcement" :
+      type === "Insurance Operations" ? "Insurance Operations" :
+      "QA Announcement";
     const isInsight = resolvedType === "Insight";
+    // fromTeam is no longer accepted from the client (the "From" input was
+    // removed from the form — see QAAnnouncementForm.tsx) — it's derived
+    // straight from the resolved type instead, mirroring how QA Announcement
+    // rows have always had it effectively unused/null.
+    const resolvedFromTeam =
+      resolvedType === "Product Announcement" ? "Product Team" :
+      resolvedType === "Insurance Operations" ? "Insurance Operations" :
+      null;
 
     if (typeof announcement !== "string" || !announcement.trim()) {
       return res.status(400).json({ error: "Insight content is required." });
@@ -2149,7 +2169,7 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
       type: resolvedType,
       validTillDate: isInsight ? null : (validTillDate || null),
       title: isInsight ? null : (title || null),
-      fromTeam: isInsight ? null : (fromTeam || null),
+      fromTeam: isInsight ? null : resolvedFromTeam,
       // Distinct from effectiveDate (see schema.ts) — when this notice was
       // posted, not when the policy it describes takes effect.
       announcementDate: isInsight ? null : (announcementDate || null),
@@ -2189,10 +2209,19 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
 
-    const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate, team } = req.body;
+    const { announcement, effectiveDate, category, rating, type, validTillDate, title, announcementDate, team } = req.body;
     if (team !== undefined && !isValidAnnouncementTeam(team)) {
       return res.status(400).json({ error: "team must be 'Health' or 'Term'." });
     }
+    // fromTeam is no longer accepted from the client (the "From" input was
+    // removed from the form — see QAAnnouncementForm.tsx). It's derived from
+    // `type` only when the edit sets type to one of the two new types —
+    // otherwise it's left untouched, so e.g. editing a legacy General
+    // Announcement's Title/dates doesn't wipe its historical from_team.
+    const resolvedFromTeam =
+      type === "Product Announcement" ? "Product Team" :
+      type === "Insurance Operations" ? "Insurance Operations" :
+      undefined;
     const { announcements } = createRepositories(getDb());
     const row = await announcements.update(id, {
       ...(announcement !== undefined ? { announcement } : {}),
@@ -2202,7 +2231,7 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
       ...(type !== undefined ? { type } : {}),
       ...(validTillDate !== undefined ? { validTillDate } : {}),
       ...(title !== undefined ? { title } : {}),
-      ...(fromTeam !== undefined ? { fromTeam } : {}),
+      ...(resolvedFromTeam !== undefined ? { fromTeam: resolvedFromTeam } : {}),
       ...(announcementDate !== undefined ? { announcementDate } : {}),
       ...(team !== undefined ? { team } : {}),
     });

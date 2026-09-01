@@ -134,7 +134,16 @@ export function QAAnnouncementForm({
   // it describes actually takes effect, which stays optional/blank).
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
-  const [announcementType, setAnnouncementType] = useState<"QA Announcement" | "General Announcement" | "Insight">("QA Announcement");
+  // "General Announcement" is kept in this union (NOT offered as a
+  // selectable Type below — see the dropdown's options) purely so editing
+  // a legacy row that was never reclassified (see migration 0056) doesn't
+  // hit a TypeScript error assigning `item.type` into this state. Its
+  // CustomSelect will simply show no matching option ("Select…") when that
+  // happens — the admin picks a real type (Product Announcement / Insurance
+  // Operations / QA Announcement) to save it as going forward.
+  const [announcementType, setAnnouncementType] = useState<
+    "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight"
+  >("QA Announcement");
   // Which advisor audience this announcement targets — see teamForTags
   // in server.ts. Defaults to "Health" (matches the column default and the
   // spec's retroactive backfill of pre-existing announcements).
@@ -178,7 +187,6 @@ export function QAAnnouncementForm({
   const [category, setCategory] = useState("");
   const [title, setTitle] = useState("");
   const [validTillDate, setValidTillDate] = useState(""); // Valid Till Date — optional; blank means the notice never auto-expires
-  const [fromTeam, setFromTeam] = useState("");
   const [authorName, setAuthorName] = useState("");
   const [rating, setRating] = useState(0); // 0 = unselected/"Select" — no rating applicable
   const [errorMsg, setErrorMsg] = useState("");
@@ -654,16 +662,21 @@ export function QAAnnouncementForm({
         if (itemType === "Insight") {
           // Insights carry none of the type-specific fields — clear them so
           // switching Type in this form (or editing a different row next)
-          // never leaks a stale value from a previous QA/General edit.
+          // never leaks a stale value from a previous QA/Product/Operations
+          // edit.
           setTitle("");
           setValidTillDate("");
-          setFromTeam("");
           setCategory("");
           setRating(0);
         } else if (itemType !== "QA Announcement") {
+          // Covers Product Announcement, Insurance Operations, and legacy
+          // (unreclassified) General Announcement rows — all share the same
+          // Title + dates fields now. The "From" field is gone from this
+          // form entirely (see the Type dropdown below), so a legacy row's
+          // `item.from` is intentionally not loaded into any input here —
+          // it's left untouched server-side unless this edit changes Type.
           setTitle(item.title || item.category || "");
           setValidTillDate(item.validTillDate || "");
-          setFromTeam(item.from || "");
         } else {
           setCategory(item.category || "");
           setRating(item.rating ?? 0);
@@ -678,7 +691,6 @@ export function QAAnnouncementForm({
       setTitle("");
       setRating(0);
       setValidTillDate("");
-      setFromTeam("");
       setAnnouncementType("QA Announcement");
       setAnnouncementTeam("Health");
       setAlreadyInForce(false);
@@ -719,7 +731,9 @@ export function QAAnnouncementForm({
         setErrorMsg("Please provide a category matching compliance rule!");
         return;
       }
-    } else if (announcementType === "General Announcement") {
+    } else if (announcementType !== "Insight") {
+      // Product Announcement, Insurance Operations, and legacy (unreclassified)
+      // General Announcement rows all require a Title.
       if (!title.trim()) {
         setErrorMsg("Please provide a title!");
         return;
@@ -745,7 +759,12 @@ export function QAAnnouncementForm({
         title: announcementType === "QA Announcement" ? category.trim() : title.trim(),
         rating: announcementType === "QA Announcement" ? rating : 0,
         validTillDate: announcementType !== "QA Announcement" ? (validTillDate || null) : null,
-        fromTeam: announcementType === "General Announcement" ? (fromTeam.trim() || null) : null,
+        // fromTeam is intentionally NOT sent from the client anymore — Product
+        // Announcement / Insurance Operations now encode their department via
+        // `type` itself, and the server sets fromTeam from resolvedType (see
+        // server.ts's POST /api/announcements). Omitting the key on PUT also
+        // means editing a legacy General Announcement row here leaves its
+        // existing fromTeam untouched.
         // Distinct from effectiveDate — when this notice was posted, not when
         // the policy it describes takes effect. Applies to both types.
         announcementDate: announcementDate || null,
@@ -832,7 +851,6 @@ export function QAAnnouncementForm({
     setText("");
     loadIntoEditor("");
     setTitle("");
-    setFromTeam("");
     if (!editingAnnouncementId) {
       setCategory("");
       setRating(0);
@@ -914,7 +932,13 @@ export function QAAnnouncementForm({
             <CustomSelect
               theme={theme === "dark" ? "dark" : "light"}
               value={announcementType}
-              onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement" | "Insight")}
+              onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight")}
+              // "General Announcement" is intentionally NOT an option here —
+              // it's replaced by the two dedicated types below. If this form
+              // is editing a legacy row still carrying that type (see
+              // migration 0056), CustomSelect finds no matching option and
+              // shows its placeholder ("Select…") instead — picking any real
+              // type here and saving reclassifies that row for good.
               triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
                 theme === "dark"
                   ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
@@ -922,7 +946,8 @@ export function QAAnnouncementForm({
               }`}
               options={[
                 { value: "QA Announcement", label: "QA Announcement" },
-                { value: "General Announcement", label: "General Announcement" },
+                { value: "Product Announcement", label: "Product Announcement" },
+                { value: "Insurance Operations", label: "Insurance Operations" },
                 { value: "Insight", label: "Insight" },
               ]}
             />
@@ -1073,38 +1098,26 @@ export function QAAnnouncementForm({
           </>
         ) : (
           <>
-            {/* Title + From share one row. */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Title" theme={theme}>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Independence Day Downtime Alert"
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-605"
-                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
-                  }`}
-                  required
-                />
-              </Field>
-
-              <Field label="From" hint="optional" theme={theme}>
-                <input
-                  type="text"
-                  title="From (optional) — originating team or department"
-                  value={fromTeam}
-                  onChange={(e) => setFromTeam(e.target.value)}
-                  placeholder="e.g. Underwriting Team"
-                  className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
-                    theme === "dark"
-                      ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-605"
-                      : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
-                  }`}
-                />
-              </Field>
-            </div>
+            {/* Product Announcement / Insurance Operations (and legacy,
+                unreclassified General Announcement rows) share this branch.
+                Just a Title now — the old "From" text field is gone (per
+                product decision: the Type itself now says which department
+                this is from; the server sets fromTeam from resolvedType, see
+                server.ts's POST /api/announcements). */}
+            <Field label="Title" theme={theme}>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Independence Day Downtime Alert"
+                className={`w-full text-xs font-semibold px-2.5 py-2 rounded-lg border outline-none placeholder:font-normal ${
+                  theme === "dark"
+                    ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500 placeholder-stone-605"
+                    : "bg-white border-stone-250 text-stone-820 focus:border-blue-500 placeholder-stone-400"
+                }`}
+                required
+              />
+            </Field>
 
             {/* Dates + their convenience checkboxes share one bordered
                 group (same "when does this apply" grouping as the QA

@@ -80,9 +80,16 @@ export const changeLogs = pgTable("change_logs", {
 // ─────────────────────────────────────────────────────────────────────────
 // announcements — small, admin-curated list of QA/general announcements.
 // ─────────────────────────────────────────────────────────────────────────
+// "General Announcement" is kept for legacy rows (Postgres can't drop an
+// enum value in place, and reclassification in migration 0056 doesn't
+// necessarily catch every historical row) but is no longer offered as a
+// selectable Type in the Announcement Manager — "Product Announcement" and
+// "Insurance Operations" replaced it as the two real, dedicated types.
 export const announcementTypeEnum = pgEnum("announcement_type", [
   "QA Announcement",
   "General Announcement",
+  "Product Announcement",
+  "Insurance Operations",
   "Insight",
 ]);
 

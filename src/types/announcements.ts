@@ -39,10 +39,18 @@ export interface QAAnnouncement {
   category: string;
   addedBy: string;
   rating?: number;
-  type?: "QA Announcement" | "General Announcement" | "Insight";
+  /** "General Announcement" is legacy-only — Postgres can't drop an enum
+   * value in place, and some historical rows may still carry it (see
+   * migration 0056's reclassification). It's no longer a selectable Type
+   * in the Announcement Manager; "Product Announcement" and "Insurance
+   * Operations" replaced it as the two real, dedicated non-QA types. */
+  type?: "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight";
   validTillDate?: string;
   title?: string;
-  /** Optional team/department the announcement is coming from. Only shown for "General Announcement" type. */
+  /** Legacy-only free-text team/department, from the old "General
+   * Announcement" type's "From" field — no longer collected for Product
+   * Announcement / Insurance Operations (the type itself now says which
+   * department), so this is only ever populated on legacy rows. */
   from?: string;
   /** YYYY-MM-DD, optional — when this notice was posted/published. Distinct
    * from effectiveDate; defaults to today in the form but is editable. */

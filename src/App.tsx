@@ -793,12 +793,19 @@ export default function App() {
       return d.getTime();
     };
 
-    // Retained rule: a General announcement past its Valid Till Date is
-    // expired and drops out regardless of how recently it was posted.
+    // "General family" — Product Announcement, Insurance Operations, and any
+    // legacy (unreclassified) General Announcement row, treated as one
+    // collective non-QA bucket for expiry + the 3-item cap below. Insight
+    // rows are excluded upstream (see qaAnnouncements' own fetch), so
+    // "anything that isn't QA" is exactly this bucket.
+    const isGeneralFamily = (item: QAAnnouncement) => (item.type || "QA Announcement") !== "QA Announcement";
+
+    // Retained rule: a General-family announcement past its Valid Till Date
+    // is expired and drops out regardless of how recently it was posted.
     // QA announcements have no expiry field and are governed purely by the
     // recency cap below.
     const unexpiredAnnouncements = qaAnnouncements.filter(item => {
-      if (item.type === "General Announcement" && item.validTillDate) {
+      if (isGeneralFamily(item) && item.validTillDate) {
         const tillDate = new Date(item.validTillDate);
         tillDate.setHours(0, 0, 0, 0);
         if (today.getTime() >= tillDate.getTime()) return false;
@@ -810,8 +817,8 @@ export default function App() {
 
     // Missing `type` defaults to QA (matches the "QA Announcement" fallback
     // used elsewhere, e.g. LookupPage's `item.type || "QA Announcement"`).
-    const qaOnly = unexpiredAnnouncements.filter(item => item.type === "General Announcement" ? false : true);
-    const generalOnly = unexpiredAnnouncements.filter(item => item.type === "General Announcement");
+    const qaOnly = unexpiredAnnouncements.filter(item => !isGeneralFamily(item));
+    const generalOnly = unexpiredAnnouncements.filter(isGeneralFamily);
 
     const cappedQa = [...qaOnly].sort(sortByPostedDesc).slice(0, MAX_QA_ANNOUNCEMENTS);
     const cappedGeneral = [...generalOnly].sort(sortByPostedDesc).slice(0, MAX_GENERAL_ANNOUNCEMENTS);

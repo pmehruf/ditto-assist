@@ -74,7 +74,12 @@ export function HomeAnnouncementCard({
   const sorted = activeAnnouncements;
   const index = noticeIndex % sorted.length;
   const item = sorted[index];
-  const isGeneral = (item.type || "QA Announcement") === "General Announcement";
+  // "General family" — everything that isn't a QA Announcement (Insight is
+  // already excluded upstream from activeAnnouncements/qaAnnouncements, so
+  // this covers Product Announcement, Insurance Operations, and any legacy
+  // unreclassified General Announcement row as one collective bucket for
+  // color/label treatment).
+  const isGeneral = (item.type || "QA Announcement") !== "QA Announcement";
 
   const diffDays = item.effectiveDate ? getDaysDiff(item.effectiveDate) : null;
   const countdownConfig = diffDays !== null && item.effectiveDate ? getCountdownBadgeConfig(diffDays, item.effectiveDate) : null;
@@ -96,7 +101,7 @@ export function HomeAnnouncementCard({
       {/* Category + badges row */}
       <div className="flex items-center justify-between gap-2 mb-[clamp(4px,0.8vh,8px)] flex-wrap">
         <span className={`text-[11px] font-bold uppercase tracking-wide truncate ${isGeneral ? (theme === "dark" ? "text-emerald-400" : "text-emerald-700") : (theme === "dark" ? "text-rose-400" : "text-rose-700")}`}>
-          {item.category || (isGeneral ? "General Announcement" : "QA Announcement")}
+          {item.category || (isGeneral ? (item.type || "General Announcement") : "QA Announcement")}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
           {countdownConfig && (

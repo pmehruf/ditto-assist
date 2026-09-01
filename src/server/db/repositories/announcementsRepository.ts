@@ -51,9 +51,16 @@ const SORTABLE_COLUMNS = {
  * the org's needs change. Chosen generously so it only ever prunes genuine
  * long-tail backlog, never anything an advisor would still expect to see.
  */
-export const ANNOUNCEMENT_RETENTION_LIMIT: Record<"QA Announcement" | "General Announcement" | "Insight", number> = {
+export const ANNOUNCEMENT_RETENTION_LIMIT: Record<
+  "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight",
+  number
+> = {
   "QA Announcement": 100,
+  // Legacy-only (see schema.ts's announcementTypeEnum) — kept here so any
+  // unreclassified row still has a retention limit to enforce against.
   "General Announcement": 100,
+  "Product Announcement": 100,
+  "Insurance Operations": 100,
   "Insight": 100,
 };
 
@@ -200,7 +207,7 @@ export class AnnouncementsRepository {
    * sites should never pass it.
    */
   async enforceRetentionLimit(
-    type: "QA Announcement" | "General Announcement" | "Insight",
+    type: "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight",
     limitOverride?: number
   ): Promise<number[]> {
     const limit = limitOverride ?? ANNOUNCEMENT_RETENTION_LIMIT[type];

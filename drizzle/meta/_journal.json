@@ -386,6 +386,20 @@
       "when": 1788900000000,
       "tag": "0054_announcement_insight_type",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0055_announcement_product_operations_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789000100000,
+      "tag": "0056_reclassify_general_announcements",
+      "breakpoints": true
     }
   ]
 }

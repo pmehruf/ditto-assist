@@ -170,7 +170,9 @@ export function AnnouncementLogPage({
   // Insights (which never appear in the advisor-facing feed or the Home
   // Dashboard carousel, only here and on the "Did you know!?" card — see
   // requirement #8) alongside the existing QA/General types. "" = all types.
-  const [typeFilter, setTypeFilter] = useState<"" | "QA Announcement" | "General Announcement" | "Insight">("");
+  const [typeFilter, setTypeFilter] = useState<
+    "" | "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight"
+  >("");
   const [openItem, setOpenItem] = useState<QAAnnouncement | null>(null);
   // Bumped only when the create/edit form actually saves something (see
   // handleFormAnnouncementsChange below) — the signal this gallery needs to
@@ -444,7 +446,12 @@ export function AnnouncementLogPage({
                     options={[
                       { value: "", label: "All Types" },
                       { value: "QA Announcement", label: "QA Announcement" },
-                      { value: "General Announcement", label: "General Announcement" },
+                      { value: "Product Announcement", label: "Product Announcement" },
+                      { value: "Insurance Operations", label: "Insurance Operations" },
+                      // Legacy-only (see schema.ts's announcementTypeEnum) —
+                      // kept filterable so any unreclassified row is still
+                      // findable/editable here.
+                      { value: "General Announcement", label: "General Announcement (Legacy)" },
                       { value: "Insight", label: "Insight" },
                     ]}
                   />

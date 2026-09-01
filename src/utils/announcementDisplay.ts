@@ -28,12 +28,14 @@ export function ratingColorClasses(rating: number, dark: boolean): string {
   }
 }
 
-/** "Team" — QA Announcements are simply labeled by their type; General
- * Announcements show whatever team the author entered (Product, Medical,
- * etc. — QAAnnouncementForm's "From" field, mapped to `item.from`). */
+/** "Team" — QA Announcements are simply labeled by their type. Legacy
+ * (unreclassified) General Announcement rows show whatever team the author
+ * entered (Product, Medical, etc. — QAAnnouncementForm's old "From" field,
+ * mapped to `item.from`); Product Announcement / Insurance Operations rows
+ * no longer collect a "From" value — the type itself is now the label. */
 export function teamLabel(item: QAAnnouncement): string {
   if (item.type === "General Announcement") return item.from || "—";
-  return "QA Announcement";
+  return item.type || "QA Announcement";
 }
 
 /**
