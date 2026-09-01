@@ -116,6 +116,10 @@ type WidgetState =
       payments: number | null;
       leadCount: number;
       paymentsCount: number;
+      chat: number | null;
+      chatCount: number;
+      call: number | null;
+      callCount: number;
       prevConsolidated: number | null;
     }
   | { kind: "unavailable" };
@@ -127,37 +131,57 @@ interface AdvisorSummaryRow {
   leadScoreInstances: number;
   paymentsAvg: number | null;
   paymentsInstances: number;
+  chatAvg: number | null;
+  chatInstances: number;
+  callAvg: number | null;
+  callInstances: number;
+}
+
+interface AggregateResult {
+  lead: number | null;
+  payments: number | null;
+  leadCount: number;
+  paymentsCount: number;
+  chat: number | null;
+  chatCount: number;
+  call: number | null;
+  callCount: number;
 }
 
 async function fetchTeamAggregate(
   qs: string
-): Promise<{ scopeLabel: string; lead: number | null; payments: number | null; leadCount: number; paymentsCount: number } | "forbidden" | null> {
+): Promise<(AggregateResult & { scopeLabel: string }) | "forbidden" | null> {
   const res = await fetch(`/api/qa-dashboard/summary?${qs}`);
   const body = await res.json();
   if (!res.ok) return null;
   if (body.error === "FORBIDDEN") return "forbidden";
   if (body.error) return null;
   const advisors: AdvisorSummaryRow[] = body.advisors || [];
-  const withData = advisors.filter((a) => a.paymentsAvg !== null || a.leadScoreAvg !== null);
   const avg = (vals: number[]) => (vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null);
   // Evaluation counts are summed only over the advisors that actually fed
-  // that metric's average (same filter as the average itself), so "N
-  // evaluations" always matches the population the score above it
-  // describes — not a total that includes advisors with no score.
-  const leadContributors = withData.filter((a) => a.leadScoreAvg !== null);
-  const paymentsContributors = withData.filter((a) => a.paymentsAvg !== null);
+  // that metric's average, so "N evaluations" always matches the
+  // population the score above it describes — not a total that includes
+  // advisors with no score. Each metric is filtered independently since an
+  // advisor can have, say, a Lead score but no Chat/Call evaluations yet.
+  const contributorsFor = (key: keyof AdvisorSummaryRow) => advisors.filter((a) => a[key] !== null);
+  const leadContributors = contributorsFor("leadScoreAvg");
+  const paymentsContributors = contributorsFor("paymentsAvg");
+  const chatContributors = contributorsFor("chatAvg");
+  const callContributors = contributorsFor("callAvg");
   return {
     scopeLabel: body.isAdmin ? "Company-Wide" : "Your Team",
     lead: avg(leadContributors.map((a) => a.leadScoreAvg).filter((v): v is number => v !== null)),
     payments: avg(paymentsContributors.map((a) => a.paymentsAvg).filter((v): v is number => v !== null)),
     leadCount: leadContributors.reduce((sum, a) => sum + (a.leadScoreInstances || 0), 0),
     paymentsCount: paymentsContributors.reduce((sum, a) => sum + (a.paymentsInstances || 0), 0),
+    chat: avg(chatContributors.map((a) => a.chatAvg).filter((v): v is number => v !== null)),
+    chatCount: chatContributors.reduce((sum, a) => sum + (a.chatInstances || 0), 0),
+    call: avg(callContributors.map((a) => a.callAvg).filter((v): v is number => v !== null)),
+    callCount: callContributors.reduce((sum, a) => sum + (a.callInstances || 0), 0),
   };
 }
 
-async function fetchOwnAggregate(
-  qs: string
-): Promise<{ lead: number | null; payments: number | null; leadCount: number; paymentsCount: number } | null> {
+async function fetchOwnAggregate(qs: string): Promise<AggregateResult | null> {
   const res = await fetch(`/api/qa-dashboard/dashboard?${qs}`);
   const body = await res.json();
   if (!res.ok || !body.metrics) return null;
@@ -166,6 +190,10 @@ async function fetchOwnAggregate(
     payments: body.metrics.loPayments?.average ?? null,
     leadCount: body.metrics.leadScore?.numberOfLeads ?? 0,
     paymentsCount: body.metrics.loPayments?.instances ?? 0,
+    chat: body.metrics.loChats?.average ?? null,
+    chatCount: body.metrics.loChats?.instances ?? 0,
+    call: body.metrics.loCalls?.average ?? null,
+    callCount: body.metrics.loCalls?.instances ?? 0,
   };
 }
 
@@ -173,10 +201,8 @@ async function fetchOwnAggregate(
  * their own — hits the aggregate-only /company-summary route (see its doc
  * comment on the server) instead of leaving them with an empty widget. This
  * never grants access to the real QA Dashboard page itself: it's a
- * different, narrower endpoint that only ever returns 4 numbers. */
-async function fetchCompanyWideAggregate(
-  qs: string
-): Promise<{ lead: number | null; payments: number | null; leadCount: number; paymentsCount: number } | null> {
+ * different, narrower endpoint that only ever returns 8 numbers. */
+async function fetchCompanyWideAggregate(qs: string): Promise<AggregateResult | null> {
   const res = await fetch(`/api/qa-dashboard/company-summary?${qs}`);
   const body = await res.json();
   if (!res.ok || body.error) return null;
@@ -185,6 +211,10 @@ async function fetchCompanyWideAggregate(
     payments: body.payments ?? null,
     leadCount: body.leadCount ?? 0,
     paymentsCount: body.paymentsCount ?? 0,
+    chat: body.chat ?? null,
+    chatCount: body.chatCount ?? 0,
+    call: body.call ?? null,
+    callCount: body.callCount ?? 0,
   };
 }
 
@@ -243,6 +273,10 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
               payments: ownThis.payments,
               leadCount: ownThis.leadCount,
               paymentsCount: ownThis.paymentsCount,
+              chat: ownThis.chat,
+              chatCount: ownThis.chatCount,
+              call: ownThis.call,
+              callCount: ownThis.callCount,
               prevConsolidated: ownLast ? avgOf(ownLast.lead, ownLast.payments) : null,
             });
             return;
@@ -270,6 +304,10 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
             payments: companyThis.payments,
             leadCount: companyThis.leadCount,
             paymentsCount: companyThis.paymentsCount,
+            chat: companyThis.chat,
+            chatCount: companyThis.chatCount,
+            call: companyThis.call,
+            callCount: companyThis.callCount,
             prevConsolidated: companyLast ? avgOf(companyLast.lead, companyLast.payments) : null,
           });
           return;
@@ -290,6 +328,10 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           payments: teamThis.payments,
           leadCount: teamThis.leadCount,
           paymentsCount: teamThis.paymentsCount,
+          chat: teamThis.chat,
+          chatCount: teamThis.chatCount,
+          call: teamThis.call,
+          callCount: teamThis.callCount,
           prevConsolidated: teamLast && teamLast !== "forbidden" ? avgOf(teamLast.lead, teamLast.payments) : null,
         });
       } catch (err) {
@@ -329,25 +371,14 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   }, []);
 
   // This card is used exclusively by the Home dashboard (LookupIntroPage.tsx)
-  // — vertical padding/margins below use clamp(floor, Xvh, ceiling) so this
-  // supporting-tier card compresses on a short viewport instead of forcing
-  // the page taller than it needs to be. Horizontal padding and all font
-  // sizes are untouched.
-  // `lg:h-[380px]` — at desktop (the "poster" composition LookupIntroPage.tsx
-  // builds at lg and up, see ScaleToFit.tsx), this card gets a deliberate,
-  // fixed height rather than its natural content height. That's NOT the
-  // same thing as the "stretch to match the Announcement card" behavior
-  // that used to cause a large dead gap here — this is one fixed number,
-  // authored once, and LookupIntroPage.tsx derives the Announcement card's
-  // own height FROM this fixed value (this column's total measured height,
-  // this card included) so the two cards' bottoms land on the same line by
-  // construction, at every screen size the whole composition scales to.
-  // (Was 420px — trimmed to 380px, matched by a slight height increase on
-  // the Workspace Tools tiles above, so this card and the Announcement
-  // Counter beside it stop reading as visually oversized/mismatched
-  // against that shorter tile row.) Below `lg` this card keeps its
-  // original natural/content height, completely unaffected.
-  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.6vh,20px)] lg:h-[380px] flex flex-col ${
+  // — sized to its own natural content height at every breakpoint now (the
+  // old fixed `lg:h-[380px]`, authored purely to support ScaleToFit's
+  // poster-scaling alignment trick, is gone along with that mechanism — see
+  // LookupIntroPage.tsx's leftColRef height-matching effect, which now
+  // measures this card's real height directly instead of relying on an
+  // arbitrary constant). Vertical padding still uses clamp(floor, Xvh,
+  // ceiling) so the card compresses gracefully on a short viewport.
+  const cardClass = `relative rounded-2xl border px-5 py-[clamp(10px,1.4vh,18px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
 
@@ -361,7 +392,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
   if (state.kind === "loading") {
     return (
       <div className={cardClass}>
-        <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)]">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 select-none">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
               <Star className="w-4 h-4" />
@@ -369,7 +400,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
             <span className={`text-[12px] font-black uppercase tracking-wide ${theme === "dark" ? "text-white" : "text-stone-900"}`}>QA Performance</span>
           </div>
         </div>
-        <div className="lg:flex-1 lg:flex lg:flex-col lg:justify-center animate-pulse space-y-2">
+        <div className="animate-pulse space-y-2">
           <div className={`h-7 w-32 rounded-lg ${theme === "dark" ? "bg-white/[0.04]" : "bg-stone-200/60"}`} />
           <div className={`h-3.5 w-20 rounded ${theme === "dark" ? "bg-white/[0.04]" : "bg-stone-200/60"}`} />
         </div>
@@ -399,19 +430,19 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
 
   return (
     <div className={cardClass}>
-      <div className="flex items-center justify-between mb-[clamp(6px,1vh,14px)] lg:shrink-0">
+      <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2 select-none min-w-0">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
-            <Star className="w-[18px] h-[18px]" />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
+            <Star className="w-4 h-4" />
           </div>
-          <span className={`text-[16px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+          <span className={`text-[14px] font-black uppercase tracking-wide truncate ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
             QA Performance
           </span>
         </div>
         <button
           type="button"
           onClick={onOpenQaDashboard}
-          className={`flex items-center gap-0.5 text-[13px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
+          className={`flex items-center gap-0.5 text-[11.5px] font-bold uppercase tracking-wide cursor-pointer transition-colors shrink-0 ${
             theme === "dark" ? "text-stone-400 hover:text-white" : "text-stone-500 hover:text-stone-800"
           }`}
         >
@@ -420,57 +451,40 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
         </button>
       </div>
 
-      {/* BODY WRAPPER — below `lg` this is inert (no classes apply), so the
-          KPI row and last-updated line just flow normally exactly as
-          before. At `lg`+, where the card above has a fixed height
-          (420px), `lg:flex-1 lg:flex lg:flex-col lg:justify-center` makes
-          this whole body center as one block in the space left under the
-          header — filling the taller card evenly instead of leaving a
-          dead gap between the KPI numbers and the last-updated line. */}
-      <div className="lg:flex-1 lg:flex lg:flex-col lg:justify-center lg:min-h-0">
-      {/* CONSOLIDATED SCORE (left) + LEAD/PAYMENTS QA (right, stacked) —
-          all THREE zones left-aligned (label, stars-beside-number on one
-          baseline, supporting text), separated by thin vertical/horizontal
-          divider rules rather than whitespace alone. This card is now the
-          narrower 2-of-3 partner next to the Announcement Counter card
-          (see LookupIntroPage.tsx), so Lead QA and Payments QA are
-          stacked one above the other in their own right-hand column
-          instead of sitting side-by-side with Consolidated in a 3-across
-          row — same per-zone alignment/typography/hierarchy either way,
-          just reflowed to fit comfortably at this width. Consolidated
-          keeps the strongest hierarchy (bigger stars/number, tier badge,
-          trend, and the last-month line the other two don't get). */}
-      <div className="flex items-stretch gap-6 sm:gap-8">
+      {/* CONSOLIDATED SCORE (left) + LEAD/PAYMENTS/CHAT/CALL (right, 2x2
+          grid) — sized to fit five metrics in a compact, natural-height
+          card (no more fixed lg:h-[380px] — see cardClass's comment).
+          Consolidated keeps the strongest hierarchy (bigger stars/number,
+          tier badge, trend, last-month line); the 2x2 grid trades the old
+          stacked Lead/Payments layout's larger type for a denser grid now
+          that Chat QA and Call QA are shown alongside them. */}
+      <div className="flex items-stretch gap-5 sm:gap-6">
         <div className="min-w-0 flex-1 flex flex-col items-start text-left justify-center">
-          <div className={`text-[13px] font-bold uppercase tracking-wide mb-[clamp(4px,0.8vh,10px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+          <div className={`text-[11px] font-bold uppercase tracking-wide mb-1 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
-          {/* Consolidated ONLY: stars stacked above the number (not beside
-              it, unlike Lead QA/Payments QA below) — still left-aligned,
-              same sizes as before, just re-stacked vertically per request. */}
-          <div className="flex flex-col items-start gap-1 mb-[clamp(4px,0.8vh,10px)]">
+          <div className="flex flex-col items-start gap-0.5 mb-1">
             {/* Stars stay a fixed amber (same accent as this card's own
                 header icon) rather than the tier color — with the score
-                number and "Excellent" badge both already using tier.color
-                right next to each other, tinting the stars the same made
-                three same-colored elements in a row read as a mistake
-                rather than a signal. Gold stars are also just the familiar
-                rating convention on their own, independent of any tier. */}
-            <StarRating score={state.consolidated} size={28} color="#FBBF24" />
-            <span className={`text-[48px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+                number and tier badge both already using tier.color right
+                next to each other, tinting the stars the same made three
+                same-colored elements in a row read as a mistake rather
+                than a signal. */}
+            <StarRating score={state.consolidated} size={20} color="#FBBF24" />
+            <span className={`text-[34px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
               {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
             </span>
           </div>
-          <div className="flex items-center justify-start gap-2.5 mb-[clamp(4px,0.8vh,10px)] flex-wrap">
+          <div className="flex items-center justify-start gap-2 mb-1 flex-wrap">
             <span
-              className="text-[14px] font-black uppercase tracking-wide px-2 py-1 rounded"
+              className="text-[11px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
               style={{ color: tier.color, backgroundColor: tier.subtle }}
             >
               {tier.label}
             </span>
             {trend !== null && trend !== 0 && (
-              <span className={`text-[13.5px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
-                {trend > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+              <span className={`text-[11px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
+                {trend > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                 {trend > 0 ? "+" : ""}
                 {trend.toFixed(2)} this month
               </span>
@@ -478,58 +492,49 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           </div>
           {/* Always visible (not hover-only) — labelled plainly rather than
               "vs last month", since it sits directly under the Consolidated
-              Score above, not the Lead QA figure beside it; this is the
-              trend line's own previous-period baseline, not a per-metric
-              number. Plain text, no chart — the arrow + delta above already
-              carries the trend; a shape here would just repeat it. */}
+              Score above, not a per-metric figure. */}
           {state.prevConsolidated !== null && (
-            <div className={`text-[13.5px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+            <div className={`text-[11px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
               Last month: {state.prevConsolidated.toFixed(2)}
             </div>
           )}
         </div>
 
-        {/* Divider between Consolidated and the Lead/Payments column. */}
+        {/* Divider between Consolidated and the metrics grid. */}
         <div className="w-px self-stretch shrink-0" style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(120,113,108,0.25)" }} />
 
-        {/* Lead QA / Payments QA — stacked, each left-aligned with its
-            label above a stars-beside-number baseline, plus a workload
-            line (evaluation count). Real numbers already returned by the
-            same endpoints this card was already calling
-            (leadScoreInstances/numberOfLeads and paymentsInstances) —
-            nothing invented, nothing newly fetched. */}
-        <div className="min-w-0 flex-1 flex flex-col justify-center gap-[clamp(8px,1.4vh,16px)]">
+        {/* Lead / Payments / Chat / Call QA — a compact 2x2 grid, each
+            left-aligned with its label above a stars-beside-number
+            baseline, plus a workload line (evaluation count). Real numbers
+            already returned by the same endpoints this card was already
+            calling (see fetchTeamAggregate/fetchOwnAggregate/
+            fetchCompanyWideAggregate above) — Chat/Call were already
+            present in the underlying data, just not surfaced here before. */}
+        <div className="min-w-0 flex-1 grid grid-cols-2 gap-x-4 gap-y-2">
           {([
             ["Lead QA", state.lead, state.leadCount],
             ["Payments QA", state.payments, state.paymentsCount],
-          ] as const).map(([label, score, count], idx) => {
+            ["Chat QA", state.chat, state.chatCount],
+            ["Call QA", state.call, state.callCount],
+          ] as const).map(([label, score, count]) => {
             const t = tierFor(score, theme);
             return (
-              <div key={label}>
-                {idx === 1 && (
-                  <div
-                    className="h-px w-full mb-[clamp(8px,1.4vh,16px)]"
-                    style={{ backgroundColor: theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(120,113,108,0.25)" }}
-                  />
-                )}
-                <div className="min-w-0 flex flex-col items-start text-left">
-                  <div className={`text-[13px] font-bold uppercase tracking-wide mb-[clamp(3px,0.6vh,8px)] ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
-                    {label}
-                  </div>
-                  {/* Tier-colored here, neutral white on Consolidated above —
-                      the reverse of "everything tier-colored" — so Consolidated
-                      reads as the plain hero number and Lead/Payments carry the
-                      tier signal beside it. Sized up (was 16px stars / 20px
-                      number) alongside Consolidated's own increase. */}
-                  <div className="flex items-baseline gap-2.5 mb-[clamp(3px,0.6vh,8px)]">
-                    <StarRating score={score} size={24} color="#FBBF24" />
-                    <span className="text-[30px] leading-none font-black font-mono" style={{ color: t.color }}>
-                      {score !== null ? score.toFixed(2) : "—"}
-                    </span>
-                  </div>
-                  <div className={`text-[13px] font-medium ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
-                    {count > 0 ? `${count.toLocaleString("en-IN")} evaluation${count === 1 ? "" : "s"}` : "No evaluations yet"}
-                  </div>
+              <div key={label} className="min-w-0 flex flex-col items-start text-left">
+                <div className={`text-[10px] font-bold uppercase tracking-wide mb-0.5 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+                  {label}
+                </div>
+                {/* Tier-colored here, neutral white on Consolidated above —
+                    the reverse of "everything tier-colored" — so
+                    Consolidated reads as the plain hero number and each
+                    metric carries the tier signal beside it. */}
+                <div className="flex items-baseline gap-1.5 mb-0.5">
+                  <StarRating score={score} size={14} color="#FBBF24" />
+                  <span className="text-[18px] leading-none font-black font-mono" style={{ color: t.color }}>
+                    {score !== null ? score.toFixed(2) : "—"}
+                  </span>
+                </div>
+                <div className={`text-[10px] font-medium truncate ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}>
+                  {count > 0 ? `${count.toLocaleString("en-IN")} eval${count === 1 ? "" : "s"}` : "No data yet"}
                 </div>
               </div>
             );
@@ -539,19 +544,17 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
 
       {/* Always visible — real last-processed time (processRawDump's actual
           trigger history via the Apps Script Executions API, see
-          appsScriptClient.ts), not a guess and not hidden behind hover.
-          Pinned bottom-right of the card below `lg` (`mt-auto` still pushes
-          it down within this natural-height card there); at `lg`+ it just
-          flows after the KPI row as part of the centered body block above. */}
+          appsScriptClient.ts), not a guess and not hidden behind hover. */}
       {lastRunAt && (
         <div
-          className={`flex items-center justify-end gap-1.5 text-[12.5px] font-medium mt-auto lg:mt-0 pt-[clamp(4px,0.8vh,12px)] ${theme === "dark" ? "text-stone-500" : "text-stone-400"}`}
+          className={`flex items-center justify-end gap-1.5 text-[11px] font-medium mt-2 pt-2 border-t ${
+            theme === "dark" ? "text-stone-500 border-white/[0.06]" : "text-stone-400 border-stone-200"
+          }`}
         >
           <Clock className="w-3 h-3 shrink-0" />
           Data last updated {formatRelativeTime(lastRunAt)}
         </div>
       )}
-      </div>
     </div>
   );
 }

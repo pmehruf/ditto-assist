@@ -2075,7 +2075,7 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
 
     if (req.query.paginated) {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 25, "desc");
-      const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement"] as const);
+      const type = pickEnumValue(req.query.type, ["QA Announcement", "General Announcement", "Insight"] as const);
       const dateFrom = typeof req.query.dateFrom === "string" && req.query.dateFrom.trim() ? req.query.dateFrom.trim() : undefined;
       const dateTo = typeof req.query.dateTo === "string" && req.query.dateTo.trim() ? req.query.dateTo.trim() : undefined;
       const effectiveDateFrom = typeof req.query.effectiveDateFrom === "string" && req.query.effectiveDateFrom.trim() ? req.query.effectiveDateFrom.trim() : undefined;
@@ -2089,7 +2089,12 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
       return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
     }
 
-    const rows = await announcements.list({ category, team });
+    // Insights are managed through the Announcement Manager (paginated
+    // branch above) but must never appear in this shared unfiltered feed —
+    // it backs both the advisor-facing Announcements archive AND the
+    // Home Dashboard's carousel, neither of which should surface Insights
+    // (see the dedicated GET /api/announcements/insight route instead).
+    const rows = await announcements.list({ category, team, excludeTypes: ["Insight"] });
     return res.json({ entries: rows });
   } catch (err: any) {
     console.error("Failed to list announcements:", err);
@@ -2097,35 +2102,68 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
   }
 });
 
+// Latest published Insight for the Home Dashboard's "Did you know!?" card.
+// Deliberately NOT team-gated (Insights are general insurance knowledge, not
+// tied to Health/Term advisor audiences) and open to any authenticated user
+// regardless of role, unlike the admin-only paginated Announcement Manager
+// fetch above.
+app.get("/api/announcements/insight", requireAuth, async (req, res) => {
+  try {
+    const { announcements } = createRepositories(getDb());
+    const rows = await announcements.list({ type: "Insight", limit: 1 });
+    return res.json({ entry: rows[0] || null });
+  } catch (err: any) {
+    console.error("Failed to load insight:", err);
+    return res.status(500).json({ error: `Failed to load insight: ${err.message}` });
+  }
+});
+
 app.post("/api/announcements", requireAuth, async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "qa_announcement_log", "Editor", "Creating announcements"))) return;
     const { announcement, effectiveDate, category, rating, type, validTillDate, title, fromTeam, announcementDate, team } = req.body;
-    if (typeof announcement !== "string" || !announcement.trim() || typeof category !== "string" || !category.trim()) {
+    const resolvedType = type === "Insight" ? "Insight" : type === "General Announcement" ? "General Announcement" : "QA Announcement";
+    const isInsight = resolvedType === "Insight";
+
+    if (typeof announcement !== "string" || !announcement.trim()) {
+      return res.status(400).json({ error: "Insight content is required." });
+    }
+    // Insights are simple informational content — no category, rating, title,
+    // or date fields apply to them (see requirement #6).
+    if (!isInsight && (typeof category !== "string" || !category.trim())) {
       return res.status(400).json({ error: "announcement and category are required." });
     }
     if (team !== undefined && !isValidAnnouncementTeam(team)) {
       return res.status(400).json({ error: "team must be 'Health' or 'Term'." });
     }
     const { announcements } = createRepositories(getDb());
-    const resolvedType = type === "General Announcement" ? "General Announcement" : "QA Announcement";
     const row = await announcements.create({
       announcement,
-      category,
+      // The category column is NOT NULL; Insights don't have a concept of
+      // category, so a fixed label satisfies the constraint without
+      // surfacing it as a field admins fill in.
+      category: isInsight ? "Insight" : category,
       addedBy: req.user!.name,
-      effectiveDate: effectiveDate || null,
-      rating: typeof rating === "number" ? rating : null,
+      effectiveDate: isInsight ? null : (effectiveDate || null),
+      rating: isInsight ? null : (typeof rating === "number" ? rating : null),
       type: resolvedType,
-      validTillDate: validTillDate || null,
-      title: title || null,
-      fromTeam: fromTeam || null,
+      validTillDate: isInsight ? null : (validTillDate || null),
+      title: isInsight ? null : (title || null),
+      fromTeam: isInsight ? null : (fromTeam || null),
       // Distinct from effectiveDate (see schema.ts) — when this notice was
       // posted, not when the policy it describes takes effect.
-      announcementDate: announcementDate || null,
+      announcementDate: isInsight ? null : (announcementDate || null),
       // Which advisor audience this targets (Health-tagged / Term-tagged
       // visibility rules — see teamForTags). Defaults to "Health",
       // matching the column default and the spec's retroactive backfill.
+      // Insights aren't audience-restricted (see the dedicated insight
+      // route, which never filters by team), so this value is unused for
+      // them — kept as a harmless default rather than a nullable column.
       team: isValidAnnouncementTeam(team) ? team : "Health",
+      // Insights are purely informational — never gate the app behind the
+      // mandatory read-and-acknowledge modal for them (column defaults to
+      // true, so this must be set explicitly).
+      requiresAck: !isInsight,
     });
     // Retention: auto-delete the oldest announcements of THIS SAME type once
     // the configured limit is exceeded — QA and General are pruned entirely

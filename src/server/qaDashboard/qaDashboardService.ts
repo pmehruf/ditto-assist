@@ -270,7 +270,19 @@ export async function getAdvisorsDashboardListFor(
  */
 export async function getCompanyWideQaAggregateFor(
   dateFilters: DateFilters
-): Promise<{ lead: number | null; payments: number | null; leadCount: number; paymentsCount: number } | ErrorResult> {
+): Promise<
+  | {
+      lead: number | null;
+      payments: number | null;
+      leadCount: number;
+      paymentsCount: number;
+      chat: number | null;
+      chatCount: number;
+      call: number | null;
+      callCount: number;
+    }
+  | ErrorResult
+> {
   try {
     const pool = await getAllAdvisors();
     // No allowlist filter — see the comment on listAdvisorsForCaller above.
@@ -281,8 +293,12 @@ export async function getCompanyWideQaAggregateFor(
 
     const leadVals: number[] = [];
     const paymentsVals: number[] = [];
+    const chatVals: number[] = [];
+    const callVals: number[] = [];
     let leadCount = 0;
     let paymentsCount = 0;
+    let chatCount = 0;
+    let callCount = 0;
     for (const tact of tactIds) {
       const m = metricsByTact[tact];
       if (!m) continue;
@@ -294,10 +310,27 @@ export async function getCompanyWideQaAggregateFor(
         paymentsVals.push(m.paymentsAvg);
         paymentsCount += m.paymentsInstances || 0;
       }
+      if (m.chatAvg !== null) {
+        chatVals.push(m.chatAvg);
+        chatCount += m.chatInstances || 0;
+      }
+      if (m.callAvg !== null) {
+        callVals.push(m.callAvg);
+        callCount += m.callInstances || 0;
+      }
     }
     const avg = (vals: number[]) => (vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null);
 
-    return { lead: avg(leadVals), payments: avg(paymentsVals), leadCount, paymentsCount };
+    return {
+      lead: avg(leadVals),
+      payments: avg(paymentsVals),
+      leadCount,
+      paymentsCount,
+      chat: avg(chatVals),
+      chatCount,
+      call: avg(callVals),
+      callCount,
+    };
   } catch (err: any) {
     return { error: "SERVER_ERROR", message: err.message };
   }

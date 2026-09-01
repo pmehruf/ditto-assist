@@ -83,6 +83,7 @@ export const changeLogs = pgTable("change_logs", {
 export const announcementTypeEnum = pgEnum("announcement_type", [
   "QA Announcement",
   "General Announcement",
+  "Insight",
 ]);
 
 // Which advisor audience an announcement is targeted at. Users tagged

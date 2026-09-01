@@ -29,21 +29,18 @@
  * zoom... `screen.width` is a monitor property; it does not change
  * when this script sets `zoom`, so there is no loop.
  *
- * Calibrated against a real 15" laptop (~1536px effective width — see
- * LookupIntroPage.tsx's DESKTOP_CANVAS_WIDTH, the same reference width
- * the Home dashboard's own poster layout uses) vs. a real 27" monitor
- * (~2000px effective width) that needed ~125% browser zoom to visually
- * match it. Below the laptop width, zoom stays 1 (unchanged). Ramps
- * linearly from there, capped at 1.35 so an ultra-wide/4K monitor
- * doesn't run away to an absurd scale.
+ * Calibrated against a real 15" laptop (~1536px effective width) vs. a
+ * real 27" monitor (~2000px effective width) that needed ~125% browser
+ * zoom to visually match it. Below the laptop width, zoom stays 1
+ * (unchanged). Ramps linearly from there, capped at 1.35 so an
+ * ultra-wide/4K monitor doesn't run away to an absurd scale.
  *
  * `zoom` (not `transform: scale`) is used deliberately: it
  * participates in normal layout the same way native browser zoom does
  * (affects window.innerWidth, media queries, everything an app-side
- * responsive breakpoint might read — including Home's own ScaleToFit,
- * which works off ratios of measured sizes rather than absolute
- * thresholds, so it stays correct under this ambient zoom rather than
- * double-compensating).
+ * responsive breakpoint might read, including Home's own fluid grid),
+ * so it stays correct under this ambient zoom rather than
+ * double-compensating.
  *
  * One thing it does NOT do automatically, though: `vh`/`vw` units (and
  * therefore Tailwind's `h-screen`) stay pinned to the real, physical

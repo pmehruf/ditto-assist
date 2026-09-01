@@ -134,7 +134,7 @@ export function QAAnnouncementForm({
   // it describes actually takes effect, which stays optional/blank).
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
-  const [announcementType, setAnnouncementType] = useState<"QA Announcement" | "General Announcement">("QA Announcement");
+  const [announcementType, setAnnouncementType] = useState<"QA Announcement" | "General Announcement" | "Insight">("QA Announcement");
   // Which advisor audience this announcement targets — see teamForTags
   // in server.ts. Defaults to "Health" (matches the column default and the
   // spec's retroactive backfill of pre-existing announcements).
@@ -651,7 +651,16 @@ export function QAAnnouncementForm({
         // plain text above.
         setAlreadyInForce(false);
         setEffectiveImmediately(false);
-        if (itemType !== "QA Announcement") {
+        if (itemType === "Insight") {
+          // Insights carry none of the type-specific fields — clear them so
+          // switching Type in this form (or editing a different row next)
+          // never leaks a stale value from a previous QA/General edit.
+          setTitle("");
+          setValidTillDate("");
+          setFromTeam("");
+          setCategory("");
+          setRating(0);
+        } else if (itemType !== "QA Announcement") {
           setTitle(item.title || item.category || "");
           setValidTillDate(item.validTillDate || "");
           setFromTeam(item.from || "");
@@ -700,16 +709,17 @@ export function QAAnnouncementForm({
     setSuccessMsg("");
 
     if (!text.trim()) {
-      setErrorMsg("Please provide the announcement description!");
+      setErrorMsg(announcementType === "Insight" ? "Please provide the insight content!" : "Please provide the announcement description!");
       return;
     }
-    // Date Selection is optional — no validation required.
+    // Date Selection is optional — no validation required. Insights have no
+    // other required fields — content alone is enough (requirement #6).
     if (announcementType === "QA Announcement") {
       if (!category.trim()) {
         setErrorMsg("Please provide a category matching compliance rule!");
         return;
       }
-    } else {
+    } else if (announcementType === "General Announcement") {
       if (!title.trim()) {
         setErrorMsg("Please provide a title!");
         return;
@@ -721,22 +731,28 @@ export function QAAnnouncementForm({
     // instead of only ever being written to this browser's own
     // localStorage — otherwise an Admin publishing this would never be
     // visible to any other user's session.
-    const payload = {
-      announcement: text.trim(),
-      effectiveDate: date || null,
-      category: announcementType === "QA Announcement" ? category.trim() : title.trim(),
-      type: announcementType,
-      title: announcementType === "QA Announcement" ? category.trim() : title.trim(),
-      rating: announcementType === "QA Announcement" ? rating : 0,
-      validTillDate: announcementType !== "QA Announcement" ? (validTillDate || null) : null,
-      fromTeam: announcementType === "General Announcement" ? (fromTeam.trim() || null) : null,
-      // Distinct from effectiveDate — when this notice was posted, not when
-      // the policy it describes takes effect. Applies to both types.
-      announcementDate: announcementDate || null,
-      // Which advisor audience this targets — see teamForTags in
-      // server.ts. Applies to both QA and General announcement types.
-      team: announcementTeam,
-    };
+    // Insights skip every type-specific field (category/title/rating/dates/
+    // audience) — the server nulls them out regardless (see POST
+    // /api/announcements), but keeping the payload minimal here avoids
+    // sending stale values left over from a previous QA/General edit.
+    const payload = announcementType === "Insight"
+      ? { announcement: text.trim(), type: "Insight" as const }
+      : {
+        announcement: text.trim(),
+        effectiveDate: date || null,
+        category: announcementType === "QA Announcement" ? category.trim() : title.trim(),
+        type: announcementType,
+        title: announcementType === "QA Announcement" ? category.trim() : title.trim(),
+        rating: announcementType === "QA Announcement" ? rating : 0,
+        validTillDate: announcementType !== "QA Announcement" ? (validTillDate || null) : null,
+        fromTeam: announcementType === "General Announcement" ? (fromTeam.trim() || null) : null,
+        // Distinct from effectiveDate — when this notice was posted, not when
+        // the policy it describes takes effect. Applies to both types.
+        announcementDate: announcementDate || null,
+        // Which advisor audience this targets — see teamForTags in
+        // server.ts. Applies to both QA and General announcement types.
+        team: announcementTeam,
+      };
 
     try {
       if (editingAnnouncementId) {
@@ -898,7 +914,7 @@ export function QAAnnouncementForm({
             <CustomSelect
               theme={theme === "dark" ? "dark" : "light"}
               value={announcementType}
-              onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement")}
+              onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement" | "Insight")}
               triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
                 theme === "dark"
                   ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
@@ -907,30 +923,46 @@ export function QAAnnouncementForm({
               options={[
                 { value: "QA Announcement", label: "QA Announcement" },
                 { value: "General Announcement", label: "General Announcement" },
+                { value: "Insight", label: "Insight" },
               ]}
             />
           </Field>
 
-          <Field label="Audience" hint="who sees this" theme={theme}>
-            <CustomSelect
-              theme={theme === "dark" ? "dark" : "light"}
-              value={announcementTeam}
-              onChange={(val) => setAnnouncementTeam(val as "Health" | "Term")}
-              triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
-                theme === "dark"
-                  ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
-                  : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
-              }`}
-              options={[
-                { value: "Health", label: "Health Advisors" },
-                { value: "Term", label: "Term Advisors" },
-              ]}
-            />
-          </Field>
+          {/* Audience doesn't apply to Insights — they're general insurance
+              knowledge shown to every advisor regardless of Health/Term tag
+              (see the dedicated GET /api/announcements/insight route, which
+              never filters by team), so the field is hidden rather than
+              collected-but-ignored. */}
+          {announcementType !== "Insight" && (
+            <Field label="Audience" hint="who sees this" theme={theme}>
+              <CustomSelect
+                theme={theme === "dark" ? "dark" : "light"}
+                value={announcementTeam}
+                onChange={(val) => setAnnouncementTeam(val as "Health" | "Term")}
+                triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
+                  theme === "dark"
+                    ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
+                    : "bg-white border-stone-250 text-stone-850 focus:border-blue-500"
+                }`}
+                options={[
+                  { value: "Health", label: "Health Advisors" },
+                  { value: "Term", label: "Term Advisors" },
+                ]}
+              />
+            </Field>
+          )}
         </div>
 
         {/* CONDITIONAL FORMS */}
-        {announcementType === "QA Announcement" ? (
+        {announcementType === "Insight" ? (
+          // An Insight is simply a piece of informational content — none of
+          // the QA/General-specific fields (Title, Rating, Announced,
+          // Effective, etc.) apply, per requirement #6. Content alone
+          // (right column) is all that's needed.
+          <p className={`text-[11px] leading-relaxed ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
+            Insights are short, standalone insurance facts shown on the Home Dashboard's "Did you know!?" card — just write the content on the right.
+          </p>
+        ) : announcementType === "QA Announcement" ? (
           <>
             {/* Title + Rating share one row. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

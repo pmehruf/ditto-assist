@@ -12,6 +12,7 @@ import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "../components/ClippedButton";
+import { CustomSelect } from "../components/CustomSelect";
 import { Pagination } from "../components/Pagination";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { isoDateToDMY } from "../utils/dateFormat";
@@ -165,6 +166,11 @@ export function AnnouncementLogPage({
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput);
+  // Admin-only management filter — lets the Announcement Manager browse
+  // Insights (which never appear in the advisor-facing feed or the Home
+  // Dashboard carousel, only here and on the "Did you know!?" card — see
+  // requirement #8) alongside the existing QA/General types. "" = all types.
+  const [typeFilter, setTypeFilter] = useState<"" | "QA Announcement" | "General Announcement" | "Insight">("");
   const [openItem, setOpenItem] = useState<QAAnnouncement | null>(null);
   // Bumped only when the create/edit form actually saves something (see
   // handleFormAnnouncementsChange below) — the signal this gallery needs to
@@ -174,7 +180,7 @@ export function AnnouncementLogPage({
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, typeFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,6 +200,7 @@ export function AnnouncementLogPage({
     });
     const trimmed = debouncedSearch.trim();
     if (trimmed) params.set("search", trimmed);
+    if (typeFilter) params.set("type", typeFilter);
 
     fetch(`/api/announcements?${params.toString()}`)
       .then((res) => res.json())
@@ -216,7 +223,7 @@ export function AnnouncementLogPage({
     return () => {
       cancelled = true;
     };
-  }, [page, debouncedSearch, refreshTick]);
+  }, [page, debouncedSearch, refreshTick, typeFilter]);
 
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
@@ -225,6 +232,7 @@ export function AnnouncementLogPage({
       const params = new URLSearchParams({ paginated: "1", pageSize: "10000", sortBy: "announcementDate", sortDir: "desc", includeAllTeams: "1" });
       const trimmed = debouncedSearch.trim();
       if (trimmed) params.set("search", trimmed);
+      if (typeFilter) params.set("type", typeFilter);
       const res = await fetch(`/api/announcements?${params.toString()}&export=1`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to export (HTTP ${res.status}).`);
@@ -400,25 +408,47 @@ export function AnnouncementLogPage({
                 </div>
               </div>
 
-              {/* Search — server-side, across the full announcements table
-                  (not just the current page). Debounced via useDebouncedValue;
-                  a page-change effect resets to page 1 whenever the debounced
-                  term changes. */}
-              <div className="relative shrink-0">
-                <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${
-                  dark ? "text-stone-500" : "text-stone-400"
-                }`} />
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder="Search announcements..."
-                  className={`w-full pl-8 pr-3 py-1.5 rounded-lg text-xs border outline-none transition-colors ${
-                    dark
-                      ? "bg-white/[0.03] border-white/[0.08] text-white placeholder:text-stone-600 focus:border-white/20"
-                      : "bg-white border-[#D2DFEC] text-stone-900 placeholder:text-stone-400 focus:border-[#4673a9]/50"
-                  }`}
-                />
+              {/* Search + Type filter — both server-side, across the full
+                  announcements table (not just the current page). Search is
+                  debounced via useDebouncedValue; both reset to page 1 on
+                  change (see the effect above). The Type filter is what
+                  makes Insights (never shown in any advisor-facing feed)
+                  browsable/manageable here, per requirement #8. */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="relative flex-1 min-w-0">
+                  <Search className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none ${
+                    dark ? "text-stone-500" : "text-stone-400"
+                  }`} />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Search announcements..."
+                    className={`w-full pl-8 pr-3 py-1.5 rounded-lg text-xs border outline-none transition-colors ${
+                      dark
+                        ? "bg-white/[0.03] border-white/[0.08] text-white placeholder:text-stone-600 focus:border-white/20"
+                        : "bg-white border-[#D2DFEC] text-stone-900 placeholder:text-stone-400 focus:border-[#4673a9]/50"
+                    }`}
+                  />
+                </div>
+                <div className="w-40 shrink-0">
+                  <CustomSelect
+                    theme={theme}
+                    value={typeFilter}
+                    onChange={(val) => setTypeFilter(val as typeof typeFilter)}
+                    triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-1.5 rounded-lg border outline-none cursor-pointer relative ${
+                      dark
+                        ? "bg-white/[0.03] border-white/[0.08] text-white"
+                        : "bg-white border-[#D2DFEC] text-stone-900"
+                    }`}
+                    options={[
+                      { value: "", label: "All Types" },
+                      { value: "QA Announcement", label: "QA Announcement" },
+                      { value: "General Announcement", label: "General Announcement" },
+                      { value: "Insight", label: "Insight" },
+                    ]}
+                  />
+                </div>
               </div>
 
               {/* Table — replaces the old masonry tile gallery. Horizontally
@@ -435,8 +465,8 @@ export function AnnouncementLogPage({
                   <div className="text-center py-20 text-xs italic text-stone-500 select-none">
                     {loading
                       ? "Loading…"
-                      : searchInput.trim()
-                        ? "No announcements match your search."
+                      : searchInput.trim() || typeFilter
+                        ? "No announcements match your search/filter."
                         : "No active announcements. Use the form on the left to add one."}
                   </div>
                 ) : (

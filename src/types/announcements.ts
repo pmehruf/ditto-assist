@@ -39,7 +39,7 @@ export interface QAAnnouncement {
   category: string;
   addedBy: string;
   rating?: number;
-  type?: "QA Announcement" | "General Announcement";
+  type?: "QA Announcement" | "General Announcement" | "Insight";
   validTillDate?: string;
   title?: string;
   /** Optional team/department the announcement is coming from. Only shown for "General Announcement" type. */

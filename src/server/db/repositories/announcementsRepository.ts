@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { announcements, type AnnouncementRow, type NewAnnouncementRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
@@ -51,14 +51,19 @@ const SORTABLE_COLUMNS = {
  * the org's needs change. Chosen generously so it only ever prunes genuine
  * long-tail backlog, never anything an advisor would still expect to see.
  */
-export const ANNOUNCEMENT_RETENTION_LIMIT: Record<"QA Announcement" | "General Announcement", number> = {
+export const ANNOUNCEMENT_RETENTION_LIMIT: Record<"QA Announcement" | "General Announcement" | "Insight", number> = {
   "QA Announcement": 100,
   "General Announcement": 100,
+  "Insight": 100,
 };
 
 export interface AnnouncementFilter {
   category?: string;
   type?: NewAnnouncementRow["type"];
+  /** Excludes one or more types from the result — used to keep "Insight"
+   * rows out of the shared advisor-facing/carousel fetch (App.tsx's one
+   * unfiltered `.list()` call) without needing a second query path. */
+  excludeTypes?: NewAnnouncementRow["type"][];
   /** Only announcements still valid on/after this ISO date (validTillDate >= this). */
   validAsOf?: string;
   /** Restricts to a single advisor audience ("Health" | "Term"). Omit to return both. */
@@ -102,6 +107,11 @@ export class AnnouncementsRepository {
     const conditions = [];
     if (filter.category) conditions.push(eq(announcements.category, filter.category));
     if (filter.type) conditions.push(eq(announcements.type, filter.type));
+    if (filter.excludeTypes && filter.excludeTypes.length) {
+      for (const t of filter.excludeTypes) {
+        if (t) conditions.push(ne(announcements.type, t));
+      }
+    }
     if (filter.validAsOf) conditions.push(gte(announcements.validTillDate, filter.validAsOf));
     if (filter.team) conditions.push(eq(announcements.team, filter.team));
 
@@ -190,7 +200,7 @@ export class AnnouncementsRepository {
    * sites should never pass it.
    */
   async enforceRetentionLimit(
-    type: "QA Announcement" | "General Announcement",
+    type: "QA Announcement" | "General Announcement" | "Insight",
     limitOverride?: number
   ): Promise<number[]> {
     const limit = limitOverride ?? ANNOUNCEMENT_RETENTION_LIMIT[type];
