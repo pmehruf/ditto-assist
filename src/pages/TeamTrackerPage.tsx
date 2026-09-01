@@ -262,8 +262,12 @@ interface MediumStat {
   blunderPct: number | null;
 }
 function buildMediumStat(avgs: (number | null)[], instancesArr: number[], blundersArr: number[]): MediumStat {
-  const instances = instancesArr.reduce((a, b) => a + b, 0);
-  const blunders = blundersArr.reduce((a, b) => a + b, 0);
+  // `|| 0` guards against a stale server response missing the newer
+  // blunder-count fields (undefined) — without it, one undefined/NaN entry
+  // poisons the whole reduce() sum and blunderPct renders as "NaN%" instead
+  // of falling back to a sane 0.
+  const instances = instancesArr.reduce((a, b) => a + (b || 0), 0);
+  const blunders = blundersArr.reduce((a, b) => a + (b || 0), 0);
   return {
     avg: avgArr(avgs),
     instances,
@@ -614,6 +618,17 @@ export function TeamTrackerPage({ theme, registerSubPageBack }: TeamTrackerPageP
     return () => registerSubPageBack(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openPivot]);
+
+  // Opening/closing the advisor detail view swaps content in place (no
+  // activeTab change), so App.tsx's own "scroll to top on tab switch"
+  // effect never fires for it — without this, the advisor view could open
+  // already scrolled to wherever the team table happened to be (e.g. the
+  // bottom, if that's where its row was clicked from). Mirrors App.tsx's
+  // own scroll-reset (window + the #main-scrollable-body container).
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    document.getElementById("main-scrollable-body")?.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  }, [openAdvisorTactId]);
 
   // ── Loading / unauthorized states ──────────────────────────────────────
   if (contextLoading) {
