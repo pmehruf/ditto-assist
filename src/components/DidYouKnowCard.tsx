@@ -15,20 +15,25 @@ interface InsightRow {
 type CardState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; announcement: string };
 
 /**
- * "Did you know!?" — a thought-of-the-day style card sitting below QA
- * Performance on the Home Dashboard (LookupIntroPage.tsx), same width.
- * Content is sourced from the Insight type in the Announcement Manager (see
- * QAAnnouncementForm.tsx's "Insight" branch and server.ts's dedicated
- * GET /api/announcements/insight route) rather than being hardcoded here —
- * an admin publishes an Insight the same way they publish any other
- * announcement, and the latest one appears here automatically.
+ * "Did you know!?" — a thought-of-the-day style card. Lives in the narrow
+ * 260px column of the Home Dashboard's supporting row (LookupIntroPage.tsx),
+ * next to QA Performance + the Announcement Counter card stacked in the
+ * wide cell — the same slot the Announcement Counter card used to occupy,
+ * swapped by explicit request since this card's content (a single Insight)
+ * suits a tall, naturally-vertical, scrollable card far better than a strip
+ * of horizontal stat numbers does. Content is sourced from the Insight type
+ * in the Announcement Manager (see QAAnnouncementForm.tsx's "Insight"
+ * branch and server.ts's dedicated GET /api/announcements/insight route)
+ * rather than being hardcoded here — an admin publishes an Insight the same
+ * way they publish any other announcement, and the latest one appears here
+ * automatically.
  *
- * `h-full` + the body's `flex-1 min-h-0 overflow-y-auto` let this card
- * absorb whatever extra vertical room LookupIntroPage.tsx's layout gives it
- * (it's the flex-1 sibling of QA Performance's fixed-to-content height, see
- * that page's own comment) instead of leaving dead space below a short
- * card — and gives a longer Insight body real room to read rather than
- * being cramped into a tiny fixed box.
+ * `h-full` + the body's `flex-1 min-h-0 overflow-y-auto` let this card fill
+ * exactly the height LookupIntroPage.tsx measures from its sibling cell
+ * (QA Performance + Announcement Counter's combined natural height — see
+ * that page's `useMeasuredHeight` usage) and scroll internally if an
+ * Insight is too long to fit, same pattern the "Updates - Live feed" card
+ * uses for its own height-matched column.
  */
 export function DidYouKnowCard({ theme }: { theme: "light" | "dark" }) {
   const [state, setState] = useState<CardState>({ kind: "loading" });

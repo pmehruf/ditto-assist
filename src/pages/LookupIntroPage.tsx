@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Sparkles,
   FileSpreadsheet,
@@ -25,6 +25,7 @@ import { AnnouncementCounterCard } from "../components/AnnouncementCounterCard";
 import { AnnouncementStatModal } from "../components/AnnouncementStatModal";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useMeasuredHeight } from "../hooks/useMeasuredHeight";
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
 
@@ -217,34 +218,23 @@ export function LookupIntroPage({
 
   // LEFT COLUMN height, measured live — Workspace Tools (the merged tools
   // + former References grid) + the Quick Guide panel (whichever of these
-  // render) + QA Performance + the Did you know card, all at their own
-  // natural content height (see QaPerformancePeek.tsx and
-  // DidYouKnowCard.tsx — neither forces a fixed height anymore). The
-  // Announcement card's height is then set to this EXACT measured number,
-  // so its bottom edge lands on the same line as the left column's bottom
+  // render) + the supporting row (QA Performance + Announcement Counter /
+  // Did you know), all at their own natural content height. The Updates -
+  // Live feed card's height is then set to this EXACT measured number, so
+  // its bottom edge lands on the same line as the left column's bottom
   // edge by construction — not by hand-computed guesswork: the browser's
   // own layout of the left column is the source of truth, so this stays
   // correct even if a Quick Guide panel opens/closes, tile labels wrap
-  // differently, or the Insight content's length changes.
-  const leftColRef = useRef<HTMLDivElement>(null);
-  const [announcementHeightPx, setAnnouncementHeightPx] = useState<number | null>(null);
+  // differently, or the Announcement Counter's numbers change width.
+  const [leftColRef, announcementHeightPx] = useMeasuredHeight(isDesktop);
 
-  useLayoutEffect(() => {
-    if (!isDesktop) {
-      setAnnouncementHeightPx(null);
-      return;
-    }
-    const el = leftColRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const box = entry.contentBoxSize?.[0];
-      setAnnouncementHeightPx(box ? box.blockSize : entry.contentRect.height);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [isDesktop]);
+  // RIGHT CELL of the supporting row (QA Performance + Announcement
+  // Counter, stacked) height, measured the same way — applied to the "Did
+  // you know!?" card in the narrow 260px cell next to it, so THEIR bottom
+  // edges also land on the same line (see DidYouKnowCard.tsx's own doc
+  // comment: `h-full` + internal scroll is what lets it fill this exact
+  // height and stay readable even if an Insight is too long to fit).
+  const [supportingRowRightCellRef, didYouKnowHeightPx] = useMeasuredHeight(isDesktop);
 
   // Every Quick Action tile expands the same inline panel below its group
   // instead of navigating immediately — clicking a tile shows a short blurb
@@ -585,43 +575,40 @@ export function LookupIntroPage({
                 either group above) is currently expanded. */}
             {quickGuidePanel && <div className="shrink-0">{quickGuidePanel}</div>}
 
-            {/* ANNOUNCEMENT COUNTER + (QA PERFORMANCE / DID YOU KNOW) — side
-                by side from `lg` up (stacked below it). Counter card is a
-                fixed 260px at `lg`+ (narrower than the earlier 1fr:2fr
-                split) rather than a proportional fraction, so it stays a
-                fixed, modest width regardless of how much room the right
-                cell ends up with. QA Performance and Did you know are
-                stacked in that right cell, both at the same width (the
-                `minmax(0,1fr)` column) — QA Performance's own design
-                (alignment/typography/spacing/comparison visuals) is
-                completely untouched, same as it already adapts to any
-                container width.
-                `flex-1 min-h-0` (was `shrink-0`) — this row still grows to
-                absorb whatever room is left below Workspace Tools instead
-                of leaving it blank at the bottom of the page. QA
-                Performance stays `shrink-0` (its own deliberately compact,
-                natural height — see QaPerformancePeek.tsx); Did you know is
-                `flex-1 min-h-0` so IT is what actually grows (see
-                DidYouKnowCard.tsx). The Counter card USED to stretch
-                (`lg:h-full`) to match the right cell's height, but that
-                left the Counter card's own sections padded out with dead
-                space whenever the right cell ended up taller than the
-                Counter card's actual content needed (see
-                AnnouncementCounterCard.tsx's cardClass comment) — so its
-                wrapper below is `lg:self-start` instead, letting it size to
-                its own natural content and simply not fill this row's full
-                height. Below `lg`, nothing here has an ancestor stretching
-                it taller than its content anyway, so this is a no-op
-                there — everything renders at natural height, stacked. */}
+            {/* DID YOU KNOW + (QA PERFORMANCE / ANNOUNCEMENT COUNTER) — side
+                by side from `lg` up (stacked below it). Did you know sits in
+                the fixed-260px narrow cell (was the Announcement Counter
+                card's slot) — its content is a single short Insight that
+                scrolls internally if too long (see DidYouKnowCard.tsx), so a
+                tall narrow column suits it far better than the Counter
+                card's inherently-horizontal strip of stat numbers ever did.
+                QA Performance and the Announcement Counter are stacked in
+                the wide `minmax(0,1fr)` cell instead — the Counter card is
+                now a wide, horizontal layout (3-up stat grid + a Last 30
+                Days strip, see AnnouncementCounterCard.tsx) matching QA
+                Performance's own full width, rather than the narrow stacked
+                card it used to be.
+                Did you know's height is set to `didYouKnowHeightPx` — the
+                RIGHT cell's own measured total height (QA Performance +
+                Announcement Counter, via `supportingRowRightCellRef` /
+                `useMeasuredHeight` above) — so its bottom edge lands on
+                exactly the same line as that cell's, forming one clean
+                rectangle instead of the mismatched heights a plain
+                `items-stretch` grid would produce (QA Performance stays its
+                own deliberately compact, natural height; the Counter card
+                is natural height too — see its own cardClass comment; only
+                Did you know is explicitly sized, matching the "Updates -
+                Live feed" card's own height-matching pattern below). Below
+                `lg`, neither height style applies — natural height,
+                stacked, exactly as before. */}
             <div className="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
-              <div className="min-w-0 lg:self-start">
-                <AnnouncementCounterCard
-                  theme={theme}
-                  allAnnouncements={allAnnouncements}
-                  onOpenStat={(title, list) => setOpenStat({ title, list })}
-                />
+              <div
+                className="min-w-0"
+                style={isDesktop && didYouKnowHeightPx ? { height: didYouKnowHeightPx } : undefined}
+              >
+                <DidYouKnowCard theme={theme} />
               </div>
-              <div className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)]">
+              <div ref={supportingRowRightCellRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)]">
                 <div className="shrink-0">
                   <QaPerformancePeek
                     theme={theme}
@@ -629,8 +616,12 @@ export function LookupIntroPage({
                     onOpenQaDashboard={() => setActiveTab("qa_dashboard")}
                   />
                 </div>
-                <div className="flex-1 min-h-0">
-                  <DidYouKnowCard theme={theme} />
+                <div className="shrink-0">
+                  <AnnouncementCounterCard
+                    theme={theme}
+                    allAnnouncements={allAnnouncements}
+                    onOpenStat={(title, list) => setOpenStat({ title, list })}
+                  />
                 </div>
               </div>
             </div>

@@ -30,17 +30,18 @@ function parseDateOnly(s: string | null | undefined): Date | null {
 }
 
 /**
- * The "Announcement Counter" card this project had before the Home
- * Announcement carousel replaced it — restored by explicit request as the
- * narrow (1-of-3) partner card next to QA Performance (2-of-3) in the same
- * row, rather than the wide/horizontal card it used to be. Same three
- * stats, same icons/colors/click-to-browse behavior (see
- * AnnouncementStatModal.tsx, which this drives), same underlying counting
- * logic (see the `e4eb028` commit's LookupIntroPage.tsx for the version
- * this was extracted from) — just re-composed as a tall, narrow card with
- * the three stat blocks stacked vertically instead of in a horizontal row,
- * since a horizontal 3-up strip has nowhere near enough width in a 1-of-3
- * column.
+ * The "Announcement Counter" card — now a WIDE, horizontal card sitting
+ * below QA Performance in the right (1fr) cell of the supporting row (see
+ * LookupIntroPage.tsx), same width as QA Performance itself, mirroring how
+ * QA Performance lays its own stats out horizontally rather than stacked.
+ * (It used to be the narrow 260px-column card, with "Did you know!?" in
+ * this slot instead — swapped by explicit request so the narrow column
+ * holds a naturally-vertical, scrollable-content card instead of a card
+ * whose content is inherently a short horizontal strip of numbers.)
+ * Same three stats + click-to-browse behavior (see AnnouncementStatModal.tsx)
+ * and the same Last 30 Days breakdown, just arranged as two horizontal rows
+ * (a 3-up stat grid, then a single breakdown strip) instead of stacked
+ * blocks — natural content height, no forced stretch either way.
  */
 export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }: AnnouncementCounterCardProps) {
   const {
@@ -93,14 +94,6 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
     };
   }, [allAnnouncements]);
 
-  // No more `lg:h-full` — this card used to be stretched to match its
-  // sibling cell (QA Performance + Did You Know)'s height, but that cell's
-  // height has nothing to do with how much content THIS card actually has,
-  // so the leftover room just sat empty (dead padding, most visibly inside
-  // the Last 30 Days block below). Sizing to its own natural content
-  // instead (paired with `lg:self-start` on this card's wrapper in
-  // LookupIntroPage.tsx, which stops the grid row from stretching it) means
-  // every section here is only ever as tall as what it's actually showing.
   const cardClass = `relative rounded-2xl border px-4 sm:px-5 py-[clamp(10px,1.6vh,20px)] flex flex-col ${
     theme === "dark" ? "bg-white/[0.03] border-white/[0.08]" : "bg-white/60 border-stone-300"
   }`;
@@ -138,13 +131,17 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
     },
   ] as const;
 
+  const breakdownRows = [
+    { label: "QA Announcement", value: last30Qa, color: theme === "dark" ? "#FB7185" : "#BE123C" },
+    { label: "Product Announcement", value: last30Product, color: theme === "dark" ? "#A78BFA" : "#7C3AED" },
+    { label: "Insurance Operations", value: last30Ops, color: theme === "dark" ? "#2DD4BF" : "#0F766E" },
+  ] as const;
+
   return (
     <div className={cardClass}>
-      {/* No "View all" link here — it was competing with the title for
-          this narrow card's width and forcing it to truncate. Announcements
-          are still fully reachable via the "Announcements" tile in
-          Workspace Tools above. */}
-      <div className="flex items-center gap-2 select-none mb-[clamp(6px,1vh,14px)] lg:shrink-0 min-w-0">
+      {/* No "View all" link here — Announcements are still fully reachable
+          via the "Announcements" tile in Workspace Tools above. */}
+      <div className="flex items-center gap-2 select-none mb-[clamp(8px,1.2vh,16px)] shrink-0 min-w-0">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: headerIconBg, color: headerIconColor }}>
           <Megaphone className="w-4 h-4" />
         </div>
@@ -153,101 +150,74 @@ export function AnnouncementCounterCard({ theme, allAnnouncements, onOpenStat }:
         </span>
       </div>
 
-      {/* No `flex-1`/stretch below — this card now sizes to its own
-          content (see cardClass's comment). `overflow-y-auto` stays as a
-          pure safety net: on a very short viewport where even the natural
-          content doesn't fit, this scrolls in place instead of spilling
-          past its own border and the page's viewport — same pattern
-          DidYouKnowCard/HomeAnnouncementCard use, it just isn't the
-          primary sizing mechanism anymore. */}
-      <div
-        className="flex flex-col min-h-0 overflow-y-auto pr-0.5"
-        style={{
-          scrollbarWidth: "thin",
-          scrollbarColor: theme === "dark" ? "#475569 transparent" : "#94A3B8 transparent",
-        }}
-      >
-        {/* Three stat blocks — a single compact ROW each (icon, label,
-            count) instead of the old stacked icon-on-top block, which took
-            roughly 2-3x the vertical space per tile for the same
-            information. */}
-        <div className="flex flex-col gap-[clamp(4px,0.8vh,8px)] shrink-0">
-          {statTiles.map((stat) => (
-            <button
-              key={stat.title}
-              type="button"
-              onClick={() => onOpenStat(stat.title, [...stat.list])}
-              title={`View ${stat.title.toLowerCase()}`}
-              className={`relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl border text-left cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
-                theme === "dark"
-                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.16]"
-                  : "border-stone-200 bg-stone-50/70 hover:bg-white hover:border-stone-300 hover:shadow-sm"
-              }`}
+      {/* Three stat tiles side by side (was stacked, back when this card
+          lived in the narrow 260px column) — a 3-up grid reads naturally
+          now that the card has a whole row's width instead of a sliver of
+          it. */}
+      <div className="grid grid-cols-3 gap-[clamp(8px,1.2vh,12px)] shrink-0">
+        {statTiles.map((stat) => (
+          <button
+            key={stat.title}
+            type="button"
+            onClick={() => onOpenStat(stat.title, [...stat.list])}
+            title={`View ${stat.title.toLowerCase()}`}
+            className={`relative w-full flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border text-center cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
+              theme === "dark"
+                ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.16]"
+                : "border-stone-200 bg-stone-50/70 hover:bg-white hover:border-stone-300 hover:shadow-sm"
+            }`}
+          >
+            {stat.label === "Live" && stat.value > 0 && (
+              <span className="absolute top-2 right-2 flex w-1.5 h-1.5">
+                <span className="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping" style={{ backgroundColor: stat.color }} />
+                <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: stat.color }} />
+              </span>
+            )}
+            <span style={{ color: stat.color }}>{stat.icon}</span>
+            <span
+              className="text-[22px] font-black font-mono leading-none"
+              style={{ color: stat.value > 0 ? stat.color : theme === "dark" ? "#F8FAFC" : "#1E293B" }}
             >
-              <span
-                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                style={{ backgroundColor: `${stat.color}1A`, color: stat.color }}
-              >
-                {stat.icon}
-              </span>
-              <span className={`flex-1 min-w-0 text-[11px] font-bold uppercase tracking-wide leading-tight truncate ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-                {stat.label} <span className="opacity-70">{stat.sub}</span>
-              </span>
-              <span className="relative flex items-center gap-1 shrink-0">
-                {stat.label === "Live" && stat.value > 0 && (
-                  <span className="flex w-1.5 h-1.5">
-                    <span className="absolute inline-flex h-1.5 w-1.5 rounded-full opacity-75 animate-ping" style={{ backgroundColor: stat.color }} />
-                    <span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{ backgroundColor: stat.color }} />
-                  </span>
-                )}
-                <span
-                  className="text-[17px] font-black font-mono leading-none"
-                  style={{ color: stat.value > 0 ? stat.color : theme === "dark" ? "#F8FAFC" : "#1E293B" }}
-                >
-                  {stat.value}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+              {stat.value}
+            </span>
+            <span className={`text-[10.5px] font-bold uppercase tracking-wide leading-tight ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+              {stat.label}
+              <br /> {stat.sub}
+            </span>
+          </button>
+        ))}
+      </div>
 
-        {/* Last 30 Days breakdown. Total across every type (see the useMemo
-            above), then a line each for the three real, selectable types —
-            QA Announcement, Product Announcement, Insurance Operations
-            (legacy/unreclassified General Announcement rows still count
-            toward the total but have no line of their own; see migration
-            0056). Sized to its own content now (no `flex-1`/`justify-center`
-            stretch) — see cardClass's comment. */}
-        <div className={`mt-[clamp(4px,0.8vh,8px)] shrink-0 flex flex-col gap-[clamp(5px,0.8vh,8px)] p-2.5 rounded-xl border ${
-          theme === "dark" ? "border-white/[0.08] bg-white/[0.03]" : "border-stone-200 bg-stone-50/70"
-        }`}>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className={`text-[10.5px] font-bold uppercase tracking-wide ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
-              Last 30 Days
-            </span>
-            <span className={`text-lg font-black font-mono leading-none ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-              {last30Total}
-            </span>
-          </div>
-          <div className="space-y-1">
-            {([
-              { label: "QA Announcement", value: last30Qa, color: theme === "dark" ? "#FB7185" : "#BE123C" },
-              { label: "Product Announcement", value: last30Product, color: theme === "dark" ? "#A78BFA" : "#7C3AED" },
-              { label: "Insurance Operations", value: last30Ops, color: theme === "dark" ? "#2DD4BF" : "#0F766E" },
-            ] as const).map((row) => (
-              <div key={row.label} className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
-                  <span className={`text-[11px] font-semibold truncate ${theme === "dark" ? "text-stone-300" : "text-stone-700"}`}>
-                    {row.label}
-                  </span>
-                </span>
-                <span className="text-[12px] font-black font-mono shrink-0" style={{ color: row.color }}>
-                  {row.value}
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* Last 30 Days breakdown — a single horizontal strip (total on the
+          left, a divider, then the three real types inline) instead of a
+          stacked list, matching the card's new wide proportions. Total
+          counts every type (see the useMemo above); legacy/unreclassified
+          General Announcement rows count toward it without a line of their
+          own (see migration 0056). */}
+      <div className={`mt-[clamp(8px,1.2vh,12px)] shrink-0 flex flex-wrap items-center gap-x-5 gap-y-2 p-3 rounded-xl border ${
+        theme === "dark" ? "border-white/[0.08] bg-white/[0.03]" : "border-stone-200 bg-stone-50/70"
+      }`}>
+        <div className="flex items-baseline gap-2 shrink-0">
+          <span className={`text-[10.5px] font-bold uppercase tracking-wide ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
+            Last 30 Days
+          </span>
+          <span className={`text-xl font-black font-mono leading-none ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+            {last30Total}
+          </span>
+        </div>
+        <div className={`hidden sm:block w-px h-6 shrink-0 ${theme === "dark" ? "bg-white/[0.1]" : "bg-stone-300"}`} />
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+          {breakdownRows.map((row) => (
+            <div key={row.label} className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+              <span className={`text-[11px] font-semibold whitespace-nowrap ${theme === "dark" ? "text-stone-300" : "text-stone-700"}`}>
+                {row.label}
+              </span>
+              <span className="text-[12px] font-black font-mono shrink-0" style={{ color: row.color }}>
+                {row.value}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
