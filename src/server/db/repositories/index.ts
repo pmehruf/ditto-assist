@@ -33,27 +33,39 @@ import { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
 import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 import { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
 import { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
+import { TermPlaybookConnectionRepository } from "./termPlaybookConnectionRepository.js";
 import { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
 import { FeatureAccessRepository } from "./featureAccessRepository.js";
 import { DepartmentsRepository } from "./departmentsRepository.js";
 import { OrgTeamsRepository } from "./orgTeamsRepository.js";
 import { RolesRepository } from "./rolesRepository.js";
-import { RelationshipTypesRepository } from "./relationshipTypesRepository.js";
+import { RelationshipGroupsRepository } from "./relationshipGroupsRepository.js";
 import { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
 import { CustomAccessGrantsRepository } from "./customAccessGrantsRepository.js";
 import { ProductAssistLogsRepository } from "./productAssistLogsRepository.js";
 import { ProductAssistLogExportConnectionRepository } from "./productAssistLogExportConnectionRepository.js";
+import { ProductAssistUnresolvedQueriesRepository } from "./productAssistUnresolvedQueriesRepository.js";
 import { SpecialInstructionsRepository } from "./specialInstructionsRepository.js";
 import { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
 import { FaqRecordsRepository } from "./faqRecordsRepository.js";
+import { TermFaqConnectionRepository } from "./termFaqConnectionRepository.js";
+import { TermFaqRecordsRepository } from "./termFaqRecordsRepository.js";
 import { KbAcronymsRepository } from "./kbAcronymsRepository.js";
 import { PlanRestrictionsRepository } from "./planRestrictionsRepository.js";
 import { ProductAssistQuotaSettingsRepository } from "./productAssistQuotaSettingsRepository.js";
+import { ProductAssistEligibilityGroupsRepository } from "./productAssistEligibilityGroupsRepository.js";
 import { ProductAssistUserQuotaOverridesRepository } from "./productAssistUserQuotaOverridesRepository.js";
 import { ProductAssistExtraCreditGrantsRepository } from "./productAssistExtraCreditGrantsRepository.js";
 import { ProductAssistUsageLedgerRepository } from "./productAssistUsageLedgerRepository.js";
 import { AdvisorDirectorySyncStateRepository } from "./advisorDirectorySyncStateRepository.js";
 import { CoachingRepository } from "./coachingRepository.js";
+import { QaFeedbackDiscussedMarksRepository } from "./qaFeedbackDiscussedMarksRepository.js";
+import { AccessRulesRepository } from "./accessRulesRepository.js";
+import { AiUsageLogRepository } from "./aiUsageLogRepository.js";
+import { AiModelPricingRepository } from "./aiModelPricingRepository.js";
+import { GuideMentorAdvisorMappingsRepository } from "./guideMentorAdvisorMappingsRepository.js";
+import { GuideMentorRelationshipHistoryRepository } from "./guideMentorRelationshipHistoryRepository.js";
+import { GroupToolAccessRepository } from "./groupToolAccessRepository.js";
 
 export { SearchHistoryRepository } from "./searchHistoryRepository.js";
 export type { SearchHistoryFilter, CreateSearchHistoryEntry } from "./searchHistoryRepository.js";
@@ -155,6 +167,7 @@ export { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 export type { CreateKbChatMessageEntry } from "./kbChatMessagesRepository.js";
 
 export { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
+export { TermPlaybookConnectionRepository } from "./termPlaybookConnectionRepository.js";
 
 export { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
 export type { CreateKbPlaybookPlanFactEntry } from "./kbPlaybookPlanFactsRepository.js";
@@ -167,8 +180,8 @@ export type { CreateOrgTeamEntry, UpdateOrgTeamEntry } from "./orgTeamsRepositor
 export { RolesRepository } from "./rolesRepository.js";
 export type { CreateRoleEntry, UpdateRoleEntry } from "./rolesRepository.js";
 
-export { RelationshipTypesRepository } from "./relationshipTypesRepository.js";
-export type { CreateRelationshipTypeEntry, UpdateRelationshipTypeEntry } from "./relationshipTypesRepository.js";
+export { RelationshipGroupsRepository } from "./relationshipGroupsRepository.js";
+export type { CreateRelationshipGroupEntry, UpdateRelationshipGroupEntry } from "./relationshipGroupsRepository.js";
 
 export { UserRelationshipsRepository } from "./userRelationshipsRepository.js";
 export type { CreateUserRelationshipEntry } from "./userRelationshipsRepository.js";
@@ -181,6 +194,11 @@ export { KbFaqConnectionRepository } from "./kbFaqConnectionRepository.js";
 export { FaqRecordsRepository } from "./faqRecordsRepository.js";
 export type { CreateFaqRecordEntry, FaqRecordFilter } from "./faqRecordsRepository.js";
 
+export { TermFaqConnectionRepository } from "./termFaqConnectionRepository.js";
+
+export { TermFaqRecordsRepository } from "./termFaqRecordsRepository.js";
+export type { CreateTermFaqRecordEntry, TermFaqRecordFilter } from "./termFaqRecordsRepository.js";
+
 export { KbAcronymsRepository } from "./kbAcronymsRepository.js";
 export type { CreateKbAcronymEntry, UpdateKbAcronymEntry, KbAcronymFilter } from "./kbAcronymsRepository.js";
 
@@ -189,6 +207,9 @@ export type { CreatePlanRestrictionEntry, UpdatePlanRestrictionEntry } from "./p
 
 export { ProductAssistQuotaSettingsRepository } from "./productAssistQuotaSettingsRepository.js";
 export type { UpdateQuotaSettingsEntry } from "./productAssistQuotaSettingsRepository.js";
+
+export { ProductAssistEligibilityGroupsRepository } from "./productAssistEligibilityGroupsRepository.js";
+export type { CreateEligibilityGroupEntry, UpdateEligibilityGroupEntry } from "./productAssistEligibilityGroupsRepository.js";
 
 export { ProductAssistUserQuotaOverridesRepository } from "./productAssistUserQuotaOverridesRepository.js";
 export type { UpsertUserQuotaOverrideEntry } from "./productAssistUserQuotaOverridesRepository.js";
@@ -205,6 +226,30 @@ export type {
 
 export { AdvisorDirectorySyncStateRepository } from "./advisorDirectorySyncStateRepository.js";
 export type { UpsertAdvisorSyncStateEntry } from "./advisorDirectorySyncStateRepository.js";
+
+export { GuideMentorAdvisorMappingsRepository } from "./guideMentorAdvisorMappingsRepository.js";
+export type { SyncGuideMentorAdvisorMappingEntry, EditGuideMentorAdvisorMappingEntry } from "./guideMentorAdvisorMappingsRepository.js";
+
+export { GuideMentorRelationshipHistoryRepository } from "./guideMentorRelationshipHistoryRepository.js";
+export type { GuideMentorRelationshipKind, GuideMentorRelationshipSource } from "./guideMentorRelationshipHistoryRepository.js";
+
+export { AccessRulesRepository } from "./accessRulesRepository.js";
+export type { CreateAccessRuleEntry, UpdateAccessRuleEntry, AccessRuleLevel } from "./accessRulesRepository.js";
+
+export { ProductAssistUnresolvedQueriesRepository } from "./productAssistUnresolvedQueriesRepository.js";
+export type {
+  CreateUnresolvedQueryEntry,
+  UnresolvedQueryFilter,
+  UpdateUnresolvedQueryStatusEntry,
+} from "./productAssistUnresolvedQueriesRepository.js";
+
+export { AiUsageLogRepository } from "./aiUsageLogRepository.js";
+export type { AiUsageSource, RecordAiUsageEntry, AiUsageBySourceModel } from "./aiUsageLogRepository.js";
+
+export { AiModelPricingRepository } from "./aiModelPricingRepository.js";
+export type { UpsertModelPricingEntry, ModelPrice } from "./aiModelPricingRepository.js";
+
+export { GroupToolAccessRepository } from "./groupToolAccessRepository.js";
 
 /**
  * Bundles every repository against a single Db/TestDb instance. This is the
@@ -230,7 +275,7 @@ export interface Repositories {
   departments: DepartmentsRepository;
   orgTeams: OrgTeamsRepository;
   roles: RolesRepository;
-  relationshipTypes: RelationshipTypesRepository;
+  relationshipGroups: RelationshipGroupsRepository;
   userRelationships: UserRelationshipsRepository;
   customAccessGrants: CustomAccessGrantsRepository;
   categories: CategoriesRepository;
@@ -249,20 +294,32 @@ export interface Repositories {
   kbChatMessages: KbChatMessagesRepository;
   kbPlaybookConnection: KbPlaybookConnectionRepository;
   kbPlaybookPlanFacts: KbPlaybookPlanFactsRepository;
+  termPlaybookConnection: TermPlaybookConnectionRepository;
   productAssistAcks: ProductAssistAcksRepository;
   productAssistLogs: ProductAssistLogsRepository;
   productAssistLogExportConnection: ProductAssistLogExportConnectionRepository;
   specialInstructions: SpecialInstructionsRepository;
   kbFaqConnection: KbFaqConnectionRepository;
   faqRecords: FaqRecordsRepository;
+  termFaqConnection: TermFaqConnectionRepository;
+  termFaqRecords: TermFaqRecordsRepository;
   kbAcronyms: KbAcronymsRepository;
   planRestrictions: PlanRestrictionsRepository;
   productAssistQuotaSettings: ProductAssistQuotaSettingsRepository;
+  productAssistEligibilityGroups: ProductAssistEligibilityGroupsRepository;
   productAssistUserQuotaOverrides: ProductAssistUserQuotaOverridesRepository;
   productAssistExtraCreditGrants: ProductAssistExtraCreditGrantsRepository;
   productAssistUsageLedger: ProductAssistUsageLedgerRepository;
   advisorDirectorySyncState: AdvisorDirectorySyncStateRepository;
+  guideMentorAdvisorMappings: GuideMentorAdvisorMappingsRepository;
+  guideMentorRelationshipHistory: GuideMentorRelationshipHistoryRepository;
   coaching: CoachingRepository;
+  qaFeedbackDiscussedMarks: QaFeedbackDiscussedMarksRepository;
+  accessRules: AccessRulesRepository;
+  productAssistUnresolvedQueries: ProductAssistUnresolvedQueriesRepository;
+  aiUsageLog: AiUsageLogRepository;
+  aiModelPricing: AiModelPricingRepository;
+  groupToolAccess: GroupToolAccessRepository;
 }
 
 export function createRepositories(db: AnyDb): Repositories {
@@ -284,7 +341,7 @@ export function createRepositories(db: AnyDb): Repositories {
     departments: new DepartmentsRepository(db),
     orgTeams: new OrgTeamsRepository(db),
     roles: new RolesRepository(db),
-    relationshipTypes: new RelationshipTypesRepository(db),
+    relationshipGroups: new RelationshipGroupsRepository(db),
     userRelationships: new UserRelationshipsRepository(db),
     customAccessGrants: new CustomAccessGrantsRepository(db),
     categories: new CategoriesRepository(db),
@@ -303,19 +360,31 @@ export function createRepositories(db: AnyDb): Repositories {
     kbChatMessages: new KbChatMessagesRepository(db),
     kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
     kbPlaybookPlanFacts: new KbPlaybookPlanFactsRepository(db),
+    termPlaybookConnection: new TermPlaybookConnectionRepository(db),
     productAssistAcks: new ProductAssistAcksRepository(db),
     productAssistLogs: new ProductAssistLogsRepository(db),
     productAssistLogExportConnection: new ProductAssistLogExportConnectionRepository(db),
     specialInstructions: new SpecialInstructionsRepository(db),
     kbFaqConnection: new KbFaqConnectionRepository(db),
     faqRecords: new FaqRecordsRepository(db),
+    termFaqConnection: new TermFaqConnectionRepository(db),
+    termFaqRecords: new TermFaqRecordsRepository(db),
     kbAcronyms: new KbAcronymsRepository(db),
     planRestrictions: new PlanRestrictionsRepository(db),
     productAssistQuotaSettings: new ProductAssistQuotaSettingsRepository(db),
+    productAssistEligibilityGroups: new ProductAssistEligibilityGroupsRepository(db),
     productAssistUserQuotaOverrides: new ProductAssistUserQuotaOverridesRepository(db),
     productAssistExtraCreditGrants: new ProductAssistExtraCreditGrantsRepository(db),
     productAssistUsageLedger: new ProductAssistUsageLedgerRepository(db),
     advisorDirectorySyncState: new AdvisorDirectorySyncStateRepository(db),
+    guideMentorAdvisorMappings: new GuideMentorAdvisorMappingsRepository(db, new GuideMentorRelationshipHistoryRepository(db)),
+    guideMentorRelationshipHistory: new GuideMentorRelationshipHistoryRepository(db),
     coaching: new CoachingRepository(db),
+    qaFeedbackDiscussedMarks: new QaFeedbackDiscussedMarksRepository(db),
+    accessRules: new AccessRulesRepository(db),
+    productAssistUnresolvedQueries: new ProductAssistUnresolvedQueriesRepository(db),
+    aiUsageLog: new AiUsageLogRepository(db),
+    aiModelPricing: new AiModelPricingRepository(db),
+    groupToolAccess: new GroupToolAccessRepository(db),
   };
 }

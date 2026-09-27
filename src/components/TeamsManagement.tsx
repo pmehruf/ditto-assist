@@ -4,7 +4,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Users, Power, Search } from "lucide-react";
+import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Users, Power, Search, Trash2 } from "lucide-react";
 import { OrgTeam } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
@@ -39,10 +39,8 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [draftDescription, setDraftDescription] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,7 +53,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
     return orgTeams.filter((t) => {
       if (statusFilter === "active" && !t.active) return false;
       if (statusFilter === "inactive" && t.active) return false;
-      if (q && !t.name.toLowerCase().includes(q) && !(t.description || "").toLowerCase().includes(q)) return false;
+      if (q && !t.name.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [orgTeams, searchQuery, statusFilter]);
@@ -63,13 +61,12 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
   const resetCreateForm = () => {
     setCreating(false);
     setNewName("");
-    setNewDescription("");
     setActionError(null);
   };
 
   const createTeam = async () => {
     if (!newName.trim()) {
-      setActionError("A team name is required.");
+      setActionError("A business unit name is required.");
       return;
     }
     setSaving(true);
@@ -78,15 +75,15 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
       const res = await fetch("/api/org-teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), description: newDescription.trim() || null }),
+        body: JSON.stringify({ name: newName.trim() }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Failed to create this team (HTTP ${res.status}).`);
-      logAction("Team Created", `Created team "${body.entry.name}".`);
+      if (!res.ok) throw new Error(body.error || `Failed to create this business unit (HTTP ${res.status}).`);
+      logAction("Business Unit Created", `Created business unit "${body.entry.name}".`);
       resetCreateForm();
       onChanged();
     } catch (err: any) {
-      setActionError(err.message || "Failed to create this team.");
+      setActionError(err.message || "Failed to create this business unit.");
     } finally {
       setSaving(false);
     }
@@ -95,19 +92,17 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
   const startEdit = (team: OrgTeam) => {
     setEditingId(team.id);
     setDraftName(team.name);
-    setDraftDescription(team.description || "");
     setActionError(null);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setDraftName("");
-    setDraftDescription("");
   };
 
   const saveEdit = async (team: OrgTeam) => {
     if (!draftName.trim()) {
-      setActionError("A team name is required.");
+      setActionError("A business unit name is required.");
       return;
     }
     setSaving(true);
@@ -116,11 +111,11 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
       const res = await fetch(`/api/org-teams/${team.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draftName.trim(), description: draftDescription.trim() || null }),
+        body: JSON.stringify({ name: draftName.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
-      logAction("Team Edited", `Updated team "${team.name}"${draftName.trim() !== team.name ? ` (renamed to "${draftName.trim()}")` : ""}.`);
+      logAction("Business Unit Edited", `Updated business unit "${team.name}"${draftName.trim() !== team.name ? ` (renamed to "${draftName.trim()}")` : ""}.`);
       cancelEdit();
       onChanged();
     } catch (err: any) {
@@ -140,11 +135,47 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
         body: JSON.stringify({ active: !team.active }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Failed to update this team (HTTP ${res.status}).`);
-      logAction("Team Edited", `${team.active ? "Deactivated" : "Reactivated"} team "${team.name}".`);
+      if (!res.ok) throw new Error(body.error || `Failed to update this business unit (HTTP ${res.status}).`);
+      logAction("Business Unit Edited", `${team.active ? "Deactivated" : "Reactivated"} business unit "${team.name}".`);
       onChanged();
     } catch (err: any) {
-      setActionError(err.message || "Failed to update this team.");
+      setActionError(err.message || "Failed to update this business unit.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Access Control Center Phase 4 (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md)
+  // — a real delete, alongside the existing deactivate-not-delete path.
+  // Server-side dependency check decides the outcome: an active Access
+  // Rule or Product Assist's eligibility setting referencing this team
+  // blocks deletion outright (409, no `requiresConfirmation`); users or
+  // inactive rules referencing it come back with `requiresConfirmation` and
+  // a plain-English summary, which this asks the caller to confirm before
+  // resending with `confirmed: true`; zero dependencies deletes immediately.
+  const deleteTeam = async (team: OrgTeam) => {
+    setSaving(true);
+    setActionError(null);
+    try {
+      let res = await fetch(`/api/org-teams/${team.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: false }),
+      });
+      let body = await res.json().catch(() => ({}));
+      if (!res.ok && body.requiresConfirmation) {
+        if (!window.confirm(`${body.error} Delete "${team.name}" anyway?`)) return;
+        res = await fetch(`/api/org-teams/${team.id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmed: true }),
+        });
+        body = await res.json().catch(() => ({}));
+      }
+      if (!res.ok) throw new Error(body.error || `Failed to delete this business unit (HTTP ${res.status}).`);
+      onChanged();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to delete this business unit.");
     } finally {
       setSaving(false);
     }
@@ -160,7 +191,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap text-emerald-500">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            {orgTeams.length} {orgTeams.length === 1 ? "team" : "teams"}
+            {orgTeams.length} {orgTeams.length === 1 ? "business unit" : "business units"}
           </span>
           {canEdit && !creating && (
             <ClippedButton
@@ -171,7 +202,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
               className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
             >
               <Plus className="w-3.5 h-3.5 shrink-0" />
-              New Team
+              New Business Unit
             </ClippedButton>
           )}
         </div>
@@ -184,17 +215,11 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
         )}
 
         {creating && (
-          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                Name
-                <input className={inputClass} placeholder="e.g. Bliss" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </label>
-              <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                Description (optional)
-                <input className={inputClass} placeholder="Short description" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} />
-              </label>
-            </div>
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
+            <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted max-w-sm">
+              Name
+              <input className={inputClass} placeholder="e.g. Bliss" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            </label>
             <div className="flex items-center gap-2">
               <ClippedButton onClick={createTeam} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="px-3 py-1.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white">
                 {saving ? "Saving..." : "Save"}
@@ -208,7 +233,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
 
         {orgTeams.length === 0 && !creating ? (
           <p className={`px-3 py-8 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
-            No teams yet. {canEdit ? "Create one to get started." : "The Developer hasn't created any yet."}
+            No business units yet. {canEdit ? "Create one to get started." : "The Developer hasn't created any yet."}
           </p>
         ) : (
           <>
@@ -220,7 +245,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search teams…"
+                  placeholder="Search business units…"
                   className={`w-full pl-7 pr-2.5 py-1.5 rounded-lg border text-[11px] font-semibold outline-none ${
                     dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
                   }`}
@@ -246,7 +271,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
           )}
           {visibleTeams.length === 0 ? (
             <p className={`px-3 py-8 text-center text-xs font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
-              No teams match the current search/filters.
+              No business units match the current search/filters.
             </p>
           ) : (
           <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
@@ -255,32 +280,24 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
                 {visibleTeams.map((team, idx) => {
                   const isEditing = canEdit && editingId === team.id;
                   return (
-                    <tr key={team.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
+                    <tr key={team.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""}`}>
                       <td className="px-3 py-2.5 w-8">
                         <Users className={`w-3.5 h-3.5 mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`} />
                       </td>
                       <td className="px-3 py-2.5">
                         {isEditing ? (
-                          <div className="space-y-1.5">
-                            <input className={inputClass} value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Name" />
-                            <input className={inputClass} value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} placeholder="Description (optional)" />
-                          </div>
+                          <input className={inputClass} value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Name" />
                         ) : (
-                          <>
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-black text-xs ${dark ? "text-white" : "text-stone-900"}`}>{team.name}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap ${
-                                team.active
-                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                                  : "bg-stone-500/15 text-stone-400 border-stone-500/30"
-                              }`}>
-                                {team.active ? "Active" : "Inactive"}
-                              </span>
-                            </div>
-                            {team.description && (
-                              <p className={`text-[10.5px] mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>{team.description}</p>
-                            )}
-                          </>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-black text-xs ${dark ? "text-white" : "text-stone-900"}`}>{team.name}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap ${
+                              team.active
+                                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                : "bg-stone-500/15 text-stone-400 border-stone-500/30"
+                            }`}>
+                              {team.active ? "Active" : "Inactive"}
+                            </span>
+                          </div>
                         )}
                       </td>
                       <td className={`px-3 py-2.5 text-[10.5px] whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
@@ -303,7 +320,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
                                 onClick={() => startEdit(team)}
                                 cornerBg={dark ? "#0e2236" : "#ffffff"}
                                 className={`p-1.5 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`}
-                                title="Edit team"
+                                title="Edit business unit"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </ClippedButton>
@@ -315,6 +332,15 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
                                 title={team.active ? "Deactivate" : "Reactivate"}
                               >
                                 <Power className="w-3.5 h-3.5" />
+                              </ClippedButton>
+                              <ClippedButton
+                                onClick={() => deleteTeam(team)}
+                                disabled={saving}
+                                cornerBg={dark ? "#0e2236" : "#ffffff"}
+                                className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`}
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
                               </ClippedButton>
                             </div>
                           )}
@@ -332,8 +358,8 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
 
         <p className="text-[10.5px] font-semibold text-content-muted">
           {canEdit
-            ? "Teams are foundation metadata for future access scoping — today, assigning a user to a team has no effect on what they can access. Assign a user to a team from the Directory tab. Deactivating hides a team from the assignment dropdown without deleting it or unassigning existing members."
-            : "Admin clearance grants read-only visibility into teams. Developer or Platform Admin clearance is required to create or edit them."}
+            ? "Business units are foundation metadata for future access scoping — today, assigning a user to a business unit has no effect on what they can access. Assign a user to a business unit from the Directory tab. Deactivating hides a business unit from the assignment dropdown without deleting it or unassigning existing members. Deleting permanently removes it — blocked if an Access Rule or Product Assist's eligibility setting still references it."
+            : "Admin clearance grants read-only visibility into business units. Developer or Platform Admin clearance is required to create, edit, or delete them."}
         </p>
       </div>
     </div>

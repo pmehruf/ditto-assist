@@ -23,6 +23,14 @@ interface OwnerControlsPageProps {
   /** Hidden feature ids, lifted to App so hasAccess() can read them. */
   hiddenPages: string[];
   setHiddenPages: (ids: string[]) => void;
+  /** Same resolveAccess()-backed evaluator every other governed feature's
+   * page uses — see App.tsx's hasAccess(). Toggling a page's visibility
+   * requires Editor access on "owner_controls" (no longer a hardcoded
+   * Developer-only exception as of 2026-09 — see featurePermissions.ts);
+   * someone with only Viewer access can reach this page (nav requires just
+   * Viewer) but sees the toggles disabled rather than have them silently
+   * 403 on click. */
+  hasAccess: (featureId: string, actionType: "Viewer" | "Editor") => boolean;
 }
 
 /**
@@ -46,13 +54,20 @@ interface OwnerControlsPageProps {
  * the Developer always sees every page — including this one. That makes it
  * impossible to lock yourself out.
  */
-export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerControlsPageProps) {
+export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages, hasAccess }: OwnerControlsPageProps) {
   const dark = theme === "dark";
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const canManage = hasAccess("owner_controls", "Editor");
 
   const hiddenSet = new Set(hiddenPages);
+  // Count only hidden rows that still correspond to a currently-registered
+  // page — hiddenSet itself can carry stale entries for a feature that was
+  // since removed/renamed from DEFAULT_FEATURE_PERMISSIONS (its hidden row
+  // in the DB was never cleaned up), which would otherwise inflate this
+  // count above the number of rows actually marked "Hidden" below.
+  const visibleHiddenCount = HIDEABLE_PAGES.filter((f) => hiddenSet.has(f.id)).length;
 
   const refresh = async () => {
     setLoading(true);
@@ -152,6 +167,7 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
         <span>
           This only controls whether a page is shown. It does not change tiers or permissions — who <em>may</em> use a
           visible page is still governed by the Access Control Center. You will always see every page regardless of these settings.
+          {!canManage && " You can view this list, but you don't have permission to change it."}
         </span>
       </div>
 
@@ -174,7 +190,7 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
           </h3>
           <div className="flex items-center gap-3">
             <span className={`text-[10px] font-mono ${dark ? "text-stone-400" : "text-stone-500"}`}>
-              {hiddenSet.size} hidden / {HIDEABLE_PAGES.length} pages
+              {visibleHiddenCount} hidden / {HIDEABLE_PAGES.length} pages
             </span>
             <button
               type="button"
@@ -233,9 +249,9 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages }: OwnerC
                     role="switch"
                     aria-checked={!isHidden}
                     aria-label={`${feature.name} visibility`}
-                    disabled={isBusy}
+                    disabled={isBusy || !canManage}
                     onClick={() => toggle(feature.id, !isHidden)}
-                    title={isHidden ? "Show this page to everyone" : "Hide this page from everyone except you"}
+                    title={!canManage ? "You don't have permission to change this" : isHidden ? "Show this page to everyone" : "Hide this page from everyone except you"}
                     className={`relative w-11 h-6 rounded-full border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ${
                       isHidden
                         ? dark

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useState } from "react";
-import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, IdCard, Power, Search } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, IdCard, Power, Search, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { AppRole } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
@@ -37,23 +37,26 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [draftDescription, setDraftDescription] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const memberCount = (roleId: number) => usersList.filter((u) => u.roleId === roleId).length;
+  const membersOf = (roleId: number) => usersList.filter((u) => u.roleId === roleId).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Which role's member list is expanded open below its row — see
+  // DepartmentsManagement.tsx's identical pattern for why.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const visibleRoles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return roles.filter((r) => {
       if (statusFilter === "active" && !r.active) return false;
       if (statusFilter === "inactive" && r.active) return false;
-      if (q && !r.name.toLowerCase().includes(q) && !(r.description || "").toLowerCase().includes(q)) return false;
+      if (q && !r.name.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [roles, searchQuery, statusFilter]);
@@ -61,7 +64,6 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
   const resetCreateForm = () => {
     setCreating(false);
     setNewName("");
-    setNewDescription("");
     setActionError(null);
   };
 
@@ -76,7 +78,7 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
       const res = await fetch("/api/roles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), description: newDescription.trim() || null }),
+        body: JSON.stringify({ name: newName.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to create this role (HTTP ${res.status}).`);
@@ -93,14 +95,12 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
   const startEdit = (role: AppRole) => {
     setEditingId(role.id);
     setDraftName(role.name);
-    setDraftDescription(role.description || "");
     setActionError(null);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setDraftName("");
-    setDraftDescription("");
   };
 
   const saveEdit = async (role: AppRole) => {
@@ -114,7 +114,7 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
       const res = await fetch(`/api/roles/${role.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draftName.trim(), description: draftDescription.trim() || null }),
+        body: JSON.stringify({ name: draftName.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
@@ -143,6 +143,37 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
       onChanged();
     } catch (err: any) {
       setActionError(err.message || "Failed to update this role.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Access Control Center Phase 4 (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md)
+  // — see TeamsManagement.tsx's deleteTeam for the identical two-step
+  // confirm/block reasoning.
+  const deleteRole = async (role: AppRole) => {
+    setSaving(true);
+    setActionError(null);
+    try {
+      let res = await fetch(`/api/roles/${role.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: false }),
+      });
+      let body = await res.json().catch(() => ({}));
+      if (!res.ok && body.requiresConfirmation) {
+        if (!window.confirm(`${body.error} Delete "${role.name}" anyway?`)) return;
+        res = await fetch(`/api/roles/${role.id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmed: true }),
+        });
+        body = await res.json().catch(() => ({}));
+      }
+      if (!res.ok) throw new Error(body.error || `Failed to delete this role (HTTP ${res.status}).`);
+      onChanged();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to delete this role.");
     } finally {
       setSaving(false);
     }
@@ -182,17 +213,11 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
         )}
 
         {creating && (
-          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                Name
-                <input className={inputClass} placeholder="e.g. Mentor" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </label>
-              <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                Description (optional)
-                <input className={inputClass} placeholder="Short description" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} />
-              </label>
-            </div>
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
+            <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted max-w-sm">
+              Name
+              <input className={inputClass} placeholder="e.g. Mentor" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            </label>
             <div className="flex items-center gap-2">
               <ClippedButton onClick={createRole} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="px-3 py-1.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white">
                 {saving ? "Saving..." : "Save"}
@@ -252,37 +277,42 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
               <tbody>
                 {visibleRoles.map((role, idx) => {
                   const isEditing = canEdit && editingId === role.id;
+                  const count = memberCount(role.id);
+                  const expanded = expandedId === role.id;
                   return (
-                    <tr key={role.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
+                    <Fragment key={role.id}>
+                    <tr className={`border-b align-top ${expanded ? "" : "last:border-b-0"} ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""}`}>
                       <td className="px-3 py-2.5 w-8">
                         <IdCard className={`w-3.5 h-3.5 mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`} />
                       </td>
                       <td className="px-3 py-2.5">
                         {isEditing ? (
-                          <div className="space-y-1.5">
-                            <input className={inputClass} value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Name" />
-                            <input className={inputClass} value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} placeholder="Description (optional)" />
-                          </div>
+                          <input className={inputClass} value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Name" />
                         ) : (
-                          <>
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-black text-xs ${dark ? "text-white" : "text-stone-900"}`}>{role.name}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap ${
-                                role.active
-                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                                  : "bg-stone-500/15 text-stone-400 border-stone-500/30"
-                              }`}>
-                                {role.active ? "Active" : "Inactive"}
-                              </span>
-                            </div>
-                            {role.description && (
-                              <p className={`text-[10.5px] mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>{role.description}</p>
-                            )}
-                          </>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-black text-xs ${dark ? "text-white" : "text-stone-900"}`}>{role.name}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap ${
+                              role.active
+                                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                : "bg-stone-500/15 text-stone-400 border-stone-500/30"
+                            }`}>
+                              {role.active ? "Active" : "Inactive"}
+                            </span>
+                          </div>
                         )}
                       </td>
-                      <td className={`px-3 py-2.5 text-[10.5px] whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                        {memberCount(role.id)} {memberCount(role.id) === 1 ? "member" : "members"}
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {/* Click-to-expand the member list below this row —
+                            see DepartmentsManagement.tsx's identical control. */}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(expanded ? null : role.id)}
+                          disabled={count === 0}
+                          className={`flex items-center gap-1 text-[10.5px] font-bold cursor-pointer disabled:cursor-default disabled:opacity-60 ${dark ? "text-stone-400 hover:text-sky-400" : "text-stone-500 hover:text-sky-600"}`}
+                        >
+                          {count > 0 && (expanded ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />)}
+                          {count} {count === 1 ? "member" : "members"}
+                        </button>
                       </td>
                       {canEdit && (
                         <td className="px-3 py-2.5 text-right">
@@ -314,11 +344,40 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </ClippedButton>
+                              <ClippedButton
+                                onClick={() => deleteRole(role)}
+                                disabled={saving}
+                                cornerBg={dark ? "#0e2236" : "#ffffff"}
+                                className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`}
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </ClippedButton>
                             </div>
                           )}
                         </td>
                       )}
                     </tr>
+                    {expanded && (
+                      <tr className={`border-b last:border-b-0 ${dark ? "border-stone-850 bg-black/[0.15]" : "border-stone-150 bg-stone-100/70"}`}>
+                        <td />
+                        <td colSpan={canEdit ? 3 : 2} className="px-3 py-2.5">
+                          <div className="flex flex-wrap gap-1.5">
+                            {membersOf(role.id).map((u) => (
+                              <span
+                                key={u.email}
+                                title={u.email}
+                                className={`px-2 py-1 rounded-full border text-[10.5px] font-semibold whitespace-nowrap ${dark ? "bg-white/[0.03] border-stone-800 text-stone-300" : "bg-white border-stone-200 text-stone-700"}`}
+                              >
+                                {u.name}
+                                <span className={`ml-1 font-mono text-[9px] ${dark ? "text-stone-500" : "text-stone-400"}`}>{u.tactId}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -330,8 +389,8 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
 
         <p className="text-[10.5px] font-semibold text-content-muted">
           {canEdit
-            ? "Roles are foundation metadata for future access scoping — today, assigning a user to a role has no effect on what they can access, and this is independent of the QA Dashboard's own Admin/Guide/Mentor role. Assign a user to a role from the Directory tab. Deactivating hides a role from the assignment dropdown without deleting it or unassigning existing members."
-            : "Admin clearance grants read-only visibility into roles. Developer or Platform Admin clearance is required to create or edit them."}
+            ? "Roles are foundation metadata for future access scoping — today, assigning a user to a role has no effect on what they can access, and this is independent of the QA Dashboard's own Admin/Guide/Mentor role. Assign a user to a role from the Directory tab. Deactivating hides a role from the assignment dropdown without deleting it or unassigning existing members. Deleting permanently removes it — blocked if an Access Rule or Product Assist's eligibility setting still references it."
+            : "Admin clearance grants read-only visibility into roles. Developer or Platform Admin clearance is required to create, edit, or delete them."}
         </p>
       </div>
     </div>

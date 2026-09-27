@@ -7,13 +7,13 @@ import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "r
 import type { Dispatch, SetStateAction } from "react";
 import {
   Plus, Trash2, Upload, ChevronDown, ChevronRight, FileText, RefreshCw, AlertTriangle, CheckCircle2, X, Tag, Link2,
-  Search, Filter, Pencil, Folder, ArrowLeftRight,
+  Search, Filter, Pencil, Folder, ArrowLeftRight, BookOpen,
 } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
-import { INSURER_LOGOS } from "../constants/insurerLogos";
+import { INSURER_LOGOS, matchInsurerKey } from "../constants/insurerLogos";
 import { getPlanInsurerColor, hexToRgba } from "../utils/planInsurerColors";
 import { realPlanNames } from "../utils/kbPlanNames";
 import { DittoWordmark } from "./mascots/DittoWordmark";
@@ -30,12 +30,19 @@ const INSURER_ACCENT_COLOR: Record<string, { light: string; dark: string }> = {
   "Care Health": getPlanInsurerColor("Care Supreme"),
   "Aditya Birla": getPlanInsurerColor("Activ One Max"),
   "Niva Bupa": getPlanInsurerColor("Aspire"),
+  // Term Insurance insurers (2026-09) — no PED plan-name mapping exists for
+  // these (planInsurerColors.ts is Health-only), so their muted brand pairs
+  // are hardcoded directly here instead of routed through getPlanInsurerColor.
+  "Axis Max Life": { light: "#8C3B4A", dark: "#C98D9A" },
+  "ICICI Prudential": { light: "#A15A2E", dark: "#D9A176" },
+  "HDFC Life": { light: "#2F4F6B", dark: "#88AFC7" },
+  "Bajaj Life": { light: "#2E6B6E", dark: "#7FBFC2" },
 };
 
 interface KbCategory {
   id: number;
   name: string;
-  type: "insurer" | "general";
+  type: "insurer" | "general" | "fundamentals";
   sortOrder: number;
   planNames: string[];
   disabledPlanNames: string[];
@@ -61,7 +68,7 @@ interface KbResource {
 
 // What KIND of document a resource is — Brochure/Policy Wording/Prospectus/
 // Add-on, independent of its insurer category and plan tags — see 0034's
-// schema comment and queryAssist.ts's SOURCE PRECEDENCE. Kept as ordered
+// schema comment and productAssist.ts's SOURCE PRECEDENCE. Kept as ordered
 // entries (not an object) so select options match the authority order
 // Policy Wording > Prospectus > Brochure the model uses.
 const DOCUMENT_TYPE_OPTIONS: { value: KbDocumentType; label: string }[] = [
@@ -76,7 +83,7 @@ const DOCUMENT_TYPE_LABEL: Record<KbDocumentType, string> = Object.fromEntries(
 ) as Record<KbDocumentType, string>;
 
 // The four document-type tabs shown per insurer (Plans | All Resources |
-// <these four>) — matches the authority-order groups queryAssist.ts
+// <these four>) — matches the authority-order groups productAssist.ts
 // actually reasons about. "Other" isn't a real doc-type tab (it's the
 // catch-all default for pre-"clean start" resources — see 0034's schema
 // comment) but still shows up inside All Resources and, when a plan has one,
@@ -146,7 +153,7 @@ function dedupeCaseInsensitive(names: string[]): string[] {
 /** A resource counts toward a plan/variant if it's tagged with that name
  * (case/whitespace-insensitively) or has no plan tags at all — an untagged
  * resource applies broadly to every plan under its insurer, same retrieval
- * semantics queryAssist.ts already uses, unchanged. Add-on documentType
+ * semantics productAssist.ts already uses, unchanged. Add-on documentType
  * resources never count here regardless of tags — per the KB's design an
  * add-on can genuinely apply to several unrelated plans, so tying it to
  * whichever plan it happens to be tagged with would be misleading; add-ons
@@ -263,7 +270,7 @@ function isAddOnOnlyPlanName(planName: string, catResources: KbResource[]): bool
  * A name in disabledPlanNames is intentionally still resolvable elsewhere
  * (e.g. still valid on already-tagged resources) but hidden from this
  * "active plans" list and from Product Assist's plan-scope picker
- * (server.ts's /api/query-assist/categories applies the same filter). */
+ * (server.ts's /api/product-assist/categories applies the same filter). */
 function planNamesForCategory(category: KbCategory, catResources: KbResource[]): string[] {
   const names = [...category.planNames];
   for (const r of catResources) {
@@ -295,6 +302,16 @@ interface KnowledgeBaseResourceManagementProps {
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  /** Health/Term (2026-09) — which vertical's categories/resources this
+   * admin view is currently scoped to, owned by KnowledgeBaseManagementPage's
+   * toggle. See kb_categories.domain's schema.ts comment. */
+  domain: "Health" | "Term";
+  /** Whether the caller can add/edit/delete/move documents and manage plan
+   * tags here — resolved from hasAccess("knowledge_base", "Editor") in
+   * App.tsx (2026-09 permission architecture fix). Replaces a hardcoded
+   * tier check so a Custom Grant/Access Rule actually works, not just
+   * Admin+/Developer tier. */
+  canManage: boolean;
 }
 
 /**
@@ -317,9 +334,15 @@ interface KnowledgeBaseResourceManagementProps {
  * Google Sheet ingestion is a separate, already-built flow (the Product
  * Playbook — see ConnectionsPage.tsx).
  */
-export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseResourceManagementProps) {
+export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentUser, setChangeLogs, domain, canManage }: KnowledgeBaseResourceManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
+
+  // Term insurers don't sell a standalone "Prospectus" document the way
+  // Health plans do — explicit product request: hide the Prospectus tab,
+  // stat, and doc-type option for the Term domain only, leaving Health's
+  // Prospectus handling completely untouched.
+  const docTypeTabs = domain === "Term" ? DOC_TYPE_TABS.filter(t => t.value !== "prospectus") : DOC_TYPE_TABS;
+  const documentTypeOptions = domain === "Term" ? DOCUMENT_TYPE_OPTIONS.filter(o => o.value !== "prospectus") : DOCUMENT_TYPE_OPTIONS;
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
@@ -368,7 +391,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     setLoadError(null);
     try {
       const [catRes, resRes, planRes] = await Promise.all([
-        fetch("/api/kb/categories"),
+        fetch(`/api/kb/categories?domain=${domain}`),
         fetch("/api/kb/resources"),
         fetch("/api/plan-configs"),
       ]);
@@ -394,12 +417,12 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [domain]);
 
   // ── Add insurer/category ────────────────────────────────────────────────
   const [addInsurerOpen, setAddInsurerOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryType, setNewCategoryType] = useState<"insurer" | "general">("insurer");
+  const [newCategoryType, setNewCategoryType] = useState<"insurer" | "general" | "fundamentals">("insurer");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -412,7 +435,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       const res = await fetch("/api/kb/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type: newCategoryType, sortOrder: newCategoryType === "general" ? 999 : 0 }),
+        body: JSON.stringify({ name, type: newCategoryType, sortOrder: newCategoryType === "insurer" ? 0 : 999, domain }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to add category (HTTP ${res.status}).`);
@@ -460,7 +483,13 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   const [categoryPlanInputById, setCategoryPlanInputById] = useState<Record<number, string>>({});
   const [categoryPlanSavingId, setCategoryPlanSavingId] = useState<number | null>(null);
 
-  const saveCategoryFields = async (category: KbCategory, patch: Partial<Pick<KbCategory, "planNames" | "disabledPlanNames">>) => {
+  // Returns whether the save actually succeeded — callers that give
+  // optimistic UI feedback (e.g. clearing the "Add plan name" box) must
+  // wait for this rather than clearing on click, or a rejected/failed save
+  // looks identical to a successful one: the box empties either way and the
+  // plan just never shows up, with the only difference being the saveError
+  // banner up top, which is easy to miss. See addCategoryPlanName below.
+  const saveCategoryFields = async (category: KbCategory, patch: Partial<Pick<KbCategory, "planNames" | "disabledPlanNames">>): Promise<boolean> => {
     setCategoryPlanSavingId(category.id);
     setSaveError(null);
     try {
@@ -472,26 +501,36 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to update plan names (HTTP ${res.status}).`);
       setCategories(prev => prev.map(c => (c.id === category.id ? body.category : c)));
+      return true;
     } catch (err: any) {
       setSaveError(err.message || "Failed to update plan names. Please try again.");
+      return false;
     } finally {
       setCategoryPlanSavingId(null);
     }
   };
 
-  const addCategoryPlanName = (category: KbCategory, rawName: string) => {
+  const addCategoryPlanName = async (category: KbCategory, rawName: string) => {
     const name = rawName.trim();
     if (!name) return;
     if (category.planNames.some(n => n.toLowerCase() === name.toLowerCase())) {
-      setCategoryPlanInputById(prev => ({ ...prev, [category.id]: "" }));
+      // A real duplicate, not a failure — but silently clearing the box gave
+      // no sign either way, which read as "add plan isn't working." Leave
+      // the typed text in place and say why instead.
+      setSaveError(`"${name}" is already a plan under ${category.name}.`);
       return;
     }
     const nextNames = [...category.planNames, name];
     // Adding a name that was previously disabled re-enables it in one step.
     const nextDisabled = category.disabledPlanNames.filter(n => n.toLowerCase() !== name.toLowerCase());
-    logAction("Knowledge Base Plan Added", `Added plan "${name}" under "${category.name}".`);
-    setCategoryPlanInputById(prev => ({ ...prev, [category.id]: "" }));
-    saveCategoryFields(category, { planNames: nextNames, disabledPlanNames: nextDisabled });
+    const ok = await saveCategoryFields(category, { planNames: nextNames, disabledPlanNames: nextDisabled });
+    // Only clear the box — and log the action — once the save actually
+    // went through; on failure the typed name stays put (with saveError
+    // explaining why) so the user can just retry instead of retyping.
+    if (ok) {
+      logAction("Knowledge Base Plan Added", `Added plan "${name}" under "${category.name}".`);
+      setCategoryPlanInputById(prev => ({ ...prev, [category.id]: "" }));
+    }
   };
 
   /** True delete vs disable, decided by whether any resource in this
@@ -955,8 +994,8 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           const catResourcesAll = resources.filter(r => r.categoryId === category.id);
           const catResources = catResourcesAll.filter(r => statusFilter.has(r.status));
           const expanded = expandedCategoryId === category.id;
-          const logoSrc = category.type === "insurer" ? INSURER_LOGOS[category.name] : undefined;
-          const accent = category.type === "insurer" ? INSURER_ACCENT_COLOR[category.name] : undefined;
+          const logoSrc = category.type === "insurer" ? matchInsurerKey(category.name, INSURER_LOGOS) : undefined;
+          const accent = category.type === "insurer" ? matchInsurerKey(category.name, INSURER_ACCENT_COLOR) : undefined;
           const accentColor = accent ? (dark ? accent.dark : accent.light) : undefined;
           const planNames = category.type === "insurer" ? planNamesForCategory(category, catResources) : [];
           const families = category.type === "insurer" ? buildPlanFamilies(planNames, catResources) : [];
@@ -967,7 +1006,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           const insurerLevelResources = catResources.filter(r => r.isInsurerLevel);
           const tabs: { key: TabKey; label: string }[] = [
             ...(category.type === "insurer" ? [{ key: "plans" as TabKey, label: "Plans" }] : []),
-            ...DOC_TYPE_TABS.map(t => ({ key: t.value as TabKey, label: t.tabLabel })),
+            ...docTypeTabs.map(t => ({ key: t.value as TabKey, label: t.tabLabel })),
             { key: "all", label: "All Resources" },
             ...(category.type === "insurer"
               ? [{ key: "insurer_resources" as TabKey, label: `Insurer Resources${insurerLevelResources.length > 0 ? ` (${insurerLevelResources.length})` : ""}` }]
@@ -991,8 +1030,23 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                   {/* Fixed-width/height box so every insurer's name starts at
                       the exact same x position regardless of that insurer's
                       own logo aspect ratio (they range from ~1.3:1 to
-                      ~3.2:1 natively — see insurerLogos.ts). */}
-                  <div className="w-9 h-6 shrink-0 flex items-center justify-center">
+                      ~3.2:1 natively — see insurerLogos.ts). Insurer logos
+                      sit on a small fixed white chip (not theme-dependent)
+                      rather than directly on the row background: several of
+                      the source SVGs have a transparent canvas with dark
+                      brand colors that have no reliable contrast against a
+                      dark theme row — a guaranteed-white backdrop keeps every
+                      logo legible in both themes without touching each
+                      insurer's own colors. */}
+                  <div
+                    className="w-11 h-7 shrink-0 flex items-center justify-center"
+                    style={logoSrc ? {
+                      backgroundColor: "#FFFFFF",
+                      borderRadius: 6,
+                      border: dark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)",
+                      padding: "3px 5px",
+                    } : undefined}
+                  >
                     {logoSrc ? (
                       <img src={logoSrc} alt={category.name} className="max-w-full max-h-full object-contain" />
                     ) : category.type === "general" ? (
@@ -1001,6 +1055,14 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                       // occupy for insurer rows, using the app's existing
                       // Ditto wordmark asset rather than a generic folder icon.
                       <DittoWordmark className="max-w-full max-h-full" imgStyle={{ maxHeight: "20px" }} isWhite={dark} />
+                    ) : category.type === "fundamentals" ? (
+                      // Insurance Fundamentals categories (2026-09) have no
+                      // insurer/brand to show a logo for — a book icon reads
+                      // as "reference/conceptual material" instead of the
+                      // generic folder glyph every other unbranded category
+                      // fallback used, so this section still looks
+                      // intentional rather than mis-set-up.
+                      <BookOpen className="w-4 h-4 text-content-muted" />
                     ) : (
                       <Folder className="w-4 h-4 text-content-muted" />
                     )}
@@ -1026,7 +1088,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                   <div className="flex flex-wrap items-center gap-1.5 mb-3">
                     {category.type === "insurer" && <StatPill label={`Plan${families.length === 1 ? "" : "s"}`} value={families.length} dark={dark} />}
                     <StatPill label={`Resource${catResourcesAll.length === 1 ? "" : "s"}`} value={catResourcesAll.length} dark={dark} />
-                    {DOC_TYPE_TABS.map(t => (
+                    {docTypeTabs.map(t => (
                       <div key={t.value} className="contents">
                         <StatPill label={t.tabLabel} value={docTypeCounts[t.value]} dark={dark} />
                       </div>
@@ -1110,6 +1172,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                                   <PlanFamilyRow
                                     family={familyResourcesSearched}
                                     dark={dark}
+                                    docTypeTabs={docTypeTabs}
                                     expanded={familyExpanded}
                                     onToggle={() => setExpandedPlanByCategory(prev => ({ ...prev, [category.id]: familyExpanded ? null : family.rootName }))}
                                     canManage={canManage}
@@ -1255,6 +1318,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
         <AddDocumentModal
           theme={theme}
           categoryName={categories.find(c => c.id === addDocModalCategoryId)?.name || ""}
+          documentTypeOptions={documentTypeOptions}
           documentType={pendingDocType(addDocModalCategoryId)}
           onChangeDocumentType={v => setPendingDocTypeByCategory(prev => ({ ...prev, [addDocModalCategoryId]: v }))}
           onChooseFile={() => triggerUpload(addDocModalCategoryId)}
@@ -1277,6 +1341,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
           category={editingCategory}
           categories={categories}
           canManage={canManage}
+          documentTypeOptions={documentTypeOptions}
           onClose={() => setEditingResourceId(null)}
           onChangeDocumentType={v => changeDocumentType(editingResource, v)}
           changingDocType={changingDocTypeResourceId === editingResource.id}
@@ -1322,7 +1387,7 @@ function SectionLabel({ dark, tone, children }: { dark: boolean; tone?: "addon";
  * VariantGroup blocks instead of listing every variant as if it were an
  * unrelated plan. */
 function PlanFamilyRow({
-  family, dark, expanded, onToggle, canManage, onEditResource, onRemovePlanName, onRenamePlanName,
+  family, dark, expanded, onToggle, canManage, onEditResource, onRemovePlanName, onRenamePlanName, docTypeTabs,
 }: {
   family: PlanFamily;
   dark: boolean;
@@ -1332,6 +1397,7 @@ function PlanFamilyRow({
   onEditResource: (r: KbResource) => void;
   onRemovePlanName?: (name: string) => void;
   onRenamePlanName?: (name: string) => void;
+  docTypeTabs: { value: KbDocumentType; tabLabel: string; shortLabel: string }[];
 }) {
   const hasVariants = family.variants.length > 0;
   const totalCount = familyResourceCount(family);
@@ -1353,7 +1419,7 @@ function PlanFamilyRow({
           <span className="text-[10px] font-semibold text-content-muted whitespace-nowrap">{totalCount} resource{totalCount === 1 ? "" : "s"}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {DOC_TYPE_TABS.filter(t => t.value !== "addon").map(t => (
+          {docTypeTabs.filter(t => t.value !== "addon").map(t => (
             <span key={t.value} className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${dark ? "bg-white/[0.05] text-stone-400" : "bg-stone-900/[0.05] text-stone-500"}`}>
               {t.shortLabel} {counts[t.value]}
             </span>
@@ -1575,11 +1641,11 @@ function AddInsurerModal({
 }: {
   theme: "light" | "dark";
   name: string;
-  type: "insurer" | "general";
+  type: "insurer" | "general" | "fundamentals";
   saving: boolean;
   error: string | null;
   onChangeName: (v: string) => void;
-  onChangeType: (v: "insurer" | "general") => void;
+  onChangeType: (v: "insurer" | "general" | "fundamentals") => void;
   onSubmit: () => void;
   onClose: () => void;
 }) {
@@ -1607,7 +1673,23 @@ function AddInsurerModal({
         </div>
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Type</label>
-          <CustomSelect theme={theme} value={type} onChange={v => onChangeType(v as "insurer" | "general")} options={[{ value: "insurer", label: "Insurer" }, { value: "general", label: "General / Others" }]} />
+          <CustomSelect
+            theme={theme}
+            value={type}
+            onChange={v => onChangeType(v as "insurer" | "general" | "fundamentals")}
+            options={[
+              { value: "insurer", label: "Insurer" },
+              { value: "general", label: "General / Others" },
+              // Insurance Fundamentals (2026-09) — a dedicated conceptual-
+              // knowledge bucket, deliberately distinct from "General /
+              // Others": retrieved through its own always-on channel
+              // regardless of whether an insurer/plan is selected, and never
+              // treated as authoritative for a product-specific fact — see
+              // kb_categories.type's schema.ts comment and
+              // productAssist.ts's retrieveFundamentalsChunks.
+              { value: "fundamentals", label: "Insurance Fundamentals" },
+            ]}
+          />
         </div>
       </div>
       <div className={`px-5 py-3 border-t flex items-center justify-end gap-2 ${dark ? "border-stone-800" : "border-stone-200"}`}>
@@ -1623,12 +1705,13 @@ function AddInsurerModal({
 }
 
 function AddDocumentModal({
-  theme, categoryName, documentType, onChangeDocumentType, onChooseFile,
+  theme, categoryName, documentType, documentTypeOptions, onChangeDocumentType, onChooseFile,
   urlValue, onChangeUrlValue, titleValue, onChangeTitleValue, addingUrl, urlError, urlSuccess, onSubmitUrl, onClose,
 }: {
   theme: "light" | "dark";
   categoryName: string;
   documentType: KbDocumentType;
+  documentTypeOptions: { value: KbDocumentType; label: string }[];
   onChangeDocumentType: (v: KbDocumentType) => void;
   onChooseFile: () => void;
   urlValue: string;
@@ -1664,7 +1747,7 @@ function AddDocumentModal({
       <div className="px-5 py-4 space-y-3 overflow-y-auto">
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Document type</label>
-          <CustomSelect theme={theme} value={documentType} onChange={v => onChangeDocumentType(v as KbDocumentType)} options={DOCUMENT_TYPE_OPTIONS} />
+          <CustomSelect theme={theme} value={documentType} onChange={v => onChangeDocumentType(v as KbDocumentType)} options={documentTypeOptions} />
         </div>
 
         <div className={`flex items-center gap-1 rounded-lg p-0.5 ${dark ? "bg-white/[0.04]" : "bg-stone-100"}`}>
@@ -1726,7 +1809,7 @@ function AddDocumentModal({
 
 function ResourceEditModal({
   theme, resource, category, categories, canManage, onClose,
-  onChangeDocumentType, changingDocType, onMove, moving,
+  onChangeDocumentType, documentTypeOptions, changingDocType, onMove, moving,
   tagInput, onChangeTagInput, onAddTag, onRemoveTag, tagSaving, onToggleInsurerLevel, onDelete,
 }: {
   theme: "light" | "dark";
@@ -1736,6 +1819,7 @@ function ResourceEditModal({
   canManage: boolean;
   onClose: () => void;
   onChangeDocumentType: (v: KbDocumentType) => void;
+  documentTypeOptions: { value: KbDocumentType; label: string }[];
   changingDocType: boolean;
   onMove: (categoryId: number) => void;
   moving: boolean;
@@ -1783,7 +1867,7 @@ function ResourceEditModal({
 
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Document type</label>
-          <CustomSelect theme={theme} value={resource.documentType} onChange={v => onChangeDocumentType(v as KbDocumentType)} options={DOCUMENT_TYPE_OPTIONS} disabled={!canManage || changingDocType} />
+          <CustomSelect theme={theme} value={resource.documentType} onChange={v => onChangeDocumentType(v as KbDocumentType)} options={documentTypeOptions} disabled={!canManage || changingDocType} />
         </div>
 
         <div>

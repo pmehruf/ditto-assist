@@ -15,6 +15,15 @@ interface KnowledgeBaseManagementPageProps {
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  // Whether the caller can add/edit/delete/move Knowledge Base documents
+  // (the "Documents" section only) — resolved from hasAccess("knowledge_base",
+  // "Editor") in App.tsx, so a Custom Grant or Access Rule (not just tier)
+  // can unlock this exactly like every other governed feature (2026-09
+  // permission architecture fix). The Special Instructions and Acronym
+  // Dictionary sections below are a separate, deliberate Developer/Platform-
+  // Admin-only carve-out (per spec, since they directly steer Product
+  // Assist's answers) and are untouched by this prop.
+  canManage: boolean;
 }
 
 type SectionKey = "documents" | "special_instructions" | "acronyms";
@@ -45,19 +54,26 @@ type SectionKey = "documents" | "special_instructions" | "acronyms";
  * product decision: it duplicated the main Announcements feature without
  * ever pulling from it, and nothing had been entered into it yet. The
  * kb_announcements table/repository were left in place (unused, empty) in
- * case this is revisited later — see queryAssist.ts's SOURCE PRECEDENCE
+ * case this is revisited later — see productAssist.ts's SOURCE PRECEDENCE
  * comment for the current precedence order (now starting at #0 Special
  * Instructions, still announcement-free).
  *
  * "Acronym Dictionary" (added 2026-08): shorthand advisors habitually type
- * (e.g. "OS" for Optima Secure, "CBB" for Cumulative Bonus Super) mapped to
+ * (e.g. "OS" for Optima Secure, "CBB" for Cumulative Bonus Booster) mapped to
  * its full expansion — see src/components/AcronymDictionary.tsx and
  * src/server/knowledgeBase/acronyms.ts. Purely additive: its own section,
  * its own tab, same permission split as Special Instructions.
  */
-export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser, setChangeLogs }: KnowledgeBaseManagementPageProps) {
+export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: KnowledgeBaseManagementPageProps) {
   const dark = theme === "dark";
   const [section, setSection] = useState<SectionKey>("documents");
+  // Health/Term (2026-09) — this is the Admin/Developer-facing management
+  // side, so unlike ProductAssistPage's advisor-facing toggle, this one is
+  // NEVER restricted by the admin's own tags: an admin manages both
+  // verticals' Knowledge Base content regardless of which tag(s), if any,
+  // they personally carry. Defaults to "Health" (the pre-existing content),
+  // switches every sub-section's fetch/create calls to the chosen domain.
+  const [domain, setDomain] = useState<"Health" | "Term">("Health");
 
   const tabs: { key: SectionKey; label: string }[] = [
     { key: "documents", label: "Documents" },
@@ -79,8 +95,28 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
               : section === "special_instructions"
                 ? "Controlled instructions Product Assist checks before consulting the Product Playbook, Policy Wording, or other resources."
                 : "Shorthand advisors habitually type, mapped to its full meaning, so Product Assist recognizes it."}
-            {effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer" ? "" : " Read-only — Admin clearance is required to make changes."}
+            {section === "documents"
+              ? (canManage ? "" : " Read-only — you don't have permission to make changes.")
+              : (effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer" ? "" : " Read-only — Admin clearance is required to make changes.")}
           </p>
+        </div>
+        {/* Health/Term toggle — scopes every tab's content to one vertical
+            at a time, mirroring Product Assist's own domain isolation. */}
+        <div className="inline-flex items-center gap-1 rounded-lg bg-stone-900/[0.05] dark:bg-white/[0.06] p-1 shrink-0">
+          {(["Health", "Term"] as const).map(d => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDomain(d)}
+              className={`px-3 py-1.5 rounded-md text-[10.5px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
+                domain === d
+                  ? dark ? "bg-[#00D3F3]/20 text-[#00D3F3]" : "bg-[#4673a9]/15 text-[#4673a9]"
+                  : dark ? "text-stone-500 hover:text-stone-300" : "text-stone-400 hover:text-stone-600"
+              }`}
+            >
+              {d}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -102,11 +138,11 @@ export function KnowledgeBaseManagementPage({ theme, effectiveTier, currentUser,
       </div>
 
       {section === "documents" ? (
-        <KnowledgeBaseResourceManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+        <KnowledgeBaseResourceManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} domain={domain} canManage={canManage} />
       ) : section === "special_instructions" ? (
-        <SpecialInstructions theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+        <SpecialInstructions theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} domain={domain} />
       ) : (
-        <AcronymDictionary theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+        <AcronymDictionary theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} domain={domain} />
       )}
     </div>
   );

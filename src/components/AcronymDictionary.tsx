@@ -65,6 +65,10 @@ interface AcronymDictionaryProps {
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  /** Health/Term (2026-09) — which vertical this admin view is currently
+   * scoped to, owned by KnowledgeBaseManagementPage's toggle. See
+   * kb_acronyms.domain's schema.ts comment. */
+  domain: "Health" | "Term";
 }
 
 /**
@@ -77,10 +81,10 @@ interface AcronymDictionaryProps {
  * Purely a CRUD + reference UI — the actual matching (word-boundary string
  * match, not embedding similarity — an acronym is a short exact token, not
  * a phrase) lives server-side in src/server/knowledgeBase/acronyms.ts and is
- * invoked from queryAssist.ts for every question, feeding retrieval, plan
+ * invoked from productAssist.ts for every question, feeding retrieval, plan
  * detection, and a small reference block in the prompt.
  */
-export function AcronymDictionary({ theme, effectiveTier, currentUser, setChangeLogs }: AcronymDictionaryProps) {
+export function AcronymDictionary({ theme, effectiveTier, currentUser, setChangeLogs, domain }: AcronymDictionaryProps) {
   const dark = theme === "dark";
   const canManage = effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
@@ -107,7 +111,7 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/kb/acronyms");
+      const res = await fetch(`/api/kb/acronyms?domain=${domain}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to load the Acronym Dictionary (HTTP ${res.status}).`);
       setEntries(body.entries || []);
@@ -118,7 +122,7 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [domain]);
 
   // ── Search / filter ───────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -156,8 +160,11 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = { acronym, expansion, notes: form.notes.trim() || null };
       const isEdit = form.id !== null;
+      // domain is set once at creation only — never editable afterward (see
+      // kb_categories.domain's schema.ts comment on the same design
+      // decision), so it's omitted entirely from an edit's payload.
+      const payload = { acronym, expansion, notes: form.notes.trim() || null, ...(isEdit ? {} : { domain }) };
       const res = await fetch(isEdit ? `/api/kb/acronyms/${form.id}` : "/api/kb/acronyms", {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -221,7 +228,8 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <p className={`text-xs font-semibold max-w-2xl ${dark ? "text-stone-400" : "text-stone-600"}`}>
-          Shorthand advisors habitually type (e.g. "OS" for Optima Secure, "CBB" for Cumulative Bonus Super) so Product Assist
+          Shorthand advisors habitually type (e.g. "OS" for Optima Secure, "CBB" for Cumulative Bonus Booster) so Product Assist
+
           recognizes it instead of under-retrieving or asking what it means.
           {!canManage && " Read-only — Developer or Platform Admin clearance is required to make changes."}
         </p>
@@ -268,7 +276,7 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
       <div className={`rounded-xl border overflow-hidden ${cardClass}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className={dark ? "bg-white/[0.04]" : "bg-stone-50"}>
+            <thead className={dark ? "bg-white/[0.04]" : "bg-[var(--table-header-bg)]"}>
               <tr>
                 {["Acronym", "Full Form", "Notes", "Status", "Last Updated", "Updated By", "Actions"].map(h => (
                   <th key={h} className={`px-3 py-2 font-bold uppercase tracking-wide text-[10px] whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>

@@ -97,7 +97,7 @@ export function AnnouncementStatModal({
                   className={`w-full text-left rounded-xl border p-3 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
                     theme === "dark"
                       ? "border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.16]"
-                      : "border-stone-200 bg-stone-50/60 hover:bg-white hover:border-stone-300"
+                      : "border-stone-200 bg-surface-solid hover:bg-white hover:border-stone-300"
                   }`}
                 >
                   <div className="min-w-0 flex-1">

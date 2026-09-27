@@ -87,4 +87,59 @@ describe("QaEvaluationHistoryRepository", () => {
     const rows = await repo.listAll();
     expect(rows).toHaveLength(6);
   });
+
+  // ── source_batch scoping (2026-09) — the original (NULL source_batch)
+  // import and a later batch-stamped import must never be able to wipe each
+  // other out. ──────────────────────────────────────────────────────────
+  describe("batch scoping", () => {
+    const batchRow = (batch: string, checkedDate: string): NewQaEvaluationHistoryEntry => ({
+      checkedDate,
+      mistakeDate: null,
+      tactId: "TACT-2",
+      advisorName: "Bob",
+      chatId: `chat-${batch}-${checkedDate}`,
+      domain: "FIRST_CALL",
+      score: 4,
+      sourceBatch: batch,
+    });
+
+    it("deleteAll only removes NULL-source_batch rows, leaving batch-stamped rows untouched", async () => {
+      await seedArchiveLikeData(); // all NULL source_batch
+      await repo.bulkInsert([batchRow("2026-06-manual-backfill", "2026-06-01")]);
+
+      await repo.deleteAll();
+
+      const remaining = await repo.listAll();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].sourceBatch).toBe("2026-06-manual-backfill");
+    });
+
+    it("deleteByBatch only removes rows in that batch, leaving the original (NULL) archive and other batches untouched", async () => {
+      await seedArchiveLikeData(); // all NULL source_batch, 6 rows
+      await repo.bulkInsert([
+        batchRow("2026-06-manual-backfill", "2026-06-01"),
+        batchRow("2026-06-manual-backfill", "2026-06-02"),
+        batchRow("2026-07-manual-backfill", "2026-07-01"),
+      ]);
+
+      await repo.deleteByBatch("2026-06-manual-backfill");
+
+      const remaining = await repo.listAll();
+      expect(remaining).toHaveLength(7); // 6 original + the untouched 2026-07 batch row
+      expect(remaining.some((r) => r.sourceBatch === "2026-06-manual-backfill")).toBe(false);
+      expect(remaining.filter((r) => r.sourceBatch === null)).toHaveLength(6);
+      expect(remaining.some((r) => r.sourceBatch === "2026-07-manual-backfill")).toBe(true);
+    });
+
+    it("countByBatch counts only that batch's rows", async () => {
+      await seedArchiveLikeData();
+      await repo.bulkInsert([
+        batchRow("2026-06-manual-backfill", "2026-06-01"),
+        batchRow("2026-06-manual-backfill", "2026-06-02"),
+      ]);
+
+      expect(await repo.countByBatch("2026-06-manual-backfill")).toBe(2);
+      expect(await repo.countByBatch("2026-07-manual-backfill")).toBe(0);
+    });
+  });
 });

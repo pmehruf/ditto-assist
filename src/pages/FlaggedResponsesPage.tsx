@@ -318,7 +318,7 @@ export function FlaggedResponsesPage({
             <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
               <table className="w-full border-collapse min-w-[950px]">
                 <thead>
-                  <tr className={`border-b ${dark ? "bg-[#132c46] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
+                  <tr className={`border-b ${dark ? "bg-[#132c46] border-stone-850" : "bg-[var(--table-header-bg)] border-stone-200"}`}>
                     <SortableTh label="Flagged By" sortKey="userName" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
                     <SortableTh label="Plan" sortKey="planName" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
                     <SortableTh label="Timestamp" sortKey="timestamp" activeSort={issuesSort} onSort={toggleIssuesSort} className={thClass} />
@@ -343,7 +343,7 @@ export function FlaggedResponsesPage({
                             : issue.status === "Resolved"
                               ? dark ? "bg-emerald-950/10" : "bg-emerald-500/5"
                               : idx % 2 === 1
-                                ? dark ? "bg-white/[0.015]" : "bg-stone-50/60"
+                                ? dark ? "bg-white/[0.015]" : "bg-surface-solid"
                                 : ""
                         }`}
                       >

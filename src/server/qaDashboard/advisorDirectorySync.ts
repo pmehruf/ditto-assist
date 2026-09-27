@@ -36,11 +36,12 @@
  *     never provisioned.
  *   - Product Assist retrieval, credit calculation, or the quota evaluator
  *     itself (productAssistQuota.ts) — setting departmentId/orgTeamId/
- *     roleId/tags on a matching user is enough for resolveQuotaBucket() to
- *     recognize them automatically, IF an admin has separately configured
- *     "AI Usage & Limits" Settings to point eligibleDepartmentId/
- *     eligibleOrgTeamId/eligibleRoleId at these same Advisory/Bliss/Advisor
- *     rows — that configuration step is unchanged and untouched by this file.
+ *     roleId/tags on a matching user is enough for groupMatchesUser() to
+ *     recognize them automatically, IF an admin has separately defined a
+ *     matching eligibility group (see product_assist_eligibility_groups,
+ *     2026-09-07) whose Department/Team/Role/Tag conditions point at these
+ *     same Advisory/Bliss/Advisor rows — that configuration step is
+ *     unchanged and untouched by this file.
  */
 
 import type { Repositories } from "../db/repositories/index.js";
@@ -128,7 +129,7 @@ async function resolveAdvisorCatalogIds(
 
   const errors: string[] = [];
   if (!advisory) errors.push('The "Advisory" department does not exist — add it in Access Control Center\'s Departments tab, then re-run this sync.');
-  if (!bliss) errors.push('The "Bliss" team does not exist — add it in Access Control Center\'s Teams tab, then re-run this sync.');
+  if (!bliss) errors.push('The "Bliss" business unit does not exist — add it in Access Control Center\'s Business Unit tab, then re-run this sync.');
   if (!advisor) errors.push('The "Advisor" role does not exist — add it in Access Control Center\'s Roles tab, then re-run this sync.');
   if (errors.length > 0) return { errors };
 

@@ -9,13 +9,32 @@ import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
 import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkdown";
 import { realPlanNames } from "../utils/kbPlanNames";
-import { HEALTH_FAQ_LIBRARY_URL } from "../constants/productAssistLibrary";
+import { HEALTH_FAQ_LIBRARY_URL, TERM_FAQ_LIBRARY_URL } from "../constants/productAssistLibrary";
+import type { LoggedUser } from "../types/user";
+
+/** Health/Term — see the shared "announcement_team" enum this reuses
+ * (schema.ts) and server.ts's resolveCallerDomain for the authoritative,
+ * server-side version of this same rule. */
+type ProductAssistDomain = "Health" | "Term";
+
+/** Client-side mirror of server.ts's teamForTags — which single domain (if
+ * any) a caller's tags restrict them to. undefined = no restriction (no
+ * tags, or both tags), matching the same "both/neither = sees both"
+ * precedent already established for Dedicated Announcements/Did You Know. */
+function domainRestrictionForTags(tags: string[] | null | undefined): ProductAssistDomain | undefined {
+  const set = new Set(tags ?? []);
+  const hasHealth = set.has("Health");
+  const hasTerm = set.has("Term");
+  if (hasHealth && !hasTerm) return "Health";
+  if (hasTerm && !hasHealth) return "Term";
+  return undefined;
+}
 
 /** Mirrors QuotaStatus in src/server/knowledgeBase/productAssistQuota.ts —
  * the caller's own live credit status, returned by GET /api/product-assist/
  * quota and echoed back in every /api/product-assist/ask response. */
 interface ProductAssistQuotaStatus {
-  bucket: "developer_unlimited" | "health_advisor" | "trial";
+  matchedGroups: { id: number; name: string }[];
   unlimited: boolean;
   dailyLimit: number | null;
   monthlyLimit: number | null;
@@ -26,17 +45,18 @@ interface ProductAssistQuotaStatus {
   extraCredits: number;
   warningThresholdPercent: number;
   monthlyUtilizationPercent: number | null;
-  state: "unlimited" | "ok" | "warning" | "at_limit";
+  state: "unlimited" | "ok" | "warning" | "daily_exceeded" | "at_limit";
 }
 
 interface ProductAssistPageProps {
   theme: "light" | "dark";
+  currentUser: LoggedUser | null;
 }
 
 interface KbCategoryLite {
   id: number;
   name: string;
-  type: "insurer" | "general";
+  type: "insurer" | "general" | "fundamentals";
   planNames: string[];
 }
 
@@ -112,6 +132,11 @@ interface LocalChatMessage {
 interface LocalChatSession {
   id: string;
   title: string;
+  /** Health/Term (2026-09) — which vertical this conversation's insurer/plan
+   * scope belongs to. `undefined` marks a conversation saved before this
+   * field existed, which is always implicitly "Health" (Term didn't exist
+   * yet) — see openSession's fallback below. */
+  domain?: ProductAssistDomain;
   categoryId: number | null;
   planTags: string[];
   messages: LocalChatMessage[];
@@ -278,9 +303,13 @@ function CopyButton({ text, dark }: { text: string; dark: boolean }) {
 
 /**
  * The compact "utilization bar" required by the Credit & Usage Management
- * spec (2026-08) — monthly-primary, daily as smaller supporting text,
- * warning/at-limit/unlimited states, deliberately plain (no progress-ring
- * gamification, no color gradients beyond the app's own status palette).
+ * spec (2026-08, redesigned 2026-09 into two separate bars). Monthly is the
+ * real ceiling — it's the only thing that can ever actually block a
+ * request (see productAssistQuota.ts's ENFORCEMENT MODEL comment) — so its
+ * bar behaves like before: proportional fill, red once truly exhausted.
+ * Daily is now purely a pacing indicator: it fills to 100% and STAYS there
+ * once the day's typical allowance is used up (it never overflows past
+ * full, and never blocks), so it can't be confused with an actual limit.
  * Renders nothing while quota hasn't loaded yet, so it never shifts layout
  * on first paint.
  */
@@ -295,9 +324,9 @@ function ProductAssistUtilizationBar({ quota, dark }: { quota: ProductAssistQuot
 
   const monthlyLimit = quota.monthlyLimit;
   const monthlyUsed = Math.round(quota.monthlyUsed * 100) / 100;
-  const pct = quota.monthlyUtilizationPercent === null ? 0 : Math.min(100, Math.max(0, quota.monthlyUtilizationPercent));
+  const monthlyPct = quota.monthlyUtilizationPercent === null ? 0 : Math.min(100, Math.max(0, quota.monthlyUtilizationPercent));
 
-  const stateColor =
+  const monthlyStateColor =
     quota.state === "at_limit"
       ? dark
         ? "text-rose-300"
@@ -309,25 +338,47 @@ function ProductAssistUtilizationBar({ quota, dark }: { quota: ProductAssistQuot
       : dark
       ? "text-stone-300"
       : "text-stone-600";
-  const barColor = quota.state === "at_limit" ? "#f43f5e" : quota.state === "warning" ? "#f59e0b" : dark ? "#00D3F3" : "#4673a9";
+  const monthlyBarColor = quota.state === "at_limit" ? "#f43f5e" : quota.state === "warning" ? "#f59e0b" : dark ? "#00D3F3" : "#4673a9";
+
+  const dailyLimit = quota.dailyLimit;
+  const dailyUsed = Math.round(quota.dailyUsed * 100) / 100;
+  const dailyExceeded = quota.state === "daily_exceeded";
+  // Capped at 100 and never past it — daily is a pacing figure, not a hard
+  // cap, so the bar communicates "you've used today's typical share" by
+  // filling and staying full rather than by overflowing its own track.
+  const dailyPct = dailyLimit === null || dailyLimit <= 0 ? 0 : Math.min(100, Math.max(0, (dailyUsed / dailyLimit) * 100));
+  const dailyBarColor = dailyExceeded ? "#f59e0b" : dark ? "#00D3F3" : "#4673a9";
+  const dailyTextColor = dailyExceeded ? (dark ? "text-amber-300" : "text-amber-600") : dark ? "text-stone-500" : "text-stone-400";
 
   return (
-    <div className="flex flex-col items-start sm:items-end gap-1 shrink-0 min-w-[160px]">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className={`text-[10.5px] font-bold ${stateColor}`}>
+    <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0 min-w-[160px]">
+      <div className="w-full flex flex-col items-start sm:items-end gap-0.5">
+        <span className={`text-[10.5px] font-bold ${monthlyStateColor}`}>
           {monthlyUsed}/{monthlyLimit ?? "—"} monthly credits
         </span>
-        {quota.dailyLimit !== null && (
-          <span className={`text-[10px] font-semibold ${dark ? "text-stone-500" : "text-stone-400"}`}>
-            (Today: {Math.round(quota.dailyUsed * 100) / 100}/{quota.dailyLimit})
+        <div className={`w-40 h-1.5 rounded-full overflow-hidden ${dark ? "bg-white/10" : "bg-stone-200"}`}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${monthlyPct}%`, backgroundColor: monthlyBarColor }} />
+        </div>
+      </div>
+
+      {dailyLimit !== null && (
+        <div className="w-full flex flex-col items-start sm:items-end gap-0.5">
+          <span className={`text-[10px] font-semibold ${dailyTextColor}`}>
+            {dailyUsed}/{dailyLimit} today
           </span>
-        )}
-      </div>
-      <div className={`w-40 h-1.5 rounded-full overflow-hidden ${dark ? "bg-white/10" : "bg-stone-200"}`}>
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: barColor }} />
-      </div>
+          <div className={`w-40 h-1 rounded-full overflow-hidden ${dark ? "bg-white/10" : "bg-stone-200"}`}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${dailyPct}%`, backgroundColor: dailyBarColor }} />
+          </div>
+        </div>
+      )}
+
       {quota.state === "at_limit" && (
         <span className={`text-[10px] font-bold ${dark ? "text-rose-300" : "text-rose-600"}`}>Limit reached — contact a Developer for more credits.</span>
+      )}
+      {dailyExceeded && (
+        <span className={`text-[10px] font-semibold ${dark ? "text-amber-300" : "text-amber-600"}`}>
+          Today's typical pace reached — still available from your monthly balance.
+        </span>
       )}
     </div>
   );
@@ -384,8 +435,16 @@ function splitReferences(text: string): { body: string; references: string | nul
  * short-lived context for the CURRENT request. Nothing is persisted server
  * side (see server.ts's POST /api/product-assist/ask).
  */
-export function ProductAssistPage({ theme }: ProductAssistPageProps) {
+export function ProductAssistPage({ theme, currentUser }: ProductAssistPageProps) {
   const dark = theme === "dark";
+
+  // Health/Term (2026-09) — undefined restriction means the caller (no
+  // tags, or both tags) may use either domain and gets an actual toggle;
+  // a single-tag caller is locked to that one domain, matching
+  // resolveCallerDomain's server-side enforcement exactly (this client
+  // check is only for UI convenience — the server never trusts it alone).
+  const domainRestriction = domainRestrictionForTags(currentUser?.tags);
+  const [domain, setDomain] = useState<ProductAssistDomain>(domainRestriction ?? "Health");
 
   const [categories, setCategories] = useState<KbCategoryLite[]>([]);
   const [sessions, setSessions] = useState<LocalChatSession[]>(() => loadLocalSessions());
@@ -450,7 +509,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
       setLoading(true);
       setLoadError(null);
       try {
-        const catRes = await fetch("/api/product-assist/categories");
+        const catRes = await fetch(`/api/product-assist/categories?domain=${domain}`);
         const catBody = await catRes.json().catch(() => ({}));
         if (!catRes.ok) throw new Error(catBody.error || `Failed to load insurers (HTTP ${catRes.status}).`);
         setCategories(catBody.entries || []);
@@ -467,7 +526,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
       // failure rather than surfacing a second error banner for a purely
       // supplementary nav feature.
       try {
-        const libRes = await fetch("/api/product-assist/library");
+        const libRes = await fetch(`/api/product-assist/library?domain=${domain}`);
         const libBody = await libRes.json().catch(() => ({}));
         if (libRes.ok) {
           setLibrary({ playbook: libBody.playbook ?? { sourceUrl: null }, insurers: libBody.insurers ?? [] });
@@ -477,7 +536,11 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
       }
 
       // Same non-fatal pattern for the utilization bar's initial state —
-      // shown before the advisor asks their first question.
+      // shown before the advisor asks their first question. Quota is
+      // shared across both domains (one credit pool per advisor), so this
+      // doesn't need to re-run on a domain switch — but re-running it here
+      // too is harmless and keeps this effect simple as a single "domain
+      // changed, reload everything scoped to it" block.
       try {
         const quotaRes = await fetch("/api/product-assist/quota");
         const quotaBody = await quotaRes.json().catch(() => ({}));
@@ -486,7 +549,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
         // Non-fatal — see comment above.
       }
     })();
-  }, []);
+  }, [domain]);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -534,6 +597,9 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
   const openSession = (session: LocalChatSession) => {
     setCurrentSessionId(session.id);
     setMessages(session.messages);
+    // A session saved before the domain field existed is always implicitly
+    // "Health" (Term didn't exist yet) — see LocalChatSession's doc comment.
+    setDomain(session.domain ?? "Health");
     setSelectedCategoryValue(session.categoryId === null ? GENERAL_VALUE : String(session.categoryId));
     setSelectedPlanTags(session.planTags);
     setSendError(null);
@@ -544,6 +610,18 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
     if (!window.confirm("Delete this conversation? This only removes it from this browser.")) return;
     saveSessions(sessions.filter(s => s.id !== session.id));
     if (currentSessionId === session.id) startNewChat();
+  };
+
+  // Switching domain mid-selection invalidates whatever insurer/plan was
+  // already picked (category ids are domain-scoped — see kb_categories.
+  // domain) — reset both, same as startNewChat's own reasoning. Only
+  // reachable while scope is unlocked (see the toggle's render guard
+  // below), so this never fires mid-conversation.
+  const switchDomain = (next: ProductAssistDomain) => {
+    if (next === domain) return;
+    setDomain(next);
+    setSelectedCategoryValue("");
+    setSelectedPlanTags([]);
   };
 
   const togglePlanTag = (plan: string) => {
@@ -594,7 +672,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
       const res = await fetch("/api/product-assist/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categoryId, planTags, question, history }),
+        body: JSON.stringify({ categoryId, planTags, question, history, domain }),
       });
       const body = await res.json().catch(() => ({}));
       // Refresh the utilization bar from whatever the server computed —
@@ -620,6 +698,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
         const newSession: LocalChatSession = {
           id: genId(),
           title: question.slice(0, 120),
+          domain,
           categoryId,
           planTags,
           messages: finalMessages,
@@ -640,7 +719,10 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
   const proseClass = `text-xs leading-relaxed space-y-2 [&_ol]:mt-1 [&_ul]:mt-1 [&_li]:pl-0.5 ${dark ? "text-stone-200" : "text-stone-800"}`;
 
   const categoryOptions = [
-    { value: GENERAL_VALUE, label: "General (Playbook+FAQ)" },
+    // "General" now searches every KB category's document chunks in the
+    // domain (not just FAQ/Playbook — see productAssist.ts's General-scope
+    // broadening), so the label no longer names specific sources.
+    { value: GENERAL_VALUE, label: "General" },
     ...categories.filter(c => c.type === "insurer").map(c => ({ value: String(c.id), label: c.name })),
   ];
 
@@ -732,15 +814,21 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
             </button>
             {libraryOpen && (
               <div className="flex flex-col gap-0.5 pl-1.5 pb-1">
-                {/* Core Resources — always the top two rows once Library is
+                {/* Core Resources — always the top row(s) once Library is
                     open, no further expand/collapse of their own. Product
                     Playbook opens its existing kb_resources sourceUrl
                     directly (same Google Sheet link Knowledge Base
                     Management already exposes to admins — nothing new is
-                    revealed); Health FAQ deliberately does NOT resolve to
+                    revealed); the FAQ item deliberately does NOT resolve to
                     its own resource/sourceUrl — its Sheet stays internal —
                     and instead opens the configured external destination
-                    (see HEALTH_FAQ_LIBRARY_URL's own comment). */}
+                    (see HEALTH_FAQ_LIBRARY_URL/TERM_FAQ_LIBRARY_URL's own
+                    comments). Playbook is shown for both domains — Term got
+                    its own Playbook in 2026-09 (see server.ts's
+                    /api/product-assist/library, which already resolves the
+                    domain-appropriate kb_resources row); this button used to
+                    be Health-only from before that shipped, which hid a
+                    fully-wired Term Playbook from the sidebar. */}
                 <span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-[#8CA0B3] opacity-70 px-2.5 pt-1 pb-0.5">
                   Core Resources
                 </span>
@@ -758,14 +846,14 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
                   {library?.playbook.sourceUrl && <ExternalLink className="w-3 h-3 shrink-0 opacity-50" />}
                 </button>
                 <a
-                  href={HEALTH_FAQ_LIBRARY_URL}
+                  href={domain === "Health" ? HEALTH_FAQ_LIBRARY_URL : TERM_FAQ_LIBRARY_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title="Open Health FAQ"
+                  title={domain === "Health" ? "Open Health FAQ" : "Open Term FAQ"}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-semibold text-[#C4CDD8] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
                 >
                   <FileText className="w-3 h-3 shrink-0 opacity-70" />
-                  <span className="flex-1 text-left truncate">Health FAQ</span>
+                  <span className="flex-1 text-left truncate">{domain === "Health" ? "Health FAQ" : "Term FAQ"}</span>
                   <ExternalLink className="w-3 h-3 shrink-0 opacity-50" />
                 </a>
 
@@ -932,6 +1020,15 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
             {scopeLocked ? (
               <div className="flex items-center gap-2 px-4 py-2.5 text-[10.5px] font-semibold min-w-0">
                 <span className="opacity-50 shrink-0" title="Locked — start a new chat to change insurer or plans.">🔒</span>
+                {/* Domain badge — only shown when it isn't already obvious
+                    (a single-tag advisor only ever sees one domain, so
+                    labeling every conversation with it would be noise). */}
+                {domainRestriction === undefined && (
+                  <>
+                    <span className="text-[#8CA0B3] truncate">{domain === "Health" ? "Health" : "Term"}</span>
+                    <span className="opacity-30 shrink-0">·</span>
+                  </>
+                )}
                 <span className="text-white truncate">{lockedInsurerLabel}</span>
                 {lockedPlanLabel && (
                   <>
@@ -942,6 +1039,28 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
               </div>
             ) : (
               <div className="flex flex-col gap-2.5 px-4 py-3 min-w-0">
+                {/* Health/Term toggle (2026-09) — only rendered for an
+                    advisor whose tags don't already restrict them to one
+                    domain (see domainRestriction's comment); a single-tag
+                    advisor never sees a choice that isn't actually theirs
+                    to make. Disappears once scope locks, same as the
+                    insurer/plan controls below it. */}
+                {domainRestriction === undefined && (
+                  <div className="w-full sm:w-auto inline-flex items-center gap-1 rounded-lg bg-white/[0.06] p-1">
+                    {(["Health", "Term"] as const).map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => switchDomain(d)}
+                        className={`px-3 py-1.5 rounded-md text-[10.5px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
+                          domain === d ? "bg-[#01334F] text-[#AEDCF4]" : "text-[#8CA0B3] hover:text-white hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        {d} Insurance
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="w-full sm:w-auto sm:min-w-[240px] sm:max-w-sm">
                   <CustomSelect
                     theme={theme}
@@ -952,10 +1071,9 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
                     // Lighter than the band behind it (dark container ->
                     // lighter control), full width of its own responsive
                     // wrapper rather than a fixed px width — wide enough
-                    // that a long selected label (e.g. "General
-                    // (Playbook+FAQ)") is never clipped, and never wider
-                    // than its wrapper's cap, so it can't force horizontal
-                    // overflow at any zoom level.
+                    // that a long selected insurer name is never clipped,
+                    // and never wider than its wrapper's cap, so it can't
+                    // force horizontal overflow at any zoom level.
                     triggerClassName="w-full flex items-center justify-between gap-2 text-xs font-bold pl-3 pr-8 py-2 rounded-lg border outline-none transition-colors relative cursor-pointer bg-white/[0.08] border-white/[0.16] text-white hover:bg-white/[0.12]"
                   />
                 </div>
@@ -1038,7 +1156,7 @@ export function ProductAssistPage({ theme }: ProductAssistPageProps) {
                   </p>
                   <p className="text-[11px] font-medium text-content-muted leading-relaxed">
                     Choose the right context first — select an <span className="font-bold">insurer and plan</span> for
-                    product-specific questions, or <span className="font-bold">General (Playbook + FAQ)</span> for
+                    product-specific questions, or <span className="font-bold">General</span> for
                     broader insurance and Ditto-related queries.
                   </p>
                   <p className="text-[11px] font-medium text-content-muted">

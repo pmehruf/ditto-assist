@@ -5,96 +5,106 @@
 
 /**
  * Regression tests for the Product Assist Credit & Usage Management engine
- * (2026-08, revised 2026-08-25 — "Wire the Access Control Center to the
- * Real Authorization System + Correct Product Assist Eligibility"). Covers
- * the CORRECTED eligibility model — Department + Team + Role (all three,
- * admin-configured via product_assist_quota_settings.eligibleDepartmentId/
- * eligibleOrgTeamId/eligibleRoleId) AND the Health tag — plus per-user
- * overrides, extra credits (including the new optional expiry), and the
- * enforcement check — against a real (PGlite) Postgres instance so the SQL
- * aggregation (SUM/GROUP BY) is exercised for real, not mocked.
+ * (2026-08, revised 2026-09-07 — "multiple eligibility groups, no trial
+ * fallback"). Covers the CURRENT eligibility model: any number of
+ * admin-defined eligibility groups (product_assist_eligibility_groups),
+ * each with independently-optional Department/Team/Role/Tag matching
+ * conditions (null = "any" for that dimension, AND across the non-null
+ * ones) and independently-nullable daily/monthly credit limits. A user
+ * matching multiple groups gets the highest limit per dimension, with a
+ * null (uncapped) limit in any matched group winning outright. A user
+ * matching NO group is blocked entirely (zero monthly credits, no
+ * automatic trial allotment) — plus per-user overrides, extra credits
+ * (including optional expiry), and the enforcement check — against a real
+ * (PGlite) Postgres instance so the SQL aggregation (SUM/GROUP BY) is
+ * exercised for real, not mocked.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../db/testUtils.js";
 import { createRepositories, type Repositories } from "../db/repositories/index.js";
-import { resolveQuotaBucket, getQuotaStatus, checkQuota, recordUsage, type ProductAssistEligibilityConfig } from "./productAssistQuota.js";
+import {
+  groupMatchesUser,
+  resolveMatchedGroups,
+  getQuotaStatus,
+  checkQuota,
+  recordUsage,
+  type EligibilityGroupLike,
+} from "./productAssistQuota.js";
 
-const FULLY_CONFIGURED: ProductAssistEligibilityConfig = { eligibleDepartmentId: 1, eligibleOrgTeamId: 2, eligibleRoleId: 3 };
-const UNCONFIGURED: ProductAssistEligibilityConfig = { eligibleDepartmentId: null, eligibleOrgTeamId: null, eligibleRoleId: null };
+function group(overrides: Partial<EligibilityGroupLike> = {}): EligibilityGroupLike {
+  return {
+    id: 1,
+    name: "Test Group",
+    departmentId: null,
+    orgTeamId: null,
+    roleId: null,
+    tag: null,
+    dailyCredits: null,
+    monthlyCredits: null,
+    ...overrides,
+  };
+}
 
-describe("resolveQuotaBucket (pure) — Section 7's exact rule: Department AND Team AND Role AND Health", () => {
-  it("gives Developer tier automatic unlimited, regardless of tags/dept/team/role", () => {
-    expect(resolveQuotaBucket({ tier: "Developer", tags: [] }, UNCONFIGURED)).toBe("developer_unlimited");
-    expect(
-      resolveQuotaBucket({ tier: "Developer", tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("developer_unlimited");
+describe("groupMatchesUser (pure) — null = any dimension, AND across the non-null ones", () => {
+  it("a wildcard group (every condition null) matches every user", () => {
+    expect(groupMatchesUser(group(), { tags: [] })).toBe(true);
+    expect(groupMatchesUser(group(), { tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 })).toBe(true);
   });
 
-  it("Advisory + Bliss + Advisor + Health -> eligible (health_advisor)", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("health_advisor");
+  it("a fully-specified group requires every dimension to match simultaneously", () => {
+    const g = group({ departmentId: 1, orgTeamId: 2, roleId: 3, tag: "Health" });
+    expect(groupMatchesUser(g, { tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 })).toBe(true);
+    // extra tags don't disqualify
+    expect(groupMatchesUser(g, { tags: ["Health", "Term"], departmentId: 1, orgTeamId: 2, roleId: 3 })).toBe(true);
   });
 
-  it("Advisory + Bliss + Advisor + Health + Term (extra tag doesn't disqualify) -> still eligible", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health", "Term"], departmentId: 1, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("health_advisor");
+  it("wrong department alone fails the match even if team/role/tag all match", () => {
+    const g = group({ departmentId: 1, orgTeamId: 2, roleId: 3, tag: "Health" });
+    expect(groupMatchesUser(g, { tags: ["Health"], departmentId: 999, orgTeamId: 2, roleId: 3 })).toBe(false);
   });
 
-  it("Advisory + Bliss + Advisor + Term ONLY (no Health tag) -> NOT eligible", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Term"], departmentId: 1, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("trial");
+  it("wrong team alone fails the match", () => {
+    const g = group({ departmentId: 1, orgTeamId: 2, roleId: 3, tag: "Health" });
+    expect(groupMatchesUser(g, { tags: ["Health"], departmentId: 1, orgTeamId: 999, roleId: 3 })).toBe(false);
   });
 
-  it("right Team + Role + Health but WRONG Department -> NOT eligible", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health"], departmentId: 999, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("trial");
+  it("wrong role alone fails the match", () => {
+    const g = group({ departmentId: 1, orgTeamId: 2, roleId: 3, tag: "Health" });
+    expect(groupMatchesUser(g, { tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 999 })).toBe(false);
   });
 
-  it("right Department + Role + Health but WRONG Team -> NOT eligible", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health"], departmentId: 1, orgTeamId: 999, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("trial");
+  it("missing the required tag fails the match", () => {
+    const g = group({ departmentId: 1, orgTeamId: 2, roleId: 3, tag: "Health" });
+    expect(groupMatchesUser(g, { tags: ["Term"], departmentId: 1, orgTeamId: 2, roleId: 3 })).toBe(false);
   });
 
-  it("right Department + Team + Health but WRONG Role -> NOT eligible", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 999 }, FULLY_CONFIGURED)
-    ).toBe("trial");
+  it("a group with only a tag condition (dept/team/role left blank) matches regardless of dept/team/role", () => {
+    const g = group({ tag: "Health" });
+    expect(groupMatchesUser(g, { tags: ["Health"], departmentId: null, orgTeamId: null, roleId: null })).toBe(true);
+    expect(groupMatchesUser(g, { tags: ["Health"], departmentId: 42, orgTeamId: 43, roleId: 44 })).toBe(true);
+    expect(groupMatchesUser(g, { tags: [], departmentId: 42, orgTeamId: 43, roleId: 44 })).toBe(false);
   });
 
-  it("Health tag with no Department/Team/Role assigned at all -> NOT eligible", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health"], departmentId: null, orgTeamId: null, roleId: null }, FULLY_CONFIGURED)
-    ).toBe("trial");
+  it("a user with null dept/team/role only matches a group whose corresponding conditions are also null", () => {
+    const g = group({ departmentId: 1 });
+    expect(groupMatchesUser(g, { tags: [], departmentId: null })).toBe(false);
+  });
+});
+
+describe("resolveMatchedGroups (pure)", () => {
+  it("returns every group the user matches, order-preserving, and none they don't", () => {
+    const groups = [
+      group({ id: 1, name: "A", tag: "Health" }),
+      group({ id: 2, name: "B", tag: "Term" }),
+      group({ id: 3, name: "C" }), // wildcard
+    ];
+    const matched = resolveMatchedGroups({ tags: ["Health"] }, groups);
+    expect(matched.map((g) => g.id)).toEqual([1, 3]);
   });
 
-  it("Platform Admin is NOT auto-unlimited (only real Developer tier is) even with a perfect match", () => {
-    expect(
-      resolveQuotaBucket({ tier: "Platform Admin", tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("health_advisor"); // Platform Admin isn't auto-unlimited, but CAN still qualify for health_advisor like anyone else
-    expect(resolveQuotaBucket({ tier: "Platform Admin", tags: [] }, UNCONFIGURED)).toBe("trial");
-  });
-
-  it("eligibility is department/team/role/tag based, independent of tier (except the Developer carve-out) — an Admin who matches still qualifies", () => {
-    expect(
-      resolveQuotaBucket({ tier: "Admin", tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 }, FULLY_CONFIGURED)
-    ).toBe("health_advisor");
-  });
-
-  it("when eligibility is unconfigured (any of the 3 IDs unset), NOBODY qualifies — not even a user whose own IDs are also null", () => {
-    expect(
-      resolveQuotaBucket({ tier: "General", tags: ["Health"], departmentId: null, orgTeamId: null, roleId: null }, UNCONFIGURED)
-    ).toBe("trial");
-    expect(
-      resolveQuotaBucket(
-        { tier: "General", tags: ["Health"], departmentId: 1, orgTeamId: 2, roleId: 3 },
-        { eligibleDepartmentId: 1, eligibleOrgTeamId: 2, eligibleRoleId: null }
-      )
-    ).toBe("trial");
+  it("no groups matched -> empty array", () => {
+    const groups = [group({ id: 1, tag: "Health" })];
+    expect(resolveMatchedGroups({ tags: ["Term"] }, groups)).toEqual([]);
   });
 });
 
@@ -114,12 +124,8 @@ describe("productAssistQuota engine (real test DB)", () => {
   // Migration 0049 seeds "Advisory" as a department; migration 0038 seeds
   // "Bliss"/"Falcon"/"Central" org_teams and "Advisor"/"Mentor"/"Guide"
   // roles — all convenience starting catalog rows a fresh test DB already
-  // has. Configures product_assist_quota_settings' eligibility columns to
-  // point at Advisory + Bliss + Advisor, mirroring what a Developer would
-  // pick from the "AI Usage & Limits" Settings tab, and returns the three
-  // IDs so tests can assign a user to a matching or deliberately-mismatched
-  // combination.
-  const configureAdvisoryBlissAdvisorEligibility = async (r: Repositories) => {
+  // has.
+  const advisoryBlissAdvisorIds = async (r: Repositories) => {
     const [departments, orgTeams, roles] = await Promise.all([r.departments.list(), r.orgTeams.list(), r.roles.list()]);
     const advisory = departments.find((d) => d.name === "Advisory");
     const bliss = orgTeams.find((t) => t.name === "Bliss");
@@ -127,11 +133,25 @@ describe("productAssistQuota engine (real test DB)", () => {
     if (!advisory || !bliss || !advisor) {
       throw new Error("Expected migrations 0038/0049 to have seeded Advisory/Bliss/Advisor.");
     }
-    await r.productAssistQuotaSettings.update(
-      { eligibleDepartmentId: advisory.id, eligibleOrgTeamId: bliss.id, eligibleRoleId: advisor.id },
-      "test"
-    );
     return { departmentId: advisory.id, orgTeamId: bliss.id, roleId: advisor.id };
+  };
+
+  // Creates a "Health Advisors" eligibility group scoped to Advisory +
+  // Bliss + Advisor + the Health tag, mirroring what a Developer would
+  // configure from the "AI Usage & Limits" Settings tab.
+  const createHealthAdvisorsGroup = async (r: Repositories, overrides: { dailyCredits?: number | null; monthlyCredits?: number | null } = {}) => {
+    const ids = await advisoryBlissAdvisorIds(r);
+    const created = await r.productAssistEligibilityGroups.create({
+      name: "Health Advisors",
+      departmentId: ids.departmentId,
+      orgTeamId: ids.orgTeamId,
+      roleId: ids.roleId,
+      tag: "Health",
+      dailyCredits: overrides.dailyCredits ?? 20,
+      monthlyCredits: overrides.monthlyCredits ?? 500,
+      createdBy: "test",
+    });
+    return { ...ids, group: created };
   };
 
   const makeUser = async (email: string, overrides: Partial<Parameters<Repositories["users"]["create"]>[0]> = {}) => {
@@ -146,61 +166,150 @@ describe("productAssistQuota engine (real test DB)", () => {
     } as Parameters<Repositories["users"]["create"]>[0]);
   };
 
-  it("Developer tier is always unlimited", async () => {
+  it("a user matching NO eligibility group is blocked entirely — zero monthly credits, no daily cap, not unlimited", async () => {
+    await makeUser("nobody@ditto.com");
+    const status = await getQuotaStatus(repos, "nobody@ditto.com");
+    expect(status.matchedGroups).toEqual([]);
+    expect(status.unlimited).toBe(false);
+    expect(status.dailyLimit).toBeNull();
+    expect(status.monthlyLimit).toBe(0);
+  });
+
+  it("Developer tier gets no automatic exception — blocked like any other non-matching user (2026-09-07)", async () => {
     await makeUser("dev@ditto.com", { tier: "Developer" });
     const status = await getQuotaStatus(repos, "dev@ditto.com");
-    expect(status.bucket).toBe("developer_unlimited");
-    expect(status.unlimited).toBe(true);
-    expect(status.dailyLimit).toBeNull();
-    expect(status.monthlyLimit).toBeNull();
+    expect(status.matchedGroups).toEqual([]);
+    expect(status.unlimited).toBe(false);
+    expect(status.monthlyLimit).toBe(0);
   });
 
-  it("Advisory + Bliss + Advisor + Health gets the configurable default daily+monthly allowance", async () => {
-    const { departmentId, orgTeamId, roleId } = await configureAdvisoryBlissAdvisorEligibility(repos);
+  it("a Developer who matches a configured eligibility group gets that group's allowance, same as anyone else", async () => {
+    const { departmentId, orgTeamId, roleId, group: g } = await createHealthAdvisorsGroup(repos);
+    await makeUser("dev-advisor@ditto.com", { tier: "Developer", tags: ["Health"], departmentId, orgTeamId, roleId });
+    const status = await getQuotaStatus(repos, "dev-advisor@ditto.com");
+    expect(status.matchedGroups).toEqual([{ id: g.id, name: "Health Advisors" }]);
+    expect(status.unlimited).toBe(false);
+    expect(status.dailyLimit).toBe(20);
+    expect(status.monthlyLimit).toBe(500);
+  });
+
+  it("a Developer who needs access despite matching no group gets it via a per-user override, not an automatic tier exception", async () => {
+    await makeUser("dev-override@ditto.com", { tier: "Developer" });
+    await repos.productAssistUserQuotaOverrides.upsert("dev-override@ditto.com", {
+      customDailyCredits: null,
+      customMonthlyCredits: null,
+      limitsEnabled: true,
+      unlimitedAccess: true,
+      updatedBy: "developer@ditto.com",
+    });
+    const status = await getQuotaStatus(repos, "dev-override@ditto.com");
+    expect(status.matchedGroups).toEqual([]);
+    expect(status.unlimited).toBe(true); // from the override, not group membership
+  });
+
+  it("Advisory + Bliss + Advisor + Health gets the matched group's daily+monthly allowance", async () => {
+    const { departmentId, orgTeamId, roleId } = await createHealthAdvisorsGroup(repos);
     await makeUser("advisor@ditto.com", { tags: ["Health"], departmentId, orgTeamId, roleId });
     const status = await getQuotaStatus(repos, "advisor@ditto.com");
-    expect(status.bucket).toBe("health_advisor");
     expect(status.unlimited).toBe(false);
-    const settings = await repos.productAssistQuotaSettings.get();
-    expect(status.dailyLimit).toBe(settings.defaultDailyCredits);
-    expect(status.monthlyLimit).toBe(settings.defaultMonthlyCredits);
+    expect(status.dailyLimit).toBe(20);
+    expect(status.monthlyLimit).toBe(500);
   });
 
-  it("a Health-tagged Advisor in the WRONG department falls back to trial (Department is required, not just Role+tag)", async () => {
-    const { orgTeamId, roleId } = await configureAdvisoryBlissAdvisorEligibility(repos);
+  it("a Health-tagged Advisor in the WRONG department matches no group and is blocked (Department is required, not just Role+tag)", async () => {
+    const { orgTeamId, roleId } = await createHealthAdvisorsGroup(repos);
     const otherDept = await repos.departments.create({ name: "Operations", description: null, createdBy: "test" });
     await makeUser("wrong-dept@ditto.com", { tags: ["Health"], departmentId: otherDept.id, orgTeamId, roleId });
     const status = await getQuotaStatus(repos, "wrong-dept@ditto.com");
-    expect(status.bucket).toBe("trial");
+    expect(status.matchedGroups).toEqual([]);
+    expect(status.monthlyLimit).toBe(0);
   });
 
-  it("before any admin configures eligibility (all three unset), nobody lands in health_advisor even with Health + Advisor", async () => {
+  it("before any admin defines an eligibility group, nobody is eligible even with Health + Advisor", async () => {
     const role = (await repos.roles.list()).find((r) => r.name === "Advisor")!;
     await makeUser("unconfigured@ditto.com", { tags: ["Health"], roleId: role.id });
     const status = await getQuotaStatus(repos, "unconfigured@ditto.com");
-    expect(status.bucket).toBe("trial");
+    expect(status.matchedGroups).toEqual([]);
+    expect(status.monthlyLimit).toBe(0);
   });
 
-  it("everyone else gets the small monthly-only trial allotment, no daily cap", async () => {
+  it("matching two groups combines their limits by taking the highest value independently per dimension", async () => {
+    const { departmentId, orgTeamId, roleId } = await createHealthAdvisorsGroup(repos, { dailyCredits: 10, monthlyCredits: 200 });
+    // A second, broader group (matches anyone with the Health tag) with a
+    // higher daily limit but a lower monthly limit than the first group.
+    await repos.productAssistEligibilityGroups.create({
+      name: "Health Wildcard",
+      departmentId: null,
+      orgTeamId: null,
+      roleId: null,
+      tag: "Health",
+      dailyCredits: 50,
+      monthlyCredits: 100,
+      createdBy: "test",
+    });
+    await makeUser("multi@ditto.com", { tags: ["Health"], departmentId, orgTeamId, roleId });
+    const status = await getQuotaStatus(repos, "multi@ditto.com");
+    expect(status.matchedGroups).toHaveLength(2);
+    // Highest daily (50 from Wildcard) and highest monthly (200 from Health Advisors) win independently.
+    expect(status.dailyLimit).toBe(50);
+    expect(status.monthlyLimit).toBe(200);
+  });
+
+  it("a null (uncapped) limit in ANY matched group wins outright for that dimension", async () => {
+    const { departmentId, orgTeamId, roleId } = await createHealthAdvisorsGroup(repos, { dailyCredits: 10, monthlyCredits: 200 });
+    await repos.productAssistEligibilityGroups.create({
+      name: "Uncapped Daily",
+      departmentId: null,
+      orgTeamId: null,
+      roleId: null,
+      tag: "Health",
+      dailyCredits: null,
+      monthlyCredits: 50, // lower than Health Advisors' 200, but that doesn't matter — Health Advisors' 200 still wins for monthly
+      createdBy: "test",
+    });
+    await makeUser("uncapped@ditto.com", { tags: ["Health"], departmentId, orgTeamId, roleId });
+    const status = await getQuotaStatus(repos, "uncapped@ditto.com");
+    expect(status.dailyLimit).toBeNull(); // uncapped, from the second group
+    expect(status.monthlyLimit).toBe(200); // highest finite value across matched groups
+  });
+
+  it("everyone else with a broad wildcard group (every condition blank) gets that group's allowance", async () => {
+    await repos.productAssistEligibilityGroups.create({
+      name: "Everyone",
+      departmentId: null,
+      orgTeamId: null,
+      roleId: null,
+      tag: null,
+      dailyCredits: null,
+      monthlyCredits: 30,
+      createdBy: "test",
+    });
     await makeUser("general@ditto.com");
     const status = await getQuotaStatus(repos, "general@ditto.com");
-    expect(status.bucket).toBe("trial");
     expect(status.dailyLimit).toBeNull();
-    const settings = await repos.productAssistQuotaSettings.get();
-    expect(status.monthlyLimit).toBe(settings.trialMonthlyCredits);
+    expect(status.monthlyLimit).toBe(30);
   });
 
   it("recordUsage converts tokens to credits via the configured tokensPerCredit and updates used/remaining", async () => {
+    await repos.productAssistEligibilityGroups.create({
+      name: "Everyone",
+      departmentId: null,
+      orgTeamId: null,
+      roleId: null,
+      tag: null,
+      dailyCredits: null,
+      monthlyCredits: 50,
+      createdBy: "test",
+    });
     await makeUser("trial-user@ditto.com");
-    const settings = await repos.productAssistQuotaSettings.get();
     // 500 input + 500 output = 1000 tokens = exactly 1 credit at the default 1000 tokens/credit.
     await recordUsage(repos, "trial-user@ditto.com", 500, 500);
     const status = await getQuotaStatus(repos, "trial-user@ditto.com");
     expect(status.monthlyUsed).toBe(1);
-    expect(status.monthlyRemaining).toBe(settings.trialMonthlyCredits - 1);
+    expect(status.monthlyRemaining).toBe(49);
   });
 
-  it("a per-user override's custom limits take precedence over the bucket default", async () => {
+  it("a per-user override's custom limits take precedence over matched-group limits", async () => {
     await makeUser("custom@ditto.com");
     await repos.productAssistUserQuotaOverrides.upsert("custom@ditto.com", {
       customDailyCredits: 5,
@@ -215,7 +324,7 @@ describe("productAssistQuota engine (real test DB)", () => {
     expect(status.hasOverride).toBe(true);
   });
 
-  it("unlimitedAccess and limitsEnabled=false both force unlimited regardless of bucket", async () => {
+  it("unlimitedAccess and limitsEnabled=false both force unlimited regardless of matched groups", async () => {
     await makeUser("unlimited-a@ditto.com");
     await repos.productAssistUserQuotaOverrides.upsert("unlimited-a@ditto.com", {
       customDailyCredits: null,
@@ -237,15 +346,14 @@ describe("productAssistQuota engine (real test DB)", () => {
     expect((await getQuotaStatus(repos, "unlimited-b@ditto.com")).unlimited).toBe(true);
   });
 
-  it("extra credits raise the monthly limit only, never the daily cap, and (with no expiry set) never expire", async () => {
-    const { departmentId, orgTeamId, roleId } = await configureAdvisoryBlissAdvisorEligibility(repos);
+  it("extra credits raise the monthly limit only, never the daily pacing figure, and (with no expiry set) never expire", async () => {
+    const { departmentId, orgTeamId, roleId } = await createHealthAdvisorsGroup(repos);
     await makeUser("extra@ditto.com", { tags: ["Health"], departmentId, orgTeamId, roleId });
-    const settings = await repos.productAssistQuotaSettings.get();
 
     await repos.productAssistExtraCreditGrants.create({ userEmail: "extra@ditto.com", amount: 100, reason: "test grant", grantedBy: "dev" });
     let status = await getQuotaStatus(repos, "extra@ditto.com");
-    expect(status.dailyLimit).toBe(settings.defaultDailyCredits); // unaffected
-    expect(status.monthlyLimit).toBe(settings.defaultMonthlyCredits + 100);
+    expect(status.dailyLimit).toBe(20); // unaffected — daily is informational only, doesn't need "unblocking"
+    expect(status.monthlyLimit).toBe(600); // 500 + 100
     expect(status.extraCredits).toBe(100);
 
     // Consume some credits — the extra balance itself doesn't shrink (it's
@@ -255,7 +363,34 @@ describe("productAssistQuota engine (real test DB)", () => {
     status = await getQuotaStatus(repos, "extra@ditto.com");
     expect(status.extraCredits).toBe(100);
     expect(status.monthlyUsed).toBe(10);
-    expect(status.monthlyLimit).toBe(settings.defaultMonthlyCredits + 100);
+    expect(status.monthlyLimit).toBe(600);
+    expect(status.dailyLimit).toBe(20);
+  });
+
+  it("extra credits granted after the MONTHLY cap is exhausted unblock checkQuota immediately, without waiting for next month", async () => {
+    await repos.productAssistEligibilityGroups.create({
+      name: "Everyone",
+      departmentId: null,
+      orgTeamId: null,
+      roleId: null,
+      tag: null,
+      dailyCredits: null,
+      monthlyCredits: 10,
+      createdBy: "test",
+    });
+    await makeUser("blocked@ditto.com");
+    const settings = await repos.productAssistQuotaSettings.get();
+    await recordUsage(repos, "blocked@ditto.com", 10 * settings.tokensPerCredit, 0);
+
+    let check = await checkQuota(repos, "blocked@ditto.com");
+    expect(check.allowed).toBe(false);
+    expect(check.status.monthlyRemaining).toBeLessThanOrEqual(0);
+
+    // Admin grants extra credits expecting them to be usable right away.
+    await repos.productAssistExtraCreditGrants.create({ userEmail: "blocked@ditto.com", amount: 10, reason: "unblock", grantedBy: "dev" });
+    check = await checkQuota(repos, "blocked@ditto.com");
+    expect(check.allowed).toBe(true);
+    expect(check.status.monthlyRemaining).toBe(10);
   });
 
   it("an expired grant is excluded from the balance, while a non-expired (future-dated) grant still counts", async () => {
@@ -285,11 +420,29 @@ describe("productAssistQuota engine (real test DB)", () => {
     expect(await repos.productAssistExtraCreditGrants.balanceForUser("removal@ditto.com")).toBe(30);
   });
 
-  it("checkQuota blocks once the monthly allowance is exhausted, and reports the correct 'at_limit' state", async () => {
+  it("checkQuota blocks a user matching no eligibility group outright (0 monthly credits)", async () => {
+    await makeUser("nobody2@ditto.com");
+    const { allowed, status } = await checkQuota(repos, "nobody2@ditto.com");
+    expect(allowed).toBe(false);
+    expect(status.state).toBe("at_limit");
+    expect(status.monthlyRemaining).toBe(0);
+  });
+
+  it("checkQuota blocks once a matched group's monthly allowance is exhausted, and reports 'at_limit'", async () => {
+    await repos.productAssistEligibilityGroups.create({
+      name: "Everyone",
+      departmentId: null,
+      orgTeamId: null,
+      roleId: null,
+      tag: null,
+      dailyCredits: null,
+      monthlyCredits: 10,
+      createdBy: "test",
+    });
     await makeUser("exhausted@ditto.com");
     const settings = await repos.productAssistQuotaSettings.get();
-    // Consume the entire trial allotment in one shot.
-    await recordUsage(repos, "exhausted@ditto.com", settings.trialMonthlyCredits * settings.tokensPerCredit, 0);
+    // Consume the entire monthly allotment in one shot.
+    await recordUsage(repos, "exhausted@ditto.com", 10 * settings.tokensPerCredit, 0);
 
     const { allowed, status } = await checkQuota(repos, "exhausted@ditto.com");
     expect(allowed).toBe(false);
@@ -297,24 +450,32 @@ describe("productAssistQuota engine (real test DB)", () => {
     expect(status.monthlyRemaining).toBeLessThanOrEqual(0);
   });
 
-  it("checkQuota never blocks an unlimited (Developer) user no matter how much is recorded", async () => {
+  it("checkQuota never blocks a user with an explicit unlimitedAccess override, no matter how much is recorded", async () => {
     await makeUser("dev2@ditto.com", { tier: "Developer" });
+    await repos.productAssistUserQuotaOverrides.upsert("dev2@ditto.com", {
+      customDailyCredits: null,
+      customMonthlyCredits: null,
+      limitsEnabled: true,
+      unlimitedAccess: true,
+      updatedBy: "developer@ditto.com",
+    });
     await recordUsage(repos, "dev2@ditto.com", 10_000_000, 10_000_000);
     const { allowed, status } = await checkQuota(repos, "dev2@ditto.com");
     expect(allowed).toBe(true);
     expect(status.state).toBe("unlimited");
   });
 
-  it("a daily cap independently blocks a matching Health Advisor even with monthly credits still remaining", async () => {
-    const { departmentId, orgTeamId, roleId } = await configureAdvisoryBlissAdvisorEligibility(repos);
+  it("exhausting only the daily pacing figure does NOT block — monthly is the sole gate, and the state reports 'daily_exceeded'", async () => {
+    const { departmentId, orgTeamId, roleId } = await createHealthAdvisorsGroup(repos, { dailyCredits: 5, monthlyCredits: 500 });
     await makeUser("daily-cap@ditto.com", { tags: ["Health"], departmentId, orgTeamId, roleId });
     const settings = await repos.productAssistQuotaSettings.get();
     // Exhaust only the daily allowance — monthly limit is much larger.
-    await recordUsage(repos, "daily-cap@ditto.com", settings.defaultDailyCredits * settings.tokensPerCredit, 0);
+    await recordUsage(repos, "daily-cap@ditto.com", 5 * settings.tokensPerCredit, 0);
 
     const { allowed, status } = await checkQuota(repos, "daily-cap@ditto.com");
-    expect(allowed).toBe(false);
+    expect(allowed).toBe(true);
     expect(status.dailyRemaining).toBeLessThanOrEqual(0);
     expect(status.monthlyRemaining).toBeGreaterThan(0);
+    expect(status.state).toBe("daily_exceeded");
   });
 });

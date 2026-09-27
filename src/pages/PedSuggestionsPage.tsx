@@ -15,6 +15,11 @@ interface PedSuggestionsPageProps {
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  // Whether the caller can add/edit/delete PED entries/aliases and
+  // approve/reject AI mapping suggestions — resolved from
+  // hasAccess("ped_suggestions", "Editor") in App.tsx (2026-09 permission
+  // architecture fix). Both sub-tabs share this single feature id.
+  canManage: boolean;
 }
 
 /**
@@ -35,7 +40,7 @@ interface PedSuggestionsPageProps {
  * `ped_directory`-backed PedSuggestionsManagement component still exists
  * (its API routes are untouched) but is no longer wired into any tab.
  */
-export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChangeLogs }: PedSuggestionsPageProps) {
+export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: PedSuggestionsPageProps) {
   // Two surfaces live under PED Repository: the curated PED Library
   // (unchanged) and AI Mapping Review (review of AI-generated answers held
   // in the L2 AI Memory cache).
@@ -70,7 +75,7 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Manage the application's PED repository and review AI-assisted mapping recommendations before they become part of the knowledge base.
-            {effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer" ? " Changes apply to every advisor immediately." : " Read-only — Admin clearance is required to make changes."}
+            {canManage ? " Changes apply to every advisor immediately." : " Read-only — you don't have permission to make changes."}
           </p>
         </div>
       </div>
@@ -89,9 +94,9 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
 
       <div className="space-y-5 pb-6">
         {activeSubTab === "library" ? (
-          <PedRepositoryManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} />
+          <PedRepositoryManagement theme={theme} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} canManage={canManage} />
         ) : (
-          <AiMappingReview theme={theme} effectiveTier={effectiveTier} />
+          <AiMappingReview theme={theme} canReview={canManage} />
         )}
       </div>
     </div>

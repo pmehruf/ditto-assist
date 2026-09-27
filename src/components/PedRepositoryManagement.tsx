@@ -51,6 +51,12 @@ interface PedRepositoryManagementProps {
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  /** Whether the caller can add/edit/delete PED entries and aliases —
+   * resolved from hasAccess("ped_suggestions", "Editor") in App.tsx
+   * (2026-09 permission architecture fix). Replaces a hardcoded tier check
+   * so a Custom Grant/Access Rule actually works, not just Admin+/Developer
+   * tier. */
+  canManage: boolean;
 }
 
 const PAGE_SIZE = 50;
@@ -95,9 +101,8 @@ function statusBadge(status: PedEntry["status"], dark: boolean) {
  * (server-side, see pedRepositoryLive.ts) purely as PED_SOURCE=legacy
  * rollback insurance — nothing in this component needs to know that.
  */
-export function PedRepositoryManagement({ theme, effectiveTier, currentUser, setChangeLogs }: PedRepositoryManagementProps) {
+export function PedRepositoryManagement({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: PedRepositoryManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
@@ -582,7 +587,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[760px]">
             <thead>
-              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
+              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-[var(--table-header-bg)] border-stone-200"}`}>
                 <th className={`${thClass} w-8`}></th>
                 <SortableTh label="Canonical Name" sortKey="canonicalName" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 <SortableTh label="Category" sortKey="categoryKey" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
@@ -593,7 +598,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
             </thead>
             <tbody>
               {addingNew && (
-                <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-sky-50/60"}`}>
+                <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-accent-subtle"}`}>
                   <td className={tdClass}></td>
                   <td className={tdClass}>
                     <input
@@ -643,7 +648,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                   <Fragment key={entry.id}>
                     <tr
                       className={`border-b last:border-b-0 align-top cursor-pointer ${dark ? "border-stone-850" : "border-stone-150"} ${
-                        idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""
+                        idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""
                       }`}
                       onClick={() => !isEditing && toggleExpand(entry.id)}
                     >

@@ -33,8 +33,9 @@
  *      > Document Excerpts) is unchanged by adding the synthesis field.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Type } from "@google/genai";
 import type { Repositories } from "../db/repositories/index.js";
-import type { KbCategoryRow, SpecialInstructionRow, FaqRecordRow, KbPlaybookPlanFactRow, KbAcronymRow } from "../db/schema.js";
+import type { KbCategoryRow, SpecialInstructionRow, FaqRecordRow, TermFaqRecordRow, KbPlaybookPlanFactRow, KbAcronymRow } from "../db/schema.js";
 import type { SimilarKbChunk } from "../db/repositories/kbChunksRepository.js";
 
 const FIXED_QUERY_EMBEDDING = [1, 0, 0];
@@ -54,15 +55,20 @@ vi.mock("./geminiClient.js", () => ({
 }));
 
 // Imported AFTER the mock is registered, per vitest hoisting convention.
-const { answerQuery, SYSTEM_INSTRUCTION } = await import("./productAssist.js");
+const { answerQuery, SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_TERM } = await import("./productAssist.js");
 
-function mockModelResponse(body: { synthesis?: unknown; answer: string; share: string | null }) {
+function mockModelResponse(body: { synthesis?: unknown; answer: string; share: string | null; citedDocumentTitles?: string[] }, modelVersion?: string) {
   generateContentMock.mockResolvedValueOnce({
     text: JSON.stringify({
       synthesis: { requirement: "", userFacts: "", comparison: "", resolution: "SATISFIED" },
       ...body,
     }),
     usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 },
+    // Optional on the real SDK response (not guaranteed on every call) — see
+    // answerQuery's meta.modelName. Omitted by default so the bulk of this
+    // file's tests exercise the realistic "field absent" case; the dedicated
+    // "model tracking" tests below pass it explicitly.
+    ...(modelVersion !== undefined ? { modelVersion } : {}),
   });
 }
 
@@ -71,6 +77,7 @@ function categoryRow(overrides: Partial<KbCategoryRow> = {}): KbCategoryRow {
     id: 1,
     name: "TestInsurer",
     type: "insurer",
+    domain: "Health",
     sortOrder: 0,
     planNames: ["Activ One Max"],
     disabledPlanNames: [],
@@ -111,14 +118,35 @@ function faqRow(overrides: Partial<FaqRecordRow> = {}): FaqRecordRow {
   };
 }
 
+function termFaqRow(overrides: Partial<TermFaqRecordRow> = {}): TermFaqRecordRow {
+  return {
+    id: 1,
+    resourceId: 1,
+    category: "Dittos Recommended Policies",
+    question: "Can we do mid-term inclusion through Ditto for a term plan?",
+    answer: "No, Ditto does not currently facilitate this for term plans either.",
+    isAnswerable: true,
+    hasConflict: false,
+    conflictGroupKey: null,
+    questionEmbedding: FIXED_QUERY_EMBEDDING as unknown as TermFaqRecordRow["questionEmbedding"],
+    sourceRowNumber: 2,
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
 function playbookFact(overrides: Partial<KbPlaybookPlanFactRow> = {}): KbPlaybookPlanFactRow {
   return {
     id: 1,
     resourceId: 1,
+    domain: "Health",
     insurerName: "TestInsurer",
     planName: "Activ One Max",
     sourceTab: "Dittos Recommended Policies",
     content: "Chronic Care Rider covers listed chronic conditions once the insurer's eligibility criteria are met.",
+    notes: [],
     updatedAt: new Date(),
     ...overrides,
   };
@@ -132,6 +160,7 @@ function specialInstructionRow(overrides: Partial<SpecialInstructionRow> = {}): 
     instructionType: "override_rule",
     insurerCategoryId: null,
     productPlanName: null,
+    domain: "Health",
     topicEmbedding: FIXED_QUERY_EMBEDDING as unknown as SpecialInstructionRow["topicEmbedding"],
     isActive: true,
     createdBy: "test",
@@ -148,6 +177,7 @@ function acronymRow(overrides: Partial<KbAcronymRow> = {}): KbAcronymRow {
     acronym: "OS",
     expansion: "Activ One Max",
     notes: null,
+    domain: "Health",
     isActive: true,
     createdBy: "test",
     updatedBy: "test",
@@ -162,6 +192,7 @@ interface FakeReposConfig {
   chunks?: SimilarKbChunk[];
   playbookFacts?: KbPlaybookPlanFactRow[];
   faqs?: FaqRecordRow[];
+  termFaqs?: TermFaqRecordRow[];
   specialInstructions?: SpecialInstructionRow[];
   acronyms?: KbAcronymRow[];
 }
@@ -178,10 +209,17 @@ function fakeRepos(cfg: FakeReposConfig = {}): { repos: Repositories; findSimila
   const findSimilarSpy = vi.fn(
     async (
       _embedding: number[],
-      options: { documentTypes?: SimilarKbChunk["documentType"][]; limit?: number } = {}
+      options: { documentTypes?: SimilarKbChunk["documentType"][]; categoryIds?: number[]; limit?: number } = {}
     ): Promise<SimilarKbChunk[]> => {
       const all = cfg.chunks ?? [];
-      const filtered = options.documentTypes ? all.filter(c => options.documentTypes!.includes(c.documentType)) : all;
+      // Mirrors the real KbChunksRepository.findSimilar's categoryIds
+      // filtering (see kbChunksRepository.ts) — needed so Insurance
+      // Fundamentals tests (a dedicated categoryIds-scoped call with no
+      // documentTypes) and the normal staged product-document calls (a
+      // documentTypes-scoped call) don't see each other's fixture chunks
+      // just because both happen to be present in one test's cfg.chunks.
+      const byCategory = options.categoryIds ? all.filter(c => options.categoryIds!.includes(c.categoryId)) : all;
+      const filtered = options.documentTypes ? byCategory.filter(c => options.documentTypes!.includes(c.documentType)) : byCategory;
       return filtered.slice(0, options.limit ?? filtered.length);
     }
   );
@@ -189,8 +227,13 @@ function fakeRepos(cfg: FakeReposConfig = {}): { repos: Repositories; findSimila
     kbCategories: { list: async () => cfg.categories ?? [categoryRow()] },
     kbResources: { list: async () => [] },
     kbChunks: { findSimilar: findSimilarSpy },
-    kbPlaybookPlanFacts: { findMatching: async () => cfg.playbookFacts ?? [] },
+    kbPlaybookPlanFacts: {
+      findMatching: async () => cfg.playbookFacts ?? [],
+      findAllForInsurer: async () => cfg.playbookFacts ?? [],
+      listAllForDomain: async () => cfg.playbookFacts ?? [],
+    },
     faqRecords: { listAnswerableActive: async () => cfg.faqs ?? [] },
+    termFaqRecords: { listAnswerableActive: async () => cfg.termFaqs ?? [] },
     specialInstructions: { listActive: async () => cfg.specialInstructions ?? [] },
     kbAcronyms: { listActive: async () => cfg.acronyms ?? [] },
   } as unknown as Repositories;
@@ -254,14 +297,87 @@ describe("Product Assist synthesis — schema & prompt wiring (regression guard)
     await answerQuery(fakeReposOnly(), SCOPE, "Any question", []);
     const call = generateContentMock.mock.calls[0][0];
     const schema = call.config.responseSchema;
-    expect(schema.required).toEqual(["synthesis", "answer", "share"]);
-    expect(schema.propertyOrdering).toEqual(["synthesis", "answer", "share"]);
+    expect(schema.required).toEqual(["synthesis", "answer", "citedDocumentTitles", "share"]);
+    expect(schema.propertyOrdering).toEqual(["synthesis", "answer", "citedDocumentTitles", "share"]);
     expect(schema.properties.synthesis.properties.resolution.enum).toEqual([
       "SATISFIED",
       "NOT_SATISFIED",
       "INSUFFICIENT_INFORMATION",
       "NO_REQUIREMENT_FOUND",
     ]);
+    // Array-of-strings field the model uses to report which retrieved
+    // documents it actually cited (2026-09) — see citedDocumentTitles's own
+    // schema field description for the full contract.
+    expect(schema.properties.citedDocumentTitles.type).toBe(Type.ARRAY);
+    expect(schema.properties.citedDocumentTitles.items.type).toBe(Type.STRING);
+  });
+});
+
+describe("Sources panel reflects what was actually cited, not everything retrieved (2026-09)", () => {
+  // Real production bug: an answer built entirely from the Ditto FAQ still
+  // showed unrelated, never-cited Policy Wording documents in the advisor-
+  // facing "Sources" panel, because that panel was populated from every
+  // chunk RETRIEVED as context, not from what the model's own References
+  // list actually cited. citedDocumentTitles closes that gap.
+  it("citedDocumentTitles names one of two retrieved chunks -> sources is filtered down to just that one", async () => {
+    mockModelResponse({
+      answer: "Room rent is capped at 1% of Sum Insured per day.\n\n**References**\n- Policy Wording, Section 3.1",
+      citedDocumentTitles: ["Policy Wording A"],
+      share: "Room rent is capped at 1% of the sum insured, per day.",
+    });
+    const result = await answerQuery(
+      fakeReposOnly({
+        chunks: [
+          chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.", { resourceTitle: "Policy Wording A" }),
+          chunk("Unrelated excerpt about a different topic entirely.", { resourceTitle: "Policy Wording B" }),
+        ],
+      }),
+      SCOPE,
+      "What is the room rent limit?",
+      []
+    );
+    expect(result.sources.map((s) => s.title)).toEqual(["Policy Wording A"]);
+  });
+
+  it("citedDocumentTitles is an empty array (answer relied only on the Ditto FAQ) -> sources is empty even though chunks were retrieved", async () => {
+    mockModelResponse({
+      answer: "No, the remaining amount is the co-payment portion, which is not claimable.\n\n**References**\n- **FAQ- If a person has 2 plans with 20% co-payment...**",
+      citedDocumentTitles: [],
+      share: "No, that remaining amount is the co-payment you're responsible for.",
+    });
+    const result = await answerQuery(
+      fakeReposOnly({ chunks: [chunk("Unrelated policy wording excerpt about a different plan feature.")] }),
+      SCOPE,
+      "How does copayment work?",
+      []
+    );
+    expect(result.sources).toEqual([]);
+  });
+
+  it("citedDocumentTitles names a title that matches nothing retrieved (bookkeeping mismatch) -> falls back to the full retrieved list rather than hiding everything", async () => {
+    mockModelResponse({
+      answer: "Room rent is capped at 1% of Sum Insured per day.\n\n**References**\n- Policy Wording, Section 3.1",
+      citedDocumentTitles: ["A title that does not match any retrieved chunk"],
+      share: "Room rent is capped at 1% of the sum insured, per day.",
+    });
+    const result = await answerQuery(
+      fakeReposOnly({ chunks: [chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.", { resourceTitle: "Policy Wording A" })] }),
+      SCOPE,
+      "What is the room rent limit?",
+      []
+    );
+    expect(result.sources.map((s) => s.title)).toEqual(["Policy Wording A"]);
+  });
+
+  it("citedDocumentTitles absent from the model response (older/mocked answer) -> sources stays unfiltered, no regression", async () => {
+    mockModelResponse({ answer: "Room rent is capped at 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." });
+    const result = await answerQuery(
+      fakeReposOnly({ chunks: [chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.", { resourceTitle: "Policy Wording A" })] }),
+      SCOPE,
+      "What is the room rent limit?",
+      []
+    );
+    expect(result.sources.map((s) => s.title)).toEqual(["Policy Wording A"]);
   });
 });
 
@@ -440,7 +556,8 @@ describe("Product Assist synthesis — multi-source & authority hierarchy (valid
         // a genuinely-relevant-but-not-certain FAQ match (score ~0.6, above
         // FAQ_RELEVANCE_THRESHOLD's 0.5 inclusion bar but below
         // FAQ_SUFFICIENCY_THRESHOLD's 0.85 skip-retrieval gate — see the
-        // dedicated "FAQ sufficiency gate" tests below for the >=0.85 case).
+        // dedicated "ORG CONSTITUTION SUFFICIENCY GATE" tests below for the
+        // >=0.85 case).
         faqs: [faqRow({ questionEmbedding: [0.6, 0.8, 0] as unknown as FaqRecordRow["questionEmbedding"] })],
       }),
       SCOPE,
@@ -617,6 +734,163 @@ describe("Progressive source-priority retrieval", () => {
       expect(call[1].categoryIds).toEqual([SCOPE.categoryId]);
     }
   });
+
+  it("9. General scope (no insurer selected) — document-chunk retrieval spans every category in the domain, not just general-type ones", async () => {
+    // 2026-09-05 fix: a "General" question (scope.categoryId === null) used
+    // to be narrowed to only type:"general" categories, so an insurer's own
+    // Policy Wording/Prospectus/Brochure was invisible to it. Locks in that
+    // General now searches every category in the domain — insurer AND
+    // general alike — same domain isolation, just no longer also restricted
+    // to one category type within it.
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const insurerCategory = categoryRow({ id: 1, type: "insurer", name: "TestInsurer" });
+    const generalCategory = categoryRow({ id: 2, type: "general", name: "General", planNames: [] });
+    const { repos, findSimilarSpy } = fakeRepos({
+      categories: [insurerCategory, generalCategory],
+      chunks: [pw(0.1), pw(0.1), pw(0.1)], // 3 strong PW matches — sufficient, stops after stage 1
+    });
+    const generalScope = { categoryId: null, planTags: [] };
+    await answerQuery(repos, generalScope, "What is the room rent limit?", []);
+    expect(findSimilarSpy).toHaveBeenCalled();
+    for (const call of findSimilarSpy.mock.calls) {
+      expect(call[1].categoryIds).toEqual(expect.arrayContaining([insurerCategory.id, generalCategory.id]));
+      expect(call[1].categoryIds).toHaveLength(2);
+    }
+  });
+
+  it("10. General scope + insurer named (no plan) — retrieval narrows to just that insurer's category, not the whole domain", async () => {
+    // 2026-09: a General question naming a bare insurer (no specific plan)
+    // now focuses retrieval to that insurer's own category instead of
+    // searching every category in the domain — see
+    // detectDomainWideCategoryMatches's comment. Counterpart to test 9 above
+    // (which locks in the UNNARROWED case, where nothing was named).
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const testInsurer = categoryRow({ id: 1, type: "insurer", name: "TestInsurer" });
+    const otherInsurer = categoryRow({ id: 3, type: "insurer", name: "OtherInsurer", planNames: [] });
+    const { repos, findSimilarSpy } = fakeRepos({
+      categories: [testInsurer, otherInsurer],
+      chunks: [pw(0.1), pw(0.1), pw(0.1)],
+    });
+    await answerQuery(repos, { categoryId: null, planTags: [] }, "What is the room rent limit for TestInsurer?", []);
+    expect(findSimilarSpy).toHaveBeenCalled();
+    for (const call of findSimilarSpy.mock.calls) {
+      expect(call[1].categoryIds).toEqual([testInsurer.id]);
+    }
+  });
+});
+
+describe("Product Assist meta — per-query model tracking (2026-09)", () => {
+  it("captures the actual resolved model from response.modelVersion when the SDK provides it", async () => {
+    mockModelResponse({ answer: "Room rent is 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." }, "gemini-2.5-flash-002");
+    const repos = fakeReposOnly({ chunks: [chunk("Room rent capped at 1% of Sum Insured per day.")] });
+    const result = await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(result.meta.modelName).toBe("gemini-2.5-flash-002");
+  });
+
+  it("falls back to the requested GENERATION_MODEL alias when the SDK response omits modelVersion", async () => {
+    mockModelResponse({ answer: "Room rent is 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." }); // no modelVersion passed
+    const repos = fakeReposOnly({ chunks: [chunk("Room rent capped at 1% of Sum Insured per day.")] });
+    const result = await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(result.meta.modelName).toBe("gemini-2.5-flash");
+  });
+
+  it("is null for the deterministic Special-Instruction-conflict answer, since no AI call is made", async () => {
+    const conflictingRules = [
+      specialInstructionRow({ id: 1, instructionText: "The Chronic Care Rider may never be back-dated for this insurer." }),
+      specialInstructionRow({ id: 2, instructionText: "The Chronic Care Rider can be back-dated up to 30 days for this insurer." }),
+    ];
+    const repos = fakeReposOnly({ specialInstructions: conflictingRules });
+    const result = await answerQuery(repos, SCOPE, "Can the Chronic Care Rider be back-dated?", []);
+    expect(result.meta.modelName).toBeNull();
+    expect(generateContentMock).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// ORG CONSTITUTION SUFFICIENCY GATE (2026-08, widened then partly reverted
+// TWICE in 2026-09) — an exact Ditto FAQ match takes precedence over
+// DOCUMENT EXCERPTS, and once one is found, the lookup should stop —
+// applies uniformly regardless of scope mode (General/insurer-only/
+// plan-selected) and both Health/Term domains (this file only exercises
+// Health; Term shares the exact same answerQuery code path — see
+// SYSTEM_INSTRUCTION_TERM tests elsewhere in this file for the
+// domain-selection wiring itself). See "Progressive source-priority
+// retrieval" tests 1/2 above for the FAQ-only gate itself. Neither Special
+// Instruction override rules nor Playbook facts are part of this gate —
+// both were tried and reverted the same month after measurably reducing
+// answer quality in production (see productAssist.ts's OVERRIDE RULE
+// SUFFICIENCY RISK and PLAYBOOK SUFFICIENCY RISK comments): neither has a
+// per-topic relevance score strict enough to safely guarantee "this fully
+// answers the question" rather than merely "this is topically related" —
+// TOPIC_RELEVANCE_THRESHOLD (0.55) in particular is far looser than FAQ's
+// deliberately strict 0.85, and a real advisor question is often compound
+// (e.g. "is X covered, AND are non-payable items covered within X?") where
+// an override rule matching only the first half would otherwise swallow
+// retrieval for the whole question.
+// ─────────────────────────────────────────────────────────────────────────
+describe("ORG CONSTITUTION SUFFICIENCY GATE", () => {
+  function pw(distance: number, content = "Policy Wording excerpt") {
+    return chunk(content, { documentType: "policy_wording", distance });
+  }
+
+  it("an applicable Special Instruction override rule alone never skips document-chunk retrieval — it's still delivered at top authority, but retrieval always runs alongside it", async () => {
+    // Real production case: an Activ One Max override rule about Day Care
+    // Treatment matched (via the loose 0.55 topic-similarity bar) a compound
+    // question that also asked about non-payable items within Day Care —
+    // a topic the override rule never addressed. With the override rule
+    // gating retrieval, the model had zero document evidence for that
+    // second half and could only say "not specified," even though a Policy
+    // Wording clause may have covered it. Retrieval must always run so the
+    // model has a real chance at the part the override rule is silent on —
+    // SOURCE PRECEDENCE #0's own exclusivity language ("COMPLETE and
+    // EXCLUSIVE... for that same topic") is what keeps the override rule
+    // authoritative on its own topic, not this gate.
+    mockModelResponse({
+      answer: "No. Per Ditto's override policy, the Chronic Care Rider can never be back-dated for this insurer, regardless of what the policy wording implies.",
+      share: "No, this can't be back-dated.",
+    });
+    const { repos, findSimilarSpy } = fakeRepos({
+      specialInstructions: [specialInstructionRow()],
+      chunks: [pw(0.1), pw(0.1), pw(0.1)],
+    });
+    await answerQuery(repos, SCOPE, "Can the Chronic Care Rider be back-dated for this insurer?", []);
+    expect(findSimilarSpy).toHaveBeenCalled();
+  });
+
+  it("Playbook facts alone never skip document-chunk retrieval, regardless of scope mode", async () => {
+    // 2026-09: previously, a genuinely matched plan's Playbook facts alone
+    // could trip this gate and skip Policy Wording/Prospectus/Brochure
+    // retrieval entirely. Reverted on direct user feedback — see PLAYBOOK
+    // SUFFICIENCY RISK in productAssist.ts. Playbook facts have no
+    // per-topic relevance score (unlike the FAQ's questionEmbedding-based
+    // score), so "the matched plan has ANY Playbook facts" was never a
+    // trustworthy "this exact topic is settled" signal. Document-chunk
+    // retrieval must always run alongside Playbook facts now.
+    mockModelResponse({ answer: "Restoration benefit: confirmed live for this plan, unlimited restorations.", share: "Yes, this is covered." });
+    const { repos, findSimilarSpy } = fakeRepos({
+      playbookFacts: [playbookFact({ content: "Restoration benefit: confirmed live for this plan, unlimited restorations." })],
+      chunks: [pw(0.1), pw(0.1), pw(0.1)],
+    });
+    await answerQuery(repos, SCOPE, "Does Activ One Max have a restoration benefit?", []);
+    expect(findSimilarSpy).toHaveBeenCalled();
+  });
+
+  it("scope context (resolved insurer/plan name) is folded into the embedded retrieval text even when the advisor never typed it — fixes FAQ-matching inconsistency across scope modes", async () => {
+    // Root cause of the original bug report: a UI-selected plan/insurer
+    // wasn't part of the text that got embedded, so the exact same
+    // underlying question scored differently against the FAQ purely
+    // depending on whether the advisor happened to type the plan name
+    // themselves (General scope) or picked it via the UI (plan-selected
+    // scope) — making the FAQ sufficiency gate fire inconsistently for what
+    // was really the same question. Folding scope.categoryId's resolved
+    // name + effectivePlanTags into the embedded text fixes that.
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const repos = fakeReposOnly({});
+    await answerQuery(repos, SCOPE, "Is Maternity covered?", []); // names neither "TestInsurer" nor "Activ One Max" directly
+    const embeddedTexts = embedContentMock.mock.calls[0][0].contents as string[];
+    expect(embeddedTexts[0]).toContain("TestInsurer");
+    expect(embeddedTexts[0]).toContain("Activ One Max");
+  });
 });
 
 describe("Product Assist synthesis — no regression (validation case 9)", () => {
@@ -640,5 +914,557 @@ describe("Product Assist synthesis — no regression (validation case 9)", () =>
     // The internal reasoning workspace must never be forwarded to the client.
     expect(result).not.toHaveProperty("synthesis");
     expect(JSON.stringify(result)).not.toContain("NO_REQUIREMENT_FOUND n/a");
+  });
+});
+
+describe("Unresolved Queries — hadNoMatches also fires on a post-retrieval NO_REQUIREMENT_FOUND (2026-09)", () => {
+  // Real production bug: retrieval finding *something* (the right insurer's
+  // chunks) doesn't mean any of it actually addresses the specific question
+  // asked — e.g. a category match pulls in policy wording for the right
+  // plan, but nothing in it covers the specific rider the advisor asked
+  // about. Before this fix, hadNoMatches only looked at whether retrieval
+  // came back completely empty, so this everyday "the model politely said
+  // it doesn't know" case never got auto-recorded into Unresolved Queries.
+  it("retrieval finds chunks, but the model's own synthesis.resolution is NO_REQUIREMENT_FOUND -> hadNoMatches is still true", async () => {
+    mockModelResponse({
+      synthesis: {
+        requirement: "",
+        userFacts: "Cancer cover for women",
+        comparison: "UNCLEAR — no source mentions this rider",
+        resolution: "NO_REQUIREMENT_FOUND",
+      },
+      answer: "The provided source content does not contain information about a specific \"Cancer cover for women\" rider for this plan.",
+      share: null,
+    });
+    const result = await answerQuery(
+      fakeReposOnly({ chunks: [chunk("Some unrelated policy wording excerpt about room rent.")] }),
+      SCOPE,
+      "Cancer cover for women",
+      []
+    );
+
+    expect(result.hadNoMatches).toBe(true);
+    // Confirms this is genuinely the post-retrieval case, not the pre-
+    // existing zero-retrieval one — retrieval found a chunk.
+    expect(result.sources).toHaveLength(1);
+  });
+
+  it("retrieval finds chunks and synthesis.resolution is SATISFIED -> hadNoMatches stays false (no regression)", async () => {
+    mockModelResponse({
+      synthesis: { requirement: "Room rent capped", userFacts: "", comparison: "", resolution: "SATISFIED" },
+      answer: "Room rent is capped at 1% of Sum Insured per day.",
+      share: "Room rent is capped at 1% of the sum insured, per day.",
+    });
+    const result = await answerQuery(fakeReposOnly({ chunks: [chunk("Room rent capped at 1% of Sum Insured per day.")] }), SCOPE, "What is the room rent limit?", []);
+    expect(result.hadNoMatches).toBe(false);
+  });
+});
+
+describe("Term domain wiring (2026-09)", () => {
+  it("defaults to the Health system instruction when no domain is passed — byte-identical behavior for every existing caller", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    await answerQuery(fakeReposOnly(), SCOPE, "Any question", []);
+    expect(generateContentMock.mock.calls[0][0].config.systemInstruction).toBe(SYSTEM_INSTRUCTION);
+  });
+
+  it("selects the Term system instruction when domain is Term", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    await answerQuery(fakeReposOnly(), SCOPE, "Any question", [], "Term");
+    expect(generateContentMock.mock.calls[0][0].config.systemInstruction).toBe(SYSTEM_INSTRUCTION_TERM);
+    expect(generateContentMock.mock.calls[0][0].config.systemInstruction).not.toBe(SYSTEM_INSTRUCTION);
+  });
+
+  it("SYSTEM_INSTRUCTION_TERM carries the Term-insurance persona and a Term-relevant worked example, not Health's", () => {
+    expect(SYSTEM_INSTRUCTION_TERM).toContain("Term Insurance Product Expert");
+    expect(SYSTEM_INSTRUCTION_TERM).not.toContain("Health Insurance Product Expert");
+    expect(SYSTEM_INSTRUCTION_TERM).toContain("Myocardial Infarction of Specified Severity");
+    expect(SYSTEM_INSTRUCTION_TERM).toContain("EVIDENCE → RULE → CONDITION → CONCLUSION");
+  });
+
+  it("fetches Term FAQ (term_faq_records) rather than the Health FAQ when domain is Term", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    await answerQuery(
+      fakeReposOnly({
+        // A Health FAQ row present too — must NOT be picked up for a Term query.
+        faqs: [faqRow({ question: "Health-only FAQ question", answer: "Health-only FAQ answer" })],
+        termFaqs: [termFaqRow({ question: "Term-only FAQ question", answer: "Term-only FAQ answer" })],
+      }),
+      SCOPE,
+      "Can we do mid-term inclusion through Ditto?",
+      [],
+      "Term"
+    );
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text;
+    expect(promptText).toContain("Term-only FAQ question");
+    expect(promptText).not.toContain("Health-only FAQ question");
+  });
+
+  it("fetches Term Playbook plan facts (not skipped) for a Term query with a plan in scope, scoped to the Term domain", async () => {
+    // 2026-09: a real Term Playbook now exists (see termPlaybookIngest.ts) —
+    // this replaces the old "skips the Product Playbook fetch entirely for
+    // Term" test from when Term was FAQ-only.
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (_insurerName: string, _planTags: string[], _domain: "Health" | "Term") => [playbookFact({ domain: "Term" })]);
+    const repos = {
+      kbCategories: { list: async () => [categoryRow()] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    await answerQuery(repos, SCOPE, "What's the bonus for Activ One Max?", [], "Term");
+
+    expect(findMatchingSpy).toHaveBeenCalledTimes(1);
+    expect(findMatchingSpy.mock.calls[0][2]).toBe("Term");
+  });
+
+  it("scopes the Health Playbook fetch to the Health domain (default caller)", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (_insurerName: string, _planTags: string[], _domain: "Health" | "Term") => [playbookFact()]);
+    const repos = {
+      kbCategories: { list: async () => [categoryRow()] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    await answerQuery(repos, SCOPE, "What's the bonus for Activ One Max?", []);
+
+    expect(findMatchingSpy).toHaveBeenCalledTimes(1);
+    expect(findMatchingSpy.mock.calls[0][2]).toBe("Health");
+  });
+});
+
+describe("General-scope domain-wide plan detection (2026-09-07)", () => {
+  // Regression coverage for the bug where a "General" question (no insurer
+  // picked via the UI) that nonetheless named a specific plan directly in
+  // its text — or asked a broad, no-plan-named, multi-insurer question —
+  // never triggered a Product Playbook lookup at all, because the fetch was
+  // gated behind scope.categoryId !== null. See detectDomainWidePlanMatches.
+  const axisCategory = categoryRow({
+    id: 10,
+    name: "Axis Max Life",
+    planNames: ["Axis Max Life Smart Term Plan Plus"],
+  });
+  const hdfcCategory = categoryRow({
+    id: 20,
+    name: "HDFC Life",
+    planNames: ["HDFC Life Click 2 Protect Supreme"],
+  });
+  const generalScope = { categoryId: null, planTags: [] };
+
+  it("a General question naming a specific plan fetches that plan's Playbook facts, scoped to its own owning category", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (_insurerName: string, _planTags: string[], _domain: "Health" | "Term") => [
+      playbookFact({ insurerName: "Axis Max Life", planName: "Axis Max Life Smart Term Plan Plus" }),
+    ]);
+    const repos = {
+      kbCategories: { list: async () => [axisCategory, hdfcCategory] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    const result = await answerQuery(repos, generalScope, "Is there a lifetime discount in Axis Max Life Smart Term Plan Plus?", []);
+
+    expect(findMatchingSpy).toHaveBeenCalledTimes(1);
+    expect(findMatchingSpy.mock.calls[0][0]).toBe("Axis Max Life");
+    expect(findMatchingSpy.mock.calls[0][1]).toEqual(["Axis Max Life Smart Term Plan Plus"]);
+    expect(result.meta.playbookFactCount).toBe(1);
+
+    // SELECTED SCOPE line must also surface the domain-detected plan, per
+    // buildScopeLine's General-with-detected-plan branch.
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text;
+    expect(promptText).toContain("Axis Max Life Smart Term Plan Plus");
+  });
+
+  it("plans named from two different categories in one General question are looked up per owning category, never cross-matched", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (insurerName: string, _planTags: string[], _domain: "Health" | "Term") => [
+      playbookFact({ insurerName, planName: insurerName === "Axis Max Life" ? "Axis Max Life Smart Term Plan Plus" : "HDFC Life Click 2 Protect Supreme" }),
+    ]);
+    const repos = {
+      kbCategories: { list: async () => [axisCategory, hdfcCategory] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    const result = await answerQuery(
+      repos,
+      generalScope,
+      "How do Axis Max Life Smart Term Plan Plus and HDFC Life Click 2 Protect Supreme compare on discounts?",
+      []
+    );
+
+    expect(findMatchingSpy).toHaveBeenCalledTimes(2);
+    const callsByInsurer = new Map(findMatchingSpy.mock.calls.map(c => [c[0], c[1]]));
+    expect(callsByInsurer.get("Axis Max Life")).toEqual(["Axis Max Life Smart Term Plan Plus"]);
+    expect(callsByInsurer.get("HDFC Life")).toEqual(["HDFC Life Click 2 Protect Supreme"]);
+    expect(result.meta.playbookFactCount).toBe(2);
+  });
+
+  it("a General question naming no plan at all falls back to every plan's Playbook facts for the domain, not findMatching", async () => {
+    // 2026-09-07: broad fallback — a question this generic has no single
+    // plan for findMatching's insurer/plan-tag narrowing to key off, so
+    // listAllForDomain() is used instead, unconditionally, rather than
+    // silently including nothing.
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (_insurerName: string, _planTags: string[], _domain: "Health" | "Term") => [playbookFact()]);
+    const listAllForDomainSpy = vi.fn(async (_domain: "Health" | "Term") => [
+      playbookFact({ insurerName: "Axis Max Life", planName: "Axis Max Life Smart Term Plan Plus", content: "Axis discount facts." }),
+      playbookFact({ insurerName: "HDFC Life", planName: "HDFC Life Click 2 Protect Supreme", content: "HDFC discount facts." }),
+    ]);
+    const repos = {
+      kbCategories: { list: async () => [axisCategory, hdfcCategory] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy, listAllForDomain: listAllForDomainSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    const result = await answerQuery(repos, generalScope, "What are the various discounts offered by the insurers?", []);
+
+    expect(findMatchingSpy).not.toHaveBeenCalled();
+    expect(listAllForDomainSpy).toHaveBeenCalledTimes(1);
+    expect(listAllForDomainSpy.mock.calls[0][0]).toBe("Health");
+    expect(result.meta.playbookFactCount).toBe(2);
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text;
+    expect(promptText).toContain("Axis discount facts.");
+    expect(promptText).toContain("HDFC discount facts.");
+  });
+
+  it("scopes the broad no-plan fallback to the Term domain when domain is Term", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const listAllForDomainSpy = vi.fn(async (_domain: "Health" | "Term") => [playbookFact({ domain: "Term" })]);
+    const repos = {
+      kbCategories: { list: async () => [axisCategory, hdfcCategory] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: vi.fn(), listAllForDomain: listAllForDomainSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    await answerQuery(repos, generalScope, "What are the various discounts offered by the insurers?", [], "Term");
+
+    expect(listAllForDomainSpy).toHaveBeenCalledTimes(1);
+    expect(listAllForDomainSpy.mock.calls[0][0]).toBe("Term");
+  });
+
+  it("an insurer-scoped question is unaffected — still a single findMatching call against the selected category only", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (_insurerName: string, _planTags: string[], _domain: "Health" | "Term") => [playbookFact()]);
+    const repos = {
+      kbCategories: { list: async () => [categoryRow()] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    await answerQuery(repos, SCOPE, "What's the bonus for Activ One Max?", []);
+
+    expect(findMatchingSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // 2026-09 regression fix — the live wrong-answer report: an insurer IS
+  // selected via the UI (e.g. "Care Health") but no plan is picked and none
+  // is detectable in the question text. findMatching short-circuits to []
+  // whenever planTags is empty (by design), and the pre-fix code had no
+  // other branch covering "categoryId set, no plan" — so playbookFacts
+  // stayed [], and the question silently fell through to Prospectus-only
+  // document-chunk retrieval even though the insurer itself was known. This
+  // asserts findAllForInsurer (not findMatching) is what now covers it.
+  it("an insurer-scoped question with NO plan selected or detected falls back to every plan's Playbook facts for that insurer via findAllForInsurer", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const findMatchingSpy = vi.fn(async (_insurerName: string, _planTags: string[], _domain: "Health" | "Term") => []);
+    const findAllForInsurerSpy = vi.fn(async (_insurerName: string, _domain: "Health" | "Term") => [
+      playbookFact({ planName: "Care Supreme", content: "Restoration triggers on partial exhaustion." }),
+      playbookFact({ planName: "Care Freedom", content: "Restoration triggers on partial exhaustion, once a year." }),
+    ]);
+    const repos = {
+      kbCategories: { list: async () => [categoryRow()] },
+      kbResources: { list: async () => [] },
+      kbChunks: { findSimilar: async () => [] },
+      kbPlaybookPlanFacts: { findMatching: findMatchingSpy, findAllForInsurer: findAllForInsurerSpy },
+      faqRecords: { listAnswerableActive: async () => [] },
+      termFaqRecords: { listAnswerableActive: async () => [] },
+      specialInstructions: { listActive: async () => [] },
+      kbAcronyms: { listActive: async () => [] },
+    } as unknown as Repositories;
+
+    const result = await answerQuery(repos, { categoryId: 1, planTags: [] }, "How does the restoration benefit work?", []);
+
+    expect(findMatchingSpy).not.toHaveBeenCalled();
+    expect(findAllForInsurerSpy).toHaveBeenCalledTimes(1);
+    expect(findAllForInsurerSpy.mock.calls[0][0]).toBe("TestInsurer");
+    expect(findAllForInsurerSpy.mock.calls[0][1]).toBe("Health");
+    expect(result.meta.playbookFactCount).toBe(2);
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).toContain("Restoration triggers on partial exhaustion.");
+    expect(promptText).toContain("Restoration triggers on partial exhaustion, once a year.");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Insurance Fundamentals (2026-09) — a dedicated, domain-scoped conceptual-
+// knowledge layer (kb_categories.type === "fundamentals"), retrieved via its
+// own always-on, bounded, relevance-thresholded channel (see
+// retrieveFundamentalsChunks in productAssist.ts), independent of
+// scope.categoryId and never blended into the normal Policy Wording ->
+// Prospectus -> Brochure/other staged retrieval.
+//
+// Note on domain isolation (requirement: Fundamentals must never leak
+// across Health/Term): actual domain scoping happens inside
+// KbCategoriesRepository.list({ domain }) — a real SQL WHERE clause, tested
+// separately and untouched by this feature — which is the SAME mechanism
+// every other domain-scoped source in this file already trusts (categoryIds
+// resolution, Playbook lookups, FAQ table selection, etc., none of which
+// re-check domain themselves either). fakeRepos's mocked kbCategories.list
+// ignores the domain argument entirely (returns cfg.categories verbatim,
+// same as it always has), so these tests validate what THIS feature's own
+// code controls — TYPE-based filtering/scoping on whatever categories list
+// it's handed — rather than re-testing the repository's domain WHERE clause.
+// ─────────────────────────────────────────────────────────────────────────
+describe("Insurance Fundamentals (2026-09)", () => {
+  function fundamentalsCategoryRow(overrides: Partial<KbCategoryRow> = {}): KbCategoryRow {
+    return categoryRow({
+      id: 9,
+      name: "Insurance Fundamentals",
+      type: "fundamentals",
+      planNames: [],
+      ...overrides,
+    });
+  }
+  function fundamentalsChunk(content: string, overrides: Partial<SimilarKbChunk> = {}) {
+    return chunk(content, {
+      categoryId: 9,
+      documentType: "other",
+      resourceTitle: "Understanding Health Insurance: Fundamentals, Coverage, Benefits and Policy Relationships",
+      distance: 0.1, // well inside FUNDAMENTALS_RELEVANCE_DISTANCE (0.55)
+      ...overrides,
+    });
+  }
+
+  it("SYSTEM_INSTRUCTION and SYSTEM_INSTRUCTION_TERM both define INSURANCE FUNDAMENTALS as the lowest-ranked, non-authoritative source", () => {
+    for (const instruction of [SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_TERM]) {
+      expect(instruction).toContain("5. INSURANCE FUNDAMENTALS");
+      expect(instruction).toContain("Always the lowest-ranked source of any kind");
+      expect(instruction).toContain(
+        "never as the source of this specific product's actual coverage, benefit, limit, exclusion, waiting period, restoration rule, utilisation sequence, or any other product-specific outcome"
+      );
+    }
+  });
+
+  // 2026-09: real-world case where OS (Optima Secure) Policy Wording still
+  // described a discontinued "Cumulative Bonus" clause the insurer has since
+  // replaced with a "Plus" benefit the Playbook records — Policy Wording can
+  // go stale in a way the Playbook/FAQ/Special Instructions don't, so both
+  // domains must tell the model to treat the latter as current and
+  // controlling over Policy Wording whenever a plan is selected.
+  it("SYSTEM_INSTRUCTION and SYSTEM_INSTRUCTION_TERM both instruct that Playbook/Ditto FAQ/Special Instructions outrank Policy Wording as the current source of truth for a selected plan", () => {
+    for (const instruction of [SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_TERM]) {
+      expect(instruction).toContain("CURRENT SOURCE OF TRUTH");
+      expect(instruction).toContain("ahead of Policy Wording, Prospectus, Brochure, or any other DOCUMENT EXCERPT");
+      expect(instruction).toContain(
+        "do not let a Policy Wording passage on that same topic add to, soften, or contradict it, no matter how detailed or official-sounding the Policy Wording passage is"
+      );
+      expect(instruction).toContain("apply it the same way for both Health and Term plans");
+    }
+  });
+
+  it("retrieved even when an insurer/plan is already selected (not limited to General/no-insurer questions)", async () => {
+    mockModelResponse({ answer: "A waiting period is a period during which certain claims cannot be made.", share: "There's a waiting period before some claims can be made." });
+    const result = await answerQuery(
+      fakeReposOnly({
+        categories: [categoryRow(), fundamentalsCategoryRow()],
+        chunks: [
+          chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.", { categoryId: 1 }),
+          fundamentalsChunk("A waiting period is a duration after policy start during which certain claims are not payable."),
+        ],
+      }),
+      SCOPE, // insurer + plan already selected
+      "What is a waiting period?",
+      []
+    );
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).toContain("=== INSURANCE FUNDAMENTALS");
+    expect(promptText).toContain("A waiting period is a duration after policy start");
+    expect(result.meta.fundamentalsChunkCount).toBe(1);
+  });
+
+  it("kept out of DOCUMENT EXCERPTS / the Sources panel entirely — never a citable document like a policy PDF", async () => {
+    mockModelResponse({
+      answer: "Room rent is capped at 1% of Sum Insured per day.\n\n**References**\n- Policy Wording, Section 3.1",
+      citedDocumentTitles: ["Policy Wording A"],
+      share: "Room rent is capped at 1% of the sum insured, per day.",
+    });
+    const result = await answerQuery(
+      fakeReposOnly({
+        categories: [categoryRow(), fundamentalsCategoryRow()],
+        chunks: [
+          chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.", { categoryId: 1, resourceTitle: "Policy Wording A" }),
+          fundamentalsChunk("Room rent generally refers to the daily hospital accommodation charge."),
+        ],
+      }),
+      SCOPE,
+      "What is the room rent limit?",
+      []
+    );
+    expect(result.sources.map(s => s.title)).toEqual(["Policy Wording A"]);
+    expect(result.sources.map(s => s.title)).not.toContain(
+      "Understanding Health Insurance: Fundamentals, Coverage, Benefits and Policy Relationships"
+    );
+  });
+
+  it("excluded from the normal staged product-document retrieval pool, even for a General (no insurer selected) question — retrieved only through its own dedicated call", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const insurerCategory = categoryRow({ id: 1, type: "insurer", name: "TestInsurer" });
+    const generalCategory = categoryRow({ id: 2, type: "general", name: "General", planNames: [] });
+    const fundamentals = fundamentalsCategoryRow({ id: 3 });
+    const { repos, findSimilarSpy } = fakeRepos({
+      categories: [insurerCategory, generalCategory, fundamentals],
+      chunks: [
+        chunk("Policy Wording excerpt", { categoryId: 1, documentType: "policy_wording", distance: 0.1 }),
+        chunk("Policy Wording excerpt", { categoryId: 1, documentType: "policy_wording", distance: 0.1 }),
+        chunk("Policy Wording excerpt", { categoryId: 1, documentType: "policy_wording", distance: 0.1 }),
+        fundamentalsChunk("Fundamentals excerpt", { categoryId: 3 }),
+      ],
+    });
+    await answerQuery(repos, { categoryId: null, planTags: [] }, "What is the room rent limit?", []);
+
+    const stagedCalls = findSimilarSpy.mock.calls.filter(c => (c[1] as { documentTypes?: unknown }).documentTypes);
+    expect(stagedCalls.length).toBeGreaterThan(0);
+    for (const call of stagedCalls) {
+      const categoryIds = call[1].categoryIds as number[];
+      expect(categoryIds).toEqual(expect.arrayContaining([insurerCategory.id, generalCategory.id]));
+      expect(categoryIds).not.toContain(fundamentals.id);
+    }
+
+    const fundamentalsCalls = findSimilarSpy.mock.calls.filter(c => !(c[1] as { documentTypes?: unknown }).documentTypes);
+    expect(fundamentalsCalls).toHaveLength(1);
+    expect(fundamentalsCalls[0][1].categoryIds).toEqual([fundamentals.id]);
+  });
+
+  it("a chunk beyond the relevance-distance threshold is dropped — an unrelated question retrieves nothing extra", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const result = await answerQuery(
+      fakeReposOnly({
+        categories: [categoryRow(), fundamentalsCategoryRow()],
+        chunks: [fundamentalsChunk("Unrelated background content", { distance: 0.9 })], // beyond FUNDAMENTALS_RELEVANCE_DISTANCE (0.55)
+      }),
+      SCOPE,
+      "What is the room rent limit?",
+      []
+    );
+    expect(result.meta.fundamentalsChunkCount).toBe(0);
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).not.toContain("INSURANCE FUNDAMENTALS");
+  });
+
+  it("no fundamentals category configured — zero extra retrieval calls, byte-identical to before this feature existed", async () => {
+    mockModelResponse({ answer: "Room rent is capped at 1% of Sum Insured per day.", share: "Room rent is capped at 1% of the sum insured, per day." });
+    const { repos, findSimilarSpy } = fakeRepos({ chunks: [chunk("Section 3.1: Room rent capped at 1% of Sum Insured per day.")] });
+    const result = await answerQuery(repos, SCOPE, "What is the room rent limit?", []);
+    expect(result.meta.fundamentalsChunkCount).toBe(0);
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).not.toContain("INSURANCE FUNDAMENTALS");
+    // Every findSimilar call made is a staged product-document call
+    // (documentTypes set) — no dedicated categoryIds-only Fundamentals call
+    // happened at all, since no fundamentals category exists.
+    expect(findSimilarSpy).toHaveBeenCalled();
+    for (const call of findSimilarSpy.mock.calls) {
+      expect((call[1] as { documentTypes?: unknown }).documentTypes).toBeDefined();
+    }
+  });
+
+  it("reuses the single query embedding already computed for this question — no extra AI/embedding call for Fundamentals", async () => {
+    mockModelResponse({ answer: "A waiting period is a period during which certain claims cannot be made.", share: null });
+    await answerQuery(
+      fakeReposOnly({
+        categories: [categoryRow(), fundamentalsCategoryRow()],
+        chunks: [fundamentalsChunk("A waiting period is...")],
+      }),
+      SCOPE,
+      "What is a waiting period?",
+      []
+    );
+    expect(embedContentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("is bounded by its own small retrieval cap, independent of the 24-chunk product-document budget", async () => {
+    mockModelResponse({ answer: "Not specified in available sources.", share: null });
+    const manyFundamentalsChunks = Array.from({ length: 10 }, (_, i) => fundamentalsChunk(`Fundamentals excerpt ${i}`));
+    const { repos, findSimilarSpy } = fakeRepos({
+      categories: [categoryRow(), fundamentalsCategoryRow()],
+      chunks: manyFundamentalsChunks,
+    });
+    await answerQuery(repos, SCOPE, "What is a waiting period?", []);
+    const fundamentalsCall = findSimilarSpy.mock.calls.find(c => !(c[1] as { documentTypes?: unknown }).documentTypes);
+    expect(fundamentalsCall).toBeDefined();
+    expect(fundamentalsCall![1].limit).toBeLessThanOrEqual(4);
+  });
+
+  it("a purely conceptual General question answered only by Fundamentals content is NOT treated as an unresolved/no-match query", async () => {
+    mockModelResponse({
+      synthesis: { requirement: "", userFacts: "", comparison: "", resolution: "SATISFIED" },
+      answer: "A waiting period is a duration after policy start during which certain claims aren't payable.",
+      share: "There's a wait before some claims can be made.",
+    });
+    const result = await answerQuery(
+      fakeReposOnly({
+        categories: [fundamentalsCategoryRow()],
+        chunks: [fundamentalsChunk("A waiting period is a duration after policy start during which certain claims aren't payable.")],
+      }),
+      { categoryId: null, planTags: [] },
+      "What is a waiting period?",
+      []
+    );
+    const promptText = generateContentMock.mock.calls[0][0].contents[0].parts[0].text as string;
+    expect(promptText).not.toContain("(No matching Playbook facts, Ditto FAQ entries, or document excerpts were found");
+    expect(result.hadNoMatches).toBe(false);
+  });
+
+  it("a product-specific question with only Fundamentals content still surfaces as unresolved once the model itself reports NO_REQUIREMENT_FOUND", async () => {
+    mockModelResponse({
+      synthesis: { requirement: "", userFacts: "", comparison: "", resolution: "NO_REQUIREMENT_FOUND" },
+      answer: "The provided source content does not specify the exact restoration rule for this plan.",
+      share: null,
+    });
+    const result = await answerQuery(
+      fakeReposOnly({
+        categories: [categoryRow(), fundamentalsCategoryRow()],
+        chunks: [fundamentalsChunk("Restoration benefits generally reinstate the sum insured after it's exhausted by a claim.")],
+      }),
+      SCOPE,
+      "What's the exact restoration rule for Activ One Max?",
+      []
+    );
+    expect(result.hadNoMatches).toBe(true);
   });
 });

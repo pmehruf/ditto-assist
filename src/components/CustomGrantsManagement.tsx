@@ -193,7 +193,7 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
         )}
 
         {granting && (
-          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
                 User email
@@ -289,7 +289,7 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
             <table className="w-full border-collapse">
               <tbody>
                 {visibleActiveGrants.map((grant, idx) => (
-                  <tr key={grant.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
+                  <tr key={grant.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""}`}>
                     <td className="px-3 py-2.5 w-8">
                       <KeyRound className={`w-3.5 h-3.5 mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`} />
                     </td>
@@ -338,7 +338,7 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
 
         <p className="text-[10.5px] font-semibold text-content-muted">
           {canEdit
-            ? "Custom grants are the flexibility valve for when Team/Department/Role structure doesn't fit someone — a grant can only raise a person's access, never lower it below what their tier already gives them."
+            ? "Custom grants are the flexibility valve for when Business Unit/Department/Role structure doesn't fit someone — a grant can only raise a person's access, never lower it below what their tier already gives them."
             : "Admin clearance grants read-only visibility into custom grants. Developer or Platform Admin clearance is required to grant or revoke them."}
         </p>
       </div>

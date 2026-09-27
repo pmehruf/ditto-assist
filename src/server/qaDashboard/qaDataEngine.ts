@@ -19,7 +19,7 @@
  * changes and both need updating in lockstep.
  */
 
-import { fetchSheetValues, dateStringToSerial, serialToDMY } from "./sheetsClient.js";
+import { fetchSheetValues, dateStringToSerial, serialToDMY, serialToISODate } from "./sheetsClient.js";
 import { QA_SCORE_DASHBOARD_TACT_IDS } from "../../constants/qaDashboardAdvisorAllowlist.js";
 import { getDb } from "../db/client.js";
 import { createRepositories } from "../db/repositories/index.js";
@@ -127,17 +127,31 @@ async function getSheetDataCached(sheetName: string): Promise<{ headers: string[
 export function invalidateQaSheetCache(): void {
   sheetCache.clear();
   historyCacheByRange.clear();
+  advisorSnapshotCache.clear();
 }
 
 // ==================== ARCHIVE MERGE (qa_evaluation_history) ====================
-// One-time-imported historical rows (see drizzle/0027_qa_evaluation_history.sql
-// and scripts/importQaEvaluationHistory.ts) covering a period the live
-// FEEDBACK_DUMP Sheet no longer holds — confirmed before this was built, so
-// there's no overlap/double-count risk. getMergedFeedbackDumpRows() is a
+// One-time-imported historical/backfill rows (see drizzle/0027_qa_evaluation_history.sql,
+// drizzle/0061_qa_evaluation_history_source_batch.sql, scripts/importQaEvaluationHistory.ts
+// and scripts/importJune2026QaBackfill.ts). getMergedFeedbackDumpRows() is a
 // drop-in replacement for `getSheetDataCached(SHEETS.FEEDBACK_DUMP)` that
 // stitches the archive's rows in, converted to the same serial-number
 // cell-array shape, so every existing MASTER_DUMP_COLS-based reader below
 // works completely unmodified.
+//
+// OVERLAP / DE-DUPE: the original archive batch (June 2025-May 2026)
+// covered a period the live Sheet never held, so it never needed de-dupe
+// logic. A later batch — the 2026-06 gap-fill, imported to cover rows the
+// freshly-launched live Sheet was missing — DOES overlap the Sheet's own
+// date range by design (the whole point is filling in-range gaps, not a
+// range the Sheet never had). To stay safe if the QA team later completes
+// the Sheet with the very rows a batch already fills in, every archive row
+// is checked against a de-dupe key built from the live Sheet's own rows
+// (checked date + TACT ID + chat ID + domain + score, see rowDedupeKey())
+// before being merged in — a match means the same evaluation is already
+// live, so the archive row is dropped rather than double-counted. This
+// applies uniformly to every batch (harmless no-op for the original one,
+// since it shares no dates with the live Sheet to ever match against).
 
 interface HistoryCacheEntry {
   rows: QaEvaluationHistoryColumns[];
@@ -184,6 +198,21 @@ async function getHistoryRowsCached(checkedFrom?: string, checkedTo?: string): P
  * do); omit both when it doesn't (getAdvisorReviews), since narrowing the
  * archive fetch by a date range the caller isn't actually filtering by
  * would silently drop rows it needs. */
+// De-dupe key for one evaluation, shared between a live Sheet row and an
+// archive row so the two can be compared — see the OVERLAP / DE-DUPE note
+// above. Includes score (not just date+TACT+chat+domain) so a genuine
+// second evaluation of the same chat on the same day (the existing scripts'
+// own "the same Chat ID can legitimately appear multiple times" case) isn't
+// mistaken for a duplicate unless every field, score included, matches too —
+// at which point treating it as the same evaluation logged twice is by far
+// the more likely explanation.
+// Exported only so its exact-match semantics can be unit tested directly
+// (qaDataEngine.test.ts) without mocking the full Sheets+DB merge pipeline
+// getMergedFeedbackDumpRows() sits behind — not used by any other module.
+export function rowDedupeKey(checkedSerial: unknown, tactId: unknown, chatId: unknown, domain: unknown, score: unknown): string {
+  return `${checkedSerial}|${String(tactId ?? "").trim()}|${String(chatId ?? "").trim()}|${String(domain ?? "").trim()}|${score ?? ""}`;
+}
+
 async function getMergedFeedbackDumpRows(checkedFrom?: string, checkedTo?: string): Promise<{ headers: string[]; rows: unknown[][] }> {
   const live = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
   const history = await getHistoryRowsCached(checkedFrom, checkedTo);
@@ -201,9 +230,25 @@ async function getMergedFeedbackDumpRows(checkedFrom?: string, checkedTo?: strin
   const iAdvisorName = live.headers.indexOf("advisor_name");
   const width = Math.max(iChecked, iMistake, iTact, iChatId, iDomain, iScore, iAdvisorName) + 1;
 
-  const historyRows: unknown[][] = history.map((h) => {
+  // Every evaluation the live Sheet already has, keyed for the overlap check
+  // below — built once per call, off however many rows the Sheet currently
+  // holds (cheap; the Sheet is thousands, not millions, of rows).
+  const liveKeys = new Set<string>();
+  for (const r of live.rows) {
+    liveKeys.add(rowDedupeKey(r[iChecked], r[iTact], r[iChatId], r[iDomain], r[iScore]));
+  }
+
+  const historyRows: unknown[][] = [];
+  for (const h of history) {
+    const checkedSerial = dateStringToSerial(h.checkedDate);
+    if (liveKeys.has(rowDedupeKey(checkedSerial, h.tactId, h.chatId, h.domain, h.score))) {
+      // Already present in the live Sheet — skip so this archive row (from
+      // a batch that overlaps the Sheet's own date range, see the OVERLAP /
+      // DE-DUPE note above) doesn't double-count it.
+      continue;
+    }
     const row = new Array(width);
-    row[iChecked] = dateStringToSerial(h.checkedDate);
+    row[iChecked] = checkedSerial;
     // Nullable in ~24 source rows — left undefined rather than a fabricated
     // date, matching how the rest of this file already treats a missing/
     // non-numeric mistake cell (typeof check, not a truthy/falsy one).
@@ -213,8 +258,8 @@ async function getMergedFeedbackDumpRows(checkedFrom?: string, checkedTo?: strin
     row[iDomain] = h.domain;
     row[iScore] = h.score;
     if (iAdvisorName !== -1) row[iAdvisorName] = h.advisorName;
-    return row;
-  });
+    historyRows.push(row);
+  }
 
   return { headers: live.headers, rows: [...live.rows, ...historyRows] };
 }
@@ -240,6 +285,62 @@ function mentorColIndex(headers: string[]): number {
 const STATUS_COL_NAMES = ["status", "employment status", "employment_status", "joining status"];
 function statusColIndex(headers: string[]): number {
   return headers.findIndex((h) => STATUS_COL_NAMES.includes(String(h).trim().toLowerCase()));
+}
+
+// The three columns below back the Master Advisors page's Guide/Mentor
+// Advisor Mapping (guideMentorRelationshipsSync.ts) only — tolerant header-name
+// lookups in the same style as guide/mentor/status above, since the exact
+// header text on master_advisors hasn't been confirmed against every
+// possible spelling; a header that doesn't match any of these falls back to
+// -1 (field left null), never a thrown error, so a naming mismatch degrades
+// gracefully instead of breaking the whole sync.
+const BATCH_COL_NAMES = ["batch number", "batch no", "batch no.", "batch id", "batch"];
+function batchColIndex(headers: string[]): number {
+  return headers.findIndex((h) => BATCH_COL_NAMES.includes(String(h).trim().toLowerCase()));
+}
+
+// "Date of moving out to a different role" — the sheet's own tracking of
+// when an advisor stopped being an advisor because they moved internally,
+// as distinct from resigning (see LAST_WORKING_DAY_COL_NAMES below).
+const MOVED_OUT_COL_NAMES = [
+  "date of moving out to a different role",
+  "date of moving out",
+  "moved out date",
+  "moving out date",
+  "role change date",
+  "date of role change",
+  "date moved to another role",
+];
+function movedOutColIndex(headers: string[]): number {
+  return headers.findIndex((h) => MOVED_OUT_COL_NAMES.includes(String(h).trim().toLowerCase()));
+}
+
+const LAST_WORKING_DAY_COL_NAMES = ["last working day", "last working date", "lwd", "last day"];
+function lastWorkingDayColIndex(headers: string[]): number {
+  return headers.findIndex((h) => LAST_WORKING_DAY_COL_NAMES.includes(String(h).trim().toLowerCase()));
+}
+
+/** Reads a date-typed cell as "yyyy-MM-dd" — the sheet normally hands back
+ * a Sheets serial number for a real date cell (see sheetsClient.ts's file
+ * header), converted via serialToISODate; a small defensive fallback
+ * handles a cell that's a plain date-like string instead (inconsistent
+ * column typing happens on real spreadsheets), via Date.parse. Anything
+ * else (blank, unparseable) is null rather than a guess. */
+function readDateCell(headers: string[], row: unknown[], colIndexFn: (headers: string[]) => number): string | null {
+  const idx = colIndexFn(headers);
+  if (idx === -1) return null;
+  const v = row[idx];
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return serialToISODate(v);
+  const parsed = new Date(String(v));
+  if (!Number.isNaN(parsed.getTime())) return serialToISODate((parsed.getTime() - Date.UTC(1899, 11, 30)) / (24 * 60 * 60 * 1000));
+  return null;
+}
+function readBatchNumber(headers: string[], row: unknown[]): string | null {
+  const idx = batchColIndex(headers);
+  if (idx === -1) return null;
+  const v = row[idx];
+  return v != null && String(v).trim() ? String(v).trim() : null;
 }
 
 // Positive match, not a blacklist — mirrors the live source-of-truth query
@@ -296,85 +397,198 @@ function readEmail(headers: string[], row: unknown[]): string | null {
   return v != null && String(v).trim() ? String(v).trim().toLowerCase() : null;
 }
 
-export async function getAdvisorByEmail(email: string): Promise<Advisor | null> {
-  const { headers, rows } = await getSheetDataCached(SHEETS.MASTER_ADVISORS);
-  const emailCol = colIndex(headers, "Email ID");
-  const tactCol = colIndex(headers, "Tact ID");
-  const nameCol = colIndex(headers, "Name");
-  const guideCol = guideColIndex(headers);
-  const mentorCol = mentorColIndex(headers);
+// ==================== ADVISOR RELATIONSHIP MAPPING (Access Control Center) ====================
+// Advisor identity, Guide/Mentor mapping, and eligibility for QA Dashboard/
+// Team Tracker no longer come from this sheet directly (2026-09 "Rewire
+// Advisor Mapping" change) — they now come from the Access Control
+// Center's Master Advisors page: guide_mentor_advisor_mappings (identity +
+// eligibility) and guide_mentor_relationship_history (the Guide/Mentor
+// timeline), both themselves POPULATED by a sync of this same sheet (see
+// guideMentorRelationshipsSync.ts) — so master_advisors is still the
+// ultimate source of the data, just no longer read live for every mapping
+// lookup. getMasterAdvisorsRowsForSync/isEmployedStatus below remain
+// sheet-reading — that sync path is unaffected; only the identity/pool
+// lookups in this section moved to the DB.
+//
+// Two independent checks, both resolved as of one "asOfDate"
+// ("yyyy-MM-dd"):
+//   1. Was this advisor still active as of asOfDate? (eligibility — see
+//      activeTillOf below, the same calculation
+//      MasterAdvisorsManagement.tsx's own "Active Till" column uses: the
+//      earlier of dateOfMovingOut/lastWorkingDay, or always-active if
+//      neither is set)
+//   2. Who was their Guide/Mentor as of asOfDate? (guide_mentor_
+//      relationship_history's terminate-and-replace timeline)
+// For a reporting call, asOfDate is the PERIOD'S START date (not its
+// end) — so an advisor who left partway through a period, or whose
+// Mentor/Guide changed partway through, still counts for that period the
+// way they did at its start: "June data must remain attributed to Mentor
+// A" even if the change to Mentor B happened on, say, June 15.
+//
+// Pre-history dates: guide_mentor_relationship_history only has real
+// change-by-change data from when this feature shipped (2026-09) onward —
+// migration 0072 backfilled one "active since [migration date]" row per
+// advisor from whatever guide_mentor_advisor_mappings held at the time, so
+// there is no true timeline before that point. For an asOfDate earlier
+// than every history row for a given advisor/kind, resolvePersonAsOf
+// falls back to that advisor's EARLIEST known row (its best available
+// estimate for "who it probably was before we started tracking") rather
+// than showing blank — a genuine mid-timeline gap (a relationship cleared
+// to "None" and never replaced) still correctly resolves to null, since
+// that fallback only applies when asOfDate precedes every row, not when
+// it falls between two of them.
 
-  const target = String(email).trim().toLowerCase();
-  for (const row of rows) {
-    if (String(row[emailCol]).trim().toLowerCase() === target) {
-      return {
-        tactId: String(row[tactCol]),
-        name: String(row[nameCol]),
-        guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
-        mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
-        skillDomain: readSkillDomain(headers, row),
-        email: readEmail(headers, row),
-      };
+/** Internal snapshot row — carries `eligible` (see activeTillOf) so pool
+ * functions (getAllAdvisorsAsOf and friends) can filter on it, while
+ * identity lookups (findAdvisorByTactIdAsOf, getAdvisorByEmail) can ignore
+ * it — a direct-by-tactId/email lookup should always find the record
+ * regardless of employment status, matching the old sheet-based
+ * findAdvisorByTactId/getAdvisorByEmail's behavior (neither ever applied
+ * the Currently-Employed filter; only getAllAdvisors did). Never exposed
+ * outside this file — every exported function strips it via
+ * stripEligibility before returning. */
+interface AdvisorSnapshotRow extends Advisor {
+  eligible: boolean;
+}
+function stripEligibility(rows: AdvisorSnapshotRow[]): Advisor[] {
+  return rows.map(({ eligible: _eligible, ...rest }) => rest);
+}
+
+const advisorSnapshotCache = new Map<string, { rows: AdvisorSnapshotRow[]; expiresAt: number }>();
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** The earlier of dateOfMovingOut/lastWorkingDay — same calculation as
+ * MasterAdvisorsManagement.tsx's activeTillOf. null means "no known end
+ * date", i.e. always eligible. */
+function activeTillOf(m: { dateOfMovingOut: string | null; lastWorkingDay: string | null }): string | null {
+  const dates = [m.dateOfMovingOut, m.lastWorkingDay].filter((d): d is string => !!d);
+  if (dates.length === 0) return null;
+  return dates.sort()[0];
+}
+
+/** Who held one relationship kind (guide/mentor) for one advisor as of
+ * asOfDate, from their history rows — see the section comment above for
+ * the pre-history fallback rule. `rows` should already be filtered to one
+ * tactId+kind (unsorted is fine, this does its own scan). */
+function resolvePersonAsOf(rows: { personName: string; startDate: string; endDate: string | null }[], asOfDate: string): string | null {
+  if (rows.length === 0) return null;
+  const covering = rows.find((r) => r.startDate <= asOfDate && (r.endDate === null || r.endDate >= asOfDate));
+  if (covering) return covering.personName;
+  const earliest = rows.reduce((a, b) => (a.startDate <= b.startDate ? a : b));
+  if (asOfDate < earliest.startDate) return earliest.personName; // pre-history fallback
+  return null; // asOfDate falls in a real gap (cleared, never replaced) — correctly nobody
+}
+
+/** Builds EVERY advisor's identity + Guide/Mentor as of asOfDate, each
+ * tagged with whether they were active as of that date — no eligibility
+ * filtering here (see AdvisorSnapshotRow's comment); callers decide
+ * whether their use case needs the eligible-only subset. */
+async function buildAdvisorSnapshotAsOf(asOfDate: string): Promise<AdvisorSnapshotRow[]> {
+  const cached = advisorSnapshotCache.get(asOfDate);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+
+  const { guideMentorAdvisorMappings, guideMentorRelationshipHistory } = createRepositories(getDb());
+  const [mappings, history] = await Promise.all([guideMentorAdvisorMappings.list(), guideMentorRelationshipHistory.listAll()]);
+
+  const historyByTactId = new Map<string, { guide: typeof history; mentor: typeof history }>();
+  for (const h of history) {
+    let bucket = historyByTactId.get(h.tactId);
+    if (!bucket) {
+      bucket = { guide: [], mentor: [] };
+      historyByTactId.set(h.tactId, bucket);
     }
+    (h.kind === "guide" ? bucket.guide : bucket.mentor).push(h);
   }
-  return null;
+
+  const rows: AdvisorSnapshotRow[] = mappings.map((m) => {
+    const activeTill = activeTillOf(m);
+    const bucket = historyByTactId.get(m.tactId);
+    return {
+      tactId: m.tactId,
+      name: m.name,
+      email: m.email,
+      skillDomain: m.skillDomain,
+      guide: bucket ? resolvePersonAsOf(bucket.guide, asOfDate) : null,
+      mentor: bucket ? resolvePersonAsOf(bucket.mentor, asOfDate) : null,
+      eligible: activeTill === null || asOfDate <= activeTill,
+    };
+  });
+
+  advisorSnapshotCache.set(asOfDate, { rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS });
+  return rows;
+}
+
+/** Every advisor who was ACTIVE as of asOfDate, with their Guide/Mentor as
+ * of that same date — the DB-backed replacement for what getAllAdvisors()
+ * used to read live from master_advisors (see section comment above).
+ * Used directly by reporting call sites (QA Dashboard roster, Team
+ * Tracker's monthly/period functions) that need a specific period's own
+ * eligible membership. */
+export async function getAllAdvisorsAsOf(asOfDate: string): Promise<Advisor[]> {
+  const all = await buildAdvisorSnapshotAsOf(asOfDate);
+  return stripEligibility(all.filter((a) => a.eligible));
+}
+
+export async function getAdvisorsForGuideAsOf(guideName: string, asOfDate: string): Promise<Advisor[]> {
+  const target = String(guideName).trim().toLowerCase();
+  if (!target) return [];
+  const all = await buildAdvisorSnapshotAsOf(asOfDate);
+  return stripEligibility(all.filter((a) => a.eligible && (a.guide || "").trim().toLowerCase() === target));
+}
+
+export async function getAdvisorsForMentorAsOf(mentorName: string, asOfDate: string): Promise<Advisor[]> {
+  const target = String(mentorName).trim().toLowerCase();
+  if (!target) return [];
+  const all = await buildAdvisorSnapshotAsOf(asOfDate);
+  return stripEligibility(all.filter((a) => a.eligible && (a.mentor || "").trim().toLowerCase() === target));
+}
+
+/** Direct identity lookup by tactId, as of asOfDate — deliberately ignores
+ * eligibility (see AdvisorSnapshotRow's comment): once a caller already
+ * has a specific tactId in hand (an advisor's own dashboard page, a
+ * Guide/Mentor opening one team member), the record should always
+ * resolve, showing who their Guide/Mentor was as of that date, even for a
+ * period after the advisor became ineligible (e.g. viewing a resigned
+ * advisor's final month). */
+export async function findAdvisorByTactIdAsOf(tactId: string, asOfDate: string): Promise<Advisor | null> {
+  const target = String(tactId).trim();
+  const all = await buildAdvisorSnapshotAsOf(asOfDate);
+  const row = all.find((a) => String(a.tactId).trim() === target);
+  return row ? stripEligibility([row])[0] : null;
+}
+
+// ---- "Current" (today-anchored) identity/pool functions — every existing
+// caller of these (access-control checks, the QA Dashboard/Team Tracker's
+// own "who am I"/picker logic, coachingService.ts) keeps working
+// unchanged; only what's UNDER them moved from live-sheet reads to the DB,
+// anchored at today via the *AsOf functions above. Per this feature's own
+// design decision, access control (who can open/search/coach an advisor)
+// intentionally stays on the CURRENT relationship regardless of whatever
+// period a report elsewhere is showing — only reporting call sites
+// (getAdvisorsDashboardListFor, getCompanyWideQaAggregateFor, and Team
+// Tracker's monthly/period functions) call the *AsOf variants directly
+// with a period's own start date instead of going through these. ----
+
+export async function getAdvisorByEmail(email: string): Promise<Advisor | null> {
+  // Identity lookup, like findAdvisorByTactIdAsOf — deliberately ignores
+  // eligibility, so a resigned advisor's own login still resolves to their
+  // record rather than "no advisor found" (the old sheet-based version had
+  // no status filter either).
+  const target = String(email).trim().toLowerCase();
+  const all = await buildAdvisorSnapshotAsOf(todayIsoDate());
+  const row = all.find((a) => (a.email || "").trim().toLowerCase() === target);
+  return row ? stripEligibility([row])[0] : null;
 }
 
 export async function findAdvisorByTactId(tactId: string): Promise<Advisor | null> {
-  const { headers, rows } = await getSheetDataCached(SHEETS.MASTER_ADVISORS);
-  const tactCol = colIndex(headers, "Tact ID");
-  const nameCol = colIndex(headers, "Name");
-  const guideCol = guideColIndex(headers);
-  const mentorCol = mentorColIndex(headers);
-
-  const target = String(tactId).trim();
-  for (const row of rows) {
-    if (String(row[tactCol]).trim() === target) {
-      return {
-        tactId: String(row[tactCol]),
-        name: String(row[nameCol]),
-        guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
-        mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
-        skillDomain: readSkillDomain(headers, row),
-        email: readEmail(headers, row),
-      };
-    }
-  }
-  return null;
+  return findAdvisorByTactIdAsOf(tactId, todayIsoDate());
 }
 
 export async function getAllAdvisors(): Promise<Advisor[]> {
-  const { headers, rows } = await getSheetDataCached(SHEETS.MASTER_ADVISORS);
-  const tactCol = colIndex(headers, "Tact ID");
-  const nameCol = colIndex(headers, "Name");
-  const guideCol = guideColIndex(headers);
-  const mentorCol = mentorColIndex(headers);
-  const statusCol = statusColIndex(headers);
-
-  if (statusCol === -1) {
-    console.warn(
-      `[QA Dashboard] Could not find an employment-status column on master_advisors (looked for: ${STATUS_COL_NAMES.join(", ")}) — ` +
-        "the \"Currently Employed\" filter can't be applied, so getAllAdvisors() is returning every row with a Tact ID, active or not. Check the sheet's header row."
-    );
-  }
-
-  const advisors: Advisor[] = [];
-  for (const row of rows) {
-    if (!row[tactCol]) continue;
-    if (statusCol !== -1) {
-      const s = String(row[statusCol] ?? "").trim().toLowerCase();
-      if (!EMPLOYED_STATUS_VALUES.includes(s)) continue;
-    }
-    advisors.push({
-      tactId: String(row[tactCol]),
-      name: String(row[nameCol]),
-      guide: guideCol !== -1 ? (row[guideCol] != null ? String(row[guideCol]) : null) : null,
-      mentor: mentorCol !== -1 ? (row[mentorCol] != null ? String(row[mentorCol]) : null) : null,
-      skillDomain: readSkillDomain(headers, row),
-      email: readEmail(headers, row),
-    });
-  }
-  return advisors;
+  return getAllAdvisorsAsOf(todayIsoDate());
 }
 
 /** True for the exact same "Currently Employed" match getAllAdvisors() uses
@@ -390,6 +604,16 @@ export interface MasterAdvisorsRow extends Advisor {
    * statusColIndex) — null if the sheet has no recognizable status column
    * at all. Use isEmployedStatus(statusRaw) for the actual filter. */
   statusRaw: string | null;
+  /** master_advisors' Batch Number column, free text — see
+   * batchColIndex's comment. Only consumed by
+   * guideMentorRelationshipsSync.ts today. */
+  batchNumber: string | null;
+  /** "Date of moving out to a different role" — see movedOutColIndex's
+   * comment. "yyyy-MM-dd", or null if blank/unrecognized/unparseable. */
+  dateOfMovingOut: string | null;
+  /** "Last working day" — see lastWorkingDayColIndex's comment. Same
+   * "yyyy-MM-dd" format as dateOfMovingOut. */
+  lastWorkingDay: string | null;
 }
 
 /**
@@ -421,39 +645,20 @@ export async function getMasterAdvisorsRowsForSync(): Promise<{ totalRows: numbe
       skillDomain: readSkillDomain(headers, row),
       email: readEmail(headers, row),
       statusRaw: statusCol !== -1 && row[statusCol] != null ? String(row[statusCol]) : null,
+      batchNumber: readBatchNumber(headers, row),
+      dateOfMovingOut: readDateCell(headers, row, movedOutColIndex),
+      lastWorkingDay: readDateCell(headers, row, lastWorkingDayColIndex),
     }));
 
   return { totalRows: out.length, rows: out };
 }
 
 export async function getAdvisorsForGuide(guideName: string): Promise<Advisor[]> {
-  const target = String(guideName).trim().toLowerCase();
-  const all = await getAllAdvisors();
-  return all.filter((a) => String(a.guide ?? "").trim().toLowerCase() === target);
-}
-
-/** tactId -> raw Mentor Name value, straight from master_advisors column E
- * (ported from MentorHelpers.gs's _getMentorNameByTactId). */
-async function getMentorNameByTactId(): Promise<Map<string, string>> {
-  const { headers, rows } = await getSheetDataCached(SHEETS.MASTER_ADVISORS);
-  const map = new Map<string, string>();
-  const tactCol = headers.indexOf("Tact ID");
-  const mentorCol = mentorColIndex(headers);
-  if (tactCol === -1 || mentorCol === -1) return map;
-
-  for (const row of rows) {
-    const tactId = String(row[tactCol] ?? "").trim();
-    if (!tactId) continue;
-    map.set(tactId, String(row[mentorCol] ?? "").trim());
-  }
-  return map;
+  return getAdvisorsForGuideAsOf(guideName, todayIsoDate());
 }
 
 export async function getAdvisorsForMentor(mentorName: string): Promise<Advisor[]> {
-  const mentorLc = String(mentorName || "").trim().toLowerCase();
-  if (!mentorLc) return [];
-  const [mentorMap, all] = await Promise.all([getMentorNameByTactId(), getAllAdvisors()]);
-  return all.filter((a) => (mentorMap.get(String(a.tactId).trim()) || "").trim().toLowerCase() === mentorLc);
+  return getAdvisorsForMentorAsOf(mentorName, todayIsoDate());
 }
 
 export function isInScoreDashboardAllowlist(tactId: string): boolean {

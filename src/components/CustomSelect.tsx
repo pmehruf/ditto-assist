@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Search } from "lucide-react";
 
 export interface CustomSelectOption {
   value: string;
@@ -40,6 +40,16 @@ interface CustomSelectProps {
   selectedOptionClassName?: string;
   /** Colour for the selected option's check icon. */
   checkColorClassName?: string;
+  /** Adds a search box pinned to the top of the floating panel that filters
+   * the option list by label (case-insensitive substring), autofocused as
+   * soon as the panel opens. Off by default — every existing call site is
+   * unaffected — opt in for lists long enough that scrolling to find one
+   * option is the actual complaint (e.g. picking one person out of a whole
+   * department/org). Below ~15 options a search box is more chrome than
+   * help, so most call sites should stay plain. */
+  searchable?: boolean;
+  /** Placeholder for the search box. Defaults to "Search…". */
+  searchPlaceholder?: string;
 }
 
 /**
@@ -84,8 +94,12 @@ export function CustomSelect({
   panelClassName,
   selectedOptionClassName,
   checkColorClassName,
+  searchable,
+  searchPlaceholder,
 }: CustomSelectProps) {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   // Whether the floating panel should render ABOVE the trigger instead of
   // below it. Decided once, right when the panel opens (see handleToggle),
   // based on actual viewport space — most triggers have room below and
@@ -96,7 +110,9 @@ export function CustomSelect({
   const [openUpward, setOpenUpward] = useState(false);
   // Viewport-relative coordinates for the portaled panel (position: fixed),
   // captured from the trigger's own bounding rect right when it opens.
-  const [panelRect, setPanelRect] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null);
+  // `width` is a FLOOR (min-width, below), not a fixed size — see the 2026-09
+  // "don't truncate option text" fix below panelRect's usage for why.
+  const [panelRect, setPanelRect] = useState<{ top: number; bottom: number; left: number; width: number; maxWidth: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
@@ -134,10 +150,25 @@ export function CustomSelect({
         bottom: (window.innerHeight - rect.top + 6) / zoom,
         left: clampedLeft / zoom,
         width: rect.width / zoom,
+        // How far the panel is allowed to grow past the trigger's own width
+        // before hitting the viewport edge — see the width/maxWidth pairing
+        // on the panel's own style below.
+        maxWidth: (window.innerWidth - clampedLeft - margin) / zoom,
       });
     }
     setOpen((v) => !v);
   };
+
+  // Reset any leftover search text from the previous time this opened, and
+  // autofocus the search box as soon as the portaled panel has painted (a
+  // plain synchronous focus in handleToggle would run before the input
+  // exists yet, since it's only rendered once `open` flips true).
+  useEffect(() => {
+    if (!open || !searchable) return;
+    setSearchQuery("");
+    const id = window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [open, searchable]);
 
   useEffect(() => {
     if (!open) return;
@@ -184,6 +215,10 @@ export function CustomSelect({
   }, [open]);
 
   const selected = options.find((o) => o.value === value);
+  const filteredOptions =
+    searchable && searchQuery.trim()
+      ? options.filter((o) => o.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+      : options;
 
   // Cross-app UI consistency pass (2026-08): rebuilt to match Product
   // Assist's own dropdown trigger (its insurer selector on ProductAssistPage,
@@ -251,17 +286,54 @@ export function CustomSelect({
             }`}
             style={{
               left: panelRect.left,
-              width: panelRect.width,
+              // 2026-09 fix (recurring complaint across several admin
+              // tables): this used to be a fixed `width: panelRect.width`,
+              // i.e. exactly the trigger's own on-screen width. A trigger
+              // sitting in a narrow, auto-sized table column (e.g. a
+              // Department picker) could be 70-80px wide, and every option
+              // label — even ones much longer than the current selection —
+              // got force-fit into that same width and ellipsis-truncated
+              // (opt.label's old `truncate` class below), so a long option
+              // list could render as a column of indistinguishable "Adv…",
+              // "Bus…", "Fou…" fragments. The trigger's width is now only a
+              // FLOOR (minWidth) — the panel grows to fit its widest option
+              // (`width: "max-content"`), capped so it never runs off the
+              // right edge of the viewport (maxWidth, computed alongside
+              // the left-clamping above). Options that are still too long
+              // even for that capped width wrap onto a second line instead
+              // of being cut off (see opt.label below) — full text is
+              // always visible, never letters silently cut off.
+              minWidth: panelRect.width,
+              width: "max-content",
+              maxWidth: panelRect.maxWidth,
               ...(openUpward ? { bottom: panelRect.bottom } : { top: panelRect.top }),
             }}
           >
+            {searchable && (
+              // Pinned above the scrollable option list (a sibling, not
+              // inside the overflow-y-auto div below) so it stays visible
+              // while a long, filtered list scrolls underneath it.
+              <div className={`relative shrink-0 border-b ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>
+                <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${dark ? "text-stone-500" : "text-stone-400"}`} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={searchPlaceholder || "Search…"}
+                  className={`w-full pl-8 pr-3 py-2 text-input-value font-sans font-medium outline-none bg-transparent ${
+                    dark ? "text-white placeholder:text-stone-500" : "text-stone-900 placeholder:text-stone-400"
+                  }`}
+                />
+              </div>
+            )}
             <div className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>
-              {options.length === 0 ? (
+              {filteredOptions.length === 0 ? (
                 <div className={`px-4 py-3 text-input-value italic text-left select-none ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                  No options available.
+                  {searchable && searchQuery.trim() ? "No matches." : "No options available."}
                 </div>
               ) : (
-                options.map((opt) => {
+                filteredOptions.map((opt) => {
                   const isSelected = opt.value === value;
                   return (
                     <button
@@ -294,7 +366,12 @@ export function CustomSelect({
                               : "hover:bg-stone-100 border-transparent pl-[10px]"
                       }`}
                     >
-                      <span className="truncate">{opt.label}</span>
+                      {/* Not `truncate` (ellipsis) — the panel now sizes
+                          itself to fit this text (see the panel's own style
+                          above); this only wraps the rare option that's
+                          still too long even for the capped max width,
+                          rather than ever silently hiding characters. */}
+                      <span className="text-left break-words">{opt.label}</span>
                       {isSelected && <Check className={`w-3.5 h-3.5 shrink-0 ${checkColorClassName ?? "text-[var(--accent)]"}`} />}
                     </button>
                   );

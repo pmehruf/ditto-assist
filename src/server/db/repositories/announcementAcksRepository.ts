@@ -55,14 +55,15 @@ export class AnnouncementAcksRepository {
       or(isNull(announcements.validTillDate), gte(announcements.validTillDate, todayIso)),
       notInArray(announcements.id, ackedIds),
     ];
-    // Users tagged Health-only need to ack Health announcements only,
-    // Term-only need to ack Term only; everyone else (unassigned, or tagged
-    // BOTH Health and Term) must ack both, so no team condition is added.
+    // Users tagged Health-only need to ack Health announcements (plus any
+    // "Both"-audience one) only; Term-only need to ack Term (plus "Both")
+    // only; everyone else (unassigned, or tagged BOTH Health and Term) must
+    // ack everything, so no team condition is added.
     const tags = new Set(user.tags ?? []);
     const hasHealth = tags.has("Health");
     const hasTerm = tags.has("Term");
-    if (hasHealth && !hasTerm) conditions.push(eq(announcements.team, "Health"));
-    else if (hasTerm && !hasHealth) conditions.push(eq(announcements.team, "Term"));
+    if (hasHealth && !hasTerm) conditions.push(or(eq(announcements.team, "Health"), eq(announcements.team, "Both")));
+    else if (hasTerm && !hasHealth) conditions.push(or(eq(announcements.team, "Term"), eq(announcements.team, "Both")));
 
     return this.db
       .select()

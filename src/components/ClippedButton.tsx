@@ -53,8 +53,33 @@ interface ClippedButtonProps {
    * to live on the button itself. Ignored unless `borderColor` is set.
    */
   fillClassName?: string;
+  /**
+   * "action" fills the button with the app's shared primary/neutral-action
+   * navy — the same `--action-navy`/`--on-action-navy`/`--action-navy-hover`
+   * tokens `PrimaryCtaButton` uses for its default "accent" variant (see
+   * that component). This is the ONE place that color lives: pass
+   * `variant="action"` instead of a one-off `bg-blue-600`/hardcoded-hex
+   * `style.background` on every "Add X" / "Save" / "Generate" / function-
+   * performing button, and the whole app's secondary action buttons stay
+   * in lock-step with the primary CTA's color, in both themes, for free.
+   * (2026-09 design-system fix: several pages had drifted onto a hardcoded
+   * `#1f2d3d` or the old `bg-blue-600` family, which happens to match the
+   * token in light theme but NOT in dark theme, where `--action-navy`
+   * resolves to a lighter `#355F87` for contrast against a near-black
+   * page — see index.css's `.dark { --action-navy: ... }` comment.)
+   * Omit this prop (the default) to keep passing your own background via
+   * `className`/`style`, exactly as before — this is purely additive and
+   * changes no existing call site that doesn't opt in.
+   */
+  variant?: "action";
   children: React.ReactNode;
 }
+
+/** The shared "action" variant's own color classes — kept as one constant
+ * so `ClippedButton` and any future component/story reads a single
+ * definition rather than a class string duplicated at each call site. */
+const ACTION_VARIANT_CLASSNAME =
+  "bg-[var(--action-navy)] text-[var(--on-action-navy)] hover:bg-[var(--action-navy-hover)]";
 
 /**
  * Shared "grid texture" veneer style — mirrors the scanline pattern used by
@@ -106,6 +131,7 @@ export function ClippedButton({
   hoverBorderColor,
   borderWidth = 1.5,
   fillClassName,
+  variant,
   children,
 }: ClippedButtonProps) {
   const clipSize = size === "lg" ? 10 : size === "md" ? 8 : 6;
@@ -158,7 +184,7 @@ export function ClippedButton({
       // flex/gap layouts every call site already relies on).
       className={`relative isolate overflow-hidden inline-flex items-center justify-center select-none transition-all active:scale-95 disabled:active:scale-100 ${
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-      } ${borderColor ? "clipped-btn-bordered" : ""} ${className}`}
+      } ${borderColor ? "clipped-btn-bordered" : ""} ${variant === "action" ? ACTION_VARIANT_CLASSNAME : ""} ${className}`}
       style={
         {
           // Only the bottom-right corner is clipped now — the top-right

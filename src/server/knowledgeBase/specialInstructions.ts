@@ -5,7 +5,7 @@
 
 import type { Repositories } from "../db/repositories/index.js";
 import type { SpecialInstructionRow } from "../db/schema.js";
-import type { QueryAssistScope } from "./queryAssist.js";
+import type { ProductAssistScope } from "./productAssist.js";
 
 // Cosine-similarity cutoff for "is this question actually about this
 // instruction's Topic" — deliberately lower than a document-chunk
@@ -50,7 +50,7 @@ function specificityRank(row: SpecialInstructionRow): 1 | 2 | 3 | 4 {
 /** Deterministic scope check — does this instruction's own Insurer/Product
  * (if set) match the advisor's resolved query scope? Independent of topic
  * relevance, which is checked separately via embedding similarity. */
-function scopeMatches(row: SpecialInstructionRow, scope: QueryAssistScope, effectivePlanTags: string[]): boolean {
+function scopeMatches(row: SpecialInstructionRow, scope: ProductAssistScope, effectivePlanTags: string[]): boolean {
   if (row.insurerCategoryId !== null && row.insurerCategoryId !== scope.categoryId) return false;
   if (row.productPlanName) {
     const needle = row.productPlanName.trim().toLowerCase();
@@ -87,7 +87,7 @@ export interface ApplicableSpecialInstructions {
  *   1. Scope-filter deterministically (Insurer/Product match against the
  *      resolved query scope) — never fuzzy, never AI-judged.
  *   2. Topic-filter by embedding similarity between `queryEmbedding` (the
- *      SAME query embedding queryAssist.ts already computed for kbChunks
+ *      SAME query embedding productAssist.ts already computed for kbChunks
  *      retrieval — no extra embedding call) and each candidate's stored
  *      `topicEmbedding`. This is what stops a "Free Period" instruction
  *      from firing on an unrelated "Organ Donor Expenses" question for the
@@ -102,14 +102,21 @@ export interface ApplicableSpecialInstructions {
  *      with identical text) applies normally; Additional Information/
  *      General Instruction rows never conflict with each other since they
  *      carry no override authority.
+ *
+ * `domain` scopes step 0 itself: only Health-authored instructions apply to
+ * a Health query, only Term-authored ones to a Term query (see
+ * special_instructions.domain's schema.ts comment) — the repository-level
+ * `listActive(domain)` filter enforces this before scope/topic matching
+ * even runs.
  */
 export async function resolveApplicableInstructions(
   repos: Repositories,
-  scope: QueryAssistScope,
+  scope: ProductAssistScope,
   effectivePlanTags: string[],
-  queryEmbedding: number[]
+  queryEmbedding: number[],
+  domain: SpecialInstructionRow["domain"]
 ): Promise<ApplicableSpecialInstructions> {
-  const active = await repos.specialInstructions.listActive();
+  const active = await repos.specialInstructions.listActive(domain);
   if (active.length === 0) {
     return { overrideRules: [], advisory: [], conflicts: [] };
   }

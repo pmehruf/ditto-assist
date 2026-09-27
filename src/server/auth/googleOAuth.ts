@@ -340,6 +340,154 @@ export async function exchangeCodeForKbFaqSheetsGrant(code: string): Promise<KbF
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// TERM FAQ SHEET — "Connect Google Sheets" incremental-scope grant.
+//
+// Same pattern as the Ditto/Health FAQ grant above (same OAuth client, same
+// registered redirect URI, disambiguated in server.ts's shared callback by
+// its own distinctly-named state cookie) but its own function pair/scope
+// list — kept separate because the Term FAQ Sheet has a different owner/
+// account than the Health FAQ workbook, so the two grants are connected
+// independently and stored in their own table (termFaqConnection). Only
+// spreadsheets.readonly is requested.
+// ─────────────────────────────────────────────────────────────────────────
+
+const TERM_FAQ_SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+export function getTermFaqSheetsAuthUrl(state: string, loginHint?: string): string {
+  const client = getOAuthClient();
+  return client.generateAuthUrl({
+    access_type: "offline",
+    scope: ["openid", "email", TERM_FAQ_SHEETS_READONLY_SCOPE],
+    hd: ALLOWED_DOMAIN,
+    prompt: "consent",
+    include_granted_scopes: true,
+    state,
+    login_hint: loginHint,
+  });
+}
+
+export interface TermFaqSheetsGrant {
+  email: string;
+  refreshToken: string;
+}
+
+/**
+ * Exchanges the Term FAQ's "Connect Google Sheets" authorization code for a
+ * refresh token — same verification discipline as exchangeCodeForKbFaqSheetsGrant
+ * (signature/domain-checked ID token); only ever stored for a real
+ * @joinditto.in account.
+ */
+export async function exchangeCodeForTermFaqSheetsGrant(code: string): Promise<TermFaqSheetsGrant> {
+  const client = getOAuthClient();
+  const { tokens } = await client.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Google did not return a refresh token for this connection. This usually happens when the account has a " +
+        "prior grant cached — revoke this app's access at https://myaccount.google.com/permissions and try " +
+        "connecting again."
+    );
+  }
+  if (!tokens.id_token) {
+    throw new Error("Google did not return an id_token for this authorization code.");
+  }
+
+  const ticket = await client.verifyIdToken({
+    idToken: tokens.id_token,
+    audience: requireEnv("GOOGLE_CLIENT_ID"),
+  });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) {
+    throw new Error("Could not read an identity from the Google ID token.");
+  }
+  if (!payload.email_verified) {
+    throw new Error("Google account email is not verified.");
+  }
+
+  const emailDomain = payload.email.split("@")[1]?.toLowerCase();
+  const hdClaim = payload.hd?.toLowerCase();
+  if (emailDomain !== ALLOWED_DOMAIN || hdClaim !== ALLOWED_DOMAIN) {
+    throw new Error(`Access restricted to @${ALLOWED_DOMAIN} Google Workspace accounts.`);
+  }
+
+  return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// TERM PLAYBOOK SHEET — "Connect Google Sheets" incremental-scope grant.
+//
+// Same pattern as the Term FAQ grant above (same OAuth client, same
+// registered redirect URI, disambiguated in server.ts's shared callback by
+// its own distinctly-named state cookie) but its own function pair/scope
+// list — kept separate because the Term Playbook Sheet has a different
+// owner/account than the Health Playbook workbook, so the two grants are
+// connected independently and stored in their own table
+// (termPlaybookConnection). Only spreadsheets.readonly is requested.
+// ─────────────────────────────────────────────────────────────────────────
+
+const TERM_PLAYBOOK_SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+export function getTermPlaybookSheetsAuthUrl(state: string, loginHint?: string): string {
+  const client = getOAuthClient();
+  return client.generateAuthUrl({
+    access_type: "offline",
+    scope: ["openid", "email", TERM_PLAYBOOK_SHEETS_READONLY_SCOPE],
+    hd: ALLOWED_DOMAIN,
+    prompt: "consent",
+    include_granted_scopes: true,
+    state,
+    login_hint: loginHint,
+  });
+}
+
+export interface TermPlaybookSheetsGrant {
+  email: string;
+  refreshToken: string;
+}
+
+/**
+ * Exchanges the Term Playbook's "Connect Google Sheets" authorization code
+ * for a refresh token — same verification discipline as
+ * exchangeCodeForTermFaqSheetsGrant (signature/domain-checked ID token);
+ * only ever stored for a real @joinditto.in account.
+ */
+export async function exchangeCodeForTermPlaybookSheetsGrant(code: string): Promise<TermPlaybookSheetsGrant> {
+  const client = getOAuthClient();
+  const { tokens } = await client.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Google did not return a refresh token for this connection. This usually happens when the account has a " +
+        "prior grant cached — revoke this app's access at https://myaccount.google.com/permissions and try " +
+        "connecting again."
+    );
+  }
+  if (!tokens.id_token) {
+    throw new Error("Google did not return an id_token for this authorization code.");
+  }
+
+  const ticket = await client.verifyIdToken({
+    idToken: tokens.id_token,
+    audience: requireEnv("GOOGLE_CLIENT_ID"),
+  });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) {
+    throw new Error("Could not read an identity from the Google ID token.");
+  }
+  if (!payload.email_verified) {
+    throw new Error("Google account email is not verified.");
+  }
+
+  const emailDomain = payload.email.split("@")[1]?.toLowerCase();
+  const hdClaim = payload.hd?.toLowerCase();
+  if (emailDomain !== ALLOWED_DOMAIN || hdClaim !== ALLOWED_DOMAIN) {
+    throw new Error(`Access restricted to @${ALLOWED_DOMAIN} Google Workspace accounts.`);
+  }
+
+  return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // QUERY ASSIST LOG EXPORT — "Connect Google Sheets" incremental-scope grant.
 //
 // Same pattern as the two grants above (same OAuth client, same registered

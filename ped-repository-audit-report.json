@@ -1,0 +1,237 @@
+{
+  "generatedAt": "2026-08-24T17:37:16.914Z",
+  "liveDb": {
+    "totalPedRepositoryRows": 1184,
+    "statusCounts": {
+      "approved": 1173,
+      "deprecated": 11
+    },
+    "totalAliasRows": 1401,
+    "visibleAliasCount": 1371,
+    "hiddenAliasCount": 30
+  },
+  "json": {
+    "rawKeyCount": 815,
+    "uniqueNormalizedCount": 813
+  },
+  "comparison": {
+    "presentCount": 811,
+    "missingCount": 2,
+    "missing": [
+      {
+        "rawKey": "smoker status",
+        "jsonCategory": "lifestyle"
+      },
+      {
+        "rawKey": "healthy lifestyle",
+        "jsonCategory": "natural_life_stage"
+      }
+    ],
+    "categoryMismatchCount": 22,
+    "categoryMismatches": [
+      {
+        "rawKey": "ganglioma",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000250",
+        "canonicalName": "Ganglioma",
+        "status": "approved",
+        "liveCategoryKey": "neoplasm",
+        "jsonCategory": "benign_growth"
+      },
+      {
+        "rawKey": "atrial myxoma",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000255",
+        "canonicalName": "Atrial myxoma",
+        "status": "approved",
+        "liveCategoryKey": "heart",
+        "jsonCategory": "benign_growth"
+      },
+      {
+        "rawKey": "sleep apnea",
+        "matchedVia": "alias",
+        "pedCode": "PED-000002",
+        "canonicalName": "Obstructive sleep apnea",
+        "status": "approved",
+        "liveCategoryKey": "respiratory",
+        "jsonCategory": "psychiatric"
+      },
+      {
+        "rawKey": "obstructive sleep apnea",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000002",
+        "canonicalName": "Obstructive sleep apnea",
+        "status": "approved",
+        "liveCategoryKey": "respiratory",
+        "jsonCategory": "psychiatric"
+      },
+      {
+        "rawKey": "osa",
+        "matchedVia": "alias",
+        "pedCode": "PED-000002",
+        "canonicalName": "Obstructive sleep apnea",
+        "status": "approved",
+        "liveCategoryKey": "respiratory",
+        "jsonCategory": "psychiatric"
+      },
+      {
+        "rawKey": "bell's palsy",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000351",
+        "canonicalName": "Bell's palsy",
+        "status": "approved",
+        "liveCategoryKey": "neuro_mild",
+        "jsonCategory": "neuro"
+      },
+      {
+        "rawKey": "gallbladder stone",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000383",
+        "canonicalName": "Gallbladder stone",
+        "status": "approved",
+        "liveCategoryKey": "liver",
+        "jsonCategory": "digestive"
+      },
+      {
+        "rawKey": "gallbladder disease",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000384",
+        "canonicalName": "Gallbladder disease",
+        "status": "approved",
+        "liveCategoryKey": "liver",
+        "jsonCategory": "digestive"
+      },
+      {
+        "rawKey": "cholecystectomy",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000385",
+        "canonicalName": "Cholecystectomy",
+        "status": "approved",
+        "liveCategoryKey": "liver",
+        "jsonCategory": "digestive"
+      },
+      {
+        "rawKey": "spinocerebellar ataxia",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000476",
+        "canonicalName": "Spinocerebellar ataxia",
+        "status": "approved",
+        "liveCategoryKey": "neuro",
+        "jsonCategory": "genetic"
+      },
+      {
+        "rawKey": "sarcoidosis",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000481",
+        "canonicalName": "Sarcoidosis",
+        "status": "approved",
+        "liveCategoryKey": "sarcoidosis",
+        "jsonCategory": "autoimmune"
+      },
+      {
+        "rawKey": "dns",
+        "matchedVia": "alias",
+        "pedCode": "PED-000039",
+        "canonicalName": "Deviated nasal septum",
+        "status": "approved",
+        "liveCategoryKey": "ent",
+        "jsonCategory": "eyeEnt"
+      },
+      {
+        "rawKey": "deviated nasal septum",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000039",
+        "canonicalName": "Deviated nasal septum",
+        "status": "approved",
+        "liveCategoryKey": "ent",
+        "jsonCategory": "eyeEnt"
+      },
+      {
+        "rawKey": "allergic condition",
+        "matchedVia": "alias",
+        "pedCode": "PED-000001",
+        "canonicalName": "Allergic",
+        "status": "approved",
+        "liveCategoryKey": "allergy",
+        "jsonCategory": "ambiguous_symptom"
+      },
+      {
+        "rawKey": "sarcoidosis systemic",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000684",
+        "canonicalName": "Sarcoidosis systemic",
+        "status": "approved",
+        "liveCategoryKey": "sarcoidosis",
+        "jsonCategory": "autoimmune"
+      },
+      {
+        "rawKey": "cystoscopy done",
+        "matchedVia": "alias",
+        "pedCode": "PED-000037",
+        "canonicalName": "Cystoscopy",
+        "status": "approved",
+        "liveCategoryKey": "investigation_procedure",
+        "jsonCategory": "kidney"
+      },
+      {
+        "rawKey": "benign brain tumor",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000785",
+        "canonicalName": "Benign brain tumor",
+        "status": "approved",
+        "liveCategoryKey": "benign_growth",
+        "jsonCategory": "neoplasm"
+      },
+      {
+        "rawKey": "meningioma tumor",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000786",
+        "canonicalName": "Meningioma tumor",
+        "status": "approved",
+        "liveCategoryKey": "benign_growth",
+        "jsonCategory": "neoplasm"
+      },
+      {
+        "rawKey": "craniopharyngioma brain",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000788",
+        "canonicalName": "Craniopharyngioma brain",
+        "status": "approved",
+        "liveCategoryKey": "benign_growth",
+        "jsonCategory": "neoplasm"
+      },
+      {
+        "rawKey": "acoustic neuroma ear",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000789",
+        "canonicalName": "Acoustic neuroma ear",
+        "status": "approved",
+        "liveCategoryKey": "benign_growth",
+        "jsonCategory": "neoplasm"
+      },
+      {
+        "rawKey": "spinal cord tumor",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000795",
+        "canonicalName": "Spinal cord tumor",
+        "status": "approved",
+        "liveCategoryKey": "neoplasm",
+        "jsonCategory": "neuro"
+      },
+      {
+        "rawKey": "sarcoidosis lungs and lymph",
+        "matchedVia": "canonicalName",
+        "pedCode": "PED-000846",
+        "canonicalName": "Sarcoidosis lungs and lymph",
+        "status": "approved",
+        "liveCategoryKey": "sarcoidosis",
+        "jsonCategory": "autoimmune"
+      }
+    ],
+    "presentByStatus": {
+      "approved": 794,
+      "deprecated": 5,
+      "?": 12
+    }
+  }
+}

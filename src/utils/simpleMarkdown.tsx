@@ -6,8 +6,8 @@
 import type { ReactNode } from "react";
 
 /**
- * Minimal markdown renderer for Query Assist's model output (see
- * src/server/knowledgeBase/queryAssist.ts's system instruction, which asks
+ * Minimal markdown renderer for Product Assist's model output (see
+ * src/server/knowledgeBase/productAssist.ts's system instruction, which asks
  * the model for **bold**, numbered lists, and bullets). Not a
  * general-purpose markdown engine — this app has no markdown dependency
  * installed, and the model's output surface is narrow enough (bold spans,

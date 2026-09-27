@@ -188,6 +188,21 @@ export class UsersRepository {
     return row;
   }
 
+  /**
+   * Stamps lastLogin + the Google account's current profile photo URL —
+   * called from server.ts's OAuth callback on every successful sign-in
+   * (see schema.ts's `picture` column comment for why this always
+   * overwrites rather than only setting once). A best-effort no-op if this
+   * email has no directory row yet (0 rows affected, not an error) — the
+   * `users` table is Admin-curated, not auto-provisioned on login.
+   */
+  async stampLogin(email: string, picture: string | null): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ lastLogin: new Date(), picture })
+      .where(eq(users.email, email.toLowerCase()));
+  }
+
   /** Single-row delete, keyed by email — the safe counterpart to
    * `updateUser` above, for the same reason (a full-array PUT with one row
    * missing would delete every OTHER user not on the current page). */

@@ -30,9 +30,11 @@ export interface AnnouncementListOptions {
    * was posted. */
   effectiveDateFrom?: string;
   effectiveDateTo?: string;
-  /** Restricts to a single advisor audience ("Health" | "Term"). Omit to
-   * return both — used for the caller's own unrestricted team, and for the
-   * Admin/Developer "includeAllTeams" bypass on the Announcement Manager. */
+  /** Restricts to a single advisor audience ("Health" | "Term") — rows
+   * tagged "Both" always match regardless of which one is passed (see
+   * teamFilterCondition). Omit to return everything — used for the
+   * caller's own unrestricted team, and for the Admin/Developer
+   * "includeAllTeams" bypass on the Announcement Manager. */
   team?: NewAnnouncementRow["team"];
 }
 
@@ -73,13 +75,27 @@ export interface AnnouncementFilter {
   excludeTypes?: NewAnnouncementRow["type"][];
   /** Only announcements still valid on/after this ISO date (validTillDate >= this). */
   validAsOf?: string;
-  /** Restricts to a single advisor audience ("Health" | "Term"). Omit to return both. */
+  /** Restricts to a single advisor audience ("Health" | "Term") — rows
+   * tagged "Both" always match regardless of which one is passed. Omit to
+   * return everything. */
   team?: NewAnnouncementRow["team"];
   limit?: number;
 }
 
 export type CreateAnnouncementEntry = Omit<NewAnnouncementRow, "id" | "createdAt">;
 export type UpdateAnnouncementEntry = Partial<CreateAnnouncementEntry>;
+
+/**
+ * Builds the WHERE condition for a `team` filter (a caller's viewer
+ * restriction, e.g. from teamForTags — "Health" or "Term", never "Both" in
+ * practice). A "Both"-audience announcement must always match regardless of
+ * which single team the viewer is restricted to, so this is an OR rather
+ * than the plain equality it used to be — see schema.ts's announcement
+ * audience note for why "Both" exists as a third value here at all.
+ */
+function teamFilterCondition(team: NonNullable<NewAnnouncementRow["team"]>) {
+  return team === "Both" ? eq(announcements.team, "Both") : or(eq(announcements.team, team), eq(announcements.team, "Both"));
+}
 
 /**
  * Data Access Layer for QA/general announcements (announcements table).
@@ -120,7 +136,7 @@ export class AnnouncementsRepository {
       }
     }
     if (filter.validAsOf) conditions.push(gte(announcements.validTillDate, filter.validAsOf));
-    if (filter.team) conditions.push(eq(announcements.team, filter.team));
+    if (filter.team) conditions.push(teamFilterCondition(filter.team));
 
     const query = this.db
       .select()
@@ -143,7 +159,7 @@ export class AnnouncementsRepository {
     if (options.dateTo) conditions.push(lte(announcements.announcementDate, options.dateTo));
     if (options.effectiveDateFrom) conditions.push(gte(announcements.effectiveDate, options.effectiveDateFrom));
     if (options.effectiveDateTo) conditions.push(lte(announcements.effectiveDate, options.effectiveDateTo));
-    if (options.team) conditions.push(eq(announcements.team, options.team));
+    if (options.team) conditions.push(teamFilterCondition(options.team));
     return conditions;
   }
 

@@ -269,7 +269,7 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
         )}
 
         {assigning && (
-          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted md:col-span-1 relative">
                 Search the user directory
@@ -409,7 +409,7 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
                   <table className="w-full border-collapse">
                     <tbody>
                       {sectionRows.map((row, idx) => (
-                        <tr key={row.email} className={`border-b last:border-b-0 ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
+                        <tr key={row.email} className={`border-b last:border-b-0 ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""}`}>
                           <td className="px-3 py-2 text-xs font-mono text-content-muted whitespace-nowrap">{row.email}</td>
                           {section.role !== "admin" && (
                             <td className="px-3 py-2 text-xs font-semibold whitespace-nowrap">{row.displayName || "—"}</td>

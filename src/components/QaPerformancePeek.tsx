@@ -463,7 +463,7 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
           <div className={`text-[11px] font-bold uppercase tracking-wide mb-1 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}>
             Consolidated Score
           </div>
-          <div className="flex flex-col items-start gap-0.5 mb-1">
+          <div className="flex flex-col items-start gap-0.5 mb-1 max-w-full">
             {/* Stars stay a fixed amber (same accent as this card's own
                 header icon) rather than the tier color — with the score
                 number and tier badge both already using tier.color right
@@ -471,25 +471,32 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
                 same-colored elements in a row read as a mistake rather
                 than a signal. */}
             <StarRating score={state.consolidated} size={20} color="#FBBF24" />
-            <span className={`text-[34px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
-              {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
-            </span>
+            {/* Number and tier badge share one line (wrapping onto a second
+                line only if the card gets too narrow to fit both) rather
+                than the badge sitting in its own row below — keeps the
+                score and its qualitative read ("Outstanding"/"Excellent")
+                as one glance instead of two. */}
+            <div className="flex items-center gap-2 flex-wrap max-w-full">
+              <span className={`text-[34px] leading-none font-black font-mono ${theme === "dark" ? "text-white" : "text-stone-900"}`}>
+                {state.consolidated !== null ? state.consolidated.toFixed(2) : "—"}
+              </span>
+              <span
+                className="text-[11px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
+                style={{ color: tier.color, backgroundColor: tier.subtle }}
+              >
+                {tier.label}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center justify-start gap-2 mb-1 flex-wrap">
-            <span
-              className="text-[11px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded"
-              style={{ color: tier.color, backgroundColor: tier.subtle }}
-            >
-              {tier.label}
-            </span>
-            {trend !== null && trend !== 0 && (
+          {trend !== null && trend !== 0 && (
+            <div className="flex items-center justify-start gap-2 mb-1 flex-wrap">
               <span className={`text-[11px] font-bold flex items-center gap-0.5 ${trend > 0 ? "text-emerald-500" : "text-orange-400"}`}>
                 {trend > 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                 {trend > 0 ? "+" : ""}
                 {trend.toFixed(2)} this month
               </span>
-            )}
-          </div>
+            </div>
+          )}
           {/* Always visible (not hover-only) — labelled plainly rather than
               "vs last month", since it sits directly under the Consolidated
               Score above, not a per-metric figure. */}
@@ -526,8 +533,13 @@ export function QaPerformancePeek({ theme, userEmail, onOpenQaDashboard }: QaPer
                 {/* Tier-colored here, neutral white on Consolidated above —
                     the reverse of "everything tier-colored" — so
                     Consolidated reads as the plain hero number and each
-                    metric carries the tier signal beside it. */}
-                <div className="flex items-baseline gap-1.5 mb-0.5">
+                    metric carries the tier signal beside it.
+                    flex-wrap (+ max-w-full) lets the score number drop
+                    below the stars when the card is too narrow for both on
+                    one line, instead of spilling past the column into the
+                    next metric — the fixed-width star row doesn't shrink,
+                    so without wrap this is what overflowed/overlapped. */}
+                <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0 mb-0.5 max-w-full">
                   <StarRating score={score} size={14} color="#FBBF24" />
                   <span className="text-[18px] leading-none font-black font-mono" style={{ color: t.color }}>
                     {score !== null ? score.toFixed(2) : "—"}

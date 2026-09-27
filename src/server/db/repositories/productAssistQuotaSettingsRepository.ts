@@ -12,9 +12,6 @@ const SETTINGS_ID = "default";
 export type UpdateQuotaSettingsEntry = Partial<
   Pick<
     ProductAssistQuotaSettingsRow,
-    | "defaultDailyCredits"
-    | "defaultMonthlyCredits"
-    | "trialMonthlyCredits"
     | "tokensPerCredit"
     | "warningThresholdPercent"
     | "monthlyBudget"
@@ -23,20 +20,19 @@ export type UpdateQuotaSettingsEntry = Partial<
     | "modelName"
     | "inputPricePerMillionTokens"
     | "outputPricePerMillionTokens"
-    | "eligibleDepartmentId"
-    | "eligibleOrgTeamId"
-    | "eligibleRoleId"
   >
 >;
 
 /**
  * Data Access Layer for `product_assist_quota_settings` — the single global
- * row backing the "AI Usage & Limits" Settings tab (default daily/monthly
- * credits, the trial allotment, token->credit conversion, warning
- * threshold, company budget, and cost-estimation pricing). Migration 0048
- * seeds the one row this table ever has; `get()` defensively re-seeds it if
- * that row is ever missing (e.g. a hand-edited test DB) so every caller can
- * treat the settings as always present.
+ * row backing the "AI Usage & Limits" Settings tab (token->credit
+ * conversion, warning threshold, company budget, and cost-estimation
+ * pricing). Eligibility and default/trial credit fields moved to
+ * product_assist_eligibility_groups as of migration 0064 — see
+ * ProductAssistEligibilityGroupsRepository. Migration 0048 seeds the one row
+ * this table ever has; `get()` defensively re-seeds it if that row is ever
+ * missing (e.g. a hand-edited test DB) so every caller can treat the
+ * settings as always present.
  */
 export class ProductAssistQuotaSettingsRepository {
   constructor(private readonly db: AnyDb) {}

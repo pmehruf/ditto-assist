@@ -15,3 +15,11 @@
  * more than one component.
  */
 export const HEALTH_FAQ_LIBRARY_URL = "https://dittohq.in/tools";
+
+/** Term counterpart to HEALTH_FAQ_LIBRARY_URL (2026-09) — same reasoning:
+ * the Term FAQ's underlying Google Sheet must stay internal, so the
+ * Library's "Term FAQ" item opens this external destination instead of the
+ * resource's own sourceUrl. Currently the same external "tools" page as
+ * Health's — update independently here if Term ever needs a distinct
+ * destination. */
+export const TERM_FAQ_LIBRARY_URL = "https://dittohq.in/tools";

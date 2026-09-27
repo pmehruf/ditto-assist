@@ -3,20 +3,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { kbCategories, type KbCategoryRow, type NewKbCategoryRow } from "../schema.js";
 
 export type CreateKbCategoryEntry = Omit<NewKbCategoryRow, "id" | "createdAt">;
 export type UpdateKbCategoryEntry = Partial<Pick<NewKbCategoryRow, "name" | "type" | "sortOrder" | "planNames" | "disabledPlanNames">>;
 
+export interface KbCategoryFilter {
+  /** Health/Term vertical — see kb_categories.domain's schema.ts comment.
+   * Omitted = every category regardless of domain (used by admin-only
+   * listings that need to see everything, e.g. the raw GET /api/kb/categories
+   * route before it's filtered further). */
+  domain?: KbCategoryRow["domain"];
+}
+
 /** Data Access Layer for `kb_categories` — the Knowledge Base's extensible
  * per-insurer + "general" category list (Ask the Playbook). */
 export class KbCategoriesRepository {
   constructor(private readonly db: AnyDb) {}
 
-  async list(): Promise<KbCategoryRow[]> {
-    return this.db.select().from(kbCategories).orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name));
+  async list(filter: KbCategoryFilter = {}): Promise<KbCategoryRow[]> {
+    const conditions = [];
+    if (filter.domain !== undefined) conditions.push(eq(kbCategories.domain, filter.domain));
+    return this.db
+      .select()
+      .from(kbCategories)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(asc(kbCategories.sortOrder), asc(kbCategories.name));
   }
 
   async get(id: number): Promise<KbCategoryRow | undefined> {

@@ -13,6 +13,10 @@ export interface FaqRecordFilter {
   resourceId?: number;
   category?: "health_product" | "operations_health";
   isActive?: boolean;
+  /** Filters to records flagged as an unresolved duplicate-question/
+   * different-answer conflict — used by the Connections page so "N flagged
+   * for review" can link through to the actual records, not just a count. */
+  hasConflict?: boolean;
 }
 
 /**
@@ -32,6 +36,7 @@ export class FaqRecordsRepository {
     if (filter.resourceId !== undefined) conditions.push(eq(faqRecords.resourceId, filter.resourceId));
     if (filter.category !== undefined) conditions.push(eq(faqRecords.category, filter.category));
     if (filter.isActive !== undefined) conditions.push(eq(faqRecords.isActive, filter.isActive));
+    if (filter.hasConflict !== undefined) conditions.push(eq(faqRecords.hasConflict, filter.hasConflict));
     const query = this.db.select().from(faqRecords);
     const rows = conditions.length > 0 ? await query.where(and(...conditions)) : await query;
     return [...rows].sort((a, b) => a.category.localeCompare(b.category) || a.question.localeCompare(b.question));

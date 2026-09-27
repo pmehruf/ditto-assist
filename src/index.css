@@ -221,6 +221,21 @@
   --table-header-bg: #EEF1F5;
   --table-row-hover: #EDF2F8;
 
+  /* Opaque neutral panel (2026-09) — for surfaces that must stay fully
+     readable/solid regardless of what's behind them: zebra-striped data
+     rows, "add new row/record" inline panels, and other dense admin-table
+     surfaces that were copy-pasting a translucent `bg-stone-50/60` (a real
+     60%-alpha Tailwind opacity modifier, NOT defeated by the
+     `html:not(.dark) .bg-stone-50` compatibility rule below since that only
+     rewrites the bare/un-modified class) and letting the page's background
+     pattern show through underneath, hurting readability. Same core color
+     as --surface-inset's target hue, just fully opaque instead of 46%
+     alpha. Dark theme's own surfaces are already fully opaque, so this
+     mirrors --surface-inset there for availability/consistency, though the
+     dark branch of each fixed call site already had its own correct value
+     and was left untouched. */
+  --surface-solid: #E3E8F0;
+
   /* Header / Sidebar — unified chrome for the light theme.
      LOCKED VALUE: this is the single source of truth for both the header
      and sidebar background in light mode. Every element that needs this
@@ -366,6 +381,17 @@
      still read as sunken wells, not just another flat panel. */
   --input-bg: #0D2740;
   --input-border: rgba(120, 190, 255, 0.22);
+  /* 2026-09: light theme has always had a distinct hover border-brighten
+     (--input-border-hover below); dark theme never defined its own value
+     for this token, so it silently inherited light theme's #A9B7C8 hex
+     wherever it was referenced (custom properties fall through to :root
+     when a theme block doesn't redefine them) — and no rule ever actually
+     applied it in dark theme in the first place (see the INPUTS section in
+     the base-styles layer, previously scoped to `html:not(.dark)` only),
+     so dark-theme inputs got zero hover feedback at all. Same aqua-border
+     family as --border-strong, just brighter, so hovering a field reads as
+     an obvious step up from the idle border. */
+  --input-border-hover: rgba(120, 190, 255, 0.55);
   --input-text: #E2E8F0;
   --option-bg: #0D2740;
 
@@ -374,6 +400,10 @@
      feedback rather than both disappearing into the row color. */
   --table-header-bg: #0B2A44;
   --table-row-hover: #163963;
+
+  /* See :root's --surface-solid comment — dark surfaces are already
+     opaque, so this just mirrors --surface-inset for availability. */
+  --surface-solid: var(--surface-inset);
 
   /* Header / Sidebar — deliberately a notch darker than the (now brighter)
      page background so the nav chrome reads as its own grounded surface
@@ -404,6 +434,8 @@
   --color-surface-inset: var(--surface-inset);
   --color-surface-tint: var(--surface-tint);
   --color-surface-hover: var(--surface-hover);
+  --color-surface-solid: var(--surface-solid);
+  --color-table-header: var(--table-header-bg);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-accent: var(--accent);
@@ -641,6 +673,33 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
    which role a given size maps to) so it can't visually surprise anywhere
    it's used. */
 .text-\[7\.5px\], .text-\[8px\], .text-\[8\.5px\] { font-size: 9.5px !important; }
+
+/* Editable table-cell text fields: don't let content get silently clipped
+   (2026-09 — recurring complaint across several admin tables, e.g. Access
+   Control Center's Directory tab: an in-row "Name" edit field showed only
+   "Edgar Per" of "Edgar Perreira"). Browsers size an `auto`-layout table's
+   columns from the narrowest content that fits, and every table in this app
+   already wraps in `overflow-x-auto` for exactly this reason (see
+   CustomSelect.tsx's own comment) — but a plain text `<input>` with a
+   percentage width doesn't contribute its VALUE's length to that column
+   sizing the way visible text does, so it can end up boxed into a column
+   only wide enough for a few characters, with everything past that simply
+   not shown (not even an ellipsis — the browser just clips it, worse than
+   truncation). This gives every free-text table-cell input, and this app's
+   own CustomSelect trigger buttons (identified by their `listbox` role —
+   see CustomSelect.tsx), a floor width they can never be compressed below,
+   so the column — and, if needed, the table, which already scrolls
+   horizontally — grows to fit instead of hiding characters. Deliberately
+   scoped to free-text-like inputs only (not number/date/checkbox/radio,
+   which have their own, often intentionally narrow, sizing needs) to avoid
+   changing anything not exhibiting this specific failure. */
+table input:not([type]),
+table input[type="text"],
+table input[type="email"],
+table input[type="search"],
+table button[aria-haspopup="listbox"] {
+  min-width: 8rem;
+}
 
 /* Native date picker follows the active theme (was forced dark globally).
    `color-scheme: dark` alone already makes the browser draw the calendar
@@ -1102,8 +1161,21 @@ input, select, textarea {
   font-size: var(--text-input-value);
 }
 
+/* 2026-09: !important on background-color only. Root cause — a plain
+   `<input className="... bg-white ...">` (or bg-stone-50/100) elsewhere in
+   this file gets rewritten to a TRANSLUCENT surface token by the "4e. LIGHT
+   THEME — surface & border consolidation" block below (`html:not(.dark)
+   .bg-white { background-color: var(--surface); }`, 55% alpha), and that
+   rule's selector (two classes) is MORE specific than this one (one class +
+   two elements), so it silently won and made every input/select/textarea
+   that happened to also carry a bg-white/bg-stone-* class render translucent
+   instead of the opaque --input-bg this rule always intended — the
+   app-wide "washed-out inputs" bug. This is the one property that class
+   collides on, so it's the only one forced; border-color/color are
+   untouched. The two scoped exceptions below (.smoke-test-scope,
+   .qa-composer) are given matching !important so they keep overriding this. */
 html:not(.dark) input, html:not(.dark) select, html:not(.dark) textarea {
-  background-color: var(--input-bg);
+  background-color: var(--input-bg) !important;
   border-color: var(--input-border);
   color: var(--input-text);
   transition: border-color 0.15s ease, background-color 0.15s ease;
@@ -1123,6 +1195,23 @@ html:not(.dark) input:focus, html:not(.dark) select:focus, html:not(.dark) texta
   border-color: var(--accent);
 }
 
+/* Dark-theme counterpart (2026-09 fix) — this block never existed before,
+   so a plain native input/select/textarea with no page-specific dark
+   className got precisely zero hover/focus feedback in dark theme, while
+   the exact same element got a clear border-brighten in light theme (see
+   above). Background/text color are left alone here since dark-theme
+   components already set their own via explicit classes (mapped through
+   the compatibility layer elsewhere in this file) — this only adds the
+   missing interaction states, mirroring light theme's behavior. */
+.dark input:not(:disabled):not(:focus):hover,
+.dark select:not(:disabled):not(:focus):hover,
+.dark textarea:not(:disabled):not(:focus):hover {
+  border-color: var(--input-border-hover);
+}
+.dark input:focus, .dark select:focus, .dark textarea:focus {
+  border-color: var(--accent);
+}
+
 /* SMOKE TEST EXCEPTION: same reasoning as the heading exception above.
    SmokeTestPage.tsx's Custom PEDs <input> hardcodes a fixed dark
    background/border/text (matching the page's own always-dark design), but
@@ -1133,7 +1222,9 @@ html:not(.dark) input:focus, html:not(.dark) select:focus, html:not(.dark) texta
 html:not(.dark) .smoke-test-scope input,
 html:not(.dark) .smoke-test-scope select,
 html:not(.dark) .smoke-test-scope textarea {
-  background-color: #090909;
+  /* !important (2026-09): needs to keep beating the base input rule above,
+     which is now also !important on background-color (see its comment). */
+  background-color: #090909 !important;
   border-color: rgba(255, 255, 255, 0.06);
   color: #F2F2F2;
 }
@@ -1153,7 +1244,7 @@ html:not(.dark) .smoke-test-scope textarea:focus {
 }
 
 /* PRODUCT ASSIST QUERY INPUT EXCEPTION: same root cause as the Smoke Test
-   exception above. QueryAssistPage.tsx's composer textarea is styled
+   exception above. ProductAssistPage.tsx's composer textarea is styled
    bg-transparent so its parent .qa-composer card's fill shows through with
    no visible inner rectangle — but the bare `html:not(.dark) textarea` rule
    above (element selector on a class-scoped parent still outranks a plain
@@ -1161,9 +1252,11 @@ html:not(.dark) .smoke-test-scope textarea:focus {
    light-theme input fill, rendering a bright white box inside the card.
    Re-pin every state to stay transparent, with #1E2C3C ink to match the
    light-theme card's own pale tint of that same blue-grey (see
-   QueryAssistPage.tsx's qa-composer/textarea comments). */
+   ProductAssistPage.tsx's qa-composer/textarea comments). */
 html:not(.dark) .qa-composer textarea {
-  background-color: transparent;
+  /* !important (2026-09): needs to keep beating the base input rule above,
+     which is now also !important on background-color (see its comment). */
+  background-color: transparent !important;
   border-color: transparent;
   color: #1E2C3C;
 }

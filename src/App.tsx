@@ -42,10 +42,9 @@ import {
   ShieldCheck,
   ClipboardCheck,
   Newspaper,
-  Search,
-  TrendingUp,
   Database,
   ToolCase,
+  Route,
   Award,
   Library,
   ShieldUser,
@@ -79,12 +78,12 @@ import {
 } from "./engine.js";
 
 import { SCRIPT_DICTIONARY } from "./constants/scriptDictionary";
-import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "./constants/featurePermissions";
+import { DEFAULT_FEATURE_PERMISSIONS } from "./constants/featurePermissions";
+import { resolveAccess, levelAllows } from "./accessRuleEvaluator";
 import { AuditLogEntry, ReportedIssue, QAAnnouncement, ExternalResource } from "./types/announcements";
 import { LoggedUser, UserProfile } from "./types/user";
-import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole } from "./types/permissions";
+import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole, AccessRule } from "./types/permissions";
 import { DbPlanConfigEntry } from "./types/plans";
-import { FeaturePermission } from "./types/permissions";
 import { ChangeLogEntry } from "./types/changeLog";
 import { DeclarationMapIcon, QaDashboardIcon, ProductAssistIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
@@ -177,6 +176,9 @@ const KnowledgeBaseManagementPage = lazy(() =>
 const ProductAssistPage = lazy(() =>
   import("./pages/ProductAssistPage").then((m) => ({ default: m.ProductAssistPage }))
 );
+const PortingAssistPage = lazy(() =>
+  import("./pages/PortingAssistPage").then((m) => ({ default: m.PortingAssistPage }))
+);
 
 /** Picks a suitable icon for a Quick Access resource based on keywords in its
  * title (dashboard, checklist, FAQ, Bliss CC medical-condition alert, DWT
@@ -222,9 +224,11 @@ const RESOURCE_ICON_MAP: Record<string, typeof Link2> = Object.fromEntries(
 /** Resolves a resource's icon: an explicit admin choice (resource.icon)
  * wins if it's a recognized name, otherwise falls back to the keyword-based
  * guess from getResourceIcon so existing/unset resources keep working. */
-// DEVELOPER_ONLY_FEATURES now lives in constants/featurePermissions.ts (see
-// hasAccess() below) so the Access Control Center's Permissions tab can
-// import the same set and render those rows as visibly locked.
+// DEVELOPER_ONLY_FEATURES lives in constants/featurePermissions.ts (see
+// hasAccess() below) — as of 2026-09 it's an empty Set for every feature, so
+// no row in the Access Control Center's Permissions tab renders as visibly
+// locked anymore; the machinery is kept as reusable infrastructure in case a
+// future feature needs a genuine hard-lock again.
 
 function resolveResourceIcon(resource: { title: string; icon?: string }) {
   if (resource.icon && RESOURCE_ICON_MAP[resource.icon]) return RESOURCE_ICON_MAP[resource.icon];
@@ -264,7 +268,7 @@ const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -303,6 +307,22 @@ export default function App() {
   // needs to be able to resolve their own effective access, same posture as
   // featureAccessOverrides above.
   const [myAccessGrants, setMyAccessGrants] = useState<CustomAccessGrant[]>([]);
+  // The signed-in user's OWN matching active access_rules rows (already
+  // pre-filtered server-side to rows whose conditions match this caller —
+  // see GET /api/my-access-rules) — the Access Rules counterpart to
+  // myAccessGrants above. Access Control Center Phase 3
+  // (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md).
+  const [myAccessRules, setMyAccessRules] = useState<AccessRule[]>([]);
+  // This signed-in user's OWN Group Access Restriction ceiling — null means
+  // "not a restricted group member, unrestricted" (the vast majority of
+  // users); an array (possibly empty) means their group owner's
+  // admin-configured tool set — see accessRuleEvaluator.ts's
+  // groupAllowedFeatureIds and GET /api/my-group-access. Same fail-open
+  // posture as myAccessGrants/myAccessRules for the fetch itself (never
+  // block the app on a network hiccup) — real enforcement always happens
+  // server-side per request regardless of what this client-side value is,
+  // see evaluateAccess.ts.
+  const [myGroupAccess, setMyGroupAccess] = useState<string[] | null>(null);
   // Team/Role catalogs — lifted here (not fetched locally inside
   // ProfileAccessPage) for the same reason `departmentsList` is: the
   // Directory tab's user add/edit form needs both lists for its Team/Role
@@ -332,7 +352,7 @@ export default function App() {
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
-    team: row.team === "Term" ? "Term" : "Health",
+    team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
   });
 
   const fetchPageVisibility = async () => {
@@ -424,6 +444,35 @@ export default function App() {
     }
   };
 
+  const fetchMyAccessRules = async () => {
+    try {
+      const res = await fetch("/api/my-access-rules");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setMyAccessRules(body.entries || []);
+    } catch (_) {
+      // Never block the app on this — worst case a rule just doesn't apply
+      // yet, same fail-open posture as myAccessGrants.
+    }
+  };
+
+  const fetchMyGroupAccess = async () => {
+    try {
+      const res = await fetch("/api/my-group-access");
+      const contentType = res.headers.get("content-type") || "";
+      if (!res.ok || !contentType.includes("application/json")) return;
+      const body = await res.json().catch(() => ({}));
+      setMyGroupAccess(body.allowedFeatureIds ?? null);
+    } catch (_) {
+      // Never block the app on this — same fail-open posture as
+      // myAccessGrants/myAccessRules; the server still enforces this
+      // restriction on every real request regardless (evaluateAccess.ts),
+      // so a failed fetch here at worst shows a nav item the backend then
+      // refuses, never a real access leak.
+    }
+  };
+
   const fetchAnnouncements = async () => {
     try {
       const res = await fetch("/api/announcements");
@@ -497,8 +546,8 @@ export default function App() {
   };
 
   // External resource links (Payment SOP, QA Dashboard, etc.) — shown as an
-  // expandable "External Resources" disclosure inside the sidebar's
-  // Reference group (see renderSidebarContent's reference-group rendering).
+  // expandable "Other Resources" disclosure inside the sidebar's
+  // Library group (see renderSidebarContent's reference-group rendering).
   // Previously lived in a separate "Quick Access" drawer opened from the
   // now-removed global header; folded into the sidebar instead of getting
   // its own trigger, since the header that opened it no longer exists.
@@ -997,6 +1046,8 @@ export default function App() {
       fetchFeatureAccessOverrides();
       fetchQaTeamTrackerAccess();
       fetchMyAccessGrants();
+      fetchMyAccessRules();
+      fetchMyGroupAccess();
       // Fetched for every tier (2026-08-25) — previously General-only,
       // since Access Control Center is Admin/Developer-only and this data
       // was assumed to matter only there. It's now also needed by the
@@ -1270,6 +1321,27 @@ export default function App() {
   const baseUserTier: "General" | "Admin" | "Platform Admin" | "Developer" = currentUser?.tier ?? "General";
   const effectiveTier = baseUserTier;
 
+  // Home dashboard override for Advisory-department Trainee Advisors —
+  // 2026-09, swaps LookupIntroPage's full Workspace Tools tile grid for a
+  // minimal welcome screen (TrainingHomePage.tsx) for advisors still in
+  // training. Matched by catalog NAME, not a hardcoded id — departmentId/
+  // roleId are admin-editable catalog rows with zero access effect today
+  // (see types/permissions.ts's Department/AppRole comments), so this only
+  // takes effect once a Developer/Admin has created a "Trainee Advisor"
+  // role (Access Control Center -> Roles) and assigned it plus the
+  // existing "Advisory" department to a user's profile (Directory -> edit
+  // user). Case/whitespace-insensitive so catalog renames don't silently
+  // break this.
+  const currentDepartmentName = currentUser?.departmentId != null
+    ? departmentsList.find((d) => d.id === currentUser.departmentId)?.name
+    : undefined;
+  const currentRoleName = currentUser?.roleId != null
+    ? rolesList.find((r) => r.id === currentUser.roleId)?.name
+    : undefined;
+  const showTrainingHome =
+    (currentDepartmentName || "").trim().toLowerCase() === "advisory" &&
+    (currentRoleName || "").trim().toLowerCase() === "trainee advisor";
+
   // NOTE: this used to eagerly bulk-fetch the ENTIRE change_logs table on
   // every login for Admin/Developer (GET /api/change-logs, no limit) purely
   // so the Modification History table had data to render. AuditPage.tsx now
@@ -1291,10 +1363,14 @@ export default function App() {
   // top: for each shipped feature, a non-null generalAccess/adminAccess in
   // the fetched override replaces that ONE tier's level; a null level (or no
   // override row at all) falls through to the shipped default untouched.
-  // DEVELOPER_ONLY_FEATURES and the Developer bypass in hasAccess() are both
-  // evaluated BEFORE this table is ever consulted, so an empty override list
-  // (the shipped-default state, e.g. right after this migration runs)
-  // behaves byte-for-byte identically to the old hardcoded constant.
+  // The Developer bypass in hasAccess() is evaluated BEFORE this table is
+  // ever consulted, so an empty override list (the shipped-default state,
+  // e.g. right after this migration runs) behaves byte-for-byte identically
+  // to the shipped registry defaults. (DEVELOPER_ONLY_FEATURES used to be
+  // evaluated here too, ahead of everything else — as of 2026-09 that Set is
+  // empty for every feature, see featurePermissions.ts, so all four features
+  // it used to hard-gate now resolve through this same override table like
+  // any other feature.)
   const featurePermissions = useMemo(() => {
     if (featureAccessOverrides.length === 0) return DEFAULT_FEATURE_PERMISSIONS;
     const overrideById = new Map<string, FeatureAccessOverride>(featureAccessOverrides.map((o) => [o.featureId, o]));
@@ -1309,97 +1385,41 @@ export default function App() {
     });
   }, [featureAccessOverrides]);
 
-  // Unified dynamic hasAccess governance function
+  // Unified dynamic hasAccess governance function — Access Control Center
+  // Phase 3 (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md): delegates to the
+  // same resolveAccess() evaluator requireFeatureAccess() (server.ts) and
+  // EffectiveAccessModal now also call, instead of re-deriving tier/
+  // override/grant resolution inline here a third time (see
+  // accessRuleEvaluator.ts). Preserves the exact resolution order this
+  // function always had — DEVELOPER_ONLY_FEATURES hard gate (a no-op as of
+  // 2026-09; the Set is now empty for every feature — see
+  // featurePermissions.ts), Feature Visibility (hiddenPages) check,
+  // real-Developer bypass, Platform Admin registry/override resolution,
+  // General/Admin registry-then-default resolution — with Access Rules (new)
+  // folded in as an additional additive-only layer alongside the existing
+  // max-of/grant-only Custom Grant rule. `featurePermissions` above (the
+  // override-merged registry)
+  // is passed as DEFAULT_FEATURE_PERMISSIONS + the raw overrides instead —
+  // resolveAccess() does that same override-merge internally, so this is
+  // behaviorally identical, not a change.
   const hasAccess = (featureId: string, actionType: "Viewer" | "Editor"): boolean => {
-    const isRealDeveloper = currentUser?.tier === "Developer";
-    // isDeveloperPowerTier still governs the DEVELOPER_ONLY_FEATURES hard
-    // gate and the Feature Visibility kill-switch exemption below — those
-    // are unrelated to feature-LEVEL access evaluation and stay exactly as
-    // they were (Platform Admin keeps every Developer capability there).
-    // What changed (Platform Admin Feature Access, migration 0050): Platform
-    // Admin no longer unconditionally bypasses the registry/override
-    // resolution further down — it now resolves through its own
-    // platformAdminAccess override, same as General/Admin, defaulting to
-    // "Editor" when unconfigured so existing behavior is unchanged until a
-    // Developer/Platform Admin explicitly narrows it in the Permissions tab.
-    const isDeveloperPowerTier = isRealDeveloper || currentUser?.tier === "Platform Admin";
-
-    // ── OWNER-ONLY HARD GATE ────────────────────────────────────────────
-    // Decided in code, NOT via the featurePermissions registry, and it
-    // returns before every other branch below.
-    //
-    // Why it can't go through the registry: `featurePermissions` is
-    // localStorage-backed (usePersistentState), so any browser that saved
-    // its permission list before a new feature id existed will not contain
-    // that id — and the `if (!perm) return true` fallback further down then
-    // grants it to EVERYONE. That is exactly how Developer Controls briefly
-    // became visible to Admin/General users. Anything that must never be
-    // reachable by a lower tier belongs in this list, not in the registry.
-    if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
-      // True for a real Developer/Platform Admin even while previewing a
-      // lower tier via "View As" — otherwise hiding a page mid-preview
-      // could leave them with no route back to these toggles.
-      return isDeveloperPowerTier;
-    }
-
-    const tier = effectiveTier;
-
-    // Developer/Platform-Admin-hidden page — checked BEFORE the tier grants
-    // below so it applies uniformly. A real Developer/Platform Admin not
-    // simulating another tier is exempt; one who IS simulating sees exactly
-    // what that tier sees, so "View As" stays an honest preview of the
-    // hiding they just configured.
-    if (hiddenPages.includes(featureId) && !(isDeveloperPowerTier && (tier === "Developer" || tier === "Platform Admin"))) {
-      return false;
-    }
-
-    // Only a real Developer bypasses everything from here on. Platform
-    // Admin now falls through to the same registry/override resolution as
-    // every other tier (see platformAdminAccess handling below).
-    if (tier === "Developer") return true;
-
-    // Resolve against the saved registry first, then fall back to the
-    // shipped defaults.
-    //
-    // That second lookup matters: the saved list lives in localStorage and
-    // goes stale the moment a new page is added, so without it every newly
-    // shipped feature would hit the default-open branch below and be granted
-    // to every tier on any browser with an older saved list. Falling through
-    // to DEFAULT_FEATURE_PERMISSIONS means a new page is governed by the
-    // tiers it actually shipped with.
-    const perm =
-      featurePermissions.find(p => p.id === featureId) ||
-      DEFAULT_FEATURE_PERMISSIONS.find(p => p.id === featureId);
-
-    // Genuinely unknown to both — not a page we ship. Kept open so
-    // non-page permission checks don't hard-fail.
-    if (!perm) return true;
-
-    // Platform Admin (migration 0050): no shipped per-feature default in
-    // DEFAULT_FEATURE_PERMISSIONS (unlike General/Admin) — resolved
-    // directly from the raw override row, defaulting to "Editor" when
-    // unset. That default exactly reproduces the old unconditional bypass
-    // until a Developer/Platform Admin explicitly narrows it.
-    const shippedLevel =
-      tier === "Platform Admin"
-        ? featureAccessOverrides.find(o => o.featureId === featureId)?.platformAdminAccess ?? "Editor"
-        : tier === "Admin" ? perm.adminAccess : perm.generalAccess;
-
-    // Custom Access Grants (max-of, grant-only — see schema.ts's doc
-    // comment on `custom_access_grants`): a grant can only RAISE this
-    // feature's level above what tier+overrides already resolved to, never
-    // lower it. Only grantType "feature_access" is wired here; other grant
-    // kinds aren't functional yet. Always the REAL signed-in user's own
-    // grants — "View As" simulation was removed from the UI, so `tier`
-    // above is always currentUser's real tier (see effectiveTier's doc
-    // comment), meaning this never needs a separate simulation guard.
-    const ACCESS_LEVEL_RANK: Record<"None" | "Viewer" | "Editor", number> = { None: 0, Viewer: 1, Editor: 2 };
-    const grant = myAccessGrants.find(g => g.active && g.grantType === "feature_access" && g.targetId === featureId);
-    const level = grant?.level && ACCESS_LEVEL_RANK[grant.level] > ACCESS_LEVEL_RANK[shippedLevel] ? grant.level : shippedLevel;
-
-    if (level === "Editor") return true;
-    if (level === "Viewer") return actionType === "Viewer";
-    return false;
+    const { level } = resolveAccess({
+      featureId,
+      tier: effectiveTier,
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: featureAccessOverrides,
+      hiddenPages,
+      grants: myAccessGrants,
+      accessRules: myAccessRules,
+      caller: {
+        orgTeamId: currentUser?.orgTeamId,
+        departmentId: currentUser?.departmentId,
+        roleId: currentUser?.roleId,
+        tags: currentUser?.tags,
+      },
+      groupAllowedFeatureIds: myGroupAccess,
+    });
+    return levelAllows(level, actionType);
   };
 
   // EVICTION GUARD — if the page the user is currently on becomes
@@ -2213,7 +2233,7 @@ export default function App() {
       return;
     }
     if (tempDepartmentId == null || tempOrgTeamId == null || tempRoleId == null) {
-      setLoginError("Department, Team, and Role are all required to activate your portal account.");
+      setLoginError("Business Unit, Department, and Role are all required to activate your portal account.");
       return;
     }
 
@@ -2656,86 +2676,62 @@ export default function App() {
               </p>
             </div>
 
-            {/* Platform stats — real figures (PED Repository: 1,153 PEDs
-                synced, 6 plans). Health Plans / AI / Medical Conditions icons
-                are the user-supplied glow-art PNGs, background-removed and
-                recolored (assets/.aistudio/icon-*-clean.png — HSV
-                saturation/value thresholding to isolate each icon's line art
-                from its glow, flattened to a flat color, verified at the
-                actual ~40px render size on both themes before wiring in).
-                Medical Conditions specifically failed this test repeatedly
-                while extracted as a hollow outline (spikes/dots or
-                glow-blurred strokes collapsed into a blob at 40px) — the fix
-                was extracting the germ's solid filled silhouette (body +
-                spikes as one shape, not a line) with the glow discarded
-                entirely; that reads clearly at true size. PED Lookups /
-                Month is a composed lucide icon (Search + TrendingUp badge)
-                — its source PNG had no recoverable line detail at all (a
-                uniform soft gradient, no crisp edge anywhere). Value text is
-                deliberately left uncolored (plain ink) per instruction —
-                only the icon carries each stat's color. */}
-            {/* gap/pt use clamp() so the metrics row breathes more on wide
-                monitors instead of staying pinned to a fixed gap-8 cap. */}
-            <div className={`grid grid-cols-2 sm:grid-cols-4 gap-[clamp(16px,2vw,32px)] pt-[clamp(12px,2vh,24px)] border-t ${isDark ? "border-slate-800" : "border-stone-300"}`}>
+            {/* Platform USP tiles — the 4 flagship tools, each keyed to the
+                exact same icon/name its own sidebar nav item uses (Sparkles/
+                ProductAssistIcon/FileSpreadsheet/ClipboardCheck — see
+                navPage("lookup"|"product_assist"|"coverage_projection"|
+                "specific_illness_check", ...) below) so a returning advisor
+                recognizes each tile as "the tool I already use," not a
+                generic stat. No card border/background here (tried, then
+                asked to remove) — plain icon + text pairs, 2 columns instead
+                of the original single row of 4 so each title still has
+                enough width to sit on 1-2 lines instead of wrapping
+                unevenly. Four distinct accent hues, one per tool — sky blue,
+                violet, green, red are each a different family so no two
+                tiles read as "the same color" next to each other (the
+                original cyan on Product Assist sat too close to Declaration
+                Assist's sky blue). */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-7 mt-[clamp(20px,3.5vh,32px)]">
               {[
                 {
-                  icon: (
-                    <span className="relative flex items-center justify-center w-full h-full">
-                      <TrendingUp className="w-6 h-6 lg:w-7 lg:h-7" />
-                      <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center border" style={{ backgroundColor: "#0EA5E9", borderColor: isDark ? "#001322" : "#F1F6FB" }}>
-                        <Search className="w-2.5 h-2.5 text-white" strokeWidth={3} />
-                      </span>
-                    </span>
-                  ),
-                  value: "2,800+",
-                  label: "PED Lookups / Month",
+                  icon: <Sparkles className="w-5.5 h-5.5" />,
+                  value: "Declaration Assist",
+                  label: "Instant PED & policy declarations",
                   hex: "#0EA5E9",
                 },
                 {
-                  icon: <img src="/assets/.aistudio/icon-medical-clean.png" alt="" className="w-9 h-9 lg:w-10 lg:h-10 object-contain" />,
-                  value: "1100+",
-                  label: "Medical Conditions on Sync",
-                  hex: "#DC2626",
+                  icon: <ProductAssistIcon className="w-5.5 h-5.5" />,
+                  value: "Product Assist",
+                  label: "AI-powered plan Q&A",
+                  hex: "#8B5CF6",
                 },
                 {
-                  icon: <img src="/assets/.aistudio/icon-health-plan-clean.png" alt="" className="w-9 h-9 lg:w-10 lg:h-10 object-contain" />,
-                  value: "6",
-                  label: "Active Health Plans",
+                  icon: <FileSpreadsheet className="w-5.5 h-5.5" />,
+                  value: "Cover Projection Assist",
+                  label: "Coverage & premium projections",
                   hex: "#22C55E",
                 },
                 {
-                  icon: <img src="/assets/.aistudio/icon-ai-clean.png" alt="" className="w-9 h-9 lg:w-10 lg:h-10 object-contain" />,
-                  value: "AI Powered",
-                  label: "Gemini Intelligence",
-                  hex: "#22D3EE",
+                  icon: <ClipboardCheck className="w-5.5 h-5.5" />,
+                  value: "Specific Illness Assist",
+                  label: "Illness-specific coverage checks",
+                  hex: "#DC2626",
                 },
               ].map((stat) => (
-                <div key={stat.label} className="flex items-center gap-3.5">
+                <div key={stat.label} className="flex items-start gap-3.5">
                   <div
-                    className="w-14 h-14 rounded-2xl border flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: `${stat.hex}1A`, borderColor: `${stat.hex}4D`, color: stat.hex }}
+                    className="w-11 h-11 rounded-lg border flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${stat.hex}1A`, borderColor: `${stat.hex}33`, color: stat.hex }}
                   >
                     {stat.icon}
                   </div>
                   <div className="min-w-0">
-                    {/* Primary value: darker slate (#1E293B) in light theme for
-                        stronger contrast/hierarchy vs. the label below; dark
-                        theme keeps a bright white since #1E293B would be
-                        nearly invisible on the near-black card background. */}
-                    <div
-                      className="text-xl lg:text-2xl font-black font-mono leading-tight"
-                      style={{ color: isDark ? "#F8FAFC" : "#1E293B" }}
-                    >
-                      {stat.value}
-                    </div>
-                    {/* Secondary label: muted slate (#64748B) at a lighter
-                        weight than before so it recedes behind the value. */}
-                    <div
-                      className="text-[10px] font-semibold tracking-wide leading-tight"
-                      style={{ color: "#64748B" }}
-                    >
-                      {stat.label}
-                    </div>
+                    <h4 className={`text-sm font-black leading-tight ${isDark ? "text-slate-100" : "text-stone-900"}`}>{stat.value}</h4>
+                    {/* Subtitle contrast: slate-400 reads clearly against both
+                        the near-black page background and the light theme —
+                        the earlier flat #64748B was too close to the dark
+                        navy canvas to scan easily. */}
+                    <p className={`text-xs font-semibold mt-1.5 leading-relaxed ${isDark ? "text-slate-400" : "text-stone-500"}`}>{stat.label}</p>
                   </div>
                 </div>
               ))}
@@ -2903,6 +2899,21 @@ export default function App() {
                       </p>
                       <div className="space-y-2">
                         <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                          Business Unit
+                        </label>
+                        <CustomSelect
+                          theme={theme}
+                          value={tempOrgTeamId != null ? String(tempOrgTeamId) : ""}
+                          onChange={(val) => {
+                            setTempOrgTeamId(val ? Number(val) : null);
+                            setLoginError(null);
+                          }}
+                          placeholder="Select your business unit"
+                          options={orgTeamsList.filter(t => t.active).map(t => ({ value: String(t.id), label: t.name }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
                           Department
                         </label>
                         <CustomSelect
@@ -2914,21 +2925,6 @@ export default function App() {
                           }}
                           placeholder="Select your department"
                           options={departmentsList.filter(d => d.active).map(d => ({ value: String(d.id), label: d.name }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                          Team
-                        </label>
-                        <CustomSelect
-                          theme={theme}
-                          value={tempOrgTeamId != null ? String(tempOrgTeamId) : ""}
-                          onChange={(val) => {
-                            setTempOrgTeamId(val ? Number(val) : null);
-                            setLoginError(null);
-                          }}
-                          placeholder="Select your team"
-                          options={orgTeamsList.filter(t => t.active).map(t => ({ value: String(t.id), label: t.name }))}
                         />
                       </div>
                       <div className="space-y-2">
@@ -3164,6 +3160,17 @@ export default function App() {
     groups: NavGroup[];
   }
 
+  // Filtered against DEFAULT_FEATURE_PERMISSIONS's current ids — hiddenPages
+  // (loaded from the page-visibility API) can carry a stale row for a
+  // feature that's since been removed/renamed from the registry, which
+  // would otherwise inflate this sidebar badge above OwnerControlsPage's own
+  // "N hidden / M pages" count. See that page's visibleHiddenCount for the
+  // same fix. Plain computation, not useMemo — this point in the component
+  // body is reached after several early `return`s above (login screen,
+  // Product Assist gate), so a hook here would be called conditionally.
+  const knownFeatureIds = new Set(DEFAULT_FEATURE_PERMISSIONS.map((f) => f.id));
+  const visibleHiddenPagesCount = hiddenPages.filter((id) => knownFeatureIds.has(id)).length;
+
   const navPage = (
     tab: typeof activeTab,
     label: string,
@@ -3211,7 +3218,15 @@ export default function App() {
               isActive: activeTab === "lookup" && !showIntro,
               onSelect: () => { setActiveTab("lookup"); setShowIntro(false); },
             }),
-            navPage("product_assist", "Product Assist", ProductAssistIcon, "Editor"),
+            // Corrected 2026-09 (permission architecture fix): this required
+            // "Editor" for nav visibility, unlike every sibling tool here —
+            // latent bug that only "worked" because product_assist's own
+            // registry default happened to also be Editor. Now that the
+            // registry correctly defaults it to Viewer (no admin action of
+            // its own — see featurePermissions.ts), this would have hidden
+            // the tab from ordinary General users had it not been fixed too.
+            navPage("product_assist", "Product Assist", ProductAssistIcon, "Viewer"),
+            navPage("porting_assist", "Porting Assist", Route, "Viewer"),
             navPage("coverage_projection", "Cover Projection Assist", FileSpreadsheet, "Viewer"),
             navPage("specific_illness_check", "Specific Illness Assist", ClipboardCheck, "Viewer"),
           ],
@@ -3227,7 +3242,7 @@ export default function App() {
         },
         {
           key: "reference",
-          label: "Reference",
+          label: "Library",
           GroupIcon: Library,
           pages: [
             navPage("advisory_zone", "Plan Reference", BookOpen, "Viewer"),
@@ -3261,10 +3276,18 @@ export default function App() {
           GroupIcon: ShieldUser,
           pages: [
             navPage("profile_access", "Access Control Center", User, "Viewer"),
+            // Master Advisors moved from its own top-level sidebar entry
+            // back into the Access Control Center as one of its tabs
+            // (2026-09) — see MasterAdvisorsManagement.tsx's doc comment.
             navPage("audit", "Activity Log", Clock, "Viewer"),
-            navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
-              hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
-            }),
+            // Moved back here from Developer Zone > Developer Controls
+            // (2026-09) per explicit request — these two had briefly lived
+            // under Developer Controls on the reasoning that their shipped
+            // default is Developer/Platform-Admin-only, but that's just a
+            // reassignable default (see featurePermissions.ts), not a fixed
+            // gate, so there's no reason they can't sit under Administration.
+            navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
+            navPage("connections", "Connections", Link2, "Viewer"),
           ],
         },
       ],
@@ -3279,18 +3302,25 @@ export default function App() {
           GroupIcon: Terminal,
           pages: [
             navPage("owner_controls", "Feature Visibility", ShieldAlert, "Viewer", {
+              // Filtered against DEFAULT_FEATURE_PERMISSIONS's current ids —
+              // hiddenPages can carry a stale row for a feature that's since
+              // been removed/renamed from the registry (its hidden row in
+              // the DB is never cleaned up), which would otherwise inflate
+              // this badge above what OwnerControlsPage's own "N hidden / M
+              // pages" count (and the rows it actually renders as "Hidden")
+              // shows — same fix as that page's visibleHiddenCount.
               badge:
-                hiddenPages.length > 0 ? (
+                visibleHiddenPagesCount > 0 ? (
                   <span className="ml-auto text-[9px] font-black px-1.5 py-[1px] rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                    {hiddenPages.length}
+                    {visibleHiddenPagesCount}
                   </span>
                 ) : undefined,
             }),
-            // Moved here from Admin Zone > Administration — this page is
-            // already Developer-only (see DEVELOPER_ONLY_FEATURES), so it
-            // belongs visually where it's actually gated.
-            navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
-            navPage("connections", "Connections", Link2, "Viewer"),
+            // Moved here from Admin Zone > Administration (2026-09, explicit
+            // request).
+            navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
+              hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
+            }),
             navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
               iconColorClass: isActive => (isActive ? "#E08D4B" : RAIL_ICON_REST),
             }),
@@ -3337,14 +3367,18 @@ export default function App() {
     </button>
   );
 
-  /** External Resources — the link list (Payment SOP, QA Dashboard, etc.)
-   * that used to live in a separate "Quick Access" drawer opened from the
-   * now-removed global header. Folded into the Reference group as its own
+  /** Other Resources (labeled "External Resources" internally/in code —
+   * renamed in the UI only) — the link list (Payment SOP, QA Dashboard,
+   * etc.) that used to live in a separate "Quick Access" drawer opened from
+   * the now-removed global header. Folded into the Library group as its own
    * expand/collapse disclosure instead of getting a new trigger of its own
    * — same row styling/type-scale renderNavPageRow uses (the drawer already
    * matched the sidebar's chrome exactly, so this carries over unchanged).
    * Readable by every signed-in user; the "Manage Resources" edit affordance
-   * stays gated on hasAccess("resources", "Editor"), same as before. */
+   * stays gated on hasAccess("resources", "Editor"), same as before. Also
+   * has an icon-only counterpart in the collapsed rail — see
+   * renderSidebarContent's reference-group rail flyout — since it isn't a
+   * NavPage/tab and so doesn't automatically get one from group.pages. */
   const renderResourceLinksSection = () => (
     <div key="external-resources">
       <button
@@ -3354,7 +3388,7 @@ export default function App() {
         aria-expanded={showResourceLinks}
       >
         <Link2 className="w-4 h-4 shrink-0" style={{ color: RAIL_ICON_REST }} />
-        <span className="flex-1">External Resources</span>
+        <span className="flex-1">Other Resources</span>
         <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-150 ${showResourceLinks ? "" : "-rotate-90"}`} />
       </button>
 
@@ -4015,6 +4049,31 @@ export default function App() {
                                   )}
                                 </button>
                               ))}
+                              {/* Other Resources — not a NavPage (it's a
+                                  link-list disclosure, not a tab), so it
+                                  never appears via group.pages.map above.
+                                  Added here explicitly so the Library
+                                  group's rail flyout has an icon for it too
+                                  (previously missing entirely in the
+                                  collapsed rail — expanded sidebar only).
+                                  Clicking it expands into the full sidebar,
+                                  opens the Library section, and opens the
+                                  disclosure, since the link list itself only
+                                  renders in the expanded sidebar's DOM. */}
+                              {group.key === "reference" && (
+                                <button
+                                  key="other-resources-rail"
+                                  onClick={() => {
+                                    setIsMenuOpen(true);
+                                    setOpenSections(prev => ({ ...prev, reference: true }));
+                                    setShowResourceLinks(true);
+                                  }}
+                                  className="relative w-9 h-9 mt-1.5 rounded-lg shrink-0 flex items-center justify-center cursor-pointer transition-all hover:bg-white/5"
+                                  title="Other Resources"
+                                >
+                                  <Link2 className="w-[15px] h-[15px] shrink-0" style={{ color: RAIL_ICON_REST }} />
+                                </button>
+                              )}
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -4115,7 +4174,7 @@ export default function App() {
                 className={`fixed w-72 max-w-[calc(100vw-24px)] rounded-xl border shadow-xl z-[9999] p-4 font-sans text-left backdrop-blur-xl ${
                   theme === "dark"
                     ? "bg-[#0a1420]/92 border-sky-500/[0.12] text-white shadow-black/70"
-                    : "bg-white/95 border-stone-200 text-stone-900 shadow-stone-300"
+                    : "bg-[#ffffff] border-stone-200 text-stone-900 shadow-stone-300"
                 }`}
               >
               {/* 2026-08-25 redesign — was a stack of individually-boxed
@@ -4204,7 +4263,7 @@ export default function App() {
 
                       {teamName && (
                         <div className="min-w-0">
-                          <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Team</p>
+                          <p className={`text-[9px] font-bold uppercase tracking-wider ${mutedLabel}`}>Business Unit</p>
                           <p className={`text-[11px] font-semibold truncate mt-0.5 ${strongValue}`}>{teamName}</p>
                         </div>
                       )}
@@ -4335,7 +4394,7 @@ export default function App() {
           <h1> blocks), Home/Dashboard is reached via the sidebar (branding
           block + dedicated Dashboard entry — see renderSidebarContent),
           theme toggle + Logout live in the sidebar footer, and the
-          External Resources link list moved into the sidebar's Reference
+          Other Resources link list moved into the sidebar's Library
           group (renderResourceLinksSection). Sub-page back navigation
           (Team Tracker/QA Dashboard advisor drilldowns) is now a local
           button on those pages instead of routing through a shared header
@@ -4451,8 +4510,10 @@ export default function App() {
                     setNoticeIndex={setNoticeIndex}
                     slideDirection={slideDirection}
                     setSlideDirection={setSlideDirection}
-                    allAnnouncements={qaAnnouncements}
                     hasAccess={hasAccess}
+                    onOpenExternalResources={() => setShowResourceLinks(true)}
+                    allAnnouncements={qaAnnouncements}
+                    showTrainingHome={showTrainingHome}
                   />
                 </Suspense>
               </ErrorBoundary>
@@ -4639,6 +4700,10 @@ export default function App() {
                 roles={rolesList}
                 onRolesChanged={fetchRoles}
                 hiddenPages={hiddenPages}
+                canManageGroups={hasAccess("group_management", "Editor")}
+                canManageMasterAdvisors={hasAccess("master_advisors", "Editor")}
+                canViewGroups={hasAccess("group_management", "Viewer")}
+                canViewMasterAdvisors={hasAccess("master_advisors", "Viewer")}
               />
               </Suspense>
               </ErrorBoundary>
@@ -4751,7 +4816,30 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Product Assist">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <ProductAssistPage theme={theme} />
+              <ProductAssistPage theme={theme} currentUser={currentUser} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* PORTING ASSIST — independent advisor tool for calculating and
+              visually explaining waiting-period carry-forward during a
+              health-insurance porting case. Entirely client-side/input-
+              driven (see portingAssistEngine.ts) — no server data of its
+              own, no AI calls. Visible to every tier (see
+              featurePermissions.ts). */}
+          {activeTab === "porting_assist" && (
+            <motion.div
+              key="porting_assist"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="Porting Assist">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <PortingAssistPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4820,6 +4908,7 @@ export default function App() {
                 theme={theme}
                 hiddenPages={hiddenPages}
                 setHiddenPages={setHiddenPages}
+                hasAccess={hasAccess}
               />
               </Suspense>
               </ErrorBoundary>
@@ -4827,7 +4916,11 @@ export default function App() {
           )}
 
           {/* CONNECTIONS — Google Sheets integrations (QA Dashboard, Product
-              Playbook). Developer-only, same as Feature Visibility above. */}
+              Playbook, Health FAQ, Term FAQ). Shipped default is Admin/
+              Platform Admin/Developer (see "connections" in
+              featurePermissions.ts) — no longer a hardcoded Developer-only
+              exception as of 2026-09, a Developer can reassign it from the
+              Permissions tab like any other feature. */}
           {activeTab === "connections" && (
             <motion.div
               key="connections"
@@ -4839,15 +4932,18 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="Connections">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <ConnectionsPage theme={theme} effectiveTier={effectiveTier} />
+              <ConnectionsPage theme={theme} hasAccess={hasAccess} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
           )}
 
           {/* AI USAGE & LIMITS — Product Assist Credit & Usage Management
-              (2026-08). Developer-only, same as Feature Visibility/
-              Connections above (see DEVELOPER_ONLY_FEATURES). */}
+              (2026-08). Shipped default is Developer/Platform Admin only
+              (see "product_assist_quota" in featurePermissions.ts) — no
+              longer a hardcoded Developer-only exception as of 2026-09, a
+              Developer can reassign it from the Permissions tab like any
+              other feature. */}
           {activeTab === "product_assist_quota" && (
             <motion.div
               key="product_assist_quota"
@@ -4859,7 +4955,7 @@ export default function App() {
             >
               <ErrorBoundary theme={theme} label="AI Usage & Limits">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <ProductAssistQuotaPage theme={theme} departments={departmentsList} orgTeams={orgTeamsList} roles={rolesList} />
+              <ProductAssistQuotaPage theme={theme} departments={departmentsList} orgTeams={orgTeamsList} roles={rolesList} effectiveTier={effectiveTier} hasAccess={hasAccess} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
@@ -4887,6 +4983,7 @@ export default function App() {
                 setEditingAnnouncementId={setEditingAnnouncementId}
                 deletingAnnouncementId={deletingAnnouncementId}
                 setDeletingAnnouncementId={setDeletingAnnouncementId}
+                canManage={hasAccess("qa_announcement_log", "Editor")}
               />
               </Suspense>
               </ErrorBoundary>
@@ -4957,6 +5054,7 @@ export default function App() {
                 confirmDestructiveAction={confirmDestructiveAction}
                 setChangeLogs={setChangeLogs}
                 currentUser={currentUser}
+                canManage={hasAccess("plan_scope", "Editor")}
               />
               </Suspense>
               </ErrorBoundary>
@@ -4984,6 +5082,7 @@ export default function App() {
                 effectiveTier={effectiveTier}
                 currentUser={currentUser}
                 setChangeLogs={setChangeLogs}
+                canManage={hasAccess("ped_suggestions", "Editor")}
               />
               </Suspense>
               </ErrorBoundary>
@@ -5010,6 +5109,7 @@ export default function App() {
                 effectiveTier={effectiveTier}
                 currentUser={currentUser}
                 setChangeLogs={setChangeLogs}
+                canManage={hasAccess("knowledge_base", "Editor")}
               />
               </Suspense>
               </ErrorBoundary>
@@ -5036,6 +5136,7 @@ export default function App() {
               <SmokeTestPage
                 theme={theme}
                 effectiveTier={effectiveTier}
+                hasAccess={hasAccess}
                 currentUser={currentUser}
                 productionPlans={productionPlans}
                 selectedPlan={selectedPlan}
@@ -5109,7 +5210,7 @@ export default function App() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
               className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl text-left ${
-                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-white border-stone-200 text-stone-900"
+                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
               }`}
             >
               <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">
@@ -5265,7 +5366,7 @@ export default function App() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
               className={`w-full max-w-sm p-6 rounded-2xl border shadow-2xl text-left ${
-                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-white border-stone-200 text-stone-900"
+                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
               }`}
             >
               <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">

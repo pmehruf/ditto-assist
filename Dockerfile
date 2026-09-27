@@ -8,6 +8,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Cache-bust: forces every layer from here on to rebuild from the current
+# source, bypassing Cloud Build/Kaniko's layer cache. Needed because a
+# recent deploy (revision ditto-assist-00090-hs7, built 2026-09-23) served
+# code that didn't reflect the latest playbookIngest.ts changes even though
+# the uploaded source and Dockerfile were both correct — the layer cache was
+# the only remaining explanation. Bump this value whenever a deploy needs to
+# guarantee a clean rebuild instead of relying on cache invalidation.
+ARG CACHE_BUST=2026-09-24-01
 COPY . .
 RUN npm run build
 

@@ -26,7 +26,7 @@ export function InstructionManualPanel({
       className={`rounded-2xl border overflow-hidden flex flex-col min-h-0 text-left ${className} ${
         theme === "dark"
           ? "bg-white/[0.02] border-white/[0.08]"
-          : "bg-stone-50/60 border-stone-300"
+          : "bg-surface-solid border-stone-300"
       }`}
     >
       <div

@@ -4,7 +4,7 @@
  *
  * ONE-TIME SEED — imports Aditya Birla's dedicated per-plan Policy Wording
  * / Prospectus / Brochure documents into the Knowledge Base, tagged with
- * documentType so queryAssist.ts can apply the Policy Wording > Prospectus
+ * documentType so productAssist.ts can apply the Policy Wording > Prospectus
  * > Brochure authority precedence — see scripts/seedHdfcErgoUrls.ts for the
  * original pattern this follows.
  *

@@ -46,16 +46,16 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
-    team: row.team === "Term" ? "Term" : "Health",
+    team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
   };
 }
 
 /** Advisor-audience badge label — distinct from teamLabel() in
  * announcementDisplay.ts, which labels the unrelated `from`/fromTeam
  * "posted from which department" field. This is who the announcement is
- * VISIBLE to (Health Advisors vs Term Advisors), not who wrote it. */
+ * VISIBLE to (Health Advisors, Term Advisors, or Both), not who wrote it. */
 function audienceLabel(item: QAAnnouncement): string {
-  return item.team === "Term" ? "Term Advisors" : "Health Advisors";
+  return item.team === "Term" ? "Term Advisors" : item.team === "Both" ? "Both Advisors" : "Health Advisors";
 }
 
 /**
@@ -125,6 +125,16 @@ interface AnnouncementLogPageProps {
   setEditingAnnouncementId: (id: string | null) => void;
   deletingAnnouncementId: string | null;
   setDeletingAnnouncementId: (id: string | null) => void;
+  /** True when App.tsx's hasAccess("qa_announcement_log", "Editor") passes.
+   * Added 2026-09 (permission architecture fix): this page previously
+   * rendered the create/edit form and every row's Edit/Delete controls
+   * unconditionally, relying solely on the server to reject an
+   * unauthorized submit — someone with only Viewer-level access (e.g. a
+   * Permissions-tab default of Viewer) would still see fully-interactive
+   * management controls that would then fail on click. Viewer now sees the
+   * list read-only; Editor sees the full management UI, matching the
+   * Workspace Resources page's existing convention. */
+  canManage: boolean;
 }
 
 /**
@@ -150,6 +160,7 @@ export function AnnouncementLogPage({
   setEditingAnnouncementId,
   deletingAnnouncementId,
   setDeletingAnnouncementId,
+  canManage,
 }: AnnouncementLogPageProps) {
   const dark = theme === "dark";
 
@@ -166,10 +177,11 @@ export function AnnouncementLogPage({
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput);
-  // Admin-only management filter — lets the Announcement Manager browse
-  // Insights (which never appear in the advisor-facing feed or the Home
-  // Dashboard carousel, only here and on the "Did you know!?" card — see
-  // requirement #8) alongside the existing QA/General types. "" = all types.
+  // Admin-only management filter — lets the Announcement Manager browse any
+  // remaining legacy Insight rows (retired 2026-09; never appear in the
+  // advisor-facing feed or Home Dashboard carousel, and the Did You Know
+  // card no longer reads from them either — see server.ts's GET
+  // /api/did-you-know) alongside the existing QA/General types. "" = all types.
   const [typeFilter, setTypeFilter] = useState<
     "" | "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight"
   >("");
@@ -359,7 +371,10 @@ export function AnnouncementLogPage({
           the first viewport rather than needing a scroll to reach it. */}
       <div className="flex flex-col gap-3">
 
-        {/* Form card */}
+        {/* Form card — Editor only; a Viewer-only visitor gets the
+            read-only list below without a create/edit form that would
+            just fail on submit. */}
+        {canManage && (
         <div className="flex flex-col">
           <div className={cardClass}>
             {/* The form's own internal fields section (see
@@ -384,6 +399,7 @@ export function AnnouncementLogPage({
             />
           </div>
         </div>
+        )}
 
         {/* List card */}
         <div className="flex flex-col">
@@ -449,10 +465,14 @@ export function AnnouncementLogPage({
                       { value: "Product Announcement", label: "Product Announcement" },
                       { value: "Insurance Operations", label: "Insurance Operations" },
                       // Legacy-only (see schema.ts's announcementTypeEnum) —
-                      // kept filterable so any unreclassified row is still
-                      // findable/editable here.
+                      // kept filterable so any unreclassified/retired row is
+                      // still findable/editable here. Insight was retired
+                      // 2026-09 (the Did You Know card is now a live
+                      // Health/Term FAQ feed, not admin-authored — see
+                      // server.ts's GET /api/did-you-know); neither type is
+                      // creatable from QAAnnouncementForm.tsx anymore.
                       { value: "General Announcement", label: "General Announcement (Legacy)" },
-                      { value: "Insight", label: "Insight" },
+                      { value: "Insight", label: "Insight (Legacy)" },
                     ]}
                   />
                 </div>
@@ -536,6 +556,8 @@ export function AnnouncementLogPage({
                                 <span className={`text-[8px] font-mono font-bold px-1 py-[1px] rounded border ${
                                   item.team === "Term"
                                     ? dark ? "bg-purple-500/10 text-purple-400 border-purple-500/25" : "bg-purple-50 text-purple-700 border-purple-200"
+                                    : item.team === "Both"
+                                    ? dark ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25" : "bg-emerald-50 text-emerald-700 border-emerald-200"
                                     : dark ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/25" : "bg-cyan-50 text-cyan-700 border-cyan-200"
                                 }`}>
                                   {audienceLabel(item)}
@@ -622,9 +644,11 @@ export function AnnouncementLogPage({
                             <td className={`${tdClass} truncate`}>{item.addedBy}</td>
 
                             {/* Actions — Edit / Delete, with the same inline
-                                "Sure?" confirm the tiles used. */}
+                                "Sure?" confirm the tiles used. Editor-only —
+                                a Viewer-only visitor gets the read-only list
+                                with no controls that would just 403. */}
                             <td className={tdClass}>
-                              {deletingAnnouncementId === item.id ? (
+                              {!canManage ? null : deletingAnnouncementId === item.id ? (
                                 <div className="flex flex-col items-start gap-1 bg-red-500/10 border border-red-500/30 px-1.5 py-1 rounded-lg select-none">
                                   <span className="text-[8px] font-black uppercase text-red-500 tracking-wider">Sure?</span>
                                   <div className="flex items-center gap-1">

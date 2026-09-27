@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Megaphone, CheckCircle2 } from "lucide-react";
+import { Megaphone, CheckCircle2, CalendarClock } from "lucide-react";
 import { QAAnnouncement } from "../types/announcements";
 import { AnnouncementContent } from "./AnnouncementContent";
 import { isoDateToDMY } from "../utils/dateFormat";
@@ -133,6 +133,22 @@ export function AnnouncementAckModal({
                 Rating: {current.rating}
               </span>
             )}
+            {/* Effective Date — moved up into the badge row (was buried in
+                the metadata line below the announcement body, easy to miss)
+                since it's the one date that actually matters operationally:
+                when the change described above starts applying. Rose/red,
+                distinct from the other badges above, so it stands out as
+                the thing to actually notice, not just another tag. */}
+            {current.effectiveDate && (
+              <span className={`text-[9px] font-mono font-bold px-1.5 py-[1px] rounded border flex items-center gap-1 ${
+                theme === "dark"
+                  ? "bg-rose-500/10 text-rose-400 border-rose-500/25"
+                  : "bg-rose-50 text-rose-700 border-rose-200"
+              }`}>
+                <CalendarClock className="w-2.5 h-2.5 shrink-0" />
+                Effective: {isoDateToDMY(current.effectiveDate)}
+              </span>
+            )}
           </div>
 
           {/* Scrolling body — the scroll-to-end requirement lives here.
@@ -168,16 +184,16 @@ export function AnnouncementAckModal({
             <AnnouncementContent content={current.announcement} theme={theme} forceLightContrast />
           </div>
 
-          {/* Metadata line — dates only; no author byline here (the popup
-              speaks for the QA/compliance process, not a person). */}
-          <div className={`shrink-0 flex items-center justify-end gap-3 mt-2 text-[10px] font-semibold ${
-            theme === "dark" ? "text-stone-500" : "text-stone-500"
-          }`}>
-            <span>
-              {current.announcementDate ? `Announced: ${isoDateToDMY(current.announcementDate)}` : ""}
-              {current.effectiveDate ? `${current.announcementDate ? " · " : ""}Effective: ${isoDateToDMY(current.effectiveDate)}` : ""}
-            </span>
-          </div>
+          {/* Metadata line — Announced date only now; Effective Date moved
+              up into the badge row above (see that comment) since it's the
+              one that needs to actually get noticed. */}
+          {current.announcementDate && (
+            <div className={`shrink-0 flex items-center justify-end gap-3 mt-2 text-[10px] font-semibold ${
+              theme === "dark" ? "text-stone-500" : "text-stone-500"
+            }`}>
+              <span>Announced: {isoDateToDMY(current.announcementDate)}</span>
+            </div>
+          )}
         </div>
 
         {/* Footer — dedicated Mark-as-Read for THIS announcement */}

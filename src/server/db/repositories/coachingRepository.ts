@@ -108,6 +108,59 @@ export class CoachingRepository {
     return sessions.map((s) => ({ ...s, actionables: bySession.get(s.id) || [] }));
   }
 
+  /** The tactId that owns a given session — used to authorize an Edit
+   * (Task 7's "Enable an Edit option for saved session feedback") the same
+   * way getActionableTactId authorizes a status change: join through the
+   * owning record rather than trusting a client-supplied tactId. null when
+   * the session doesn't exist. */
+  async getSessionTactId(sessionId: number): Promise<string | null> {
+    const [row] = await this.db.select({ tactId: coachingSessions.tactId }).from(coachingSessions).where(eq(coachingSessions.id, sessionId)).limit(1);
+    return row?.tactId ?? null;
+  }
+
+  /** Edits a previously-saved session (Task 7 — there was previously no
+   * way to modify a saved entry, only its actionables' status). Actionables
+   * are reconciled against the submitted list: one carrying an existing id
+   * is updated in place, one without an id is inserted as new, and any
+   * existing actionable NOT present in the submitted list is deleted —
+   * mirrors how the edit form itself works (the whole actionables list for
+   * that session is submitted each time, add/remove/edit all included).
+   * Returns null if the session doesn't exist. */
+  async updateSession(
+    sessionId: number,
+    patch: {
+      meetingDate: string;
+      discussionPoints: string | null;
+      meetingNotes: string | null;
+      actionables: Array<{ id?: number; description: string; dueDate: string | null; status: CoachingActionableStatus }>;
+    }
+  ): Promise<CoachingSessionWithActionables | null> {
+    return this.db.transaction(async (tx) => {
+      const [session] = await tx
+        .update(coachingSessions)
+        .set({ meetingDate: patch.meetingDate, discussionPoints: patch.discussionPoints, meetingNotes: patch.meetingNotes })
+        .where(eq(coachingSessions.id, sessionId))
+        .returning();
+      if (!session) return null;
+
+      const existing = await tx.select().from(coachingActionables).where(eq(coachingActionables.sessionId, sessionId));
+      const keptIds = new Set(patch.actionables.filter((a) => a.id != null).map((a) => a.id as number));
+      const toDeleteIds = existing.filter((a) => !keptIds.has(a.id)).map((a) => a.id);
+      if (toDeleteIds.length) {
+        await tx.delete(coachingActionables).where(inArray(coachingActionables.id, toDeleteIds));
+      }
+      for (const a of patch.actionables) {
+        if (a.id != null && keptIds.has(a.id)) {
+          await tx.update(coachingActionables).set({ description: a.description, dueDate: a.dueDate, status: a.status }).where(eq(coachingActionables.id, a.id));
+        } else {
+          await tx.insert(coachingActionables).values({ sessionId, description: a.description, dueDate: a.dueDate, status: a.status });
+        }
+      }
+      const actionables = await tx.select().from(coachingActionables).where(eq(coachingActionables.sessionId, sessionId));
+      return { ...session, actionables };
+    });
+  }
+
   /** Resolves the tactId that owns a given actionable, via its parent
    * session — actionables don't carry tactId directly (see schema.ts),
    * so a status-update's authorization check joins through here first.

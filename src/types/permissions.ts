@@ -58,13 +58,31 @@ export interface AppRole {
   active: boolean;
 }
 
-/** One row of the `relationship_types` table (Mentor / Guide / ...) — the
- * vocabulary usable in user_relationships. */
-export interface RelationshipType {
+/** One row of the `relationship_groups` table (Mentor / Guide / ...) — the
+ * vocabulary usable in user_relationships. Renamed from RelationshipType
+ * (2026-09) — same shape, "group" instead of "type" throughout. */
+export interface RelationshipGroup {
   id: number;
   name: string;
   description: string | null;
   active: boolean;
+  /** Optionally scopes this group to one Department — when set, the
+   * Groups tab's roster builder narrows its "owner" picker to that
+   * department's members. null = unscoped (every user is a valid owner). */
+  departmentId: number | null;
+  /** Whether this group's owner->subject rows count toward the Groups
+   * tab's tool-visibility restriction. Admin-toggled there, not
+   * derived from the group's name — see schema.ts's own comment on this
+   * column for why. */
+  usedForGroupAccess: boolean;
+  /** Which tier of MEMBER this group's `usedForGroupAccess` ceiling
+   * restricts (2026-09, migration 0082) — independent of the group's
+   * owner's own tier/permissions; setting this to "Admin" does not promote
+   * the owner, and a member whose own tier doesn't match this value is
+   * entirely unaffected by this group's restriction. Deliberately excludes
+   * "Developer" — a group can never be configured to restrict Developer,
+   * see schema.ts's comment on `groupTierEnum`. Defaults to "General". */
+  groupTier: "General" | "Admin" | "Platform Admin";
 }
 
 /** One row of the `user_relationships` table — an explicit person-to-person
@@ -73,7 +91,7 @@ export interface UserRelationship {
   id: number;
   ownerEmail: string;
   subjectEmail: string;
-  relationshipTypeId: number;
+  relationshipGroupId: number;
   createdBy: string;
   createdAt: string;
 }
@@ -92,4 +110,90 @@ export interface CustomAccessGrant {
   active: boolean;
   grantedBy: string;
   grantedAt: string;
+}
+
+/** One row of the `access_rules` table — a population-level (not
+ * per-individual, unlike CustomAccessGrant) grant: "anyone whose Team/
+ * Department/Role/Product Tag matches every non-null condition here gets
+ * grantedLevel on resourceKey." See schema.ts's doc comment on the table
+ * and docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md's Phase 1 for the full
+ * reasoning. Inert until Phase 3 wires the evaluator into real enforcement. */
+export interface AccessRule {
+  id: number;
+  resourceKey: string;
+  name: string;
+  active: boolean;
+  orgTeamId: number | null;
+  departmentId: number | null;
+  roleId: number | null;
+  productTag: string | null;
+  grantedLevel: "None" | "Viewer" | "Editor";
+  createdBy: string;
+  createdAt: string;
+}
+
+/** One row of the `guide_mentor_advisor_mappings` table — an advisor's
+ * Guide/Mentor assignment plus their own sheet snapshot (Tact ID, status,
+ * etc.), mirrored from master_advisors by the Master Advisors page's own sync.
+ * Keyed by tactId, not a user account — see schema.ts's table comment. */
+export interface GuideMentorAdvisorMapping {
+  id: number;
+  tactId: string;
+  name: string;
+  email: string | null;
+  guideName: string | null;
+  mentorName: string | null;
+  status: string | null;
+  skillDomain: string | null;
+  batchNumber: string | null;
+  /** "yyyy-MM-dd", or null. See MasterAdvisorsManagement.tsx's "Active
+   * Till" calculation (earliest of this and lastWorkingDay). */
+  dateOfMovingOut: string | null;
+  lastWorkingDay: string | null;
+  manuallyEdited: boolean;
+  lastSyncedAt: string;
+  lastSyncedBy: string;
+  lastEditedAt: string | null;
+  lastEditedBy: string | null;
+}
+
+/** One row of the `guide_mentor_relationship_history` table — one past or
+ * current Mentor/Guide assignment for an advisor. Guide and Mentor are
+ * independent timelines (see `kind`); at most one row per (tactId, kind)
+ * has isActive true. `endDate` marks when THIS relationship ended — a
+ * different concept from GuideMentorAdvisorMapping's own "Active Till"
+ * (when the advisor themselves stops being active), see
+ * MasterAdvisorsManagement.tsx. */
+export interface GuideMentorRelationshipHistoryRow {
+  id: number;
+  tactId: string;
+  kind: "guide" | "mentor";
+  personName: string;
+  /** "yyyy-MM-dd" */
+  startDate: string;
+  /** "yyyy-MM-dd", or null while isActive is true. */
+  endDate: string | null;
+  isActive: boolean;
+  source: "manual" | "sync";
+  recordedBy: string;
+  recordedAt: string;
+}
+
+/** Response shape of GET .../guide-mentor-advisors/:id/history. */
+export interface GuideMentorRelationshipHistoryResponse {
+  guide: GuideMentorRelationshipHistoryRow[];
+  mentor: GuideMentorRelationshipHistoryRow[];
+}
+
+/** Response shape of both .../guide-mentor-advisors/sync and .../last-run —
+ * see guideMentorRelationshipsSync.ts's GuideMentorRelationshipsSyncResult. */
+export interface GuideMentorAdvisorMappingSyncResult {
+  recordsRead: number;
+  skippedNoTactId: number;
+  mappingsWritten: number;
+  withGuide: number;
+  withMentor: number;
+  withBoth: number;
+  withNeither: number;
+  syncedAt: string;
 }

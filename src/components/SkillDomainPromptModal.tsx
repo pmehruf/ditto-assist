@@ -98,14 +98,16 @@ export function SkillDomainPromptModal({
           >
             Remind me later
           </button>
+          {/* Shared --action-navy token (2026-09) instead of the old
+              bg-sky-600 family — the `disabled` prop below already gives
+              ClippedButton its own dimmed/not-allowed look while saving. */}
           <ClippedButton
             type="button"
             disabled={saving}
             onClick={handleSave}
             cornerBg={dark ? "#12151A" : "#ffffff"}
-            className={`px-4 py-2 text-[11px] font-black uppercase tracking-wider ${
-              saving ? "bg-stone-400/40 text-stone-500 cursor-not-allowed" : "bg-sky-600 hover:bg-sky-700 text-white cursor-pointer"
-            }`}
+            variant="action"
+            className="px-4 py-2 text-[11px] font-black uppercase tracking-wider"
           >
             {saving ? "Saving…" : "Save"}
           </ClippedButton>

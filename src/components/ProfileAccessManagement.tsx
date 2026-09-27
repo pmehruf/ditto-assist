@@ -6,9 +6,8 @@
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion, CheckSquare, Square, Layers } from "lucide-react";
-import { UserProfile, LoggedUser } from "../types/user";
+import { UserProfile } from "../types/user";
 import { Department, FeatureAccessOverride, OrgTeam, AppRole } from "../types/permissions";
-import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { EffectiveAccessModal } from "./EffectiveAccessModal";
@@ -29,8 +28,6 @@ interface ProfileAccessManagementProps {
   usersList: UserProfile[];
   setUsersList: Dispatch<SetStateAction<UserProfile[]>>;
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
-  currentUser: LoggedUser | null;
-  setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
   /** Organizational metadata only — see types/permissions.ts's doc comment
    * on Department. Only Active departments are offered in the assignment
    * dropdown below; an already-assigned-but-now-inactive department still
@@ -88,7 +85,7 @@ const emptyDraft = (): UserProfile => ({
  * doesn't read `usersList` for its own display, but does patch `setUsersList`
  * after every create/edit/delete so that cache stays correct too.
  */
-export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, currentUser, setChangeLogs, departments, orgTeams, roles, featureAccessOverrides, hiddenPages }: ProfileAccessManagementProps) {
+export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, departments, orgTeams, roles, featureAccessOverrides, hiddenPages }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
   const isDeveloper = effectiveTier === "Developer";
   // Platform Admin gets the same edit/delete/tier-assign rights as a real
@@ -112,21 +109,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
   // Developer's row at all — mirrors server.ts's blanket
   // `existing.tier === "Developer" && callerTier !== "Developer"` check.
   const canEditRow = (user: UserProfile) => isDeveloperPowerTier && !(user.tier === "Developer" && !isDeveloper);
-
-  const logAction = (actionType: string, description: string) => {
-    setChangeLogs(prev => [
-      {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        userName: currentUser?.name || currentUser?.email || "Mehruf P (Developer)",
-        role: effectiveTier,
-        actionType,
-        planName: "User Directory",
-        description,
-      },
-      ...prev,
-    ]);
-  };
 
   // `entries` holds only the CURRENT PAGE — search/filter/sort/paging all
   // happen server-side (GET /api/users?paginated=1&...) rather than loading
@@ -354,7 +336,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const saved: UserProfile = body.user;
       setEntries(prev => prev.map(u => (u.email === editingEmail ? saved : u)));
       setUsersList(prev => prev.map(u => (u.email === editingEmail ? saved : u)));
-      logAction("User Edited", `Updated directory entry for ${saved.name} (${saved.email}) — Tier: ${saved.tier}, Status: ${saved.status}.`);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
       setEditingEmail(null);
@@ -368,7 +349,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
   const deleteUser = async (email: string) => {
     if (!window.confirm(`Remove ${email} from the user directory? This cannot be undone.`)) return;
-    const removedUser = entries.find(u => u.email === email);
     setSaving(true);
     setSaveError(null);
     try {
@@ -378,7 +358,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to remove this user (HTTP ${res.status}).`);
       setUsersList(prev => prev.filter(u => u.email !== email));
-      logAction("User Deleted", `Removed ${removedUser?.name || email} (${email}) from the user directory.`);
       // Deleting the last row on a page (other than page 1) would otherwise
       // leave the view stuck on a now-empty page — loadEntries() re-fetches
       // page `page`, and the server clamps it back into range if needed.
@@ -412,7 +391,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to add this user (HTTP ${res.status}).`);
       setUsersList(prev => [...prev, body.user]);
-      logAction("User Added", `Added ${newDraft.name} (${newDraft.email}) to the user directory — Tier: ${newDraft.tier}.`);
       setAddingNew(false);
       setNewDraft(emptyDraft());
       setSearchInput("");
@@ -440,8 +418,8 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
     const changedLabels: string[] = [];
     if (bulkFields.tier) { changes.tier = bulkTier; changedLabels.push(`Tier → ${bulkTier}`); }
     if (bulkFields.status) { changes.status = bulkStatus; changedLabels.push(`Status → ${bulkStatus}`); }
+    if (bulkFields.team) { changes.orgTeamId = bulkTeamId; changedLabels.push(`Business Unit → ${teamLabel(bulkTeamId) || "Unassigned"}`); }
     if (bulkFields.department) { changes.departmentId = bulkDepartmentId; changedLabels.push(`Department → ${departmentLabel(bulkDepartmentId) || "Unassigned"}`); }
-    if (bulkFields.team) { changes.orgTeamId = bulkTeamId; changedLabels.push(`Team → ${teamLabel(bulkTeamId) || "Unassigned"}`); }
     if (bulkFields.role) { changes.roleId = bulkRoleId; changedLabels.push(`Role → ${roleLabel(bulkRoleId) || "Unassigned"}`); }
     if (bulkFields.tags) { changes.tags = bulkTags; changedLabels.push(`Tags → ${bulkTags.length ? bulkTags.join(" + ") : "Unassigned"}`); }
 
@@ -476,12 +454,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
       if (!res.ok) throw new Error(resBody.error || `Failed to bulk-update users (HTTP ${res.status}).`);
       const updatedCount = resBody.updatedCount ?? 0;
       const skippedCount = resBody.skippedCount ?? 0;
-      logAction(
-        "Bulk Edit",
-        `Bulk-updated ${updatedCount} ${updatedCount === 1 ? "user" : "users"} in the directory — ${changedLabels.join(", ")}.${
-          skippedCount ? ` ${skippedCount} skipped (Developer-record protection).` : ""
-        }`
-      );
       setBulkResult(
         `Updated ${updatedCount.toLocaleString()} ${updatedCount === 1 ? "user" : "users"}.${
           skippedCount ? ` ${skippedCount.toLocaleString()} skipped (Developer-record protection).` : ""
@@ -567,7 +539,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
     ...departments.map((d) => ({ value: String(d.id), label: d.active ? d.name : `${d.name} (Inactive)` })),
   ];
   const teamFilterOptions = [
-    { value: "", label: "All Teams" },
+    { value: "", label: "All Business Units" },
     { value: "unassigned", label: "Unassigned" },
     ...orgTeams.map((t) => ({ value: String(t.id), label: t.active ? t.name : `${t.name} (Inactive)` })),
   ];
@@ -723,7 +695,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
             />
           </div>
           <div className="w-36 shrink-0">
-            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Team</label>
+            <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Business Unit</label>
             <CustomSelect
               theme={theme}
               value={teamFilter}
@@ -836,7 +808,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         )}
 
         {canManage && selectionCount > 0 && (
-          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "bg-sky-950/10 border-sky-500/20" : "bg-sky-50/60 border-sky-200"}`}>
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "bg-sky-950/10 border-sky-500/20" : "bg-accent-subtle border-sky-200"}`}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Layers className={`w-4 h-4 shrink-0 ${dark ? "text-sky-400" : "text-sky-600"}`} />
@@ -897,7 +869,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
 
               <label className="flex items-center gap-1.5 shrink-0 cursor-pointer select-none">
                 <input type="checkbox" checked={bulkFields.team} onChange={e => setBulkFields(f => ({ ...f, team: e.target.checked }))} className="w-3.5 h-3.5 accent-sky-500" />
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Team</span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-300" : "text-stone-600"}`}>Business Unit</span>
               </label>
               <div className="w-36 shrink-0">
                 <CustomSelect
@@ -965,7 +937,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[1020px]">
             <thead>
-              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
+              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-[var(--table-header-bg)] border-stone-200"}`}>
                 {canManage && (
                   <th className={`${thClass} w-8`}>
                     <button
@@ -986,7 +958,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                 <SortableTh label="Email" sortKey="email" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <SortableTh label="TACT ID" sortKey="tactId" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
                 <th className={thClass}>Tags</th>
-                <th className={thClass}>Team</th>
+                <th className={thClass}>Business Unit</th>
                 <th className={thClass}>Department</th>
                 <th className={thClass}>Role</th>
                 <SortableTh label="Tier" sortKey="tier" activeSort={usersSort} onSort={toggleUsersSort} className={thClass} />
@@ -998,7 +970,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   // well past the viewport (2026-08-25 fix). Solid backing (matching
                   // this file's other "sunken surface" inputs) so scrolled-under
                   // cells don't show through.
-                  <th className={`${thClass} text-right sticky right-0 z-20 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-white border-stone-200"}`}>
+                  <th className={`${thClass} text-right sticky right-0 z-20 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-[#ffffff] border-stone-200"}`}>
                     Actions
                   </th>
                 )}
@@ -1006,7 +978,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
             </thead>
             <tbody>
               {addingNew && (
-                <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-sky-50/60"}`}>
+                <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-accent-subtle"}`}>
                   {canManage && <td className={tdClass} />}
                   <td className={tdClass}>
                     <input className={inputClass} placeholder="Full name" value={newDraft.name} onChange={e => setNewDraft(d => ({ ...d, name: e.target.value }))} />
@@ -1078,7 +1050,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   <td className={`${tdClass} text-[10.5px] italic ${dark ? "text-stone-500" : "text-stone-400"}`}>
                     Not yet saved
                   </td>
-                  <td className={`${tdClass} text-right sticky right-0 z-10 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-white border-stone-200"}`}>
+                  <td className={`${tdClass} text-right sticky right-0 z-10 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-[#ffffff] border-stone-200"}`}>
                     <div className="flex items-center justify-end gap-1.5">
                       <ClippedButton onClick={saveNewUser} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save new user">
                         <Save className="w-3.5 h-3.5" />
@@ -1107,7 +1079,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                   <tr
                     key={user.email}
                     className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${
-                      idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""
+                      idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""
                     }`}
                   >
                     {canManage && (
@@ -1254,7 +1226,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, cu
                       {user.createdAt ? formatDisplayTimestamp(user.createdAt) : "—"}
                     </td>
                     {canManage && (
-                      <td className={`${tdClass} text-right sticky right-0 z-10 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-white border-stone-200"}`}>
+                      <td className={`${tdClass} text-right sticky right-0 z-10 border-l ${dark ? "bg-[#060a12] border-stone-850" : "bg-[#ffffff] border-stone-200"}`}>
                         {isEditing ? (
                           <div className="flex items-center justify-end gap-1.5">
                             <ClippedButton onClick={saveEdit} disabled={saving} cornerBg={dark ? "#0e2236" : "#ffffff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save">

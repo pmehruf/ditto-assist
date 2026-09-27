@@ -78,13 +78,18 @@ export interface AiMemoryEntry {
  */
 export function AiMappingReview({
   theme,
-  effectiveTier,
+  canReview,
 }: {
   theme: "light" | "dark";
-  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
+  /** Whether the caller can approve/reject AI mapping suggestions —
+   * resolved from hasAccess("ped_suggestions", "Editor") in App.tsx
+   * (2026-09 permission architecture fix; replaces a hardcoded
+   * effectiveTier === "Admin"/"Platform Admin"/"Developer" check so a
+   * Custom Grant/Access Rule actually works, not just Admin+/Developer
+   * tier). */
+  canReview: boolean;
 }) {
   const dark = theme === "dark";
-  const canReview = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const [entries, setEntries] = useState<AiMemoryEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -465,10 +470,14 @@ export function AiMappingReview({
                                 className={`${inputClass} w-full resize-y`}
                               />
                               <div className="flex gap-2">
+                                {/* variant="action" (2026-09): shared
+                                    --action-navy token instead of the old
+                                    bg-blue-600 family. */}
                                 <ClippedButton
                                   type="button"
                                   onClick={() => saveEdit(entry)}
-                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-extrabold uppercase tracking-widest gap-1.5"
+                                  variant="action"
+                                  className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-widest gap-1.5"
                                 >
                                   <Check className="w-3 h-3" /> Save
                                 </ClippedButton>

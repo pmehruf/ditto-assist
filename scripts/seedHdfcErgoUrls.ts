@@ -9,7 +9,7 @@
  *
  * Each entry is tagged with documentType (brochure/policy_wording/
  * prospectus/addon) — see 0034_kb_resource_document_type.sql — so
- * queryAssist.ts can apply its Policy Wording > Prospectus > Brochure
+ * productAssist.ts can apply its Policy Wording > Prospectus > Brochure
  * authority precedence. Rider/add-on documents (ABCD Chronic Care,
  * Limitless, Parenthood, etc.) are tagged "addon" regardless of whether
  * the underlying PDF is itself structured as a policy wording or

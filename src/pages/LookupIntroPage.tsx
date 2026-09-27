@@ -8,14 +8,13 @@ import {
   Sparkles,
   FileSpreadsheet,
   BookOpen,
-  AlertTriangle,
   ClipboardCheck,
   Briefcase,
   Newspaper,
-  History,
   Megaphone,
   ArrowUpRight,
   Gift,
+  FolderOpen,
 } from "lucide-react";
 import { DeclarationMapIcon, ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
@@ -23,11 +22,11 @@ import { DidYouKnowCard } from "../components/DidYouKnowCard";
 import { HomeAnnouncementCard } from "../components/HomeAnnouncementCard";
 import { AnnouncementCounterCard } from "../components/AnnouncementCounterCard";
 import { AnnouncementStatModal } from "../components/AnnouncementStatModal";
-import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useMeasuredHeight } from "../hooks/useMeasuredHeight";
 import { QAAnnouncement } from "../types/announcements";
 import { LoggedUser } from "../types/user";
+import { TrainingHomePage } from "./TrainingHomePage";
 
 type HomeTabId =
   | "lookup"
@@ -45,6 +44,11 @@ interface LookupIntroPageProps {
   currentUser: LoggedUser | null;
   setShowIntro: (value: boolean) => void;
   setActiveTab: (value: HomeTabId) => void;
+  // True for a signed-in advisor whose Department/Role catalog names
+  // resolve to "Advisory"/"Trainee Advisor" (see App.tsx's own comment
+  // on this derivation). Renders TrainingHomePage instead of the usual
+  // Workspace Tools dashboard below.
+  showTrainingHome?: boolean;
   // Announcement carousel — the same shared state App.tsx already drives the
   // Declaration Assist page's carousel with (see HomeAnnouncementCard.tsx's
   // doc comment: one rotation timer in App.tsx, read by whichever page
@@ -55,12 +59,17 @@ interface LookupIntroPageProps {
   slideDirection: "right-to-left" | "left-to-right";
   setSlideDirection: (value: "right-to-left" | "left-to-right") => void;
   // The FULL (uncapped) announcement list — App.tsx's own `qaAnnouncements`
-  // state — feeding the Announcement Counter card's weekly stats, which
-  // need accurate counts past the 8-item cap `activeAnnouncements` uses.
+  // state — feeds the Announcement Counter card below QA Performance (see
+  // that component's own doc comment for why it lives there now).
   allAnnouncements: QAAnnouncement[];
   // Same gate the sidebar uses (App.tsx's hasAccess) — Quick Actions should
   // only ever offer tools this advisor can actually open.
   hasAccess: (featureId: string, action: "Viewer" | "Editor") => boolean;
+  // Expands the sidebar's own "Other Resources" disclosure (App.tsx's
+  // showResourceLinks) — the Other Resources tile below has no page of its
+  // own to navigate to (that list only ever lived in the sidebar), so its
+  // CTA opens that same disclosure instead of calling setActiveTab.
+  onOpenExternalResources: () => void;
 }
 
 function getGreeting(): string {
@@ -141,10 +150,8 @@ interface QuickActionTile {
   tag: string;
   icon: ReactNode;
   hex: string;
-  instructions: string;
-  ctaLabel: string;
   onOpen: () => void;
-  /** Renders a "SOON" badge, dims the tile, and disables its click/expand
+  /** Renders a "SOON" badge, dims the tile, and disables its click
    * behavior — for a tool that's visible (so advisors know it's coming) but
    * not yet launched. See renderTile below. */
   comingSoon?: boolean;
@@ -152,40 +159,40 @@ interface QuickActionTile {
 
 /**
  * Home page — the advisor's *workspace*, not a dashboard for any one
- * module. Two tiers, matching the hierarchy an advisor should read at a
- * glance ("these are my tools" -> "these are updates/activity"):
- *  1. WORKSPACE TOOLS — one merged section/grid under a single heading,
- *     combining the day-to-day tools (Declaration Assist, Product Assist,
- *     Cover Projection Assist, Specific Illness Assist) with what used to
- *     be a separate "References" tier (Plan References, Announcements,
- *     Declaration Map, My Activity) — all tiles render at the same
- *     compact size (see renderTile's `compact` doc comment for why: a
- *     taller authored section here means more of the page before the
- *     supporting cards, on every screen size, now that layout is fluid
- *     rather than uniformly scaled to fit). (QA Dashboard isn't a tile
- *     here — it's still fully reachable via the QA Performance card's
- *     "View QA Dashboard" link in Quick Peek below.)
- *  2. SUPPORTING — a 1:2 row of the Announcement Counter (New This Week /
- *     Went Live This Week / Live Today, see AnnouncementCounterCard.tsx —
- *     click a stat to browse it, via AnnouncementStatModal.tsx) and QA
- *     Performance + Did you know (a short Insight card, see
- *     DidYouKnowCard.tsx), paired with the Announcements carousel (real,
- *     single-item content with auto-rotation — see HomeAnnouncementCard.tsx)
- *     in its own full-height column alongside. (Recent Searches was removed
- *     from Home.)
+ * module. Left column reads top to bottom as two rows, matching the
+ * hierarchy an advisor should read at a glance:
+ *  1. WORKSPACE TOOLS — the primary Advisory Workspace tools (Declaration
+ *     Assist, Product Assist, Cover Projection Assist, Specific Illness
+ *     Assist) in one row of 4, all compact size (see renderTile's
+ *     `compact` doc comment for why).
+ *  2. DID YOU KNOW + QA PERFORMANCE STACK — a narrow 320px cell holding a
+ *     live Health/Term FAQ feed (Did You Know — see DidYouKnowCard.tsx)
+ *     next to a wider cell that stacks QA Performance, the Announcement
+ *     Counter card, and the 4 reference tiles (Plan References,
+ *     Announcements, Declaration Map, Other Resources — My Activity was
+ *     dropped from this tile set by explicit request, though it's still
+ *     reachable from the sidebar) as a 2x2 grid at the bottom. CSS Grid
+ *     stretch sizes the Did You Know cell to match the QA Performance
+ *     cell's own natural stacked height with no JS measurement (explicit
+ *     request; see this row's own JSX comment below). (QA Dashboard isn't
+ *     a tile here — it's still fully reachable via the QA Performance
+ *     card's "View QA Dashboard" link.)
+ * The right column is the Announcements carousel (real, single-item
+ * content with auto-rotation — see HomeAnnouncementCard.tsx) in its own
+ * full-height column alongside the two rows above.
  * Genuinely responsive at every breakpoint (CSS Grid/Flex with real
  * breakpoints, independently reflowing) — see App.tsx's
  * #main-scrollable-body comment for the matching overflow change this
  * relies on. Below `lg` (1024px) the page is a simple stacked column; at
- * `lg` and up it becomes the two-column grid below (left 2/3 Workspace
- * Tools + QA Performance/Did you know, right 1/3 Updates feed). This used
- * to be a fixed-width "poster" uniformly scaled to fit the viewport (see
- * the removed ScaleToFit.tsx) — replaced with real fluid layout because
- * uniform scaling shrank everything (text included) together as the left
- * sidebar expanded, instead of letting the grid reflow independently. QA
- * Performance and the Announcement card's bottoms still land on the same
- * line at `lg`+, now via `leftColRef`'s live height measurement alone (see
- * below) rather than a fixed authored height plus a shared scale factor.
+ * `lg` and up it becomes the two-column grid below (left 2/3 the three rows
+ * above, right 1/3 Updates feed). This used to be a fixed-width "poster"
+ * uniformly scaled to fit the viewport (see the removed ScaleToFit.tsx) —
+ * replaced with real fluid layout because uniform scaling shrank
+ * everything (text included) together as the left sidebar expanded,
+ * instead of letting the grid reflow independently. The left column's
+ * bottom and the Updates card's bottom still land on the same line at
+ * `lg`+, now via `leftColRef`'s live height measurement alone (see below)
+ * rather than a fixed authored height plus a shared scale factor.
  * The `activeTab === "lookup" && showIntro` condition and wrapping
  * `<motion.div key="intro">` deliberately stay in App.tsx (see
  * ResourcesPage.tsx for why — moving them here would break the
@@ -196,18 +203,28 @@ export function LookupIntroPage({
   currentUser,
   setShowIntro,
   setActiveTab,
+  showTrainingHome,
   activeAnnouncements,
   noticeIndex,
   setNoticeIndex,
   slideDirection,
   setSlideDirection,
-  allAnnouncements,
   hasAccess,
+  onOpenExternalResources,
+  allAnnouncements,
 }: LookupIntroPageProps) {
+  // Trainee Advisors in Advisory bypass every tile/hook below — a plain
+  // welcome screen, nothing to measure or fetch. Kept before ALL hooks
+  // (useState/useMediaQuery/useMeasuredHeight further down) so the Rules
+  // of Hooks hold even if this flag could change within one mount.
+  if (showTrainingHome) {
+    return <TrainingHomePage theme={theme} firstName={currentUser?.name?.split(" ")[0]} />;
+  }
+
   const firstName = currentUser?.name?.split(" ")[0];
 
-  // Which Announcement Counter stat tile's popup (if any) is open — holds
-  // the tile's title + the exact filtered list it represents.
+  // Which Announcement Counter stat's browse-list modal is open, if any —
+  // see AnnouncementStatModal.tsx.
   const [openStat, setOpenStat] = useState<{ title: string; list: QAAnnouncement[] } | null>(null);
 
   // Gates the two-column grid below (`lg` and up) and the leftColRef
@@ -217,33 +234,35 @@ export function LookupIntroPage({
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   // LEFT COLUMN height, measured live — Workspace Tools (the merged tools
-  // + former References grid) + the Quick Guide panel (whichever of these
-  // render) + the supporting row (QA Performance + Announcement Counter /
-  // Did you know), all at their own natural content height. The Updates -
-  // Live feed card's height is then set to this EXACT measured number, so
-  // its bottom edge lands on the same line as the left column's bottom
-  // edge by construction — not by hand-computed guesswork: the browser's
-  // own layout of the left column is the source of truth, so this stays
-  // correct even if a Quick Guide panel opens/closes, tile labels wrap
-  // differently, or the Announcement Counter's numbers change width.
+  // + former References grid) + the supporting row (QA Performance / Did
+  // you know), all at their own natural content height. The Updates - Live
+  // feed card's height is then set to this EXACT measured number, so its
+  // bottom edge lands on the same line as the left column's bottom edge by
+  // construction — not by hand-computed guesswork: the browser's own layout
+  // of the left column is the source of truth, so this stays correct even
+  // if tile labels wrap differently.
   const [leftColRef, announcementHeightPx] = useMeasuredHeight(isDesktop);
 
-  // RIGHT CELL of the supporting row (QA Performance + Announcement
-  // Counter, stacked) height, measured the same way — applied to the "Did
-  // you know!?" card in the narrow 260px cell next to it, so THEIR bottom
-  // edges also land on the same line (see DidYouKnowCard.tsx's own doc
-  // comment: `h-full` + internal scroll is what lets it fill this exact
-  // height and stay readable even if an Insight is too long to fit).
-  const [supportingRowRightCellRef, didYouKnowHeightPx] = useMeasuredHeight(isDesktop);
-
-  // Every Quick Action tile expands the same inline panel below its group
-  // instead of navigating immediately — clicking a tile shows a short blurb
-  // + a CTA that does the actual navigating. Accordion-style: one tile's
-  // panel open at a time, keyed by id (not a boolean) so switching tiles
-  // swaps the content instead of stacking multiple panels. Shared across
-  // BOTH Advisory Workspace and Quality & References so only one guide is
-  // ever open at a time regardless of which group it came from.
-  const [expandedTileId, setExpandedTileId] = useState<string | null>(null);
+  // QA PERFORMANCE COLUMN height (QA Performance + Announcement Counter +
+  // the 4 reference tiles), measured the exact same way, applied to Did You
+  // Know's wrapper — a SECOND, independent pairing of the same technique
+  // used just above for the Updates card, not CSS Grid `items-stretch`.
+  // Stretch was tried here first and looked right in isolation, but it's a
+  // percentage-based mechanism: a stretched grid item only has a definite
+  // height for CHILD percentage resolution once the row's own height is
+  // already resolved, and grid resolves an auto-sized row's height from its
+  // items' own CONTENT size first — which, for a `flex-1 min-h-0
+  // overflow-y-auto` scroll region with no already-definite ancestor
+  // height, falls back to the scrolling content's full natural size (flex's
+  // `min-height: auto` default). Net effect: a long FAQ pair grew the card
+  // (and, transitively, `leftColRef`'s measured total, and so the Updates
+  // card too) instead of scrolling internally — the exact overflow this is
+  // fixing. A JS-measured PIXEL height (like `announcementHeightPx` above)
+  // has no such circularity — it's a real number, not a percentage — so
+  // Did You Know's own `h-full` + internal scroll body (see
+  // DidYouKnowCard.tsx) resolves against a genuine definite height and
+  // contains any FAQ length without affecting this column's height at all.
+  const [qaColRef, qaColHeightPx] = useMeasuredHeight(isDesktop);
 
   // PRIMARY — the tools an advisor reaches for every day.
   const ADVISORY_WORKSPACE: QuickActionTile[] = [
@@ -254,10 +273,18 @@ export function LookupIntroPage({
       tag: "Map conditions to declarations",
       icon: <Sparkles className="w-[18px] h-[18px]" />,
       hex: "#0EA5E9",
-      instructions:
-        "Results may not be accurate in every case. This tool supports your judgement, it doesn't replace it. Always verify before disclosing, and reach out to your mentor when you need clarity.",
-      ctaLabel: "Lets Put Them In Their Place",
       onOpen: () => setShowIntro(false),
+    },
+    {
+      // Launched (2026-09) — moved up to 2nd position, right after
+      // Declaration Assist, and no longer masked as "Coming Soon".
+      id: "product_assist",
+      featureId: "product_assist",
+      title: "Product Assist",
+      tag: "Ask questions about insurer plans",
+      icon: <ProductAssistIcon className="w-[18px] h-[18px]" />,
+      hex: "#6366F1",
+      onOpen: () => setActiveTab("product_assist"),
     },
     {
       id: "coverage_projection",
@@ -266,9 +293,6 @@ export function LookupIntroPage({
       tag: "Base, bonus & restoration cover",
       icon: <FileSpreadsheet className="w-[18px] h-[18px]" />,
       hex: "#22C55E",
-      instructions:
-        "Enter the plan and premium details to project Base Cover, Bonus accrual, and Restoration Benefit growth across the policy term.",
-      ctaLabel: "Open Cover Projection Assist",
       onOpen: () => setActiveTab("coverage_projection"),
     },
     {
@@ -278,37 +302,15 @@ export function LookupIntroPage({
       tag: "2-year waiting period lookup",
       icon: <ClipboardCheck className="w-[18px] h-[18px]" />,
       hex: "#14B8A6",
-      instructions:
-        "Check whether a declared medical condition carries a 2-year specific illness waiting period, and see exactly how it's mapped under each plan.",
-      ctaLabel: "Open Specific Illness Assist",
       onOpen: () => setActiveTab("specific_illness_check"),
-    },
-    {
-      // Kept last (4th) deliberately — a not-yet-launched, masked "surprise"
-      // tile reads better tucked at the end of the row than interrupting
-      // the three real, everyday tools up front.
-      id: "product_assist",
-      featureId: "product_assist",
-      title: "Product Assist",
-      tag: "Ask questions about insurer plans",
-      icon: <ProductAssistIcon className="w-[18px] h-[18px]" />,
-      hex: "#6366F1",
-      instructions:
-        "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements.",
-      ctaLabel: "Open Product Assist",
-      onOpen: () => setActiveTab("product_assist"),
-      // Not yet launched — visible so advisors know it's coming, but masked
-      // and non-interactive until it ships. Remove this line to re-enable.
-      comingSoon: true,
     },
   ];
 
-  // Quality/reference tools, visited less often than the above — merged
-  // into the same Workspace Tools grid as ADVISORY_WORKSPACE at render
-  // time (see QUICK_ACTIONS below), kept as its own array here only for
-  // data organization. QA Dashboard is not a tile here (it's still fully
-  // reachable — the QA Performance card in Quick Peek below links
-  // straight to it via "View QA Dashboard").
+  // Quality/reference tools, visited less often than the above — rendered
+  // as their own 2x2 grid below (see visibleQuality below), kept as its
+  // own array here only for data organization. QA Dashboard is not a tile
+  // here (it's still fully reachable — the QA Performance card in Quick
+  // Peek below links straight to it via "View QA Dashboard").
   const QUALITY_REFERENCES: QuickActionTile[] = [
     {
       id: "advisory_zone",
@@ -317,8 +319,6 @@ export function LookupIntroPage({
       tag: "Payment-journey & illness lists",
       icon: <BookOpen className="w-4 h-4" />,
       hex: "#F59E0B",
-      instructions: "Look up payment-journey questions and plan-specific illness lists before you're mid-call with a customer.",
-      ctaLabel: "Open Plan References",
       onOpen: () => setActiveTab("advisory_zone"),
     },
     {
@@ -328,8 +328,6 @@ export function LookupIntroPage({
       tag: "Browse every posted update",
       icon: <Newspaper className="w-4 h-4" />,
       hex: "#FB7185",
-      instructions: "Browse the full searchable archive of every posted QA and General announcement, filterable by date.",
-      ctaLabel: "Open Announcements",
       onOpen: () => setActiveTab("announcement_archive"),
     },
     {
@@ -339,41 +337,49 @@ export function LookupIntroPage({
       tag: "Visual rules & payout mapping",
       icon: <DeclarationMapIcon width={16} height={16} color="currentColor" />,
       hex: "#EC4899",
-      instructions: "Browse the visual guide to medical declaration rules and payout mapping structures.",
-      ctaLabel: "Open Declaration Map",
       onOpen: () => setActiveTab("resources"),
     },
-    {
-      id: "my_activity",
-      featureId: "my_activity",
-      title: "My Activity",
-      tag: "Your personal search history",
-      icon: <History className="w-4 h-4" />,
-      hex: "#8B5CF6",
-      instructions: "Review your own past lookups and searches — a personal log of everything you've searched in Declaration Assist.",
-      ctaLabel: "Open My Activity",
-      onOpen: () => setActiveTab("my_activity"),
-    },
+    // My Activity removed from this Home dashboard tile set by explicit
+    // request (2026-09) — it's still fully reachable from the sidebar's
+    // Library group, just no longer duplicated here as its own tile.
   ];
+
+  // Mirrors the sidebar's own "Other Resources" disclosure (App.tsx's
+  // renderResourceLinksSection) — that link list has no page/tab of its
+  // own, so this tile's onOpen opens the sidebar's disclosure directly
+  // instead of calling setActiveTab, same as every other tile's onOpen
+  // pattern. Readable by every signed-in user (same as the sidebar
+  // original), so it's appended unconditionally below rather than filtered
+  // by hasAccess like QUALITY_REFERENCES.
+  const OTHER_RESOURCES_TILE: QuickActionTile = {
+    id: "other_resources",
+    featureId: "other_resources",
+    title: "Other Resources",
+    tag: "Access guides & useful links",
+    icon: <FolderOpen className="w-4 h-4" />,
+    hex: "#22C55E",
+    onOpen: onOpenExternalResources,
+  };
 
   // Every advisor sees Declaration Assistant (it's the app's default tab,
   // never gated); everything else follows the exact same permission check
   // the sidebar uses, so Quick Actions never offers a tool this advisor
   // couldn't otherwise reach.
   const visibleAdvisory = ADVISORY_WORKSPACE.filter((mod) => mod.id === "lookup" || hasAccess(mod.featureId, "Viewer"));
-  const visibleQuality = QUALITY_REFERENCES.filter((mod) => hasAccess(mod.featureId, "Viewer"));
-  const QUICK_ACTIONS = [...visibleAdvisory, ...visibleQuality];
-
-  const expandedTile = QUICK_ACTIONS.find((mod) => mod.id === expandedTileId) || null;
+  const visibleQuality = [...QUALITY_REFERENCES.filter((mod) => hasAccess(mod.featureId, "Viewer")), OTHER_RESOURCES_TILE];
 
   /** Shared tile renderer for the Workspace Tools grid (icon box size,
    * padding, title weight all key off `compact`) — currently always
    * called with `compact: true` (see the grid render below), keeping this
    * section's authored height down so it doesn't push the supporting cards
    * further down the page than necessary. The non-compact path is left in
-   * place for a future caller that wants the heavier look. */
+   * place for a future caller that wants the heavier look.
+   *
+   * Clicking a tile navigates straight to its page via `onOpen()` (removed
+   * 2026-09, explicit request — this used to expand an inline "Quick
+   * Guide" blurb + separate CTA button below the tile group instead of
+   * navigating immediately; that accordion step is gone). */
   const renderTile = (mod: QuickActionTile, compact: boolean) => {
-    const expanded = expandedTileId === mod.id;
     const comingSoon = !!mod.comingSoon;
     return (
       <button
@@ -383,10 +389,9 @@ export function LookupIntroPage({
         aria-disabled={comingSoon}
         onClick={() => {
           if (comingSoon) return;
-          setExpandedTileId((prev) => (prev === mod.id ? null : mod.id));
+          mod.onOpen();
         }}
-        title={comingSoon ? "A new tool is coming soon" : `${mod.title} — show quick guide`}
-        aria-expanded={comingSoon ? undefined : expanded}
+        title={comingSoon ? "A new tool is coming soon" : mod.title}
         // Icon-left / text-right row instead of a stacked (icon-on-top)
         // layout — on a wide monitor a 3-across grid gives each tile far
         // more width than a small stacked block needs, which read as a
@@ -424,10 +429,6 @@ export function LookupIntroPage({
             ? theme === "dark"
               ? "bg-white/[0.02] border-white/[0.06]"
               : "bg-stone-100/60 border-stone-200"
-            : expanded
-            ? theme === "dark"
-              ? "bg-white/[0.06] border-white/[0.24]"
-              : "bg-white border-stone-400 shadow-sm"
             : theme === "dark"
             ? "bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.16]"
             : "bg-white/60 border-stone-300 hover:bg-white hover:border-stone-400 hover:shadow-sm"
@@ -479,46 +480,9 @@ export function LookupIntroPage({
     );
   };
 
-  // Conditionally mounted (not just visually collapsed) — a Tailwind flex
-  // `gap` inserts space around EVERY flex child regardless of that child's
-  // own rendered height, so the previous always-mounted-but-0-height
-  // (grid-rows-[0fr]) version silently wasted two full section gaps in the
-  // default/idle state (nothing expanded), which is the page's normal
-  // resting state. Unmounting it entirely when idle removes that dead
-  // space; the tradeoff is the close transition is now an unmount instead
-  // of an animated collapse, which only affects switching/closing, not the
-  // far more common "load Home, nothing open yet" case.
-  const quickGuidePanel = expandedTile && (
-    <div
-      key={expandedTile.id}
-      className="rounded-xl border-l-[3px] pl-4 pr-4 py-3.5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-5 animate-fade-in"
-      style={{
-        borderLeftColor: lightSafe(expandedTile.hex, theme),
-        backgroundColor: theme === "dark" ? "rgba(255,255,255,0.02)" : "rgba(250,250,249,0.6)",
-      }}
-    >
-      <div className="flex items-start gap-2.5 flex-1 min-w-0">
-        <span className="shrink-0 mt-0.5" style={{ color: lightSafe(expandedTile.hex, theme) }}>
-          {expandedTile.id === "lookup" ? <AlertTriangle className="w-[18px] h-[18px]" /> : expandedTile.icon}
-        </span>
-        <div className="min-w-0">
-          <div className="text-[11px] font-black uppercase tracking-wide mb-1" style={{ color: lightSafe(expandedTile.hex, theme) }}>
-            {expandedTile.id === "lookup" ? "Before You Start" : "Quick Guide"}
-          </div>
-          <p className={`text-[14px] leading-relaxed font-medium ${theme === "dark" ? "text-white/80" : "text-stone-700"}`}>
-            {expandedTile.instructions}
-          </p>
-        </div>
-      </div>
-      <PrimaryCtaButton theme={theme} onClick={expandedTile.onOpen} className="shrink-0 self-start sm:self-center">
-        {expandedTile.ctaLabel}
-      </PrimaryCtaButton>
-    </div>
-  );
-
   return (
     <>
-      <div
+    <div
         // Section rhythm scales with actual viewport HEIGHT (clamp on vh)
         // instead of a fixed px gap — a tall monitor gets the original
         // comfortable spacing, a shorter browser viewport (real monitor
@@ -581,78 +545,69 @@ export function LookupIntroPage({
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.3fr)_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
           {/* LEFT — 2/3: Workspace Tools, QA Performance, Did you know. */}
           <div ref={leftColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)] min-h-0">
-            {/* WORKSPACE TOOLS — the former "References" tier (Plan
-                References, Announcements, etc.) now lives in this same
-                grid under this one heading instead of its own separate
-                "References" label/section; QUICK_ACTIONS is already the
-                combined visibleAdvisory + visibleQuality list. Every tile
-                renders at the COMPACT size (same as the old References
-                row) rather than the larger Workspace Tools size — with up
-                to 8 tiles now sharing one grid (wrapping to 2 rows), using
-                the taller non-compact padding on both rows would grow this
-                section's authored height noticeably, pushing the
-                supporting cards below further down the page for no real
-                benefit. Responsive: 1 column on a phone-width viewport,
-                2 on a narrow tablet, 4 side by side from lg up (wraps to a
-                second row past 4 tiles). */}
-            {QUICK_ACTIONS.length > 0 && (
+            {/* WORKSPACE TOOLS — row 1 only: the primary Advisory Workspace
+                tools (Declaration Assist, Product Assist, Cover Projection
+                Assist, Specific Illness Assist) — the
+                former "References" tier (Plan References, Announcements,
+                Declaration Map, Other Resources) instead renders as a 2x2
+                tile grid below QA Performance + the Announcement Counter
+                card (explicit request; see the row below). Every tile still
+                renders at the COMPACT size. Responsive: 1
+                column on a phone-width viewport, 2 on a narrow tablet, 4
+                side by side from lg up. */}
+            {visibleAdvisory.length > 0 && (
               <div className="shrink-0">
                 <SectionLabel icon={<Briefcase className="w-4 h-4" />} text="Workspace Tools" hex={lightSafe("#0EA5E9", theme)} size="lg" />
                 <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-[clamp(8px,1.2vh,12px)]">
-                  {QUICK_ACTIONS.map((mod) => renderTile(mod, true))}
+                  {visibleAdvisory.map((mod) => renderTile(mod, true))}
                 </div>
               </div>
             )}
 
-            {/* QUICK GUIDE — shared accordion panel for whichever tile (from
-                either group above) is currently expanded. */}
-            {quickGuidePanel && <div className="shrink-0">{quickGuidePanel}</div>}
-
-            {/* DID YOU KNOW + (QA PERFORMANCE / ANNOUNCEMENT COUNTER) — side
-                by side from `lg` up (stacked below it). Did you know sits in
-                the fixed-320px narrow cell (was the Announcement Counter
-                card's slot, and was 260px until explicit request bumped it
-                — QA Performance's own internal split (a "Consolidated
-                Score" block next to its 2x2 Lead/Payments/Chat/Call QA
-                grid) had more room than it needed, so its column — shared
-                with the Announcement Counter card stacked below it — gives
-                up some width here) — its content is a single short Insight
-                that scrolls internally if too long (see DidYouKnowCard.tsx),
-                so a tall narrow column suits it far better than the Counter
-                card's inherently-horizontal strip of stat numbers ever did.
-                QA Performance and the Announcement Counter are stacked in
-                the (now slightly narrower) wide `minmax(0,1fr)` cell
-                instead — the Counter card is a wide, horizontal layout
-                (3-up stat grid + a Last 30 Days strip, see
-                AnnouncementCounterCard.tsx) matching QA Performance's own
-                full width, rather than the narrow stacked card it used to
-                be.
-                `lg:items-start` — without it, CSS Grid's default
-                `items-stretch` (plus `align-content: stretch` on a single
-                auto row inside this row's own `flex-1 min-h-0` — i.e. a
-                definite-height container) stretches the RIGHT cell to fill
-                the ENTIRE leftover space in the left column, not just its
-                own QA Performance + Counter content — which is exactly
-                what made the Counter card read as oversized/dominant
-                before (and, via `supportingRowRightCellRef` below, would
-                have fed that same inflated number into Did you know's
-                height too). With `items-start`, the right cell sizes to
-                its own natural content, and Did you know's height is set
-                to `didYouKnowHeightPx` — that cell's own measured (now
-                accurate) height — so its bottom edge still lands on
-                exactly the same line as that cell's, forming one clean
-                rectangle, just no longer forcing extra dead space into
-                either card. Below `lg`, neither items-start nor the height
-                style applies — natural height, stacked, exactly as
-                before. */}
-            <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start gap-[clamp(10px,1.8vh,24px)] flex-1 min-h-0">
-              <div
-                className="min-w-0"
-                style={isDesktop && didYouKnowHeightPx ? { height: didYouKnowHeightPx } : undefined}
-              >
+            {/* DID YOU KNOW + QA PERFORMANCE STACK — Did You Know takes the
+                fixed-320px narrow cell that the reference tiles used to
+                occupy; QA Performance's column stacks THREE things — QA
+                Performance, the Announcement Counter card, and the
+                reference tiles themselves (Plan References, Announcements,
+                Declaration Map, Other Resources — My Activity was dropped
+                from this set by explicit request) as a 2x2 grid at the
+                bottom. Did You Know's height is set to `qaColHeightPx` — a
+                JS measurement of this row's right cell (via `qaColRef`
+                below), NOT CSS Grid stretch (tried first; see
+                `qaColHeightPx`'s own doc comment above for why that broke
+                — a fixed, definite pixel height was the actual fix, same
+                technique `announcementHeightPx` already uses for the
+                Updates card). Below `lg` the measurement resets to null and
+                everything renders at natural height, stacked. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-[clamp(10px,1.8vh,24px)]">
+              {/* LEFT — Did You Know. Fixed to `qaColHeightPx` (see above) —
+                  a genuine, definite pixel height, so its own `h-full` +
+                  internal `flex-1 min-h-0 overflow-y-auto` body (see
+                  DidYouKnowCard.tsx) can actually resolve against it: a long
+                  FAQ pair scrolls internally instead of growing the card
+                  (and, transitively, `leftColRef`'s measured total and the
+                  Updates card past the viewport — the overflow bug this
+                  fixes). The card's overall height still fills the space
+                  next to QA Performance + Announcement Counter + the tiles
+                  below them, right down to their shared bottom line. */}
+              <div className="min-w-0" style={isDesktop && qaColHeightPx ? { height: qaColHeightPx } : undefined}>
                 <DidYouKnowCard theme={theme} />
               </div>
-              <div ref={supportingRowRightCellRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)]">
+              {/* RIGHT — QA Performance, Announcement Counter, then the 4
+                  reference tiles as a 2x2 grid — `ref={qaColRef}` is what
+                  Did You Know's height above is measured from. All three
+                  stay `shrink-0` at their own natural height — including
+                  the tile grid now (previously force-fit to a fixed
+                  `clamp(160px,20vh,220px)`, a leftover from when Did You
+                  Know itself used to be capped at that height; the tiles'
+                  actual content is much shorter, so that fixed height just
+                  stretched each tile row and read as mostly-empty cards —
+                  see AnnouncementCounterCard's own comment for where that
+                  freed space went instead). Two tiles side by side still
+                  automatically equal QA Performance's own width, since both
+                  share this same column — no separate width matching
+                  needed. */}
+              <div ref={qaColRef} className="min-w-0 flex flex-col gap-[clamp(10px,1.8vh,24px)]">
                 <div className="shrink-0">
                   <QaPerformancePeek
                     theme={theme}
@@ -661,11 +616,10 @@ export function LookupIntroPage({
                   />
                 </div>
                 <div className="shrink-0">
-                  <AnnouncementCounterCard
-                    theme={theme}
-                    allAnnouncements={allAnnouncements}
-                    onOpenStat={(title, list) => setOpenStat({ title, list })}
-                  />
+                  <AnnouncementCounterCard theme={theme} allAnnouncements={allAnnouncements} onOpenStat={(title, list) => setOpenStat({ title, list })} />
+                </div>
+                <div className="shrink-0 grid grid-cols-2 grid-rows-2 gap-[clamp(6px,1vh,10px)]">
+                  {visibleQuality.map((mod) => renderTile(mod, true))}
                 </div>
               </div>
             </div>
@@ -724,7 +678,6 @@ export function LookupIntroPage({
           </div>
         </div>
       </div>
-
       {openStat && <AnnouncementStatModal theme={theme} title={openStat.title} announcements={openStat.list} onClose={() => setOpenStat(null)} />}
     </>
   );

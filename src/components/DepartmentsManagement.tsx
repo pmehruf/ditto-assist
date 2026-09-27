@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useMemo, useState } from "react";
-import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Building2, Power, Search } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Building2, Power, Search, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Department } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
@@ -25,11 +25,13 @@ interface DepartmentsManagementProps {
 /**
  * "Departments" tab — pure organizational metadata (see schema.ts's doc
  * comment on the `departments` table for why this deliberately carries zero
- * access implications). Developer can create, rename, and deactivate/
- * reactivate; Admin gets a read-only view, same posture as every other tab
- * on this page. No hard-delete is exposed here — deactivating is the only
- * removal path, so a department already assigned to users never silently
- * vanishes from their records (see departmentsRepository.ts).
+ * access implications). Developer can create, rename, deactivate/reactivate,
+ * and (Access Control Center Phase 4) permanently delete; Admin gets a
+ * read-only view, same posture as every other tab on this page. A delete is
+ * dependency-checked server-side before it happens — see
+ * catalogDependencies.ts — so a department a rule or the Product Assist
+ * eligibility setting still references can't silently vanish out from under
+ * them; deactivating remains the safer default removal path.
  *
  * Assigning a user TO a department happens on the Directory tab's add/edit
  * form (the one place membership is set), not here — this tab only manages
@@ -41,23 +43,27 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftName, setDraftName] = useState("");
-  const [draftDescription, setDraftDescription] = useState("");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const memberCount = (deptId: number) => usersList.filter((u) => u.departmentId === deptId).length;
+  const membersOf = (deptId: number) => usersList.filter((u) => u.departmentId === deptId).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Which department's member list is expanded open below its row —
+  // click-to-expand instead of always rendering every member (some
+  // departments have 100+ people, per the Advisory row's own count).
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const visibleDepartments = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return departments.filter((d) => {
       if (statusFilter === "active" && !d.active) return false;
       if (statusFilter === "inactive" && d.active) return false;
-      if (q && !d.name.toLowerCase().includes(q) && !(d.description || "").toLowerCase().includes(q)) return false;
+      if (q && !d.name.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [departments, searchQuery, statusFilter]);
@@ -65,7 +71,6 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
   const resetCreateForm = () => {
     setCreating(false);
     setNewName("");
-    setNewDescription("");
     setActionError(null);
   };
 
@@ -80,7 +85,7 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
       const res = await fetch("/api/departments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), description: newDescription.trim() || null }),
+        body: JSON.stringify({ name: newName.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to create this department (HTTP ${res.status}).`);
@@ -97,14 +102,12 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
   const startEdit = (dept: Department) => {
     setEditingId(dept.id);
     setDraftName(dept.name);
-    setDraftDescription(dept.description || "");
     setActionError(null);
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setDraftName("");
-    setDraftDescription("");
   };
 
   const saveEdit = async (dept: Department) => {
@@ -118,7 +121,7 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
       const res = await fetch(`/api/departments/${dept.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: draftName.trim(), description: draftDescription.trim() || null }),
+        body: JSON.stringify({ name: draftName.trim() }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to save changes (HTTP ${res.status}).`);
@@ -147,6 +150,37 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
       onChanged();
     } catch (err: any) {
       setActionError(err.message || "Failed to update this department.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Access Control Center Phase 4 (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md)
+  // — see TeamsManagement.tsx's deleteTeam for the identical two-step
+  // confirm/block reasoning.
+  const deleteDepartment = async (dept: Department) => {
+    setSaving(true);
+    setActionError(null);
+    try {
+      let res = await fetch(`/api/departments/${dept.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: false }),
+      });
+      let body = await res.json().catch(() => ({}));
+      if (!res.ok && body.requiresConfirmation) {
+        if (!window.confirm(`${body.error} Delete "${dept.name}" anyway?`)) return;
+        res = await fetch(`/api/departments/${dept.id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirmed: true }),
+        });
+        body = await res.json().catch(() => ({}));
+      }
+      if (!res.ok) throw new Error(body.error || `Failed to delete this department (HTTP ${res.status}).`);
+      onChanged();
+    } catch (err: any) {
+      setActionError(err.message || "Failed to delete this department.");
     } finally {
       setSaving(false);
     }
@@ -186,17 +220,11 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
         )}
 
         {creating && (
-          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-stone-50/60"}`}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                Name
-                <input className={inputClass} placeholder="e.g. Advisory" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </label>
-              <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                Description (optional)
-                <input className={inputClass} placeholder="Short description" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} />
-              </label>
-            </div>
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
+            <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted max-w-sm">
+              Name
+              <input className={inputClass} placeholder="e.g. Advisory" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            </label>
             <div className="flex items-center gap-2">
               <ClippedButton onClick={createDepartment} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="px-3 py-1.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white">
                 {saving ? "Saving..." : "Save"}
@@ -256,37 +284,45 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
               <tbody>
                 {visibleDepartments.map((dept, idx) => {
                   const isEditing = canEdit && editingId === dept.id;
+                  const count = memberCount(dept.id);
+                  const expanded = expandedId === dept.id;
                   return (
-                    <tr key={dept.id} className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""}`}>
+                    <Fragment key={dept.id}>
+                    <tr className={`border-b align-top ${expanded ? "" : "last:border-b-0"} ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""}`}>
                       <td className="px-3 py-2.5 w-8">
                         <Building2 className={`w-3.5 h-3.5 mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`} />
                       </td>
                       <td className="px-3 py-2.5">
                         {isEditing ? (
-                          <div className="space-y-1.5">
-                            <input className={inputClass} value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Name" />
-                            <input className={inputClass} value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} placeholder="Description (optional)" />
-                          </div>
+                          <input className={inputClass} value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Name" />
                         ) : (
-                          <>
-                            <div className="flex items-center gap-1.5">
-                              <span className={`font-black text-xs ${dark ? "text-white" : "text-stone-900"}`}>{dept.name}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap ${
-                                dept.active
-                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                                  : "bg-stone-500/15 text-stone-400 border-stone-500/30"
-                              }`}>
-                                {dept.active ? "Active" : "Inactive"}
-                              </span>
-                            </div>
-                            {dept.description && (
-                              <p className={`text-[10.5px] mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>{dept.description}</p>
-                            )}
-                          </>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`font-black text-xs ${dark ? "text-white" : "text-stone-900"}`}>{dept.name}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border whitespace-nowrap ${
+                              dept.active
+                                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                : "bg-stone-500/15 text-stone-400 border-stone-500/30"
+                            }`}>
+                              {dept.active ? "Active" : "Inactive"}
+                            </span>
+                          </div>
                         )}
                       </td>
-                      <td className={`px-3 py-2.5 text-[10.5px] whitespace-nowrap ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                        {memberCount(dept.id)} {memberCount(dept.id) === 1 ? "member" : "members"}
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {/* Click-to-expand the member list below this row —
+                            was static text; a department with 100+ people
+                            (e.g. Advisory) gave no way to actually see who
+                            was in it without going to the Directory tab
+                            and filtering by hand. */}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(expanded ? null : dept.id)}
+                          disabled={count === 0}
+                          className={`flex items-center gap-1 text-[10.5px] font-bold cursor-pointer disabled:cursor-default disabled:opacity-60 ${dark ? "text-stone-400 hover:text-sky-400" : "text-stone-500 hover:text-sky-600"}`}
+                        >
+                          {count > 0 && (expanded ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />)}
+                          {count} {count === 1 ? "member" : "members"}
+                        </button>
                       </td>
                       {canEdit && (
                         <td className="px-3 py-2.5 text-right">
@@ -318,11 +354,40 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
                               >
                                 <Power className="w-3.5 h-3.5" />
                               </ClippedButton>
+                              <ClippedButton
+                                onClick={() => deleteDepartment(dept)}
+                                disabled={saving}
+                                cornerBg={dark ? "#0e2236" : "#ffffff"}
+                                className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`}
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </ClippedButton>
                             </div>
                           )}
                         </td>
                       )}
                     </tr>
+                    {expanded && (
+                      <tr className={`border-b last:border-b-0 ${dark ? "border-stone-850 bg-black/[0.15]" : "border-stone-150 bg-stone-100/70"}`}>
+                        <td />
+                        <td colSpan={canEdit ? 3 : 2} className="px-3 py-2.5">
+                          <div className="flex flex-wrap gap-1.5">
+                            {membersOf(dept.id).map((u) => (
+                              <span
+                                key={u.email}
+                                title={u.email}
+                                className={`px-2 py-1 rounded-full border text-[10.5px] font-semibold whitespace-nowrap ${dark ? "bg-white/[0.03] border-stone-800 text-stone-300" : "bg-white border-stone-200 text-stone-700"}`}
+                              >
+                                {u.name}
+                                <span className={`ml-1 font-mono text-[9px] ${dark ? "text-stone-500" : "text-stone-400"}`}>{u.tactId}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -334,8 +399,8 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
 
         <p className="text-[10.5px] font-semibold text-content-muted">
           {canEdit
-            ? "Departments are organizational metadata only — they have no effect on what anyone can access. Assign a user to a department from the Directory tab. Deactivating hides a department from the assignment dropdown without deleting it or unassigning existing members."
-            : "Admin clearance grants read-only visibility into departments. Developer clearance is required to create or edit them."}
+            ? "Departments are organizational metadata only — they have no effect on what anyone can access. Assign a user to a department from the Directory tab. Deactivating hides a department from the assignment dropdown without deleting it or unassigning existing members. Deleting permanently removes it — blocked if an Access Rule or Product Assist's eligibility setting still references it."
+            : "Admin clearance grants read-only visibility into departments. Developer clearance is required to create, edit, or delete them."}
         </p>
       </div>
     </div>

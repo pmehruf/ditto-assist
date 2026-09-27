@@ -56,11 +56,13 @@ export interface QAAnnouncement {
    * from effectiveDate; defaults to today in the form but is editable. */
   announcementDate?: string;
   /** Which advisor audience this is targeted at — Health Advisors only see
-   * "Health" announcements, Term Advisors only see "Term"; everyone else
-   * (unassigned/"Both advisor"/"Manager") sees both. Always set server-side
-   * (column defaults to "Health"); optional here only so existing
-   * fixtures/constructors elsewhere in the app don't need updating. */
-  team?: "Health" | "Term";
+   * "Health" announcements, Term Advisors only see "Term"; "Both" is visible
+   * to Health AND Term advisors alike (lets the Announcement Manager post
+   * one common announcement instead of two near-duplicates); everyone else
+   * (unassigned/"Manager") sees everything regardless of this value. Always
+   * set server-side (column defaults to "Health"); optional here only so
+   * existing fixtures/constructors elsewhere in the app don't need updating. */
+  team?: "Health" | "Term" | "Both";
 }
 
 /** External link (SOP, QA Dashboard, etc.) surfaced in the Workspace Controls

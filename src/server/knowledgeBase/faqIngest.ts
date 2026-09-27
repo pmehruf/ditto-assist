@@ -206,11 +206,19 @@ export interface SyncFaqResult {
  * new UI components.
  */
 export async function syncFaq(repos: Repositories, triggeredBy: string): Promise<SyncFaqResult> {
-  const categories = await repos.kbCategories.list();
+  // Explicitly scoped to Health — this used to list categories with no
+  // domain filter at all, which "worked" only because Health's Org
+  // Constitution category happened to be the first "general" match created.
+  // termFaqIngest.ts's syncTermFaq had the exact same unscoped pattern and
+  // it silently attached every Term FAQ sync to Health's category instead
+  // of Term's own (2026-09 bug fix, see that file). Scoping here too so
+  // this function can't regress the same way if category creation order
+  // ever changes.
+  const categories = await repos.kbCategories.list({ domain: "Health" });
   const generalCategory = categories.find(c => c.type === "general");
   if (!generalCategory) {
     throw new Error(
-      'No "General" Knowledge Base category exists yet — create one first in Knowledge Base Management, then resync the Health FAQ.'
+      'No "General" Knowledge Base category exists yet for Health — create one first in Knowledge Base Management, then resync the Health FAQ.'
     );
   }
 
@@ -236,12 +244,16 @@ export async function syncFaq(repos: Repositories, triggeredBy: string): Promise
     });
   } else {
     // Also carries the title rename through for a row still on the legacy
-    // "Ditto FAQ" name — self-heals on this very sync, no separate
+    // "Ditto FAQ" name, and re-pins categoryId to Health's own general
+    // category every sync (belt-and-suspenders against the same
+    // wrong-domain-category bug termFaqIngest.ts's syncTermFaq had —
+    // 2026-09 fix) — both self-heal on this very sync, no separate
     // migration/backfill needed.
     resource = (await repos.kbResources.update(resource.id, {
       status: "processing",
       errorMessage: null,
       title: FAQ_DITTO_RESOURCE_TITLE,
+      categoryId: generalCategory.id,
     }))!;
   }
   const resourceId = resource!.id;

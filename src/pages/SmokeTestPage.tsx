@@ -32,6 +32,9 @@ interface SmokeTestResult {
 interface SmokeTestPageProps {
   theme: "light" | "dark";
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
+  /** Same resolveAccess()-backed evaluator every other governed feature's
+   * page uses — see App.tsx's hasAccess(). */
+  hasAccess: (featureId: string, actionType: "Viewer" | "Editor") => boolean;
   currentUser: LoggedUser | null;
   productionPlans: string[];
   selectedPlan: string;
@@ -49,13 +52,17 @@ interface SmokeTestPageProps {
  * AI in production, which is itself the signal this page exists to catch
  * before an advisor hits it live.
  *
- * Visible to every tier (read/run); adding or removing a custom PED is
- * gated to Admin/Developer both here and server-side (requireAdminOrDeveloper),
- * same pattern as the PED Directory page.
+ * Visible to every tier (read/run); adding or removing a custom PED requires
+ * Editor access on the "smoke_test" governed feature (hasAccess/
+ * requireFeatureAccess, same registry/override/Access-Rule/Custom-Grant
+ * pipeline every other feature uses — "smoke_test" stopped being a hardcoded
+ * Developer-only exception in 2026-09, so a Developer can now reassign it
+ * from the Permissions tab like any other feature).
  */
 export function SmokeTestPage({
   theme,
   effectiveTier,
+  hasAccess,
   currentUser,
   productionPlans,
   selectedPlan,
@@ -63,7 +70,7 @@ export function SmokeTestPage({
   setChangeLogs,
 }: SmokeTestPageProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
+  const canManage = hasAccess("smoke_test", "Editor");
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs((prev) => [

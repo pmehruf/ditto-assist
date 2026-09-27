@@ -10,7 +10,8 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
  * sibling elsewhere on the page can be set to that exact pixel height (see
  * LookupIntroPage.tsx: the "Updates - Live feed" card matches the left
  * column's total height, and the "Did you know!?" card matches the QA
- * Performance + Announcement Counter cell's height) — the two edges land on
+ * Performance + Announcement Counter + reference-tiles cell's height) — the
+ * two edges land on
  * the same line by construction (the browser's own layout is the source of
  * truth), not hand-computed guesswork, and it stays correct as content
  * changes (a Quick Guide panel opening, an Insight's length changing, etc.).

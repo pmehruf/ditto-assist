@@ -4,8 +4,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, RefreshCw, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download, ArrowLeft, ClipboardList } from "lucide-react";
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Search, RefreshCw, AlertTriangle, X, Users, GraduationCap, Calendar, BarChart3, Tag, ListFilter, CheckCircle2, Download, ArrowLeft, ListChecks } from "lucide-react";
 import { QaDashboardIcon } from "../components/icons";
 import { CustomSelect } from "../components/CustomSelect";
 import { ClippedButton } from "../components/ClippedButton";
@@ -90,99 +89,21 @@ const REVIEW_COLUMNS = [
 const SCORE_DANGER = 3.5;
 const SCORE_WARN = 3.75;
 
-// ── Historical trend chart + metric selector (Task 3 item 3) — same
-// shape/behavior as Team Tracker's own (see TeamTrackerPage.tsx), kept as
-// a small local copy here rather than a shared import since this page's
-// data source (one advisor's monthly rows) is simpler than Team
-// Tracker's multi-advisor pivot. ──────────────────────────────────────
-type MetricKey = "cumulative" | "lead" | "payment" | "chat" | "call";
-interface MetricPoint {
-  score: number | null;
-  instances: number;
-}
-const METRIC_OPTIONS: { value: MetricKey; label: string }[] = [
-  { value: "cumulative", label: "Cumulative" },
-  { value: "lead", label: "Lead" },
-  { value: "payment", label: "Payment" },
-  { value: "chat", label: "Chat" },
-  { value: "call", label: "Call" },
-];
-const METRIC_LABELS: Record<MetricKey, string> = { cumulative: "Cumulative Score", lead: "Lead Score", payment: "Payment QA", chat: "Chat QA", call: "Call QA" };
+// QIP/PIP Candidates table: sticky header (px-3 py-1.5, text-xs → ~28px)
+// plus 7 data rows (px-3 py-1.5, text-xs → ~28px each) plus a hairline
+// border per row ≈ 8 * 28px + 8px borders = 232px. Past 7 rows the table
+// scrolls internally inside this fixed height instead of growing the card.
+const QIP_TABLE_MAX_HEIGHT_PX = 232;
 
-/** One advisor's own monthly row — mirrors TeamTrackerPage.tsx's
- * MonthlyAdvisorRow (same /api/qa-dashboard/team-tracker/table response),
- * trimmed to the fields the trend chart actually needs. */
-interface AdvisorMonthlyRow {
-  monthKey: string;
-  monthLabel: string;
-  cumulativeScore: number | null;
-  leadScoreAvg: number | null;
-  leadScoreInstances: number;
-  paymentsAvg: number | null;
-  paymentsInstances: number;
-  chatAvg: number | null;
-  chatInstances: number;
-  callAvg: number | null;
-  callInstances: number;
-}
-
-// ── Session Feedback (formerly Team Tracker's "Coaching Workspace") —
-// relocated here per requirement #15: it belongs with the individual
-// advisor's QA Dashboard, not Team Tracker. Draft persistence (browser
-// localStorage, per-advisor) + saved history (DB, via the same
-// /api/qa-dashboard/team-tracker/coaching/* routes Team Tracker used) —
-// a session is written ONLY on explicit Save, same as before. ──────────
+// ── Session Feedback — full editable control (create/save sessions,
+// history, actionable statuses) lives in Team Tracker's advisor-level
+// Insights view now, not here (explicit request: the earlier relocation to
+// this page was a mapping error). This page keeps only a read-only
+// ActionableStatus type/status-badge for the lightweight self-view section
+// below (see ReadOnlyFeedbackSummarySection), plus its own status-update
+// call — a plain Advisor can act on their own actionables from here even
+// though they can't reach Team Tracker to edit anything else. ──────────
 type ActionableStatus = "Open" | "In Progress" | "Completed" | "Failed";
-interface SessionFeedbackActionableDraft {
-  id: string; // client-only React key, not persisted as-is
-  description: string;
-  dueDate: string; // "yyyy-MM-dd", "" = none
-}
-interface SessionFeedbackDraft {
-  meetingDate: string; // "yyyy-MM-dd"
-  discussionPoints: string;
-  meetingNotes: string;
-  actionables: SessionFeedbackActionableDraft[];
-}
-function emptySessionFeedbackDraft(): SessionFeedbackDraft {
-  const d = new Date();
-  return { meetingDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, discussionPoints: "", meetingNotes: "", actionables: [] };
-}
-function sessionFeedbackDraftKey(tactId: string): string {
-  return `ditto_session_feedback_draft_${tactId}`;
-}
-/** Reading/writing localStorage can throw (private browsing, storage full,
- * disabled) — every call site treats that as "no draft available" rather
- * than crashing the page. */
-function loadSessionFeedbackDraft(tactId: string): SessionFeedbackDraft {
-  try {
-    const raw = window.localStorage.getItem(sessionFeedbackDraftKey(tactId));
-    if (!raw) return emptySessionFeedbackDraft();
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.actionables)) return parsed as SessionFeedbackDraft;
-  } catch {
-    /* corrupt/unreadable draft — start fresh rather than crash */
-  }
-  return emptySessionFeedbackDraft();
-}
-function saveSessionFeedbackDraftToStorage(tactId: string, draft: SessionFeedbackDraft) {
-  try {
-    window.localStorage.setItem(sessionFeedbackDraftKey(tactId), JSON.stringify(draft));
-  } catch {
-    /* storage full/unavailable — draft just won't survive a refresh */
-  }
-}
-function clearSessionFeedbackDraft(tactId: string) {
-  try {
-    window.localStorage.removeItem(sessionFeedbackDraftKey(tactId));
-  } catch {
-    /* ignore */
-  }
-}
-function isSessionFeedbackDraftEmpty(d: SessionFeedbackDraft): boolean {
-  return !d.discussionPoints.trim() && !d.meetingNotes.trim() && d.actionables.every((a) => !a.description.trim());
-}
-
 interface FeedbackSummaryActionable {
   id: number;
   description: string;
@@ -203,24 +124,10 @@ interface FeedbackSummaryEntry {
 async function fetchFeedbackSummary(tactId: string): Promise<FeedbackSummaryEntry[]> {
   return fetchJson<FeedbackSummaryEntry[]>(`/api/qa-dashboard/team-tracker/coaching/history?${qs({ tactId })}`);
 }
-async function postSessionFeedback(payload: {
-  tactId: string;
-  meetingDate: string;
-  discussionPoints: string;
-  meetingNotes: string;
-  actionables: { description: string; dueDate: string | null; status: "Open" }[];
-}): Promise<FeedbackSummaryEntry> {
-  const res = await fetch("/api/qa-dashboard/team-tracker/coaching/sessions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
-  return body as FeedbackSummaryEntry;
-}
-/** Feedback Summary's own status control — the only place an
- * actionable's status changes after it's created (see requirement #16). */
+/** The advisor's own status control on their read-only Feedback Summary —
+ * the one field they CAN edit here (see requirement: "since the actionable
+ * is given to the advisors, they should have the option to update the
+ * actionable status on their end on the advisor dashboard"). */
 async function patchActionableStatus(actionableId: number, status: ActionableStatus): Promise<void> {
   const res = await fetch(`/api/qa-dashboard/team-tracker/coaching/actionables/${actionableId}/status`, {
     method: "PATCH",
@@ -285,15 +192,19 @@ function pad(n: number): string {
 function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+/** monthIndex0 is 0-11 (January = 0) — same Start/End/Till formula
+ * computeDefaultDates() always used for "the current month", generalized to
+ * any (year, month) pair for the Control section's Month selector below. */
+function monthDateFilters(year: number, monthIndex0: number): DateFilters {
+  return {
+    checkedFrom: `${year}-${pad(monthIndex0 + 1)}-01`,
+    checkedTo: fmtDate(new Date(year, monthIndex0 + 1, 0)),
+    tillDate: fmtDate(new Date(year, monthIndex0, -1)),
+  };
+}
 function computeDefaultDates(): DateFilters {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = d.getMonth();
-  return {
-    checkedFrom: `${y}-${pad(m + 1)}-01`,
-    checkedTo: fmtDate(new Date(y, m + 1, 0)),
-    tillDate: fmtDate(new Date(y, m, -1)),
-  };
+  return monthDateFilters(d.getFullYear(), d.getMonth());
 }
 const DATES_STORAGE_KEY = "qa_dashboard_date_filters";
 function loadStoredDates(): DateFilters | null {
@@ -306,6 +217,53 @@ function loadStoredDates(): DateFilters | null {
     /* corrupt/unreadable storage — ignore */
   }
   return null;
+}
+
+// ── Month selector (Control section) — "yyyy-MM", or the literal "custom"
+// for manual Start/End/Till editing exactly as before. Picking a month
+// auto-fills the three date fields via monthDateFilters above; they stay
+// disabled (view-only) until "Custom" is chosen, so the visible dates can
+// never silently drift from the selected month. ───────────────────────────
+function monthKeyOf(year: number, monthIndex0: number): string {
+  return `${year}-${pad(monthIndex0 + 1)}`;
+}
+function parseMonthKey(key: string): { year: number; monthIndex0: number } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  return { year: Number(m[1]), monthIndex0: Number(m[2]) - 1 };
+}
+function currentMonthKey(): string {
+  const d = new Date();
+  return monthKeyOf(d.getFullYear(), d.getMonth());
+}
+// Last 24 months (newest first) plus "Custom" — 24 is comfortably past any
+// range this dashboard's own date filters are meant to cover day-to-day,
+// without the dropdown growing unbounded.
+const MONTH_SELECT_COUNT = 24;
+function recentMonthOptions(count: number): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  const now = new Date();
+  let y = now.getFullYear();
+  let m = now.getMonth();
+  for (let i = 0; i < count; i++) {
+    out.push({ value: monthKeyOf(y, m), label: new Date(y, m, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" }) });
+    m--;
+    if (m < 0) {
+      m = 11;
+      y--;
+    }
+  }
+  return out;
+}
+const MONTH_SELECTION_STORAGE_KEY = "qa_dashboard_month_selection";
+function loadStoredMonthSelection(): string {
+  try {
+    const raw = window.localStorage.getItem(MONTH_SELECTION_STORAGE_KEY);
+    if (raw) return raw;
+  } catch {
+    /* ignore */
+  }
+  return currentMonthKey();
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -972,135 +930,6 @@ function AdvisorRosterTable({
   );
 }
 
-// ── Compact metric selector for the trend chart — a small pill row that
-// reads as part of the chart card rather than another large filter
-// section (Task 3 item 3). ────────────────────────────────────────────
-function MetricSelector({ value, onChange, dark }: { value: MetricKey; onChange: (v: MetricKey) => void; dark: boolean }) {
-  return (
-    <div className={`inline-flex flex-wrap rounded-lg border p-0.5 gap-0.5 ${dark ? "bg-white/[0.04] border-white/[0.10]" : "bg-stone-100 border-stone-200"}`}>
-      {METRIC_OPTIONS.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors ${
-            value === o.value ? "bg-[#117FDA] text-white" : dark ? "text-slate-300 hover:text-white" : "text-stone-500 hover:text-stone-800"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function AdvisorTrendChart({ dark, theme, data, scoreLabel }: { dark: boolean; theme: "light" | "dark"; data: { month: string; score: number | null; instances: number }[]; scoreLabel: string }) {
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#1F2937" : "#E5E7EB"} />
-        <XAxis dataKey="month" stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
-        <YAxis yAxisId="score" domain={[0, 5]} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
-        <YAxis yAxisId="instances" orientation="right" allowDecimals={false} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} fontSize={11} tickLine={false} />
-        <Tooltip
-          content={({ active, payload, label }) => {
-            if (active && payload && payload.length) {
-              return (
-                <div className={`p-2 rounded-lg border text-[11px] font-sans shadow-lg font-bold ${dark ? "bg-stone-900 border-stone-800 text-zinc-100" : "bg-white border-stone-200 text-stone-950"}`}>
-                  <p className="opacity-75 mb-0.5">{label}</p>
-                  {payload.map((p) => (
-                    <p key={p.dataKey as string} className="font-black">
-                      {p.dataKey === "score" ? `${scoreLabel}: ` : "Instances: "}
-                      {p.value ?? "NA"}
-                    </p>
-                  ))}
-                </div>
-              );
-            }
-            return null;
-          }}
-        />
-        <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-        <Line yAxisId="score" type="monotone" dataKey="score" name={scoreLabel} stroke="#117FDA" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-        <Line yAxisId="instances" type="monotone" dataKey="instances" name="QA Instances" stroke="#9CA3AF" strokeWidth={1.5} strokeDasharray="4 3" dot={{ r: 2 }} />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
-// ── Historical trend section — Guide/Mentor/Admin only (same scope Team
-// Tracker's own table endpoint already enforces; see this page's
-// canBrowseOthers). A plain Advisor's own self-view keeps the existing
-// Score Dashboard scorecards unchanged (guardrail: "Existing QA Dashboard
-// scorecards and calculations must remain unchanged") rather than gaining
-// a chart that reuses an endpoint they aren't authorized to call. ──────
-function AdvisorTrendSection({ dark, theme, tactId }: { dark: boolean; theme: "light" | "dark"; tactId: string }) {
-  const [metric, setMetric] = useState<MetricKey>("cumulative");
-  const [rows, setRows] = useState<AdvisorMonthlyRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    // Last 12 months through the current month — enough to show a
-    // meaningful trend without a separate period control on this page.
-    const now = new Date();
-    const toYm = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-    const fromDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-    const fromYm = `${fromDate.getFullYear()}-${pad(fromDate.getMonth() + 1)}`;
-    fetchJson<{ rows: AdvisorMonthlyRow[] }>(`/api/qa-dashboard/team-tracker/table?${qs({ tactId, fromMonth: fromYm, toMonth: toYm })}`)
-      .then((r) => {
-        if (!cancelled) setRows(r.rows);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message || "Failed to load historical trend.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tactId]);
-
-  const chartData = useMemo(() => {
-    if (!rows) return [];
-    return rows.map((r) => {
-      const point: Record<MetricKey, MetricPoint> = {
-        cumulative: { score: r.cumulativeScore, instances: r.paymentsInstances + r.chatInstances + r.callInstances },
-        lead: { score: r.leadScoreAvg, instances: r.leadScoreInstances },
-        payment: { score: r.paymentsAvg, instances: r.paymentsInstances },
-        chat: { score: r.chatAvg, instances: r.chatInstances },
-        call: { score: r.callAvg, instances: r.callInstances },
-      };
-      return { month: r.monthLabel, ...point[metric] };
-    });
-  }, [rows, metric]);
-  const hasChartData = chartData.filter((d) => d.score !== null).length > 1;
-
-  return (
-    <div className={`rounded-xl border p-3 flex flex-col ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Historical Trend</h4>
-        <MetricSelector value={metric} onChange={setMetric} dark={dark} />
-      </div>
-      {loading ? (
-        <p className="text-[13px] text-content-muted py-6 text-center">Loading…</p>
-      ) : error ? (
-        <p className="text-[13px] text-red-500 py-6 text-center">{error}</p>
-      ) : hasChartData ? (
-        <div className="w-full h-48 font-sans text-[11px] font-bold">
-          <AdvisorTrendChart dark={dark} theme={theme} data={chartData} scoreLabel={METRIC_LABELS[metric]} />
-        </div>
-      ) : (
-        <div className="py-10 text-center text-[13px] text-content-muted">Not enough scored months yet.</div>
-      )}
-    </div>
-  );
-}
-
 function ActionableStatusChip({ status, dark }: { status: ActionableStatus; dark: boolean }) {
   const cls =
     status === "Completed"
@@ -1156,12 +985,34 @@ function ActionableStatusSelect({ actionableId, status, dark, onChanged }: { act
   );
 }
 
-// ── Feedback Summary (formerly Team Tracker's "Coaching History") — the
-// longitudinal record of session feedback for this advisor (Task 3 items
-// 14 &amp; 15). Scannable list, newest meeting first; each actionable's
-// status is editable right here rather than only settable at creation. ──
-function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean; tactId: string; refreshSignal: number }) {
-  const [entries, setEntries] = useState<FeedbackSummaryEntry[] | null>(null);
+// ── Actionables duplicated from the Advisor Insight Page (Team Tracker) —
+// per the explicit spec: "That actionable item alone should be duplicated
+// and displayed... Only the assigned actionable should be surfaced on the
+// Advisor's QA Dashboard. The complete feedback summary should remain
+// available inside the Advisor Insight Page." So this reads the SAME
+// coaching-history endpoint Team Tracker's own Feedback Summary uses, but
+// flattens every session down to just its actionables — no meeting
+// discussion/notes text here, only the items assigned to this advisor,
+// each carrying a small "logged <date>" caption for context.
+//
+// Visible to anyone who can see this advisor's dashboard at all — the
+// advisor's own self-view, or a Guide/Mentor/Admin browsing them (explicit
+// request; see this component's call site). Editing is narrower though:
+// `canEditStatus` (true only for the advisor's own self-view) gates the
+// interactive status dropdown — a Guide/Mentor/Admin sees a plain
+// read-only badge instead, and edits status from their own control back in
+// Team Tracker. Status updates PATCH the same actionables/:id/status route
+// Team Tracker's own status control uses (server-side, that route already
+// allows either the advisor themselves or a Guide/Mentor/Admin with
+// coaching access to this advisor — see coachingService.ts's authorize),
+// so a change made from either place is the same DB row — nothing to
+// "sync back". ──────────────────────────────────────────────────────────
+interface FlattenedActionable extends FeedbackSummaryActionable {
+  sessionId: number;
+  meetingDate: string;
+}
+function ActionablesFromInsightSection({ dark, tactId, canEditStatus }: { dark: boolean; tactId: string; canEditStatus: boolean }) {
+  const [actionables, setActionables] = useState<FlattenedActionable[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -1170,11 +1021,13 @@ function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean
     setLoading(true);
     setError("");
     fetchFeedbackSummary(tactId)
-      .then((r) => {
-        if (!cancelled) setEntries(r);
+      .then((entries) => {
+        if (cancelled) return;
+        const flat = entries.flatMap((s) => s.actionables.map((a) => ({ ...a, sessionId: s.id, meetingDate: s.meetingDate })));
+        setActionables(flat);
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || "Failed to load feedback summary.");
+        if (!cancelled) setError(err.message || "Failed to load actionables.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1182,224 +1035,45 @@ function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean
     return () => {
       cancelled = true;
     };
-  }, [tactId, refreshSignal]);
+  }, [tactId]);
 
-  const setActionableStatus = (sessionId: number, actionableId: number, next: ActionableStatus) => {
-    setEntries((prev) => (prev ? prev.map((s) => (s.id !== sessionId ? s : { ...s, actionables: s.actionables.map((a) => (a.id === actionableId ? { ...a, status: next } : a)) })) : prev));
+  const setActionableStatus = (actionableId: number, next: ActionableStatus) => {
+    setActionables((prev) => (prev ? prev.map((a) => (a.id === actionableId ? { ...a, status: next } : a)) : prev));
   };
 
   return (
     <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08] bg-white/[0.03]" : "border-[var(--border)] bg-white"}`}>
       <div className={`px-3 py-2.5 border-b ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
-        <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Feedback Summary</h4>
+        <h4 className={`flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>
+          <ListChecks className="w-3.5 h-3.5" />
+          Actionables
+        </h4>
+        <p className={`text-[10px] font-semibold mt-0.5 ${dark ? "text-slate-400" : "text-stone-500"}`}>
+          {canEditStatus ? "Update the status as you complete each one." : "Status is updated by the advisor."}
+        </p>
       </div>
       <div className="p-3">
         {loading ? (
           <p className="text-[13px] text-content-muted py-2">Loading…</p>
         ) : error ? (
           <p className="text-[13px] text-red-500 py-2">{error}</p>
-        ) : !entries || entries.length === 0 ? (
-          <p className="text-[13px] text-content-muted py-2">No session feedback logged yet.</p>
+        ) : !actionables || actionables.length === 0 ? (
+          <p className="text-[13px] text-content-muted py-2">No actionables assigned yet.</p>
         ) : (
-          <ul className="space-y-2 max-h-[50vh] overflow-auto">
-            {entries.map((s) => (
-              <li key={s.id} className={`rounded-lg border p-2.5 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`font-bold ${dark ? "text-white" : "text-stone-900"}`}>{s.meetingDate}</span>
-                  <span className={dark ? "text-slate-400" : "text-stone-500"}>{s.authorName}</span>
-                </div>
-                {s.discussionPoints && (
-                  <p className="mt-1">
-                    <span className="font-bold text-content-muted">Discussion: </span>
-                    {s.discussionPoints}
-                  </p>
-                )}
-                {s.meetingNotes && (
-                  <p className="mt-1">
-                    <span className="font-bold text-content-muted">Notes: </span>
-                    {s.meetingNotes}
-                  </p>
-                )}
-                {s.actionables.length > 0 && (
-                  <ul className="mt-1.5 space-y-1">
-                    {s.actionables.map((a) => (
-                      <li key={a.id} className="flex items-center gap-2 flex-wrap">
-                        <ActionableStatusChip status={a.status} dark={dark} />
-                        <span className="flex-1 min-w-[120px]">{a.description}</span>
-                        {a.dueDate && <span className="text-content-muted">(due {a.dueDate})</span>}
-                        <ActionableStatusSelect actionableId={a.id} status={a.status} dark={dark} onChanged={(next) => setActionableStatus(s.id, a.id, next)} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
+          <ul className="space-y-1.5 max-h-[50vh] overflow-auto">
+            {actionables.map((a) => (
+              <li key={a.id} className={`rounded-lg border p-2.5 text-[12px] flex items-center gap-2 flex-wrap ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
+                <ActionableStatusChip status={a.status} dark={dark} />
+                <span className="flex-1 min-w-[140px]">{a.description}</span>
+                {a.dueDate && <span className="text-content-muted">(due {a.dueDate})</span>}
+                <span className={`text-[10px] font-semibold ${dark ? "text-slate-500" : "text-stone-400"}`}>logged {a.meetingDate}</span>
+                {canEditStatus && <ActionableStatusSelect actionableId={a.id} status={a.status} dark={dark} onChanged={(next) => setActionableStatus(a.id, next)} />}
               </li>
             ))}
           </ul>
         )}
       </div>
     </div>
-  );
-}
-
-// ── Floating Session Feedback workspace (formerly Team Tracker's
-// "Coaching Workspace", relocated here per requirement #15) — icon-only
-// button positioned above the app's pinned footer bar (Task 3 item 9),
-// panel renamed and stripped of the Advisor/Team info the old panel
-// showed (redundant here — the page itself is already that advisor's
-// dashboard). New actionables always start "Open"; status is only ever
-// changed afterward, from Feedback Summary's own control. ──────────────
-function SessionFeedbackWorkspace({ dark, tactId, advisorName, onSaved }: { dark: boolean; tactId: string; advisorName: string; onSaved: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<SessionFeedbackDraft>(() => loadSessionFeedbackDraft(tactId));
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [savedFlash, setSavedFlash] = useState(false);
-
-  useEffect(() => {
-    setDraft(loadSessionFeedbackDraft(tactId));
-    setSaveError("");
-    setSavedFlash(false);
-  }, [tactId]);
-
-  useEffect(() => {
-    saveSessionFeedbackDraftToStorage(tactId, draft);
-  }, [tactId, draft]);
-
-  const addActionable = () => setDraft((d) => ({ ...d, actionables: [...d.actionables, { id: `${Date.now()}-${d.actionables.length}`, description: "", dueDate: "" }] }));
-  const updateActionable = (id: string, patch: Partial<SessionFeedbackActionableDraft>) =>
-    setDraft((d) => ({ ...d, actionables: d.actionables.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
-  const removeActionable = (id: string) => setDraft((d) => ({ ...d, actionables: d.actionables.filter((a) => a.id !== id) }));
-
-  const handleSave = async () => {
-    if (isSessionFeedbackDraftEmpty(draft)) return;
-    setSaving(true);
-    setSaveError("");
-    try {
-      await postSessionFeedback({
-        tactId,
-        meetingDate: draft.meetingDate,
-        discussionPoints: draft.discussionPoints,
-        meetingNotes: draft.meetingNotes,
-        actionables: draft.actionables.filter((a) => a.description.trim()).map((a) => ({ description: a.description.trim(), dueDate: a.dueDate || null, status: "Open" as const })),
-      });
-      clearSessionFeedbackDraft(tactId);
-      setDraft(emptySessionFeedbackDraft());
-      setSavedFlash(true);
-      onSaved();
-    } catch (err: any) {
-      setSaveError(err.message || "Failed to save session feedback.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const inputCls = `w-full rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"}`;
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        // bottom-16 (not the old bottom-5) clears the app's own pinned
-        // footer bar — at bottom-5 this button sat on top of/overlapped
-        // the footer's right-aligned "©BLISS GUIDES.DITTO" text.
-        className="fixed bottom-16 right-5 z-40 inline-flex items-center justify-center w-11 h-11 rounded-full shadow-lg text-white cursor-pointer hover:brightness-110 transition"
-        style={{ background: "#117FDA" }}
-        title={`Session Feedback — ${advisorName}`}
-        aria-label={`Session Feedback for ${advisorName}`}
-      >
-        <ClipboardList className="w-5 h-5" />
-        {!isSessionFeedbackDraftEmpty(draft) && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-400" title="Unsaved draft" />}
-      </button>
-
-      {open && (
-        <div
-          className={`fixed bottom-[4.75rem] right-5 z-40 w-[380px] max-w-[calc(100vw-2.5rem)] max-h-[75vh] overflow-auto rounded-2xl border shadow-2xl p-4 space-y-3 ${
-            dark ? "bg-[#0b1830] border-white/[0.12]" : "bg-white border-stone-200"
-          }`}
-        >
-          <div className="flex items-start justify-between gap-2">
-            <h3 className={`text-[13px] font-black ${dark ? "text-white" : "text-[#111827]"}`}>Session Feedback</h3>
-            <button type="button" onClick={() => setOpen(false)} className={`cursor-pointer shrink-0 ${dark ? "text-slate-400 hover:text-white" : "text-stone-400 hover:text-stone-800"}`}>
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Date</span>
-            <input type="date" value={draft.meetingDate} onChange={(e) => setDraft((d) => ({ ...d, meetingDate: e.target.value }))} className={inputCls} />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Discussion Points</span>
-            <textarea
-              rows={3}
-              value={draft.discussionPoints}
-              onChange={(e) => setDraft((d) => ({ ...d, discussionPoints: e.target.value }))}
-              className={inputCls}
-              placeholder="What to bring up in this session…"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Notes</span>
-            <textarea
-              rows={3}
-              value={draft.meetingNotes}
-              onChange={(e) => setDraft((d) => ({ ...d, meetingNotes: e.target.value }))}
-              className={inputCls}
-              placeholder="What was actually discussed…"
-            />
-          </label>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Actionables</span>
-              <button type="button" onClick={addActionable} className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}>
-                + Add
-              </button>
-            </div>
-            {draft.actionables.length === 0 ? (
-              <p className="text-[11px] text-content-muted">No actionables yet.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {draft.actionables.map((a) => (
-                  <div key={a.id} className={`rounded-lg border p-2 space-y-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
-                    <div className="flex items-start gap-1.5">
-                      <input value={a.description} onChange={(e) => updateActionable(a.id, { description: e.target.value })} placeholder="Description" className={inputCls + " flex-1"} />
-                      <button
-                        type="button"
-                        onClick={() => removeActionable(a.id)}
-                        className={`cursor-pointer shrink-0 mt-1.5 ${dark ? "text-slate-400 hover:text-red-400" : "text-stone-400 hover:text-red-500"}`}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    {/* No status picker here — new actionables always start
-                        "Open" (requirement #16); status is only ever
-                        changed afterward, from Feedback Summary. */}
-                    <input type="date" value={a.dueDate} onChange={(e) => updateActionable(a.id, { dueDate: e.target.value })} className={inputCls} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {saveError && <p className="text-[11px] text-red-500 font-semibold">{saveError}</p>}
-          {savedFlash && !saving && isSessionFeedbackDraftEmpty(draft) && <p className="text-[11px] text-emerald-500 font-semibold">Saved to Feedback Summary.</p>}
-
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || isSessionFeedbackDraftEmpty(draft)}
-            className="w-full rounded-lg py-2 text-[13px] font-bold text-white cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition"
-            style={{ background: "#1f2d3d" }}
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -1425,7 +1099,21 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
     dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
   }`;
 
-  const [dates, setDates] = useState<DateFilters>(() => loadStoredDates() || computeDefaultDates());
+  // "yyyy-MM", or the literal "custom" — see monthKeyOf/parseMonthKey above.
+  // When restoring a non-"custom" selection, `dates` is always freshly
+  // recomputed from that month rather than trusted from its own stored
+  // value, so the two can never disagree on load (e.g. after upgrading from
+  // before this Month selector existed, when only DATES_STORAGE_KEY had
+  // ever been written).
+  const [monthSelection, setMonthSelection] = useState<string>(() => loadStoredMonthSelection());
+  const [dates, setDates] = useState<DateFilters>(() => {
+    const storedMonth = loadStoredMonthSelection();
+    if (storedMonth !== "custom") {
+      const parsed = parseMonthKey(storedMonth);
+      if (parsed) return monthDateFilters(parsed.year, parsed.monthIndex0);
+    }
+    return loadStoredDates() || computeDefaultDates();
+  });
   useEffect(() => {
     try {
       window.localStorage.setItem(DATES_STORAGE_KEY, JSON.stringify(dates));
@@ -1433,6 +1121,31 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
       /* ignore quota/serialization errors */
     }
   }, [dates]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(MONTH_SELECTION_STORAGE_KEY, monthSelection);
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [monthSelection]);
+  const monthOptions = useMemo(() => [...recentMonthOptions(MONTH_SELECT_COUNT), { value: "custom", label: "Custom" }], []);
+  function handleMonthSelectionChange(value: string) {
+    setMonthSelection(value);
+    if (value !== "custom") {
+      const parsed = parseMonthKey(value);
+      if (parsed) setDates(monthDateFilters(parsed.year, parsed.monthIndex0));
+    }
+  }
+  // Start/End/Till Date stay editable at all times now — the Month selector
+  // is a convenience shortcut that fills them in, not a gate on them (it
+  // used to disable these fields outright unless "Custom" was picked
+  // explicitly, which made ad-hoc date ranges unreachable). Editing any
+  // field directly flips the selector to "Custom" so it never shows a
+  // month whose canonical range no longer matches what's actually loaded.
+  function handleDateFieldChange(field: keyof DateFilters, value: string) {
+    setDates((prev) => ({ ...prev, [field]: value }));
+    setMonthSelection("custom");
+  }
 
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1444,10 +1157,6 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   const [tabData, setTabData] = useState<Record<string, SheetTable | undefined>>({});
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
   const [tabError, setTabError] = useState<Record<string, string>>({});
-  // Bumped after a Session Feedback Save so the open advisor's Feedback
-  // Summary refetches without a full page reload.
-  const [feedbackRefreshSignal, setFeedbackRefreshSignal] = useState(0);
-
   const [advisorsSummary, setAdvisorsSummary] = useState<AdvisorSummaryRow[] | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState("");
@@ -1469,14 +1178,6 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewTypeFilter, setReviewTypeFilter] = useState("");
   const [reviewStatusFilter, setReviewStatusFilter] = useState("");
-
-  // QIP table row cap state — see the effect right after qipCandidates is
-  // defined below (kept apart from it to avoid a temporal-dead-zone
-  // reference: this state is used inside the JSX above where qipCandidates
-  // is computed, but the measuring effect itself needs qipCandidates to
-  // already exist as a dependency).
-  const qipHeaderRowRef = useRef<HTMLTableRowElement>(null);
-  const [qipNineRowMaxHeight, setQipNineRowMaxHeight] = useState<number | null>(null);
 
   // The advisor roster table below the Overall Score/QIP row used this
   // same row-cap-via-ResizeObserver pattern (a fixed 6 rows, internal
@@ -1653,27 +1354,15 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
     );
   }, [filteredSummary]);
 
-  // QIP table row cap — dropped the earlier approach of matching this
-  // card's height to the (unrelated) Overall Score column; that required
-  // measuring one element to size a different one, which turned out
-  // fragile in practice. This is simpler and self-contained: measure this
-  // table's own header row height (all rows share the same
-  // px-3/py-1.5/text-xs padding and line-height, so one row's height
-  // stands in for any row), then cap the scroll area at 5 rows worth
-  // (header + 4 data rows — was 9, taller than this card needs to be) via
-  // max-height. Fewer than 5 rows sizes naturally; more than 5 scrolls
-  // internally instead of growing the card. The state name kept its
-  // original "NineRow" wording rather than being renamed along with the
-  // value, to keep this diff to the one line that actually changed.
-  useEffect(() => {
-    const el = qipHeaderRowRef.current;
-    if (!el) return;
-    const update = () => setQipNineRowMaxHeight(el.getBoundingClientRect().height * 5);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [qipCandidates.length]);
+  // QIP/PIP table's scroll area is capped to a fixed height (~7 data rows
+  // + the sticky header, see QIP_TABLE_MAX_HEIGHT_PX below) instead of
+  // being measured against Overall Score's own height. A live
+  // ResizeObserver-based match was tried first but flex's own
+  // align-items: stretch kept winning in practice — once the QIP table
+  // had enough rows to exceed Overall Score's natural height, the row
+  // just grew to fit QIP instead of capping it. A flat pixel cap sidesteps
+  // that fight entirely: the card simply never grows past ~7 rows tall,
+  // and overflow-y-auto scrolls the rest.
 
   function avgOf(values: number[]): number | null {
     return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100 : null;
@@ -1765,6 +1454,12 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
 
   const dateFilterBar = (
     <div className={`flex flex-wrap items-end gap-3 rounded-2xl border p-4 ${dark ? "bg-white/[0.05] border-white/[0.10]" : "bg-surface-elevated border-[var(--border-strong)]"}`}>
+      <label className="flex-1 min-w-[150px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
+        <span className="flex items-center gap-1">
+          <Calendar className="w-3 h-3" /> Month
+        </span>
+        <CustomSelect value={monthSelection} onChange={handleMonthSelectionChange} theme={theme} triggerClassName={selectTriggerClass} options={monthOptions} />
+      </label>
       {(["checkedFrom", "checkedTo", "tillDate"] as const).map((field) => (
         <label key={field} className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
           <span className="flex items-center gap-1">
@@ -1772,12 +1467,16 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           </span>
           <DateInputDMY
             value={dates[field]}
-            onChange={(v) => setDates((prev) => ({ ...prev, [field]: v }))}
+            onChange={(v) => handleDateFieldChange(field, v)}
             displayClassName={`w-full ${qaDateInputClass}`}
           />
         </label>
       ))}
-      <ClippedButton onClick={handleRefresh} size="md" className="h-8 gap-2 px-4 text-xs font-bold text-white hover:brightness-110 shrink-0" style={{ background: "#1f2d3d" }}>
+      {/* variant="action" (2026-09): shared --action-navy token instead of a
+          hardcoded #1f2d3d, which stayed the light-theme color even in dark
+          theme. hover:brightness-110 dropped — the variant's own
+          hover:bg-[--action-navy-hover] already provides hover feedback. */}
+      <ClippedButton onClick={handleRefresh} size="md" variant="action" className="h-8 gap-2 px-4 text-xs font-bold shrink-0">
         <RefreshCw className="w-3 h-3" />
         {loading ? "Loading…" : "Load Dashboard"}
       </ClippedButton>
@@ -1865,15 +1564,27 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
               />
             </label>
           )}
+          <label className="flex-1 min-w-[150px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
+            <span className="flex items-center gap-1">
+              <Calendar className="w-3 h-3" /> Month
+            </span>
+            <CustomSelect value={monthSelection} onChange={handleMonthSelectionChange} theme={theme} triggerClassName={selectTriggerClass} options={monthOptions} />
+          </label>
           {(["checkedFrom", "checkedTo", "tillDate"] as const).map((field) => (
             <label key={field} className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1">
                 <Calendar className="w-3 h-3" /> {field === "checkedFrom" ? "Start Date" : field === "checkedTo" ? "End Date" : "Till Date"}
               </span>
-              <DateInputDMY value={dates[field]} onChange={(v) => setDates((prev) => ({ ...prev, [field]: v }))} displayClassName={`w-full ${qaDateInputClass}`} />
+              <DateInputDMY
+                value={dates[field]}
+                onChange={(v) => handleDateFieldChange(field, v)}
+                displayClassName={`w-full ${qaDateInputClass}`}
+              />
             </label>
           ))}
-          <ClippedButton onClick={() => loadAdvisorsSummary(dates)} size="md" className="h-8 gap-2 px-4 text-xs font-bold text-white shrink-0 hover:brightness-110" style={{ background: "#1f2d3d" }}>
+          {/* variant="action" (2026-09): shared --action-navy token instead
+              of a hardcoded #1f2d3d (see the Refresh button above). */}
+          <ClippedButton onClick={() => loadAdvisorsSummary(dates)} size="md" variant="action" className="h-8 gap-2 px-4 text-xs font-bold shrink-0">
             <RefreshCw className="w-3.5 h-3.5" />
             {summaryLoading ? "Loading…" : "Load Dashboard"}
           </ClippedButton>
@@ -1884,11 +1595,12 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
 
         {advisorsSummary !== null && (
           /* Both columns use a proportional basis (40/60) so together they
-             always span the row's full width. Their heights are no longer
-             tied to each other — Overall Score sizes to its own 2x2 card
-             grid, and the QIP card below caps its own table to 5 rows (see
-             qipNineRowMaxHeight) — so there's nothing left to keep in sync
-             between two unrelated elements. */
+             always span the row's full width. QIP/PIP's own table caps at
+             a fixed height (QIP_TABLE_MAX_HEIGHT_PX, ~7 rows) and scrolls
+             internally past that — see the table wrapper below — so it no
+             longer relies on flex's align-items: stretch, which could only
+             ever equalize both sides to whichever's natural content was
+             TALLEST rather than cap one to the other. */
           <div className="flex flex-col lg:flex-row gap-4">
             {/* Overall Score — a 2x2 pairing (not a single tall stack): the
                 two money-metric cards (Payments/Lead Score) form one
@@ -1919,14 +1631,21 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
               </div>
             </div>
 
-            {/* QIP/PIP Candidates — the rest of the row (60% basis). Its own
-                height is capped to 5 rows (see qipNineRowMaxHeight below);
-                it does not try to match the Overall Score column anymore. */}
+            {/* QIP/PIP Candidates — the rest of the row (60% basis). The
+                card itself is naturally sized (title banner + table), not
+                height-matched to Overall Score — instead the table's own
+                scroll area below is capped at QIP_TABLE_MAX_HEIGHT_PX
+                (~7 rows), so the card stops growing past that and any
+                further candidates scroll internally instead. */}
             <div
-              className={`lg:basis-3/5 lg:grow lg:shrink min-w-0 rounded-2xl overflow-hidden border flex flex-col ${
+              // 2026-09: light theme had a hover elevation change here
+              // (hover:shadow-overlay) and dark theme had none -- added the
+              // same transition to dark's own shadow-sm baseline so the
+              // panel gets equivalent hover feedback in both themes.
+              className={`lg:basis-3/5 lg:grow lg:shrink min-w-0 rounded-2xl overflow-hidden border flex flex-col transition-shadow duration-200 ${
                 dark
-                  ? "border-[rgba(184,106,28,0.35)] bg-white/[0.02] shadow-sm"
-                  : "border-[rgba(176,106,36,0.28)] bg-white shadow-card hover:shadow-overlay transition-shadow duration-200"
+                  ? "border-[rgba(184,106,28,0.35)] bg-white/[0.02] shadow-sm hover:shadow-card"
+                  : "border-[rgba(176,106,36,0.28)] bg-white shadow-card hover:shadow-overlay"
               }`}
             >
               {/* Not an <h1-h6> on purpose: index.css's light-theme rule
@@ -1959,16 +1678,15 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                     ))}
                   </div>
                 ) : (
-                  // max-height caps the visible area to 5 rows worth
-                  // (qipNineRowMaxHeight = header-row height x 5, measured
-                  // off qipHeaderRowRef below); overflow-y scrolls the rest
-                  // internally instead of growing the card. With 5 or fewer
-                  // candidates this never kicks in — the box just sizes to
-                  // its natural (shorter) content.
-                  <div className="overflow-y-auto" style={qipNineRowMaxHeight ? { maxHeight: qipNineRowMaxHeight } : undefined}>
+                  // Fixed max-height (~7 rows, QIP_TABLE_MAX_HEIGHT_PX) so
+                  // the card stops growing once the candidate list gets
+                  // long — overflow-y only kicks in past that point. With
+                  // a short list the table is naturally shorter than the
+                  // cap, so this never visibly scrolls either way.
+                  <div className="overflow-y-auto" style={{ maxHeight: QIP_TABLE_MAX_HEIGHT_PX }}>
                     <table className="w-full text-xs border-collapse">
                       <thead>
-                        <tr ref={qipHeaderRowRef}>
+                        <tr>
                           {["Advisor", "Payment QA", "Instances", "LeadScore", "Instances"].map((h, i) => (
                             <th
                               key={`${h}-${i}`}
@@ -2088,15 +1806,27 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
               <span className="flex items-center gap-1"><Search className="w-3 h-3" /> Viewing advisor</span>
               <AdvisorCombobox advisors={pickerAdvisors} value={selectedTactId || ""} onChange={handleAdvisorChange} theme={theme} className="w-full" />
             </label>
+            <label className="flex-1 min-w-[150px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
+              <span className="flex items-center gap-1">
+                <Calendar className="w-3 h-3" /> Month
+              </span>
+              <CustomSelect value={monthSelection} onChange={handleMonthSelectionChange} theme={theme} triggerClassName={selectTriggerClass} options={monthOptions} />
+            </label>
             {(["checkedFrom", "checkedTo", "tillDate"] as const).map((field) => (
               <label key={field} className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" /> {field === "checkedFrom" ? "Start Date" : field === "checkedTo" ? "End Date" : "Till Date"}
                 </span>
-                <DateInputDMY value={dates[field]} onChange={(v) => setDates((prev) => ({ ...prev, [field]: v }))} displayClassName={`w-full ${qaDateInputClass}`} />
+                <DateInputDMY
+                  value={dates[field]}
+                  onChange={(v) => handleDateFieldChange(field, v)}
+                  displayClassName={`w-full ${qaDateInputClass}`}
+                />
               </label>
             ))}
-            <ClippedButton onClick={handleRefresh} size="md" className="h-8 gap-2 px-4 text-xs font-bold text-white hover:brightness-110 shrink-0" style={{ background: "#1f2d3d" }}>
+            {/* variant="action" (2026-09): shared --action-navy token
+                instead of a hardcoded #1f2d3d (see the Refresh button above). */}
+            <ClippedButton onClick={handleRefresh} size="md" variant="action" className="h-8 gap-2 px-4 text-xs font-bold shrink-0">
               <RefreshCw className="w-3 h-3" />
               {loading ? "Loading…" : "Load Dashboard"}
             </ClippedButton>
@@ -2160,14 +1890,25 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
         </div>
       )}
 
-      {/* Historical Trend + Feedback Summary — below the existing
-          scorecard, Guide/Mentor/Admin only (requirement #15: existing QA
-          Dashboard scorecards/calculations above are unchanged). A plain
-          Advisor's own self-view stops at the scorecard above. */}
-      {activeTab === "score" && canBrowseOthers && advisor && (
+      {/* The "Historical Trend" chart that used to render here for
+          Guide/Mentor/Admin (browsing someone else's Advisor's QA
+          Dashboard) was removed by explicit request — this page's
+          scorecards above are the source of truth for that scope, and
+          Team Tracker's Advisor Performance Page is the dedicated place
+          for a trend view. The duplicated Actionables list below the score
+          cards (see ActionablesFromInsightSection) is visible to anyone who
+          can see this advisor's dashboard at all — a plain Advisor's own
+          self-view, or a Guide/Mentor/Admin browsing them (explicit
+          request — it used to be self-view only, since a plain Advisor
+          can't reach Team Tracker's own copy, but a Guide/Mentor/Admin
+          should be able to see it right here too rather than only in Team
+          Tracker). Only the advisor themselves can change a status though
+          (canEditStatus={!canBrowseOthers}) — a Guide/Mentor/Admin sees a
+          read-only badge here; they still have their own editable control
+          back in Team Tracker's Advisor Insight Page. */}
+      {activeTab === "score" && advisor && (
         <div className="space-y-3.5">
-          <AdvisorTrendSection dark={dark} theme={theme} tactId={advisor.tactId} />
-          <FeedbackSummarySection dark={dark} tactId={advisor.tactId} refreshSignal={feedbackRefreshSignal} />
+          <ActionablesFromInsightSection dark={dark} tactId={advisor.tactId} canEditStatus={!canBrowseOthers} />
         </div>
       )}
 
@@ -2287,11 +2028,9 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
         </>
       )}
 
-      {/* Floating Session Feedback — Guide/Mentor/Admin only, same scope
-          as Historical Trend/Feedback Summary above (requirement #15). */}
-      {canBrowseOthers && advisor && (
-        <SessionFeedbackWorkspace dark={dark} tactId={advisor.tactId} advisorName={advisor.name || advisor.tactId} onSaved={() => setFeedbackRefreshSignal((v) => v + 1)} />
-      )}
+      {/* The floating Session Feedback workspace (create/save sessions) now
+          lives in Team Tracker's advisor-level Insights view — see this
+          page's header comment. Nothing renders here for it. */}
     </div>
   );
 }

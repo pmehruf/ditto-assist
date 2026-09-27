@@ -40,6 +40,10 @@ import {
   exchangeCodeForKbPlaybookSheetsGrant,
   getKbFaqSheetsAuthUrl,
   exchangeCodeForKbFaqSheetsGrant,
+  getTermFaqSheetsAuthUrl,
+  exchangeCodeForTermFaqSheetsGrant,
+  getTermPlaybookSheetsAuthUrl,
+  exchangeCodeForTermPlaybookSheetsGrant,
   getProductAssistLogExportSheetsAuthUrl,
   exchangeCodeForProductAssistLogExportGrant,
 } from "./src/server/auth/googleOAuth.js";
@@ -59,15 +63,26 @@ import {
   getCompanyWideQaAggregateFor as getQaCompanyWideAggregateFor,
 } from "./src/server/qaDashboard/qaDashboardService.js";
 import type { DateFilters as QaDateFilters } from "./src/server/qaDashboard/qaDataEngine.js";
+import { invalidateQaSheetCache } from "./src/server/qaDashboard/qaDataEngine.js";
 import {
   getTeamTrackerContext,
   getTeamTrackerTable,
+  getTeamTrackerPeriodSummary,
+  getCurrentMonthPeriodChange,
 } from "./src/server/qaDashboard/teamTrackerService.js";
-import { saveCoachingSession, getCoachingHistory, updateActionableStatus } from "./src/server/coaching/coachingService.js";
+import {
+  saveCoachingSession,
+  getCoachingHistory,
+  updateActionableStatus,
+  updateCoachingSession,
+  listDiscussedFeedback,
+  setFeedbackDiscussed,
+} from "./src/server/coaching/coachingService.js";
 import { encryptQaRefreshToken } from "./src/server/qaDashboard/tokenCrypto.js";
-import { invalidateQaSheetsAuthCache, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
+import { invalidateQaSheetsAuthCache, getQaSheetsHealth, QA_MASTER_SPREADSHEET_ID } from "./src/server/qaDashboard/sheetsClient.js";
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { syncAdvisorDirectory } from "./src/server/qaDashboard/advisorDirectorySync.js";
+import { syncGuideMentorRelationships } from "./src/server/qaDashboard/guideMentorRelationshipsSync.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
@@ -85,10 +100,18 @@ import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbook
 import { invalidatePlaybookSheetsAuthCache, PLAYBOOK_SPREADSHEET_ID } from "./src/server/knowledgeBase/playbookSheetsClient.js";
 import { encryptFaqRefreshToken } from "./src/server/knowledgeBase/faqTokenCrypto.js";
 import { invalidateFaqSheetsAuthCache, FAQ_SPREADSHEET_ID } from "./src/server/knowledgeBase/faqSheetsClient.js";
+import { encryptTermFaqRefreshToken } from "./src/server/knowledgeBase/termFaqTokenCrypto.js";
+import { invalidateTermFaqSheetsAuthCache, TERM_FAQ_SPREADSHEET_ID } from "./src/server/knowledgeBase/termFaqSheetsClient.js";
+import { encryptTermPlaybookRefreshToken } from "./src/server/knowledgeBase/termPlaybookTokenCrypto.js";
+import { invalidateTermPlaybookSheetsAuthCache, TERM_PLAYBOOK_SPREADSHEET_ID } from "./src/server/knowledgeBase/termPlaybookSheetsClient.js";
 import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
-import { syncFaq, maybeRefreshFaqIfStale } from "./src/server/knowledgeBase/faqIngest.js";
+import { syncFaq, maybeRefreshFaqIfStale, FAQ_DITTO_RESOURCE_TITLE } from "./src/server/knowledgeBase/faqIngest.js";
+import { syncTermFaq, maybeRefreshTermFaqIfStale, TERM_FAQ_RESOURCE_TITLE } from "./src/server/knowledgeBase/termFaqIngest.js";
+import { syncTermPlaybook, maybeRefreshTermPlaybookIfStale, TERM_PLAYBOOK_RESOURCE_TITLE } from "./src/server/knowledgeBase/termPlaybookIngest.js";
+import { getDidYouKnowFeed } from "./src/server/knowledgeBase/didYouKnow.js";
 import { encryptProductAssistLogRefreshToken } from "./src/server/knowledgeBase/productAssistLogTokenCrypto.js";
-import { invalidateProductAssistLogSheetsAuthCache } from "./src/server/knowledgeBase/productAssistLogSheetsClient.js";
+import { invalidateProductAssistLogSheetsAuthCache, getProductAssistLogExportHealth } from "./src/server/knowledgeBase/productAssistLogSheetsClient.js";
+import { exportUnresolvedQueryRows } from "./src/server/knowledgeBase/productAssistUnresolvedQueriesSheetsClient.js";
 import { runProductAssistLogExport } from "./src/server/knowledgeBase/productAssistLogExport.js";
 import { embedDocumentChunks } from "./src/server/knowledgeBase/embeddings.js";
 import {
@@ -100,7 +123,11 @@ import {
   startOfDayIST,
   startOfMonthIST,
 } from "./src/server/knowledgeBase/productAssistQuota.js";
-import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES } from "./src/constants/featurePermissions.js";
+import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES, GROUP_RESTRICTABLE_FEATURES } from "./src/constants/featurePermissions.js";
+import { ruleMatchesCaller, levelAllows, type ActionType as AccessActionType } from "./src/accessRuleEvaluator.js";
+import { evaluateAccess, getGroupAllowedFeatureIds } from "./src/server/accessControl/evaluateAccess.js";
+import { countCatalogDependencies, blocksDeletion, needsConfirmation, describeDependencies } from "./src/server/accessControl/catalogDependencies.js";
+import { describeUserAccessChanges } from "./src/server/accessControl/describeUserAccessChanges.js";
 
 dotenv.config();
 
@@ -753,6 +780,23 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
     parsedOutput = applyPostGuards(parsedOutput, ped, planName, config);
     const finalResult = finalizeOutput(parsedOutput, ped, config, config.questions);
 
+    // Cross-feature usage tracking (2026-09, visibility only — see
+    // ai_usage_log's schema.ts comment). Only ever reached on an actual L3
+    // Gemini call (L1 deterministic and L2 AI Memory cache hits both return
+    // earlier in this function), so this never over-counts a cache hit as a
+    // fresh AI call. Fire-and-forget — a failure here must never affect the
+    // advisor's lookup, which has already succeeded above.
+    void repos.aiUsageLog
+      .record({
+        source: "declaration_assist_match",
+        userEmail: req.user!.email,
+        model: usedModel || modelsToTry[0],
+        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+        label: String(ped).slice(0, 200),
+      })
+      .catch(err => console.error("AI usage log: failed to record Declaration Assist match entry (non-fatal):", err));
+
     // Record into AI Memory (L2) as 'pending', entering the Unknown Condition
     // Queue for manual review. `result` is what future cache hits replay to
     // the advisor; `raw` keeps Gemini's untouched JSON for the queue's detail
@@ -970,6 +1014,21 @@ app.post("/api/ai-plan-workflow", requireAuth, expensiveActionLimiter, async (re
           if (parsed.categoryMappings) categoryMappings = parsed.categoryMappings;
           if (parsed.illnessMappings) illnessMappings = parsed.illnessMappings;
           usedAi = true;
+
+          // Cross-feature usage tracking (2026-09, visibility only — see
+          // ai_usage_log's schema.ts comment). Fire-and-forget — a failure
+          // here must never affect the workflow response, already built
+          // above.
+          void createRepositories(getDb())
+            .aiUsageLog.record({
+              source: "plan_management_ai_workflow",
+              userEmail: req.user!.email,
+              model: "gemini-2.5-flash",
+              inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+              outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+              label: String(planName ?? "").slice(0, 200),
+            })
+            .catch((err: unknown) => console.error("AI usage log: failed to record Plan Management AI workflow entry (non-fatal):", err));
         }
       }
     } catch (gErr) {
@@ -1006,6 +1065,14 @@ const KB_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_kb_playbook_oauth_state";
 // Sheets" grant (Knowledge Base Management) — see
 // src/server/auth/googleOAuth.ts's Ditto FAQ Sheet section.
 const KB_FAQ_OAUTH_STATE_COOKIE = "ditto_kb_faq_oauth_state";
+// Same idea, for the Term FAQ Sheet's own independent "Connect Google
+// Sheets" grant (Connections page) — see
+// src/server/auth/googleOAuth.ts's Term FAQ Sheet section.
+const TERM_FAQ_OAUTH_STATE_COOKIE = "ditto_term_faq_oauth_state";
+// Same idea, for the Term Playbook Sheet's own independent "Connect Google
+// Sheets" grant (Connections page) — see
+// src/server/auth/googleOAuth.ts's Term Playbook Sheet section.
+const TERM_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_term_playbook_oauth_state";
 // Same idea, for the Product Assist Log Export's own independent "Connect
 // Google Sheets" grant (Connections page) — see src/server/auth/googleOAuth.ts's
 // Product Assist Log Export section. This is the only one of the three
@@ -1114,6 +1181,56 @@ app.get("/api/auth/google/callback", async (req, res) => {
     return;
   }
 
+  const termFaqExpectedState = req.cookies?.[TERM_FAQ_OAUTH_STATE_COOKIE];
+  if (termFaqExpectedState) {
+    res.clearCookie(TERM_FAQ_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== termFaqExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Connections.");
+        return;
+      }
+      const grant = await exchangeCodeForTermFaqSheetsGrant(code);
+      const { termFaqConnection } = createRepositories(getDb());
+      await termFaqConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptTermFaqRefreshToken(grant.refreshToken),
+        connectedBy: req.user?.email || grant.email,
+      });
+      invalidateTermFaqSheetsAuthCache();
+      res.redirect("/?term_faq_connected=1");
+    } catch (err: any) {
+      console.error("Term FAQ Google Sheets connection failed:", err);
+      res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Connections.`);
+    }
+    return;
+  }
+
+  const termPlaybookExpectedState = req.cookies?.[TERM_PLAYBOOK_OAUTH_STATE_COOKIE];
+  if (termPlaybookExpectedState) {
+    res.clearCookie(TERM_PLAYBOOK_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== termPlaybookExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting again from Connections.");
+        return;
+      }
+      const grant = await exchangeCodeForTermPlaybookSheetsGrant(code);
+      const { termPlaybookConnection } = createRepositories(getDb());
+      await termPlaybookConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptTermPlaybookRefreshToken(grant.refreshToken),
+        connectedBy: req.user?.email || grant.email,
+      });
+      invalidateTermPlaybookSheetsAuthCache();
+      res.redirect("/?term_playbook_connected=1");
+    } catch (err: any) {
+      console.error("Term Playbook Google Sheets connection failed:", err);
+      res.status(401).send(`Connecting Google Sheets failed: ${err.message || "unknown error"}. Please try again from Connections.`);
+    }
+    return;
+  }
+
   const productAssistLogExpectedState = req.cookies?.[PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE];
   if (productAssistLogExpectedState) {
     res.clearCookie(PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE);
@@ -1150,6 +1267,14 @@ app.get("/api/auth/google/callback", async (req, res) => {
     }
 
     const identity = await exchangeCodeForIdentity(code);
+    // Best-effort — a directory-row lookup/stamp failure should never block
+    // sign-in itself; the session cookie above is already good regardless.
+    try {
+      const { users: usersRepoForLogin } = createRepositories(getDb());
+      await usersRepoForLogin.stampLogin(identity.email, identity.picture || null);
+    } catch (stampErr) {
+      console.error("Failed to stamp login/picture for", identity.email, stampErr);
+    }
     const token = createSessionToken(identity);
     res.cookie(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
@@ -1239,6 +1364,46 @@ function teamForTags(tags: string[] | null | undefined): "Health" | "Term" | und
 
 function isValidAnnouncementTeam(v: unknown): v is "Health" | "Term" {
   return v === "Health" || v === "Term";
+}
+
+/** Same as isValidAnnouncementTeam but also accepts "Both" — the
+ * announcements.team column's own dedicated audience enum (announcement_
+ * audience) is a superset of the shared announcement_team enum the plain
+ * validator above still guards (12 other call sites validate a strictly
+ * binary Health/Term `domain` param and must keep using that one; only the
+ * 3 announcement create/list/update routes use this one). "Both" means the
+ * announcement is visible to Health AND Term advisors alike (in addition to
+ * advisors with no/mixed tags, who already see everything). */
+function isValidAnnouncementAudience(v: unknown): v is "Health" | "Term" | "Both" {
+  return v === "Health" || v === "Term" || v === "Both";
+}
+
+/** Resolves and validates the domain (Health/Term) an advisor-facing
+ * Product Assist / Knowledge Base route should serve for this caller, per
+ * the confirmed tag-based access rule (mirrors teamForTags's own
+ * precedent, already governing announcements/Did You Know): a caller
+ * tagged with only Health may only use "Health"; a caller tagged with only
+ * Term may only use "Term"; a caller with BOTH tags, or NEITHER, may use
+ * either. When the request doesn't specify a domain at all, defaults to
+ * whichever domain the caller's tags restrict them to, or "Health" for an
+ * unrestricted caller — keeping every pre-Term client call (which never
+ * sends `domain`) working unchanged. Returns `{ error }` when the
+ * requested domain is invalid or the caller's tags don't permit it. */
+function resolveCallerDomain(
+  requested: unknown,
+  callerTags: string[] | null | undefined
+): { domain: "Health" | "Term" } | { error: string } {
+  const restriction = teamForTags(callerTags);
+  if (requested === undefined || requested === null || requested === "") {
+    return { domain: restriction ?? "Health" };
+  }
+  if (!isValidAnnouncementTeam(requested)) {
+    return { error: 'domain must be "Health" or "Term".' };
+  }
+  if (restriction !== undefined && requested !== restriction) {
+    return { error: `You don't have access to ${requested} Insurance Product Assist.` };
+  }
+  return { domain: requested };
 }
 
 type CallerTier = "General" | "Admin" | "Platform Admin" | "Developer";
@@ -1358,7 +1523,7 @@ app.get("/api/users", requireAuth, async (req, res) => {
 //      otherwise downgrade every remaining Developer at once.
 app.patch("/api/users/bulk", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
+    const { users: usersRepo, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isAdminPower(callerTier)) {
       return res.status(403).json({ error: "Admin, Platform Admin, or Developer clearance is required to bulk-edit the user directory." });
@@ -1425,7 +1590,7 @@ app.patch("/api/users/bulk", requireAuth, async (req, res) => {
           return res.status(400).json({ error: "changes.orgTeamId must be a number or null." });
         }
         if (!(await orgTeams.get(changes.orgTeamId))) {
-          return res.status(400).json({ error: "That team doesn't exist." });
+          return res.status(400).json({ error: "That business unit doesn't exist." });
         }
       }
       patch.orgTeamId = changes.orgTeamId;
@@ -1486,6 +1651,41 @@ app.patch("/api/users/bulk", requireAuth, async (req, res) => {
     const finalEmails = eligible.map((u) => u.email);
     const updated = finalEmails.length > 0 ? await usersRepo.bulkUpdate(finalEmails, patch) : [];
 
+    if (updated.length > 0) {
+      try {
+        // Bulk edits apply one intended value across many users with
+        // different prior values, so this describes the change that was
+        // APPLIED (not a per-user before/after diff) plus how many rows it
+        // landed on — matching the deploy log style already used by, e.g.,
+        // Department/Team/Role edits above.
+        const [deptName, teamName, roleName] = await Promise.all([
+          patch.departmentId ? departments.get(patch.departmentId).then((d) => d?.name) : Promise.resolve(undefined),
+          patch.orgTeamId ? orgTeams.get(patch.orgTeamId).then((t) => t?.name) : Promise.resolve(undefined),
+          patch.roleId ? roles.get(patch.roleId).then((r) => r?.name) : Promise.resolve(undefined),
+        ]);
+        const clauses = [
+          "tier" in patch ? `tier → ${patch.tier}` : null,
+          "status" in patch ? `status → ${patch.status}` : null,
+          "tags" in patch ? `tags → ${(patch.tags as string[]).length ? (patch.tags as string[]).join("/") : "none"}` : null,
+          "orgTeamId" in patch ? `business unit → ${patch.orgTeamId ? (teamName ?? "Unknown") : "Unassigned"}` : null,
+          "departmentId" in patch ? `department → ${patch.departmentId ? (deptName ?? "Unknown") : "Unassigned"}` : null,
+          "roleId" in patch ? `role → ${patch.roleId ? (roleName ?? "Unknown") : "Unassigned"}` : null,
+        ].filter(Boolean).join(", ");
+        await changeLogs.create({
+          userName: req.user!.name,
+          role: callerTier,
+          actionType: "User Bulk Edited",
+          planName: null,
+          description: `Bulk-updated ${updated.length} advisor${updated.length === 1 ? "" : "s"}: ${clauses}.${
+            skippedForDeveloperProtection > 0 ? ` (${skippedForDeveloperProtection} skipped — Developer-tier protection.)` : ""
+          }`,
+          snapshot: null,
+        });
+      } catch (logErr) {
+        console.error("Failed to write change log for bulk user update:", logErr);
+      }
+    }
+
     return res.json({
       success: true,
       totalMatched: targetRows.length,
@@ -1508,7 +1708,7 @@ app.patch("/api/users/bulk", requireAuth, async (req, res) => {
 // isDeveloperPower, which would incorrectly let Platform Admin through).
 app.patch("/api/users/:email", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
+    const { users: usersRepo, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isDeveloperPower(callerTier)) {
       return res.status(403).json({ error: "Only the Developer or Platform Admin role can edit the user directory." });
@@ -1550,7 +1750,7 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
       }
       const team = await orgTeams.get(orgTeamId);
       if (!team) {
-        return res.status(400).json({ error: "That team doesn't exist." });
+        return res.status(400).json({ error: "That business unit doesn't exist." });
       }
     }
     if (roleId !== undefined && roleId !== null) {
@@ -1606,6 +1806,30 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
       ...(orgTeamId !== undefined ? { orgTeamId } : {}),
       ...(roleId !== undefined ? { roleId } : {}),
     });
+
+    try {
+      // Only logs when at least one access-control-relevant field actually
+      // changed — an edit that touches only name/TACT ID produces no entry
+      // (see describeUserAccessChanges's doc comment above).
+      const clauses = await describeUserAccessChanges(
+        existing,
+        { tier, status, tags: resolvedTags, ...(departmentId !== undefined ? { departmentId } : {}), ...(orgTeamId !== undefined ? { orgTeamId } : {}), ...(roleId !== undefined ? { roleId } : {}) },
+        { departments, orgTeams, roles }
+      );
+      if (clauses.length > 0) {
+        await changeLogs.create({
+          userName: req.user!.name,
+          role: callerTier,
+          actionType: "User Edited",
+          planName: null,
+          description: `Updated advisor "${existing.name}" (${existing.email}): ${clauses.join(", ")}.`,
+          snapshot: null,
+        });
+      }
+    } catch (logErr) {
+      console.error("Failed to write change log for user edit:", logErr);
+    }
+
     return res.json({ success: true, user: row });
   } catch (err: any) {
     console.error("Failed to update directory entry:", err);
@@ -1618,7 +1842,7 @@ app.patch("/api/users/:email", requireAuth, async (req, res) => {
 // the old filter-then-PUT-the-whole-array delete flow unsafe).
 app.delete("/api/users/:email", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo } = createRepositories(getDb());
+    const { users: usersRepo, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isDeveloperPower(callerTier)) {
       return res.status(403).json({ error: "Only the Developer or Platform Admin role can remove users from the directory." });
@@ -1642,6 +1866,23 @@ app.delete("/api/users/:email", requireAuth, async (req, res) => {
     }
 
     await usersRepo.deleteUser(targetEmail);
+
+    try {
+      // Removing a user always revokes whatever access they held, so this
+      // is inherently access-control-relevant — always logs, unlike the
+      // single-row edit above.
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "User Deleted",
+        planName: null,
+        description: `Removed advisor "${existing.name}" (${existing.email}) from the directory — was ${existing.tier} tier, ${existing.status}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for user delete:", logErr);
+    }
+
     return res.json({ success: true });
   } catch (err: any) {
     console.error("Failed to remove directory entry:", err);
@@ -1666,7 +1907,7 @@ app.delete("/api/users/:email", requireAuth, async (req, res) => {
 // that diff for genuinely dead code.
 app.put("/api/users", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo } = createRepositories(getDb());
+    const { users: usersRepo, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (callerTier !== "Developer") {
       return res.status(403).json({ error: "Only the Developer role can edit the user directory." });
@@ -1696,6 +1937,26 @@ app.put("/api/users", requireAuth, async (req, res) => {
     }));
 
     const saved = await usersRepo.replaceAll(cleanUsers);
+
+    try {
+      // This route replaces every row (including tier/status, both
+      // access-control-relevant) in one write, and nothing in the shipped
+      // UI calls it anymore (see the route's own comment above) — a
+      // per-user before/after diff isn't worth building for a legacy path
+      // with no real caller, so this logs a single summary entry instead of
+      // the field-level diff the routes below produce.
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "User Directory Replaced",
+        planName: null,
+        description: `Replaced the entire user directory via the legacy full-array update route (${saved.length} users).`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for legacy directory replace:", logErr);
+    }
+
     return res.json({ success: true, users: saved });
   } catch (err: any) {
     console.error("Failed to persist the user directory:", err);
@@ -1711,7 +1972,7 @@ app.put("/api/users", requireAuth, async (req, res) => {
 // Developer-only, enforced by the PUT/DELETE-via-PUT route above.
 app.post("/api/users", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, departments, orgTeams, roles } = createRepositories(getDb());
+    const { users: usersRepo, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isAdminPower(callerTier)) {
       return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
@@ -1752,7 +2013,7 @@ app.post("/api/users", requireAuth, async (req, res) => {
       }
       const team = await orgTeams.get(orgTeamId);
       if (!team) {
-        return res.status(400).json({ error: "That team doesn't exist." });
+        return res.status(400).json({ error: "That business unit doesn't exist." });
       }
     }
     if (roleId !== undefined && roleId !== null) {
@@ -1782,6 +2043,37 @@ app.post("/api/users", requireAuth, async (req, res) => {
       ...(orgTeamId !== undefined ? { orgTeamId } : {}),
       ...(roleId !== undefined ? { roleId } : {}),
     });
+
+    try {
+      // A new user's tier/status/tags/org attributes are all
+      // access-control-relevant from the moment the row exists, so creation
+      // always logs (unlike the single-row edit route, which only logs
+      // when one of those fields actually changes).
+      const [deptName, teamName, roleName] = await Promise.all([
+        departmentId ? departments.get(departmentId).then((d) => d?.name) : Promise.resolve(undefined),
+        orgTeamId ? orgTeams.get(orgTeamId).then((t) => t?.name) : Promise.resolve(undefined),
+        roleId ? roles.get(roleId).then((r) => r?.name) : Promise.resolve(undefined),
+      ]);
+      const details = [
+        `tier ${tier}`,
+        `status ${status}`,
+        resolvedTags.length ? `tags ${resolvedTags.join("/")}` : null,
+        teamName ? `business unit ${teamName}` : null,
+        deptName ? `department ${deptName}` : null,
+        roleName ? `role ${roleName}` : null,
+      ].filter(Boolean).join(", ");
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "User Added",
+        planName: null,
+        description: `Added advisor "${row.name}" (${row.email}) to the directory — ${details}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for user creation:", logErr);
+    }
+
     return res.json({ success: true, user: row });
   } catch (err: any) {
     console.error("Failed to add a new directory entry:", err);
@@ -1839,20 +2131,48 @@ async function requireAdminOrDeveloper(req: any, res: any, action: string): Prom
 // behaves identically whether a person is looking at the UI or hitting the
 // API directly.
 //
-// NOT applied to the Access Control Center's own routes (users,
-// departments, org-teams, roles, relationship-types, user-relationships,
-// custom-access-grants, feature-access, page-visibility) or the Product
-// Assist quota settings routes — those stay on their existing hardcoded
-// Developer/Platform-Admin-only gates, exactly like DEVELOPER_ONLY_FEATURES
-// already treats owner_controls/connections/smoke_test/product_assist_quota.
-// Reasoning: those routes configure the authorization system itself, so
-// letting a Custom Grant or Permissions-tab edit ever raise access to THEM
-// would be a privilege-escalation path (a careless or malicious grant on
-// "profile_access" could hand a General user the ability to grant further
-// access to themselves). This is a deliberate scope boundary, not an
-// oversight — see the final report.
-const ACCESS_LEVEL_RANK: Record<string, number> = { None: 0, Viewer: 1, Editor: 2 };
-
+// NOT applied to most of the Access Control Center's own administrative
+// routes (users, departments, org-teams, roles, custom-access-grants,
+// access-rules) — those stay on their existing hardcoded Developer/
+// Platform-Admin-only gates. Reasoning: those routes configure the
+// authorization system itself, so letting a Custom Grant or Permissions-tab
+// edit ever raise access to THEM would be a privilege-escalation path (a
+// careless or malicious grant on "profile_access" could hand a General user
+// the ability to grant further access to themselves). This is a deliberate
+// scope boundary, not an oversight.
+//
+// relationship-groups/user-relationships/group-access ARE wired through
+// requireFeatureAccess() (2026-09, Group Level Access) — but against the
+// narrower "group_management" featureId, never "profile_access". That's a
+// meaningfully different grant to hold: its only effect, end to end, is
+// restricting/unrestricting a General-tier member's own access to
+// GROUP_RESTRICTABLE_FEATURES (ordinary workspace tools) — there's no path
+// from holding it to granting oneself or anyone else the ability to grant
+// further access, so the self-escalation concern above doesn't apply to it.
+// See featurePermissions.ts's "group_management" entry for the full
+// reasoning.
+//
+// page-visibility's PUT route and the Product Assist quota admin routes
+// (requireQuotaAdmin) WERE also on this list, alongside "feature-access"
+// itself — all four gated by the (formerly non-empty) DEVELOPER_ONLY_
+// FEATURES hard gate for owner_controls/connections/smoke_test/
+// product_assist_quota. That Set is empty as of 2026-09 (the user's
+// explicit request — those four are ordinary reassignable features now),
+// so all of them ARE wired through requireFeatureAccess() below. The one
+// exception is GET /api/page-visibility itself, which stays requireAuth-
+// only on purpose (see its own comment) — every signed-in user's client
+// needs to read the full hidden-pages set to compute their OWN visibility,
+// regardless of whether they can manage Feature Visibility themselves.
+//
+// Access Control Center Phase 3 (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md):
+// delegates to the same evaluateAccess()/resolveAccess() evaluator hasAccess()
+// (App.tsx) and EffectiveAccessModal now also call, instead of re-deriving
+// tier/override/grant resolution inline here a third time. Deliberately
+// preserves the exact resolution order and 403 wording this function always
+// had — including NOT checking Feature Visibility (hiddenPages), which
+// hasAccess() does and this never has; see accessRuleEvaluator.ts's header
+// comment on that asymmetry, which Phase 3 leaves as-is rather than
+// silently changing real server behavior.
 async function requireFeatureAccess(
   req: any,
   res: any,
@@ -1860,52 +2180,17 @@ async function requireFeatureAccess(
   actionType: "Viewer" | "Editor",
   action: string
 ): Promise<boolean> {
-  const { users: usersRepo, featureAccess, customAccessGrants } = createRepositories(getDb());
-  const callerTier = await getCallerTier(req, usersRepo);
-
-  if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
-    if (!isDeveloperPower(callerTier)) {
-      res.status(403).json({ error: `${action} requires Developer or Platform Admin tier.` });
-      return false;
-    }
-    return true;
-  }
-
-  // Only a real Developer bypasses everything from here on (mirrors
-  // hasAccess()). Platform Admin (migration 0050) now resolves through the
-  // same registry/override path as General/Admin, via its own
-  // platformAdminAccess column — see below.
-  if (callerTier === "Developer") return true;
-
-  const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId);
-  if (!perm) return true; // unknown feature id — kept open, mirrors hasAccess()
-
-  const overrides = await featureAccess.list();
-  const override = overrides.find((o) => o.featureId === featureId);
-  // Platform Admin has no shipped per-feature default in
-  // DEFAULT_FEATURE_PERMISSIONS (unlike General/Admin) — defaults to
-  // "Editor" when unconfigured, exactly reproducing the old unconditional
-  // bypass until a Developer/Platform Admin explicitly narrows it.
-  const shippedLevel =
-    callerTier === "Platform Admin"
-      ? override?.platformAdminAccess ?? "Editor"
-      : callerTier === "Admin"
-        ? override?.adminAccess ?? perm.adminAccess
-        : override?.generalAccess ?? perm.generalAccess;
-
-  const email = (req.user?.email as string | undefined)?.toLowerCase();
-  let level = shippedLevel;
-  if (email) {
-    const grants = await customAccessGrants.listActiveForEmail(email);
-    const grant = grants.find((g) => g.grantType === "feature_access" && g.targetId === featureId);
-    if (grant?.level && ACCESS_LEVEL_RANK[grant.level] > ACCESS_LEVEL_RANK[shippedLevel]) {
-      level = grant.level;
-    }
-  }
-
-  const allowed = level === "Editor" ? true : level === "Viewer" ? actionType === "Viewer" : false;
-  if (!allowed) {
-    res.status(403).json({ error: `${action} requires access to this feature.` });
+  const { level } = await evaluateAccess(getDb(), req.user?.email, featureId);
+  if (!levelAllows(level, actionType as AccessActionType)) {
+    // DEVELOPER_ONLY_FEATURES is an empty Set as of 2026-09 (see
+    // featurePermissions.ts), so this branch is currently always false for
+    // every featureId — kept rather than removed so a future feature that
+    // genuinely needs a hard, un-overridable lock gets this more specific
+    // denial message for free just by being added to that Set again.
+    const message = DEVELOPER_ONLY_FEATURES.has(featureId)
+      ? `${action} requires Developer or Platform Admin tier.`
+      : `${action} requires access to this feature.`;
+    res.status(403).json({ error: message });
     return false;
   }
   return true;
@@ -1918,10 +2203,15 @@ app.get("/api/search-history", requireAuth, async (req, res) => {
     const requestedEmail = typeof req.query.userEmail === "string" ? req.query.userEmail.toLowerCase() : undefined;
     const isSelf = !!requestedEmail && requestedEmail === req.user!.email.toLowerCase();
 
-    // Anyone may view their OWN search history (My Activity); viewing
-    // everyone's (Audit tab, no userEmail filter, or someone else's email)
-    // requires Admin/Developer, same as the featurePermissions matrix intends.
-    if (!isSelf && !(await requireAdminOrDeveloper(req, res, "Viewing other users' search history"))) return;
+    // Anyone may view their OWN search history (My Activity, its own
+    // "my_activity" feature — unaffected by this check). Viewing everyone's
+    // (Audit tab, no userEmail filter, or someone else's email) is gated on
+    // the "audit" feature. Was requireAdminOrDeveloper (a hardcoded tier
+    // check) — switched to requireFeatureAccess (2026-09 permission
+    // architecture fix) so the Permissions tab's "Activity Log" row actually
+    // has an effect; Viewer, not Editor, since this route only ever reads —
+    // there's no admin/config action on this page to reserve Editor for.
+    if (!isSelf && !(await requireFeatureAccess(req, res, "audit", "Viewer", "Viewing other users' search history"))) return;
 
     const { searchHistory } = createRepositories(getDb());
     const planName = typeof req.query.planName === "string" ? req.query.planName : undefined;
@@ -1986,11 +2276,12 @@ app.post("/api/search-history", requireAuth, async (req, res) => {
 
 app.delete("/api/search-history", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo } = createRepositories(getDb());
-    const callerTier = await getCallerTier(req, usersRepo);
-    if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin role can clear activity history." });
-    }
+    // Was isDeveloperPower (a hardcoded tier check) — switched to
+    // clear_activity Editor (2026-09 permission architecture fix) to match
+    // the client's own hasAccess("clear_activity", "Editor") gate on this
+    // button (App.tsx). Without this, a Custom Grant/Access Rule here would
+    // show the button and then 403.
+    if (!(await requireFeatureAccess(req, res, "clear_activity", "Editor", "Clearing activity history"))) return;
     const { searchHistory } = createRepositories(getDb());
     await searchHistory.clearAll();
     return res.json({ success: true });
@@ -2000,18 +2291,74 @@ app.delete("/api/search-history", requireAuth, async (req, res) => {
   }
 });
 
-// --- Change Logs (Audit tab's "Modification History" sub-tab) ---
+// --- Change Logs (Audit tab's "Modification History" sub-tab; also the
+// Access Control Center's own "Change History" sub-tab — see
+// ACCESS_CONTROL_ACTION_TYPE_PREFIXES below) ---
+
+// The Access Control Center's own sub-tabs, mapped to the actionType
+// prefix(es) each one's routes actually write to change_logs — used by GET
+// /api/change-logs?scope=access-control(&category=...) (Access Control
+// Center Phase 5, docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md). Keys mirror
+// ProfileAccessPage.tsx's SubTab ids so the UI's category filter and this
+// map stay easy to keep in sync by eye. Hand-maintained (not derived) so
+// it's one single, auditable list of every actionType family the
+// Departments/Teams/Roles/Access Rules/Relationships/Custom Grants/
+// Permissions/QA Dashboard Access/User Directory routes above actually
+// write. "directory" lists each User Directory actionType by its full
+// string rather than a short shared prefix like the other categories,
+// because "User " alone would also match "User Relationship
+// Created/Removed" (the Relationships category) — see
+// describeUserAccessChanges's doc comment above for what does/doesn't
+// trigger those. Deliberately excludes Product Assist's quota-eligibility
+// settings ("Product Assist Quota...", a different admin page, not a
+// sub-tab of the Access Control Center).
+const ACCESS_CONTROL_CHANGE_LOG_CATEGORIES: Record<string, string[]> = {
+  directory: ["User Added", "User Edited", "User Deleted", "User Bulk Edited", "User Directory Replaced"],
+  permissions: ["Feature Access", "Page Visibility"],
+  teams: ["Business Unit"],
+  departments: ["Department"],
+  roles: ["Role"],
+  access_rules: ["Access Rule"],
+  // "Relationship Type" (the old prefix here) never matched anything real —
+  // the actual actionTypes are "Relationship Group ..." (the group catalog
+  // itself), "User Relationship ..." (roster mappings), and "Group Tool
+  // Access Updated" (the Groups tab's tool-access save) — all three now
+  // listed so the Change History filter actually surfaces every Groups tab
+  // change instead of silently only ever matching roster mappings.
+  relationships: ["Relationship Group", "User Relationship", "Group Tool Access"],
+  custom_grants: ["Custom Access"],
+  qa_access: ["QA Dashboard Access"],
+};
+const ACCESS_CONTROL_ACTION_TYPE_PREFIXES = Object.values(ACCESS_CONTROL_CHANGE_LOG_CATEGORIES).flat();
 
 app.get("/api/change-logs", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing the modification history"))) return;
+    // Dual-purpose route: the Audit tab's own "Modification History" (no
+    // scope) is an ordinary governed feature — gated on "audit" Viewer
+    // (2026-09 permission architecture fix; was requireAdminOrDeveloper).
+    // But ?scope=access-control is the Access Control Center's OWN "Change
+    // History" sub-tab (custom grants, role/department/org changes, QA
+    // Dashboard Access, relationship groups — see
+    // ACCESS_CONTROL_CHANGE_LOG_CATEGORIES above) and deliberately stays on
+    // the hardcoded Admin/Developer-power check, same as every other
+    // ACC-administrative route (users, departments, roles, custom-access-
+    // grants, access-rules) — letting an "audit" grant see who was promoted
+    // or what a Custom Grant changed would be a self-escalation-adjacent
+    // information leak, not an ordinary feature-view gap.
+    if (req.query.scope === "access-control") {
+      if (!(await requireAdminOrDeveloper(req, res, "Viewing Access Control Center change history"))) return;
+    } else {
+      if (!(await requireFeatureAccess(req, res, "audit", "Viewer", "Viewing the modification history"))) return;
+    }
     const { changeLogs } = createRepositories(getDb());
     if (req.query.paginated) {
       const { page, pageSize, search, sortBy, sortDir } = parseListQuery(req.query, 50, "desc");
       const actionType = typeof req.query.actionType === "string" ? req.query.actionType : undefined;
+      const accessControlCategory = typeof req.query.category === "string" ? ACCESS_CONTROL_CHANGE_LOG_CATEGORIES[req.query.category] : undefined;
+      const actionTypePrefixes = req.query.scope === "access-control" ? (accessControlCategory ?? ACCESS_CONTROL_ACTION_TYPE_PREFIXES) : undefined;
       const from = typeof req.query.from === "string" ? req.query.from : undefined;
       const to = typeof req.query.to === "string" ? req.query.to : undefined;
-      const clOptions = { search, actionType, from, to, sortBy, sortDir };
+      const clOptions = { search, actionType, actionTypePrefixes, from, to, sortBy, sortDir };
       if (req.query.export) {
         const rows = await changeLogs.listMatching(clOptions);
         return res.json({ entries: rows });
@@ -2067,7 +2414,14 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
     // announcements needs to find/edit ones for either audience.
     let team: "Health" | "Term" | undefined;
     if (req.query.includeAllTeams === "1") {
-      if (!(await requireAdminOrDeveloper(req, res, "Viewing announcements across all teams"))) return;
+      // Was requireAdminOrDeveloper (a hardcoded tier check) — switched to
+      // qa_announcement_log Viewer (2026-09 permission architecture fix) so
+      // this matches the POST/PUT/DELETE routes below, which already gate
+      // on qa_announcement_log Editor. Without this, a Custom Grant/Access
+      // Rule raising a non-Admin/Developer user to qa_announcement_log
+      // Editor could create/edit/delete but never fetch the other team's
+      // announcements to manage them.
+      if (!(await requireFeatureAccess(req, res, "qa_announcement_log", "Viewer", "Viewing announcements across all teams"))) return;
     } else {
       const caller = await usersRepo.findByEmail(req.user!.email);
       team = teamForTags(caller?.tags);
@@ -2092,32 +2446,16 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
       return res.json({ entries: result.data, total: result.total, page: result.page, pageSize: result.pageSize, totalPages: result.totalPages });
     }
 
-    // Insights are managed through the Announcement Manager (paginated
-    // branch above) but must never appear in this shared unfiltered feed —
-    // it backs both the advisor-facing Announcements archive AND the
-    // Home Dashboard's carousel, neither of which should surface Insights
-    // (see the dedicated GET /api/announcements/insight route instead).
+    // "Insight" rows are legacy-only (the type was retired 2026-09 — the
+    // Did You Know card is now a live FAQ feed, see GET /api/did-you-know)
+    // but any that still exist in the table must never surface in this
+    // shared unfiltered feed, which backs both the advisor-facing
+    // Announcements archive AND the Home Dashboard's carousel.
     const rows = await announcements.list({ category, team, excludeTypes: ["Insight"] });
     return res.json({ entries: rows });
   } catch (err: any) {
     console.error("Failed to list announcements:", err);
     return res.status(500).json({ error: `Failed to load announcements: ${err.message}` });
-  }
-});
-
-// Latest published Insight for the Home Dashboard's "Did you know!?" card.
-// Deliberately NOT team-gated (Insights are general insurance knowledge, not
-// tied to Health/Term advisor audiences) and open to any authenticated user
-// regardless of role, unlike the admin-only paginated Announcement Manager
-// fetch above.
-app.get("/api/announcements/insight", requireAuth, async (req, res) => {
-  try {
-    const { announcements } = createRepositories(getDb());
-    const rows = await announcements.list({ type: "Insight", limit: 1 });
-    return res.json({ entry: rows[0] || null });
-  } catch (err: any) {
-    console.error("Failed to load insight:", err);
-    return res.status(500).json({ error: `Failed to load insight: ${err.message}` });
   }
 });
 
@@ -2153,8 +2491,8 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
     if (!isInsight && (typeof category !== "string" || !category.trim())) {
       return res.status(400).json({ error: "announcement and category are required." });
     }
-    if (team !== undefined && !isValidAnnouncementTeam(team)) {
-      return res.status(400).json({ error: "team must be 'Health' or 'Term'." });
+    if (team !== undefined && !isValidAnnouncementAudience(team)) {
+      return res.status(400).json({ error: "team must be 'Health', 'Term', or 'Both'." });
     }
     const { announcements } = createRepositories(getDb());
     const row = await announcements.create({
@@ -2179,7 +2517,7 @@ app.post("/api/announcements", requireAuth, async (req, res) => {
       // Insights aren't audience-restricted (see the dedicated insight
       // route, which never filters by team), so this value is unused for
       // them — kept as a harmless default rather than a nullable column.
-      team: isValidAnnouncementTeam(team) ? team : "Health",
+      team: isValidAnnouncementAudience(team) ? team : "Health",
       // Insights are purely informational — never gate the app behind the
       // mandatory read-and-acknowledge modal for them (column defaults to
       // true, so this must be set explicitly).
@@ -2210,8 +2548,8 @@ app.put("/api/announcements/:id", requireAuth, async (req, res) => {
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid announcement id." });
 
     const { announcement, effectiveDate, category, rating, type, validTillDate, title, announcementDate, team } = req.body;
-    if (team !== undefined && !isValidAnnouncementTeam(team)) {
-      return res.status(400).json({ error: "team must be 'Health' or 'Term'." });
+    if (team !== undefined && !isValidAnnouncementAudience(team)) {
+      return res.status(400).json({ error: "team must be 'Health', 'Term', or 'Both'." });
     }
     // fromTeam is no longer accepted from the client (the "From" input was
     // removed from the form — see QAAnnouncementForm.tsx). It's derived from
@@ -2489,10 +2827,13 @@ app.get("/api/page-visibility", requireAuth, async (req, res) => {
 app.put("/api/page-visibility/:featureId", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, pageVisibility, changeLogs } = createRepositories(getDb());
+    // Was a hardcoded isDeveloperPower-only gate (matching "owner_controls"'s
+    // old DEVELOPER_ONLY_FEATURES membership). That Set is now empty
+    // (2026-09), so this is the same requireFeatureAccess() every other
+    // governed feature's write routes use — a Permissions-tab / Access Rule
+    // / Custom Grant on "owner_controls" now actually takes effect here.
+    if (!(await requireFeatureAccess(req, res, "owner_controls", "Editor", "Changing page visibility"))) return;
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can change page visibility." });
-    }
 
     const featureId = String(req.params.featureId);
     const { hidden } = req.body;
@@ -2559,15 +2900,11 @@ app.put("/api/feature-access/:featureId", requireAuth, async (req, res) => {
     }
 
     const featureId = String(req.params.featureId);
-    // These 3 stay a hardcoded hard-gate in App.tsx's DEVELOPER_ONLY_FEATURES
-    // (checked before this table is ever consulted, specifically so they
-    // can never leak via a stale/incomplete permission list) — refusing the
-    // write here too means the UI can't show an override that would have no
-    // actual effect.
-    if (["owner_controls", "connections", "smoke_test"].includes(featureId)) {
-      return res.status(400).json({ error: `"${featureId}" is always Developer-only and can't be overridden.` });
-    }
-
+    // owner_controls/connections/smoke_test/product_assist_quota used to be
+    // rejected here unconditionally (DEVELOPER_ONLY_FEATURES was a hard,
+    // un-overridable gate for them). That Set is empty as of 2026-09 — all
+    // four are now ordinary governed features, writable like any other —
+    // so this route no longer special-cases them.
     const { generalAccess, adminAccess, platformAdminAccess } = req.body;
     if (!isValidFeatureAccessLevel(generalAccess) || !isValidFeatureAccessLevel(adminAccess) || !isValidFeatureAccessLevel(platformAdminAccess)) {
       return res.status(400).json({ error: `generalAccess, adminAccess, and platformAdminAccess must each be one of: ${FEATURE_ACCESS_LEVELS.join(", ")}, or null to clear.` });
@@ -2759,6 +3096,68 @@ app.patch("/api/departments/:id", requireAuth, async (req, res) => {
   }
 });
 
+// Delete — Access Control Center Phase 4
+// (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md). See
+// src/server/accessControl/catalogDependencies.ts's header comment for why
+// this needs an explicit dependency check even though every referencing FK
+// is ON DELETE SET NULL. Two-step: an active Access Rule or the Product
+// Assist eligibility settings referencing this department blocks deletion
+// outright (409, suggest Disable instead); users or inactive rules
+// referencing it require the caller to resend with `confirmed: true`
+// after seeing the counts; zero dependencies deletes immediately.
+app.delete("/api/departments/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, departments, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can delete departments." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid department id." });
+    }
+    const existing = await departments.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Department not found." });
+    }
+
+    const summary = await countCatalogDependencies(getDb(), "department", id);
+    if (blocksDeletion(summary)) {
+      return res.status(409).json({
+        error: `Cannot delete "${existing.name}" — ${describeDependencies(summary)}. Deactivate it instead, or remove those references first.`,
+        dependencies: summary,
+      });
+    }
+    if (needsConfirmation(summary) && req.body?.confirmed !== true) {
+      return res.status(409).json({
+        error: `Deleting "${existing.name}" will affect: ${describeDependencies(summary)}.`,
+        requiresConfirmation: true,
+        dependencies: summary,
+      });
+    }
+
+    await departments.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Department Deleted",
+        planName: null,
+        description: `Deleted department "${existing.name}"${needsConfirmation(summary) ? ` (${describeDependencies(summary)})` : ""}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for department deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete department:", err);
+    return res.status(500).json({ error: `Failed to delete this department: ${err.message}` });
+  }
+});
+
 // Org Teams (Bliss / Falcon / Central) — same read/write posture as
 // Departments above: read open to any signed-in user (2026-08-25, same
 // rationale as GET /api/departments), writes gated Developer+Platform
@@ -2772,7 +3171,7 @@ app.get("/api/org-teams", requireAuth, async (req, res) => {
     return res.json({ entries: rows });
   } catch (err: any) {
     console.error("Failed to list org teams:", err);
-    return res.status(500).json({ error: `Failed to load teams: ${err.message}` });
+    return res.status(500).json({ error: `Failed to load business units: ${err.message}` });
   }
 });
 
@@ -2781,7 +3180,7 @@ app.post("/api/org-teams", requireAuth, async (req, res) => {
     const { users: usersRepo, orgTeams, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can create teams." });
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create business units." });
     }
     const { name, description } = req.body;
     if (typeof name !== "string" || !name.trim()) {
@@ -2797,9 +3196,9 @@ app.post("/api/org-teams", requireAuth, async (req, res) => {
       await changeLogs.create({
         userName: req.user!.name,
         role: callerTier,
-        actionType: "Team Created",
+        actionType: "Business Unit Created",
         planName: null,
-        description: `Created team "${row.name}".`,
+        description: `Created business unit "${row.name}".`,
         snapshot: null,
       });
     } catch (logErr) {
@@ -2809,10 +3208,10 @@ app.post("/api/org-teams", requireAuth, async (req, res) => {
     return res.json({ entry: row });
   } catch (err: any) {
     if (err?.code === "23505") {
-      return res.status(409).json({ error: "A team with that name already exists." });
+      return res.status(409).json({ error: "A business unit with that name already exists." });
     }
     console.error("Failed to create team:", err);
-    return res.status(500).json({ error: `Failed to create this team: ${err.message}` });
+    return res.status(500).json({ error: `Failed to create this business unit: ${err.message}` });
   }
 });
 
@@ -2821,15 +3220,15 @@ app.patch("/api/org-teams/:id", requireAuth, async (req, res) => {
     const { users: usersRepo, orgTeams, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit teams." });
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit business units." });
     }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: "Invalid team id." });
+      return res.status(400).json({ error: "Invalid business unit id." });
     }
     const existing = await orgTeams.get(id);
     if (!existing) {
-      return res.status(404).json({ error: "Team not found." });
+      return res.status(404).json({ error: "Business unit not found." });
     }
 
     const { name, description, active } = req.body;
@@ -2861,9 +3260,9 @@ app.patch("/api/org-teams/:id", requireAuth, async (req, res) => {
       await changeLogs.create({
         userName: req.user!.name,
         role: callerTier,
-        actionType: "Team Edited",
+        actionType: "Business Unit Edited",
         planName: null,
-        description: `Team "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        description: `Business unit "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
         snapshot: null,
       });
     } catch (logErr) {
@@ -2873,10 +3272,66 @@ app.patch("/api/org-teams/:id", requireAuth, async (req, res) => {
     return res.json({ entry: row });
   } catch (err: any) {
     if (err?.code === "23505") {
-      return res.status(409).json({ error: "A team with that name already exists." });
+      return res.status(409).json({ error: "A business unit with that name already exists." });
     }
     console.error("Failed to update team:", err);
-    return res.status(500).json({ error: `Failed to update this team: ${err.message}` });
+    return res.status(500).json({ error: `Failed to update this business unit: ${err.message}` });
+  }
+});
+
+// Delete — see DELETE /api/departments/:id's comment above for the full
+// dependency-safety reasoning; identical two-step logic, scoped to
+// org_team_id references instead.
+app.delete("/api/org-teams/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, orgTeams, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can delete business units." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid business unit id." });
+    }
+    const existing = await orgTeams.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Business unit not found." });
+    }
+
+    const summary = await countCatalogDependencies(getDb(), "orgTeam", id);
+    if (blocksDeletion(summary)) {
+      return res.status(409).json({
+        error: `Cannot delete "${existing.name}" — ${describeDependencies(summary)}. Deactivate it instead, or remove those references first.`,
+        dependencies: summary,
+      });
+    }
+    if (needsConfirmation(summary) && req.body?.confirmed !== true) {
+      return res.status(409).json({
+        error: `Deleting "${existing.name}" will affect: ${describeDependencies(summary)}.`,
+        requiresConfirmation: true,
+        dependencies: summary,
+      });
+    }
+
+    await orgTeams.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Business Unit Deleted",
+        planName: null,
+        description: `Deleted business unit "${existing.name}"${needsConfirmation(summary) ? ` (${describeDependencies(summary)})` : ""}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for team deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete team:", err);
+    return res.status(500).json({ error: `Failed to delete this business unit: ${err.message}` });
   }
 });
 
@@ -2999,78 +3454,310 @@ app.patch("/api/roles/:id", requireAuth, async (req, res) => {
   }
 });
 
-// Relationship Types (Mentor / Guide / ...) — the vocabulary usable in
-// user_relationships below. Same read/write posture as Org Teams/Roles.
-app.get("/api/relationship-types", requireAuth, async (req, res) => {
+// Delete — see DELETE /api/departments/:id's comment above for the full
+// dependency-safety reasoning; identical two-step logic, scoped to role_id
+// references instead.
+app.delete("/api/roles/:id", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing relationship types"))) return;
-    const { relationshipTypes } = createRepositories(getDb());
-    const rows = await relationshipTypes.list();
-    return res.json({ entries: rows });
+    const { users: usersRepo, roles, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can delete roles." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid role id." });
+    }
+    const existing = await roles.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Role not found." });
+    }
+
+    const summary = await countCatalogDependencies(getDb(), "role", id);
+    if (blocksDeletion(summary)) {
+      return res.status(409).json({
+        error: `Cannot delete "${existing.name}" — ${describeDependencies(summary)}. Deactivate it instead, or remove those references first.`,
+        dependencies: summary,
+      });
+    }
+    if (needsConfirmation(summary) && req.body?.confirmed !== true) {
+      return res.status(409).json({
+        error: `Deleting "${existing.name}" will affect: ${describeDependencies(summary)}.`,
+        requiresConfirmation: true,
+        dependencies: summary,
+      });
+    }
+
+    await roles.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Role Deleted",
+        planName: null,
+        description: `Deleted role "${existing.name}"${needsConfirmation(summary) ? ` (${describeDependencies(summary)})` : ""}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for role deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
   } catch (err: any) {
-    console.error("Failed to list relationship types:", err);
-    return res.status(500).json({ error: `Failed to load relationship types: ${err.message}` });
+    console.error("Failed to delete role:", err);
+    return res.status(500).json({ error: `Failed to delete this role: ${err.message}` });
   }
 });
 
-app.post("/api/relationship-types", requireAuth, async (req, res) => {
+// Access Rules — Access Control Center Phase 2
+// (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md). CRUD only: nothing on this
+// page reads access_rules yet (that's Phase 3, evaluateAccess.ts), so
+// creating/editing a rule here has zero runtime effect today — see
+// schema.ts's doc comment on `accessRules`. Same read/write posture as
+// Custom Access Grants above (more sensitive than the plain Team/
+// Department/Role catalogs, since a rule actually grants access once wired
+// up): read open to Admin+Platform Admin+Developer, writes gated to
+// Developer+Platform Admin only.
+app.get("/api/access-rules", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, relationshipTypes, changeLogs } = createRepositories(getDb());
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing access rules"))) return;
+    const { accessRules } = createRepositories(getDb());
+    const rows = await accessRules.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list access rules:", err);
+    return res.status(500).json({ error: `Failed to load access rules: ${err.message}` });
+  }
+});
+
+const ACCESS_RULE_LEVELS = ["None", "Viewer", "Editor"] as const;
+
+app.post("/api/access-rules", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, accessRules, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can create relationship types." });
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can create access rules." });
     }
-    const { name, description } = req.body;
+    const { resourceKey, name, orgTeamId, departmentId, roleId, productTag, grantedLevel } = req.body;
+    if (typeof resourceKey !== "string" || !resourceKey.trim()) {
+      return res.status(400).json({ error: "resourceKey is required." });
+    }
+    if (!DEFAULT_FEATURE_PERMISSIONS.some((p) => p.id === resourceKey)) {
+      return res.status(400).json({ error: "resourceKey must be a known feature id." });
+    }
     if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ error: "name is required." });
     }
-    const row = await relationshipTypes.create({
+    if (!ACCESS_RULE_LEVELS.includes(grantedLevel)) {
+      return res.status(400).json({ error: `grantedLevel must be one of: ${ACCESS_RULE_LEVELS.join(", ")}.` });
+    }
+    const toId = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
+    const row = await accessRules.create({
+      resourceKey: resourceKey.trim(),
+      name: name.trim(),
+      orgTeamId: toId(orgTeamId),
+      departmentId: toId(departmentId),
+      roleId: toId(roleId),
+      productTag: typeof productTag === "string" && productTag.trim() ? productTag.trim() : null,
+      grantedLevel,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      const featureName = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === row.resourceKey)?.name || row.resourceKey;
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Access Rule Created",
+        planName: null,
+        description: `Created access rule "${row.name}" — grants ${row.grantedLevel} on "${featureName}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for access rule creation:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to create access rule:", err);
+    return res.status(500).json({ error: `Failed to create this access rule: ${err.message}` });
+  }
+});
+
+app.patch("/api/access-rules/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, accessRules, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit access rules." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid access rule id." });
+    }
+    const existing = await accessRules.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Access rule not found." });
+    }
+
+    const { name, active, orgTeamId, departmentId, roleId, productTag, grantedLevel } = req.body;
+    const patch: {
+      name?: string;
+      active?: boolean;
+      orgTeamId?: number | null;
+      departmentId?: number | null;
+      roleId?: number | null;
+      productTag?: string | null;
+      grantedLevel?: (typeof ACCESS_RULE_LEVELS)[number];
+    } = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name cannot be empty." });
+      }
+      patch.name = name.trim();
+    }
+    if (active !== undefined) {
+      if (typeof active !== "boolean") {
+        return res.status(400).json({ error: "active must be a boolean." });
+      }
+      patch.active = active;
+    }
+    const toId = (v: unknown) => (v === null || v === "" ? null : Number(v));
+    if (orgTeamId !== undefined) patch.orgTeamId = toId(orgTeamId);
+    if (departmentId !== undefined) patch.departmentId = toId(departmentId);
+    if (roleId !== undefined) patch.roleId = toId(roleId);
+    if (productTag !== undefined) patch.productTag = typeof productTag === "string" && productTag.trim() ? productTag.trim() : null;
+    if (grantedLevel !== undefined) {
+      if (!ACCESS_RULE_LEVELS.includes(grantedLevel)) {
+        return res.status(400).json({ error: `grantedLevel must be one of: ${ACCESS_RULE_LEVELS.join(", ")}.` });
+      }
+      patch.grantedLevel = grantedLevel;
+    }
+
+    const row = await accessRules.update(id, patch);
+
+    try {
+      const changeSummary = [
+        patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
+        patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
+        patch.grantedLevel !== undefined && patch.grantedLevel !== existing.grantedLevel ? `level changed to ${patch.grantedLevel}` : null,
+        (patch.orgTeamId !== undefined || patch.departmentId !== undefined || patch.roleId !== undefined || patch.productTag !== undefined) ? "conditions updated" : null,
+      ].filter(Boolean).join(", ");
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Access Rule Edited",
+        planName: null,
+        description: `Access rule "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for access rule edit:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update access rule:", err);
+    return res.status(500).json({ error: `Failed to update this access rule: ${err.message}` });
+  }
+});
+
+// Relationship Groups (Mentor / Guide / ...) — the vocabulary usable in
+// user_relationships below. Same read/write posture as Org Teams/Roles.
+// Renamed from Relationship Types (2026-09) — same table/behavior, "group"
+// instead of "type" throughout.
+app.get("/api/relationship-groups", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "group_management", "Viewer", "Viewing relationship groups"))) return;
+    const { relationshipGroups } = createRepositories(getDb());
+    const rows = await relationshipGroups.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list relationship groups:", err);
+    return res.status(500).json({ error: `Failed to load relationship groups: ${err.message}` });
+  }
+});
+
+app.post("/api/relationship-groups", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipGroups, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Creating relationship groups"))) return;
+    const { name, description, departmentId, groupTier } = req.body;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "name is required." });
+    }
+    if (departmentId !== undefined && departmentId !== null && !Number.isInteger(departmentId)) {
+      return res.status(400).json({ error: "departmentId must be an integer or null." });
+    }
+    // Group Tier (2026-09, migration 0082) — which tier of MEMBER this
+    // group's usedForGroupAccess ceiling will restrict; see schema.ts's
+    // comment on relationshipGroups.groupTier. Independent of the CALLER's
+    // own tier/permissions — no additional privilege check beyond the
+    // group_management Editor gate already required above: this column
+    // only ever narrows/widens which tier a RESTRICTION applies to, it
+    // grants nothing beyond GROUP_RESTRICTABLE_FEATURES (see
+    // featurePermissions.ts's group_management comment), so the existing
+    // authorization boundary for managing Group Level Access is unchanged.
+    if (groupTier !== undefined && groupTier !== "General" && groupTier !== "Admin" && groupTier !== "Platform Admin") {
+      return res.status(400).json({ error: 'groupTier must be "General", "Admin", or "Platform Admin".' });
+    }
+    const row = await relationshipGroups.create({
       name: name.trim(),
       description: typeof description === "string" ? description.trim() || null : null,
+      departmentId: departmentId ?? null,
       createdBy: `${req.user!.name} (${callerTier})`,
+      ...(groupTier !== undefined ? { groupTier } : {}),
     });
 
     try {
       await changeLogs.create({
         userName: req.user!.name,
         role: callerTier,
-        actionType: "Relationship Type Created",
+        actionType: "Relationship Group Created",
         planName: null,
-        description: `Created relationship type "${row.name}".`,
+        description: `Created relationship group "${row.name}".`,
         snapshot: null,
       });
     } catch (logErr) {
-      console.error("Failed to write change log for relationship type creation:", logErr);
+      console.error("Failed to write change log for relationship group creation:", logErr);
     }
 
     return res.json({ entry: row });
   } catch (err: any) {
     if (err?.code === "23505") {
-      return res.status(409).json({ error: "A relationship type with that name already exists." });
+      return res.status(409).json({ error: "A relationship group with that name already exists." });
     }
-    console.error("Failed to create relationship type:", err);
-    return res.status(500).json({ error: `Failed to create this relationship type: ${err.message}` });
+    console.error("Failed to create relationship group:", err);
+    return res.status(500).json({ error: `Failed to create this relationship group: ${err.message}` });
   }
 });
 
-app.patch("/api/relationship-types/:id", requireAuth, async (req, res) => {
+app.patch("/api/relationship-groups/:id", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, relationshipTypes, changeLogs } = createRepositories(getDb());
+    const { users: usersRepo, relationshipGroups, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can edit relationship types." });
-    }
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Editing relationship groups"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: "Invalid relationship type id." });
+      return res.status(400).json({ error: "Invalid relationship group id." });
     }
-    const existing = await relationshipTypes.get(id);
+    const existing = await relationshipGroups.get(id);
     if (!existing) {
-      return res.status(404).json({ error: "Relationship type not found." });
+      return res.status(404).json({ error: "Relationship group not found." });
     }
 
-    const { name, description, active } = req.body;
-    const patch: { name?: string; description?: string | null; active?: boolean } = {};
+    const { name, description, active, departmentId, usedForGroupAccess, groupTier } = req.body;
+    const patch: {
+      name?: string;
+      description?: string | null;
+      active?: boolean;
+      departmentId?: number | null;
+      usedForGroupAccess?: boolean;
+      groupTier?: "General" | "Admin" | "Platform Admin";
+    } = {};
     if (name !== undefined) {
       if (typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "name cannot be empty." });
@@ -3086,34 +3773,115 @@ app.patch("/api/relationship-types/:id", requireAuth, async (req, res) => {
       }
       patch.active = active;
     }
+    if (departmentId !== undefined) {
+      if (departmentId !== null && !Number.isInteger(departmentId)) {
+        return res.status(400).json({ error: "departmentId must be an integer or null." });
+      }
+      patch.departmentId = departmentId;
+    }
+    // Group Access tab's "which relationship group(s) count toward group
+    // access restriction" toggle — see schema.ts's usedForGroupAccess
+    // comment for why this is admin-flagged per group rather than name-
+    // matched.
+    if (usedForGroupAccess !== undefined) {
+      if (typeof usedForGroupAccess !== "boolean") {
+        return res.status(400).json({ error: "usedForGroupAccess must be a boolean." });
+      }
+      patch.usedForGroupAccess = usedForGroupAccess;
+    }
+    // Group Tier (2026-09, migration 0082) — see the matching validation/
+    // comment on the POST route above; same "no additional privilege check"
+    // reasoning applies here (this is an edit to an already-created group,
+    // still gated only by the group_management Editor check above).
+    if (groupTier !== undefined) {
+      if (groupTier !== "General" && groupTier !== "Admin" && groupTier !== "Platform Admin") {
+        return res.status(400).json({ error: 'groupTier must be "General", "Admin", or "Platform Admin".' });
+      }
+      patch.groupTier = groupTier;
+    }
 
-    const row = await relationshipTypes.update(id, patch);
+    const row = await relationshipGroups.update(id, patch);
 
     try {
       const changeSummary = [
         patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
         patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
         patch.description !== undefined ? "description updated" : null,
+        patch.departmentId !== undefined && patch.departmentId !== existing.departmentId ? (patch.departmentId === null ? "unlinked from its department" : "department link updated") : null,
+        patch.usedForGroupAccess !== undefined && patch.usedForGroupAccess !== existing.usedForGroupAccess
+          ? (patch.usedForGroupAccess ? "enabled for Group Access restriction" : "disabled for Group Access restriction")
+          : null,
+        patch.groupTier !== undefined && patch.groupTier !== existing.groupTier ? `Group Tier set to "${patch.groupTier}"` : null,
       ].filter(Boolean).join(", ");
       await changeLogs.create({
         userName: req.user!.name,
         role: callerTier,
-        actionType: "Relationship Type Edited",
+        actionType: "Relationship Group Edited",
         planName: null,
-        description: `Relationship type "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
+        description: `Relationship group "${existing.name}"${changeSummary ? `: ${changeSummary}.` : " updated."}`,
         snapshot: null,
       });
     } catch (logErr) {
-      console.error("Failed to write change log for relationship type edit:", logErr);
+      console.error("Failed to write change log for relationship group edit:", logErr);
     }
 
     return res.json({ entry: row });
   } catch (err: any) {
     if (err?.code === "23505") {
-      return res.status(409).json({ error: "A relationship type with that name already exists." });
+      return res.status(409).json({ error: "A relationship group with that name already exists." });
     }
-    console.error("Failed to update relationship type:", err);
-    return res.status(500).json({ error: `Failed to update this relationship type: ${err.message}` });
+    console.error("Failed to update relationship group:", err);
+    return res.status(500).json({ error: `Failed to update this relationship group: ${err.message}` });
+  }
+});
+
+// Deleting a relationship group is blocked outright (not the two-step
+// confirm dance org_teams/departments/roles use) whenever any mapping still
+// references it — the FK is ON DELETE RESTRICT (see schema.ts), unlike
+// those three catalogs' ON DELETE SET NULL, because silently widening an
+// Access Rule's condition (what SET NULL risks there) has no equivalent
+// here: a relationship group with no owner/subject rows left is simply
+// gone, nothing "widens". Checked here for a clean error message instead
+// of surfacing the raw Postgres FK-violation error.
+app.delete("/api/relationship-groups/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipGroups, userRelationships, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Deleting relationship groups"))) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid relationship group id." });
+    }
+    const existing = await relationshipGroups.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Relationship group not found." });
+    }
+    const referencing = (await userRelationships.list()).filter((r) => r.relationshipGroupId === id).length;
+    if (referencing > 0) {
+      return res.status(409).json({
+        error: `"${existing.name}" is used by ${referencing} mapping${referencing === 1 ? "" : "s"} in its roster — remove ${referencing === 1 ? "it" : "them"} first, or deactivate this group instead of deleting it.`,
+      });
+    }
+
+    await relationshipGroups.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Relationship Group Deleted",
+        planName: null,
+        description: `Deleted relationship group "${existing.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for relationship group deletion:", logErr);
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to delete relationship group:", err);
+    return res.status(500).json({ error: `Failed to delete this relationship group: ${err.message}` });
   }
 });
 
@@ -3122,7 +3890,7 @@ app.patch("/api/relationship-types/:id", requireAuth, async (req, res) => {
 // comment on why, unlike the catalogs above).
 app.get("/api/user-relationships", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing user relationships"))) return;
+    if (!(await requireFeatureAccess(req, res, "group_management", "Viewer", "Viewing user relationships"))) return;
     const { userRelationships } = createRepositories(getDb());
     const rows = await userRelationships.list();
     return res.json({ entries: rows });
@@ -3134,34 +3902,32 @@ app.get("/api/user-relationships", requireAuth, async (req, res) => {
 
 app.post("/api/user-relationships", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, relationshipTypes, userRelationships, changeLogs } = createRepositories(getDb());
+    const { users: usersRepo, relationshipGroups, userRelationships, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can create user relationships." });
-    }
-    const { ownerEmail, subjectEmail, relationshipTypeId } = req.body;
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Creating user relationships"))) return;
+    const { ownerEmail, subjectEmail, relationshipGroupId } = req.body;
     if (typeof ownerEmail !== "string" || !ownerEmail.trim() || typeof subjectEmail !== "string" || !subjectEmail.trim()) {
       return res.status(400).json({ error: "ownerEmail and subjectEmail are required." });
     }
     if (ownerEmail.trim().toLowerCase() === subjectEmail.trim().toLowerCase()) {
       return res.status(400).json({ error: "A user cannot be mapped to themselves." });
     }
-    if (typeof relationshipTypeId !== "number" || !Number.isInteger(relationshipTypeId)) {
-      return res.status(400).json({ error: "relationshipTypeId is required." });
+    if (typeof relationshipGroupId !== "number" || !Number.isInteger(relationshipGroupId)) {
+      return res.status(400).json({ error: "relationshipGroupId is required." });
     }
-    const [owner, subject, relType] = await Promise.all([
+    const [owner, subject, relGroup] = await Promise.all([
       usersRepo.findByEmail(ownerEmail.trim().toLowerCase()),
       usersRepo.findByEmail(subjectEmail.trim().toLowerCase()),
-      relationshipTypes.get(relationshipTypeId),
+      relationshipGroups.get(relationshipGroupId),
     ]);
     if (!owner) return res.status(400).json({ error: "ownerEmail does not match an existing user." });
     if (!subject) return res.status(400).json({ error: "subjectEmail does not match an existing user." });
-    if (!relType || !relType.active) return res.status(400).json({ error: "relationshipTypeId does not match an active relationship type." });
+    if (!relGroup || !relGroup.active) return res.status(400).json({ error: "relationshipGroupId does not match an active relationship group." });
 
     const row = await userRelationships.create({
       ownerEmail: ownerEmail.trim(),
       subjectEmail: subjectEmail.trim(),
-      relationshipTypeId,
+      relationshipGroupId,
       createdBy: `${req.user!.name} (${callerTier})`,
     });
 
@@ -3171,7 +3937,7 @@ app.post("/api/user-relationships", requireAuth, async (req, res) => {
         role: callerTier,
         actionType: "User Relationship Created",
         planName: null,
-        description: `Mapped ${subject.name} (${subject.email}) to ${owner.name} (${owner.email}) as "${relType.name}".`,
+        description: `Mapped ${subject.name} (${subject.email}) to ${owner.name} (${owner.email}) as "${relGroup.name}".`,
         snapshot: null,
       });
     } catch (logErr) {
@@ -3192,9 +3958,7 @@ app.delete("/api/user-relationships/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, userRelationships, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!isDeveloperPower(callerTier)) {
-      return res.status(403).json({ error: "Only the Developer or Platform Admin can remove user relationships." });
-    }
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Removing user relationships"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "Invalid relationship id." });
@@ -3218,6 +3982,193 @@ app.delete("/api/user-relationships/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to remove user relationship:", err);
     return res.status(500).json({ error: `Failed to remove this relationship: ${err.message}` });
+  }
+});
+
+// Reassign Owner — moves an owner's entire roster within one group to a
+// new owner in a single transactional operation (userRelationshipsRepository
+// .reassignOwner), instead of the caller deleting and recreating every
+// mapping by hand. Purely a roster-management convenience: group access
+// itself never depends on who owns a group (migration 0081), so this has
+// no effect on any member's actual access.
+app.post("/api/relationship-groups/:groupId/reassign-owner", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipGroups, userRelationships, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Reassigning a group's roster owner"))) return;
+    const groupId = Number(req.params.groupId);
+    if (!Number.isInteger(groupId)) return res.status(400).json({ error: "A valid groupId is required." });
+    const group = await relationshipGroups.get(groupId);
+    if (!group) return res.status(404).json({ error: "Group not found." });
+
+    const { fromOwnerEmail, toOwnerEmail } = req.body;
+    if (typeof fromOwnerEmail !== "string" || !fromOwnerEmail.trim() || typeof toOwnerEmail !== "string" || !toOwnerEmail.trim()) {
+      return res.status(400).json({ error: "fromOwnerEmail and toOwnerEmail are required." });
+    }
+    if (fromOwnerEmail.trim().toLowerCase() === toOwnerEmail.trim().toLowerCase()) {
+      return res.status(400).json({ error: "The new owner must be different from the current owner." });
+    }
+    const [fromUser, toUser] = await Promise.all([
+      usersRepo.findByEmail(fromOwnerEmail.trim().toLowerCase()),
+      usersRepo.findByEmail(toOwnerEmail.trim().toLowerCase()),
+    ]);
+    if (!fromUser) return res.status(400).json({ error: "fromOwnerEmail does not match an existing user." });
+    if (!toUser) return res.status(400).json({ error: "toOwnerEmail does not match an existing user." });
+
+    const { reassigned, duplicatesDropped } = await userRelationships.reassignOwner(groupId, fromOwnerEmail.trim(), toOwnerEmail.trim());
+    if (reassigned === 0 && duplicatesDropped === 0) {
+      return res.status(400).json({ error: `${fromUser.name} has no roster in "${group.name}" to reassign.` });
+    }
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "User Relationships Reassigned",
+        planName: null,
+        description:
+          `Reassigned ${reassigned} mapping${reassigned === 1 ? "" : "s"} in "${group.name}" from ${fromUser.name} to ${toUser.name}` +
+          (duplicatesDropped > 0 ? ` (${duplicatesDropped} already existed under ${toUser.name} and were merged).` : "."),
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for owner reassignment:", logErr);
+    }
+
+    return res.json({ success: true, reassigned, duplicatesDropped });
+  } catch (err: any) {
+    console.error("Failed to reassign group owner:", err);
+    return res.status(500).json({ error: `Failed to reassign this group's owner: ${err.message}` });
+  }
+});
+
+// Group Access — 2026-09, part of Access Control Center's unified "Groups"
+// tab (originally its own "Group Access" tab, renamed once from "Training
+// Access" before that — same mechanism throughout, generalized beyond the
+// Training Department's original trainer/trainee use case, now folded into
+// the same screen as group/roster management — see GroupsManagement.tsx).
+// A group is returned here once it's been admin-flagged
+// usedForGroupAccess=true (see schema.ts's comment on that column — toggled
+// per relationship group from the same tab, not matched by name); its
+// members are whoever that group's user_relationships rows' subjectEmail
+// point at, and may be empty (a group can have its tools pre-configured
+// before anyone's mapped to it). See schema.ts's group_tool_access comment
+// and evaluateAccess.ts's getGroupAllowedFeatureIds for the full enforcement
+// story — this section only manages the admin-facing grant list, it
+// doesn't itself gate anything.
+//
+// PERMISSIONS ARE GROUP-LEVEL, NOT OWNER-LEVEL (migration 0081, 2026-09):
+// keyed by relationshipGroupId throughout, never by ownerEmail. The "owner"
+// shown per group here is display-only (who currently manages that group's
+// roster) — it has no bearing on the group's access and one owner can
+// manage several groups, each configured independently.
+app.get("/api/group-access/groups", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "group_management", "Viewer", "Viewing group tool access"))) return;
+    const { relationshipGroups, userRelationships, users: usersRepo, groupToolAccess } = createRepositories(getDb());
+    const allGroups = await relationshipGroups.list();
+    const flagged = allGroups.filter((g) => g.usedForGroupAccess);
+    const flaggedIds = flagged.map((g) => g.id);
+    const [allRelationships, allUsers, allGrants] = await Promise.all([
+      userRelationships.list(),
+      usersRepo.list(),
+      groupToolAccess.listForGroups(flaggedIds),
+    ]);
+    const nameByEmail = new Map(allUsers.map((u) => [u.email.toLowerCase(), u.name]));
+    const relsByGroupId = new Map<number, typeof allRelationships>();
+    for (const r of allRelationships) {
+      if (!flagged.some((g) => g.id === r.relationshipGroupId)) continue;
+      const list = relsByGroupId.get(r.relationshipGroupId) ?? [];
+      list.push(r);
+      relsByGroupId.set(r.relationshipGroupId, list);
+    }
+    const entries = flagged
+      .map((g) => {
+        const rels = relsByGroupId.get(g.id) ?? [];
+        const ownerEmails = Array.from(new Set(rels.map((r) => r.ownerEmail.toLowerCase())));
+        const memberEmails = Array.from(new Set(rels.map((r) => r.subjectEmail.toLowerCase())));
+        return {
+          groupId: g.id,
+          groupName: g.name,
+          owners: ownerEmails.map((email) => ({ email, name: nameByEmail.get(email) || email })),
+          members: memberEmails.map((email) => ({ email, name: nameByEmail.get(email) || email })),
+          allowedFeatureIds: allGrants.filter((grant) => grant.relationshipGroupId === g.id).map((grant) => grant.featureId),
+        };
+      });
+    // Every flagged group is returned, even with zero members — the Groups
+    // tab shows roster and tool access side by side for whichever group is
+    // selected, so an admin can pre-configure a group's tools before its
+    // first member is mapped, not just after.
+    entries.sort((a, b) => a.groupName.localeCompare(b.groupName));
+    // relationshipGroups returned too, so the tab can render its "which
+    // group(s) count" checklist without a second round trip.
+    return res.json({ relationshipGroups: allGroups, entries });
+  } catch (err: any) {
+    console.error("Failed to list groups for Group Access:", err);
+    return res.status(500).json({ error: `Failed to load the Group Access tab: ${err.message}` });
+  }
+});
+
+app.put("/api/group-access/:groupId", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, relationshipGroups, groupToolAccess, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Changing a group's tool access"))) return;
+    const groupId = Number(req.params.groupId);
+    if (!Number.isInteger(groupId)) return res.status(400).json({ error: "A valid groupId is required." });
+
+    const group = await relationshipGroups.get(groupId);
+    if (!group) return res.status(404).json({ error: "Group not found." });
+    if (!group.usedForGroupAccess) {
+      return res.status(400).json({ error: "This group isn't enabled for group access yet — enable it at the top of this tab first." });
+    }
+
+    const { featureIds } = req.body;
+    if (!Array.isArray(featureIds) || !featureIds.every((f) => typeof f === "string")) {
+      return res.status(400).json({ error: "featureIds must be an array of strings." });
+    }
+    const invalid = featureIds.filter((f) => !GROUP_RESTRICTABLE_FEATURES.has(f));
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: `Not a group-restrictable tool: ${invalid.join(", ")}.` });
+    }
+
+    await groupToolAccess.replaceForGroup(groupId, featureIds, `${req.user!.name} (${callerTier})`);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Group Tool Access Updated",
+        planName: null,
+        description: `Set "${group.name}"'s tools to: ${featureIds.length ? featureIds.join(", ") : "(none)"}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for group tool access update:", logErr);
+    }
+
+    return res.json({ success: true, featureIds });
+  } catch (err: any) {
+    console.error("Failed to update group tool access:", err);
+    return res.status(500).json({ error: `Failed to save this group's tool access: ${err.message}` });
+  }
+});
+
+// The signed-in caller's OWN Group Access Restriction — deliberately
+// requireAuth-only (every signed-in user needs to resolve their own
+// effective access), same posture/reasoning as GET /api/my-access-grants
+// and GET /api/my-access-rules above. `allowedFeatureIds: null` means "not
+// a restricted group member, not restricted at all" — see
+// getGroupAllowedFeatureIds's own doc comment.
+app.get("/api/my-group-access", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, repos.users);
+    const allowedFeatureIds = await getGroupAllowedFeatureIds(repos, req.user!.email, callerTier);
+    return res.json({ allowedFeatureIds });
+  } catch (err: any) {
+    console.error("Failed to load caller's group access:", err);
+    return res.status(500).json({ error: `Failed to load your group access: ${err.message}` });
   }
 });
 
@@ -3254,6 +4205,30 @@ app.get("/api/my-access-grants", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to load caller's access grants:", err);
     return res.status(500).json({ error: `Failed to load your access grants: ${err.message}` });
+  }
+});
+
+// A user's own MATCHING active access_rules rows — the Access Rules
+// counterpart to GET /api/my-access-grants above, same reasoning
+// (deliberately requireAuth-only, every signed-in user needs to resolve
+// their own effective access — see App.tsx's hasAccess()). Deliberately
+// pre-filtered server-side to rows that actually match this caller's own
+// Team/Department/Role/Product Tags (via the same ruleMatchesCaller() the
+// server-side evaluator uses), rather than returning the full admin table —
+// GET /api/access-rules (the full list, with every population's rule names
+// and conditions) stays Admin+Developer-only. Access Control Center Phase 3
+// (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md).
+app.get("/api/my-access-rules", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, accessRules } = createRepositories(getDb());
+    const user = await usersRepo.findByEmail(req.user!.email);
+    const caller = { orgTeamId: user?.orgTeamId, departmentId: user?.departmentId, roleId: user?.roleId, tags: user?.tags };
+    const all = await accessRules.list();
+    const mine = all.filter((r) => r.active && ruleMatchesCaller(r, caller));
+    return res.json({ entries: mine });
+  } catch (err: any) {
+    console.error("Failed to load caller's access rules:", err);
+    return res.status(500).json({ error: `Failed to load your access rules: ${err.message}` });
   }
 });
 
@@ -3357,7 +4332,11 @@ app.delete("/api/custom-access-grants/:id", requireAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 app.get("/api/ai-memory", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing AI Mapping Review"))) return;
+    // Was requireAdminOrDeveloper (a hardcoded tier check) — switched to
+    // ped_suggestions Viewer (2026-09 permission architecture fix) to
+    // match the PATCH routes below, which already gate on ped_suggestions
+    // Editor.
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Viewer", "Viewing AI Mapping Review"))) return;
     const { aiMemory } = createRepositories(getDb());
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const planName = typeof req.query.planName === "string" ? req.query.planName : undefined;
@@ -3802,7 +4781,9 @@ app.get("/api/ped-repository/autocomplete", requireAuth, async (req, res) => {
 // actually manage them.
 app.get("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing PED aliases"))) return;
+    // Was requireAdminOrDeveloper — same ped_suggestions Viewer fix as
+    // /api/ai-memory above.
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Viewer", "Viewing PED aliases"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
     const { pedAliases } = createRepositories(getDb());
@@ -4483,7 +5464,13 @@ app.get("/api/plan-restrictions", requireAuth, async (req, res) => {
 
 app.get("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing Plan-Specific Restrictions"))) return;
+    // Was requireAdminOrDeveloper (a hardcoded tier check) — switched to
+    // plan_scope Viewer (2026-09 permission architecture fix) so this
+    // matches the POST/PATCH/DELETE routes below, which already gate on
+    // plan_scope Editor. Without this, a Custom Grant/Access Rule raising a
+    // non-Admin/Developer user to plan_scope Editor could add/edit/delete a
+    // restriction but never see the plan's existing ones first.
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Viewer", "Viewing Plan-Specific Restrictions"))) return;
     const planName = decodeURIComponent(req.params.planName);
     const { planRestrictions } = createRepositories(getDb());
     const entries = await planRestrictions.listForPlan(planName);
@@ -4729,6 +5716,7 @@ app.post("/api/specific-illness/ai-check", requireAuth, expensiveActionLimiter, 
     const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
     let response: any = null;
     let lastError: any = null;
+    let usedModel: string = modelsToTry[0];
     for (const model of modelsToTry) {
       try {
         response = await ai.models.generateContent({
@@ -4752,6 +5740,7 @@ app.post("/api/specific-illness/ai-check", requireAuth, expensiveActionLimiter, 
             },
           },
         });
+        usedModel = model;
         break;
       } catch (err: any) {
         lastError = err;
@@ -4761,6 +5750,21 @@ app.post("/api/specific-illness/ai-check", requireAuth, expensiveActionLimiter, 
     if (!response) {
       throw lastError || new Error("Failed to get a response from Gemini.");
     }
+
+    // Cross-feature usage tracking (2026-09, visibility only — see
+    // ai_usage_log's schema.ts comment). Fire-and-forget — a failure here
+    // must never affect the advisor's AI check, which has already succeeded
+    // above.
+    void createRepositories(getDb())
+      .aiUsageLog.record({
+        source: "specific_illness_ai_check",
+        userEmail: req.user!.email,
+        model: usedModel,
+        inputTokens: response.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+        label: condition.slice(0, 200),
+      })
+      .catch((err: unknown) => console.error("AI usage log: failed to record Specific Illness AI check entry (non-fatal):", err));
 
     const text = response.text;
     if (!text) {
@@ -4796,7 +5800,11 @@ app.post("/api/specific-illness/ai-check", requireAuth, expensiveActionLimiter, 
 
 app.get("/api/flagged-issues", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing flagged responses"))) return;
+    // Was requireAdminOrDeveloper (a hardcoded tier check) — switched to
+    // flagged_responses Viewer (2026-09 permission architecture fix) to
+    // match the PUT route below, which already gates on flagged_responses
+    // Editor.
+    if (!(await requireFeatureAccess(req, res, "flagged_responses", "Viewer", "Viewing flagged responses"))) return;
     const validStatuses = ["Pending", "Urgent", "Resolved", "Ignored"];
     const status = typeof req.query.status === "string" && validStatuses.includes(req.query.status)
       ? (req.query.status as "Pending" | "Urgent" | "Resolved" | "Ignored")
@@ -5002,7 +6010,7 @@ app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
       roles.get(roleId),
     ]);
     if (!dept) return res.status(400).json({ error: "That department doesn't exist." });
-    if (!team) return res.status(400).json({ error: "That team doesn't exist." });
+    if (!team) return res.status(400).json({ error: "That business unit doesn't exist." });
     if (!role) return res.status(400).json({ error: "That role doesn't exist." });
 
     const email = req.user!.email.toLowerCase();
@@ -5123,7 +6131,7 @@ app.get("/api/qa-dashboard/reviews", requireAuth, async (req, res) => {
 
 app.get("/api/qa-dashboard/connect-google", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Connecting Google Sheets"))) return;
     const state = crypto.randomBytes(16).toString("hex");
     res.cookie(QA_SHEETS_OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
@@ -5143,7 +6151,24 @@ app.get("/api/qa-dashboard/connection-status", requireAuth, async (req, res) => 
     const { qaDashboardConnection } = createRepositories(getDb());
     const row = await qaDashboardConnection.get();
     const sheetUrl = `https://docs.google.com/spreadsheets/d/${QA_MASTER_SPREADSHEET_ID}/edit`;
-    return res.json(row ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, sheetUrl } : { connected: false, sheetUrl });
+    if (!row) return res.json({ connected: false, sheetUrl });
+    // "connected" here means a grant is STORED — it does not by itself mean
+    // the grant still works (a revoked/expired refresh token, a Testing-mode
+    // OAuth consent screen, etc. all leave the row in place). `resource`
+    // below reports the real, passively-tracked outcome of the last actual
+    // Sheets read this app made (see sheetsClient.ts's getQaSheetsHealth) —
+    // same shape ConnectionRowCard.tsx already reads from the Playbook/FAQ/
+    // Term FAQ connections, so a broken grant shows as "Attention" here too,
+    // not a false "Connected".
+    const health = getQaSheetsHealth();
+    const resource = health.lastSuccessAt || health.lastErrorAt
+      ? {
+          status: health.lastErrorAt && (!health.lastSuccessAt || health.lastErrorAt > health.lastSuccessAt) ? ("error" as const) : ("active" as const),
+          lastFetchedAt: (health.lastSuccessAt ?? health.lastErrorAt)!.toISOString(),
+          errorMessage: health.lastErrorAt && (!health.lastSuccessAt || health.lastErrorAt > health.lastSuccessAt) ? health.lastErrorMessage : null,
+        }
+      : null;
+    return res.json({ connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, sheetUrl, resource });
   } catch (err: any) {
     console.error("QA Dashboard: failed to load connection status:", err);
     return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
@@ -5152,7 +6177,7 @@ app.get("/api/qa-dashboard/connection-status", requireAuth, async (req, res) => 
 
 app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Disconnecting Google Sheets"))) return;
     const { qaDashboardConnection } = createRepositories(getDb());
     await qaDashboardConnection.clear();
     invalidateQaSheetsAuthCache();
@@ -5171,7 +6196,7 @@ app.delete("/api/qa-dashboard/connection", requireAuth, async (req, res) => {
 // every other expensive admin action. ---
 app.post("/api/qa-dashboard/advisor-directory-sync", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Syncing the Advisor Directory"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Syncing the Advisor Directory"))) return;
     const repos = createRepositories(getDb());
     const callerTier = await getCallerTier(req, repos.users);
     const { changeLogs } = repos;
@@ -5188,7 +6213,12 @@ app.post("/api/qa-dashboard/advisor-directory-sync", requireAuth, expensiveActio
             `Advisor Directory Sync: ${result.recordsRead} record(s) read, ${result.currentlyEmployedRecords} Currently Employed, ` +
             `${result.usersMatched} matched, ${result.usersUpdated} updated, ${result.usersUnchanged} unchanged, ` +
             `${result.usersReverted} reverted, ${result.usersSkippedNotFound} skipped (not found).`,
-          snapshot: null,
+          // Full structured result (not just the description string above) so
+          // GET /api/qa-dashboard/advisor-directory-sync/last-run can show the
+          // Connections page's real last-run stats after a page reload,
+          // instead of only ever knowing about a sync run in THIS browser
+          // session — see that route below.
+          snapshot: result,
         });
       } catch (logErr) {
         console.error("Failed to write change log for Advisor Directory Sync:", logErr);
@@ -5199,6 +6229,238 @@ app.post("/api/qa-dashboard/advisor-directory-sync", requireAuth, expensiveActio
   } catch (err: any) {
     console.error("Advisor Directory Sync failed:", err);
     return res.status(500).json({ error: `Advisor Directory Sync failed: ${err.message}` });
+  }
+});
+
+// Real last-run info for the Connections page — reads the most recent
+// successful sync's full structured result back out of change_logs.snapshot
+// (see the POST route above), rather than relying on in-session React state
+// that resets to "not yet synced" on every page reload/refresh even though a
+// sync genuinely ran earlier. A failed run (result.errors.length > 0) is
+// deliberately never change-logged (see the POST route above), so this only
+// ever reports the last run that actually completed cleanly.
+app.get("/api/qa-dashboard/advisor-directory-sync/last-run", requireAuth, async (req, res) => {
+  try {
+    const { changeLogs } = createRepositories(getDb());
+    const [entry] = await changeLogs.list({ actionType: "Advisor Directory Synced", limit: 1 });
+    if (!entry) return res.json({ result: null });
+    return res.json({ result: entry.snapshot ?? null, syncedAt: entry.timestamp });
+  } catch (err: any) {
+    console.error("Failed to load the last Advisor Directory Sync run:", err);
+    return res.status(500).json({ error: `Failed to load: ${err.message}` });
+  }
+});
+
+// --- Guide/Mentor -> Advisor Relationship Mappings (2026-09) — Access
+// Control Center's Relationships tab. See guideMentorRelationshipsSync.ts's
+// header comment: mirrors master_advisors' Guide/Mentor columns into
+// guide_mentor_advisor_mappings, same "Admin/Developer can view, Developer+
+// Platform Admin can edit" posture as the Relationship Types/User
+// Relationships routes above, plus a sync trigger gated like Advisor
+// Directory Sync (a directory-wide write action against Google Sheets
+// data). ---
+app.get("/api/relationship-mappings/guide-mentor-advisors", requireAuth, async (req, res) => {
+  try {
+    // Corrected 2026-09 alongside the PATCH/DELETE routes below — Viewer
+    // level on "master_advisors", not a hardcoded Admin-power check, so a
+    // Permissions-tab/override/grant change actually takes effect for
+    // viewing too.
+    if (!(await requireFeatureAccess(req, res, "master_advisors", "Viewer", "Viewing Guide/Mentor advisor mappings"))) return;
+    const { guideMentorAdvisorMappings } = createRepositories(getDb());
+    const rows = await guideMentorAdvisorMappings.list();
+    return res.json({ entries: rows });
+  } catch (err: any) {
+    console.error("Failed to list Guide/Mentor advisor mappings:", err);
+    return res.status(500).json({ error: `Failed to load Guide/Mentor advisor mappings: ${err.message}` });
+  }
+});
+
+app.post("/api/relationship-mappings/guide-mentor-advisors/sync", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Syncing Guide/Mentor advisor mappings"))) return;
+    const repos = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, repos.users);
+    const { changeLogs } = repos;
+    const result = await syncGuideMentorRelationships(repos, `${req.user!.name} (${callerTier})`);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Guide/Mentor Advisor Mappings Synced",
+        planName: null,
+        description:
+          `Guide/Mentor Advisor Mapping Sync: ${result.recordsRead} record(s) read, ${result.mappingsWritten} mapped ` +
+          `(${result.withGuide} Guide only, ${result.withMentor} Mentor only, ${result.withBoth} both, ${result.withNeither} neither), ` +
+          `${result.skippedNoTactId} skipped (no Tact ID).`,
+        // Full structured result so GET .../last-run can show it after a
+        // page reload — same reasoning as Advisor Directory Sync's own
+        // last-run route.
+        snapshot: result,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Guide/Mentor Advisor Mapping Sync:", logErr);
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Guide/Mentor Advisor Mapping Sync failed:", err);
+    return res.status(500).json({ error: `Guide/Mentor Advisor Mapping Sync failed: ${err.message}` });
+  }
+});
+
+app.get("/api/relationship-mappings/guide-mentor-advisors/last-run", requireAuth, async (req, res) => {
+  try {
+    const { changeLogs } = createRepositories(getDb());
+    const [entry] = await changeLogs.list({ actionType: "Guide/Mentor Advisor Mappings Synced", limit: 1 });
+    if (!entry) return res.json({ result: null });
+    return res.json({ result: entry.snapshot ?? null, syncedAt: entry.timestamp });
+  } catch (err: any) {
+    console.error("Failed to load the last Guide/Mentor Advisor Mapping Sync run:", err);
+    return res.status(500).json({ error: `Failed to load: ${err.message}` });
+  }
+});
+
+// Per-advisor Mentor/Guide relationship timeline — see
+// guide_mentor_relationship_history's schema.ts comment. Same view
+// permission as the list route above (Admin+); id is the
+// guide_mentor_advisor_mappings row id, resolved to a tact_id here so the
+// client doesn't need to know that table's internal keying.
+app.get("/api/relationship-mappings/guide-mentor-advisors/:id/history", requireAuth, async (req, res) => {
+  try {
+    // See the list route's comment above — same correction.
+    if (!(await requireFeatureAccess(req, res, "master_advisors", "Viewer", "Viewing a Guide/Mentor relationship history"))) return;
+    const { guideMentorAdvisorMappings, guideMentorRelationshipHistory } = createRepositories(getDb());
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid mapping id." });
+    }
+    const mapping = await guideMentorAdvisorMappings.get(id);
+    if (!mapping) {
+      return res.status(404).json({ error: "Mapping not found." });
+    }
+    const rows = await guideMentorRelationshipHistory.listForAdvisor(mapping.tactId);
+    return res.json({
+      guide: rows.filter((r) => r.kind === "guide"),
+      mentor: rows.filter((r) => r.kind === "mentor"),
+    });
+  } catch (err: any) {
+    console.error("Failed to load Guide/Mentor relationship history:", err);
+    return res.status(500).json({ error: `Failed to load relationship history: ${err.message}` });
+  }
+});
+
+app.patch("/api/relationship-mappings/guide-mentor-advisors/:id", requireAuth, async (req, res) => {
+  try {
+    // Corrected 2026-09 (permission architecture fix): was a hardcoded
+    // isDeveloperPower-only gate that ignored the "master_advisors"
+    // featurePermissions entry and any Custom Grant for it entirely — an
+    // Admin explicitly granted Editor here could never actually use it.
+    // Centralized like every other governed content-management route.
+    if (!(await requireFeatureAccess(req, res, "master_advisors", "Editor", "Editing Guide/Mentor advisor mappings"))) return;
+    const { users: usersRepo, guideMentorAdvisorMappings, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid mapping id." });
+    }
+    const existing = await guideMentorAdvisorMappings.get(id);
+    if (!existing) {
+      return res.status(404).json({ error: "Mapping not found." });
+    }
+
+    const { name, guideName, mentorName, status, skillDomain, batchNumber, dateOfMovingOut, lastWorkingDay, guideEffectiveDate, mentorEffectiveDate } = req.body;
+    const patch: {
+      name?: string;
+      guideName?: string | null;
+      mentorName?: string | null;
+      status?: string | null;
+      skillDomain?: string | null;
+      batchNumber?: string | null;
+      dateOfMovingOut?: string | null;
+      lastWorkingDay?: string | null;
+      guideEffectiveDate?: string;
+      mentorEffectiveDate?: string;
+    } = {};
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name cannot be empty." });
+      }
+      patch.name = name.trim();
+    }
+    if (guideName !== undefined) patch.guideName = typeof guideName === "string" ? guideName.trim() || null : null;
+    if (mentorName !== undefined) patch.mentorName = typeof mentorName === "string" ? mentorName.trim() || null : null;
+    if (status !== undefined) patch.status = typeof status === "string" ? status.trim() || null : null;
+    if (skillDomain !== undefined) patch.skillDomain = typeof skillDomain === "string" ? skillDomain.trim() || null : null;
+    if (batchNumber !== undefined) patch.batchNumber = typeof batchNumber === "string" ? batchNumber.trim() || null : null;
+    if (dateOfMovingOut !== undefined) patch.dateOfMovingOut = typeof dateOfMovingOut === "string" ? dateOfMovingOut.trim() || null : null;
+    if (lastWorkingDay !== undefined) patch.lastWorkingDay = typeof lastWorkingDay === "string" ? lastWorkingDay.trim() || null : null;
+    // Effective date for a Mentor/Guide relationship CHANGE recorded into
+    // guide_mentor_relationship_history — distinct from the advisor-level
+    // dateOfMovingOut/lastWorkingDay above (see that table's schema.ts
+    // comment). Ignored by the repository unless the matching guideName/
+    // mentorName field is also present in this patch.
+    if (typeof guideEffectiveDate === "string" && guideEffectiveDate.trim()) patch.guideEffectiveDate = guideEffectiveDate.trim();
+    if (typeof mentorEffectiveDate === "string" && mentorEffectiveDate.trim()) patch.mentorEffectiveDate = mentorEffectiveDate.trim();
+
+    const row = await guideMentorAdvisorMappings.update(id, patch, `${req.user!.name} (${callerTier})`);
+    // QA Dashboard/Team Tracker cache this same data (advisorSnapshotCache
+    // in qaDataEngine.ts) for up to SHEET_CACHE_TTL_MS — invalidate so a
+    // Mentor/Guide/Active Till edit here is reflected immediately rather
+    // than waiting out that TTL. See "Rewire Advisor Mapping" project memory.
+    invalidateQaSheetCache();
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Guide/Mentor Advisor Mapping Edited",
+        planName: null,
+        description: `Edited the Guide/Mentor mapping for "${existing.name}" (Tact ID ${existing.tactId}).`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Guide/Mentor advisor mapping edit:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to update Guide/Mentor advisor mapping:", err);
+    return res.status(500).json({ error: `Failed to update this mapping: ${err.message}` });
+  }
+});
+
+app.delete("/api/relationship-mappings/guide-mentor-advisors/:id", requireAuth, async (req, res) => {
+  try {
+    // See the PATCH route's comment above — same 2026-09 correction.
+    if (!(await requireFeatureAccess(req, res, "master_advisors", "Editor", "Removing Guide/Mentor advisor mappings"))) return;
+    const { users: usersRepo, guideMentorAdvisorMappings, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ error: "Invalid mapping id." });
+    }
+    const existing = await guideMentorAdvisorMappings.get(id);
+    await guideMentorAdvisorMappings.delete(id);
+    invalidateQaSheetCache(); // see the PATCH route's comment above
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Guide/Mentor Advisor Mapping Removed",
+        planName: null,
+        description: existing ? `Removed the Guide/Mentor mapping for "${existing.name}" (Tact ID ${existing.tactId}).` : `Removed Guide/Mentor advisor mapping #${id}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Guide/Mentor advisor mapping removal:", logErr);
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Failed to remove Guide/Mentor advisor mapping:", err);
+    return res.status(500).json({ error: `Failed to remove this mapping: ${err.message}` });
   }
 });
 
@@ -5233,7 +6495,7 @@ function describeDbError(err: any): string {
 
 app.get("/api/product-assist-logs/connect-google", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Connecting Google Sheets"))) return;
     const state = crypto.randomBytes(16).toString("hex");
     res.cookie(PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
@@ -5257,11 +6519,20 @@ app.get("/api/product-assist-logs/connection-status", requireAuth, async (req, r
     // to offer until the env var is actually set.
     const logSheetId = process.env.PRODUCT_ASSIST_LOG_SHEET_ID;
     const sheetUrl = logSheetId ? `https://docs.google.com/spreadsheets/d/${logSheetId}/edit` : null;
-    return res.json(
-      row
-        ? { connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, pendingCount, sheetUrl }
-        : { connected: false, pendingCount, sheetUrl }
-    );
+    if (!row) return res.json({ connected: false, pendingCount, sheetUrl });
+    // Same "a stored grant isn't proof it still works" reasoning as the QA
+    // Dashboard route above — resource reflects the real outcome of the
+    // last actual export attempt (see productAssistLogSheetsClient.ts's
+    // getProductAssistLogExportHealth), not just row presence.
+    const health = getProductAssistLogExportHealth();
+    const resource = health.lastSuccessAt || health.lastErrorAt
+      ? {
+          status: health.lastErrorAt && (!health.lastSuccessAt || health.lastErrorAt > health.lastSuccessAt) ? ("error" as const) : ("active" as const),
+          lastFetchedAt: (health.lastSuccessAt ?? health.lastErrorAt)!.toISOString(),
+          errorMessage: health.lastErrorAt && (!health.lastSuccessAt || health.lastErrorAt > health.lastSuccessAt) ? health.lastErrorMessage : null,
+        }
+      : null;
+    return res.json({ connected: true, connectedEmail: row.connectedEmail, connectedAt: row.connectedAt, pendingCount, sheetUrl, resource });
   } catch (err: any) {
     console.error("Product Assist Log Export: failed to load connection status:", err);
     return res.status(500).json({ error: `Failed to load connection status: ${describeDbError(err)}` });
@@ -5270,7 +6541,7 @@ app.get("/api/product-assist-logs/connection-status", requireAuth, async (req, r
 
 app.delete("/api/product-assist-logs/connection", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Disconnecting Google Sheets"))) return;
     const { productAssistLogExportConnection } = createRepositories(getDb());
     await productAssistLogExportConnection.clear();
     invalidateProductAssistLogSheetsAuthCache();
@@ -5298,7 +6569,7 @@ app.post("/api/product-assist-logs/export-and-clear", async (req, res) => {
       if (!req.user) {
         return res.status(401).json({ error: "Sign-in required (or provide a valid X-Cron-Secret header)." });
       }
-      if (!(await requireAdminOrDeveloper(req, res, "Exporting Product Assist logs"))) return;
+      if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Exporting Product Assist logs"))) return;
     }
 
     const repos = createRepositories(getDb());
@@ -5463,6 +6734,53 @@ app.get("/api/qa-dashboard/team-tracker/table", requireAuth, async (req, res) =>
   }
 });
 
+// "QA Performance" tiles/rankings for a period view — one getAdvisorsBatchMetrics
+// call over the actual [fromMonth, toMonth] date range (Start/End/Till Date),
+// instead of /table's per-month averages. See teamTrackerService.ts's
+// getTeamTrackerPeriodSummary header comment.
+app.get("/api/qa-dashboard/team-tracker/period-summary", requireAuth, async (req, res) => {
+  try {
+    const guide = typeof req.query.guide === "string" && req.query.guide.trim() ? req.query.guide.trim() : null;
+    const mentor = typeof req.query.mentor === "string" && req.query.mentor.trim() ? req.query.mentor.trim() : null;
+    const fromYm = typeof req.query.fromMonth === "string" ? req.query.fromMonth.trim() : "";
+    const toYm = typeof req.query.toMonth === "string" ? req.query.toMonth.trim() : "";
+    if (!/^\d{4}-\d{2}$/.test(fromYm) || !/^\d{4}-\d{2}$/.test(toYm)) {
+      return res.status(400).json({ error: "fromMonth and toMonth (yyyy-MM) are required." });
+    }
+    const result = await getTeamTrackerPeriodSummary(req.user!.email, guide, mentor, fromYm, toYm);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to load period summary:", err);
+    return res.status(500).json({ error: `Failed to load Team Tracker period summary: ${err.message}` });
+  }
+});
+
+// Team Tracker Home Page's "Current Month Analysis" — Period Change card.
+// Separate from /table because it needs its own day-of-month-clamped
+// queries per prior month (see teamTrackerService.ts's
+// getCurrentMonthPeriodChange header comment) rather than the full-month
+// data /table already returns. currentMonthKey ("yyyy-MM") is the client's
+// own already-computed "latest scored month within the loaded period" —
+// passed in rather than re-derived here so the two endpoints never
+// disagree on which month is "current."
+app.get("/api/qa-dashboard/team-tracker/current-month-period-change", requireAuth, async (req, res) => {
+  try {
+    const guide = typeof req.query.guide === "string" && req.query.guide.trim() ? req.query.guide.trim() : null;
+    const mentor = typeof req.query.mentor === "string" && req.query.mentor.trim() ? req.query.mentor.trim() : null;
+    const fromYm = typeof req.query.fromMonth === "string" ? req.query.fromMonth.trim() : "";
+    const toYm = typeof req.query.toMonth === "string" ? req.query.toMonth.trim() : "";
+    const currentMonthKey = typeof req.query.currentMonthKey === "string" ? req.query.currentMonthKey.trim() : "";
+    if (!/^\d{4}-\d{2}$/.test(fromYm) || !/^\d{4}-\d{2}$/.test(toYm)) {
+      return res.status(400).json({ error: "fromMonth and toMonth (yyyy-MM) are required." });
+    }
+    const result = await getCurrentMonthPeriodChange(req.user!.email, guide, mentor, fromYm, toYm, currentMonthKey);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to load current-month period change:", err);
+    return res.status(500).json({ error: `Failed to load current-month period change: ${err.message}` });
+  }
+});
+
 // --- Team Tracker: Coaching Workspace ---
 // Access control reuses teamTrackerService.ts's own Guide/Mentor/Admin
 // scope (see canAccessAdvisorForCoaching) via coachingService.ts — same
@@ -5495,6 +6813,38 @@ app.post("/api/qa-dashboard/team-tracker/coaching/sessions", requireAuth, async 
   } catch (err: any) {
     console.error("Team Tracker: failed to save coaching session:", err);
     return res.status(500).json({ error: `Failed to save coaching session: ${err.message}` });
+  }
+});
+
+// Edit option for saved session feedback (Task 7 — previously only an
+// actionable's status could be changed after Save, never the session's own
+// discussion points / meeting notes / actionable list).
+app.patch("/api/qa-dashboard/team-tracker/coaching/sessions/:id", requireAuth, async (req, res) => {
+  try {
+    const sessionId = Number(req.params.id);
+    const body = req.body || {};
+    const actionables = Array.isArray(body.actionables)
+      ? body.actionables.map((a: any) => ({
+          id: Number.isFinite(Number(a?.id)) && a?.id != null ? Number(a.id) : undefined,
+          description: typeof a?.description === "string" ? a.description : "",
+          dueDate: typeof a?.dueDate === "string" && a.dueDate ? a.dueDate : null,
+          status: a?.status === "In Progress" || a?.status === "Completed" || a?.status === "Failed" ? a.status : "Open",
+        }))
+      : [];
+    const result = await updateCoachingSession(req.user!.email, sessionId, {
+      meetingDate: typeof body.meetingDate === "string" ? body.meetingDate : "",
+      discussionPoints: typeof body.discussionPoints === "string" ? body.discussionPoints : "",
+      meetingNotes: typeof body.meetingNotes === "string" ? body.meetingNotes : "",
+      actionables,
+    });
+    if (result && typeof result === "object" && "error" in result) {
+      const status = result.error === "FORBIDDEN" ? 403 : result.error === "NOT_FOUND" ? 404 : result.error === "INVALID_INPUT" ? 400 : 500;
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to update coaching session:", err);
+    return res.status(500).json({ error: `Failed to update coaching session: ${err.message}` });
   }
 });
 
@@ -5536,6 +6886,42 @@ app.patch("/api/qa-dashboard/team-tracker/coaching/actionables/:id/status", requ
   }
 });
 
+// QA Feedback's "Mark as Discussed" checkbox (Advisor Insight Page) —
+// backend-persisted so the mark is the same for every Guide/Mentor/Admin
+// who opens that advisor, not per-browser localStorage.
+app.get("/api/qa-dashboard/team-tracker/feedback-discussed", requireAuth, async (req, res) => {
+  try {
+    const tactId = typeof req.query.tactId === "string" ? req.query.tactId : "";
+    const result = await listDiscussedFeedback(req.user!.email, tactId);
+    if (!Array.isArray(result) && result && typeof result === "object" && "error" in result) {
+      const status = result.error === "FORBIDDEN" ? 403 : result.error === "INVALID_INPUT" ? 400 : 500;
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to load discussed feedback marks:", err);
+    return res.status(500).json({ error: `Failed to load discussed feedback marks: ${err.message}` });
+  }
+});
+
+app.put("/api/qa-dashboard/team-tracker/feedback-discussed", requireAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const tactId = typeof body.tactId === "string" ? body.tactId : "";
+    const rowIdentity = typeof body.rowIdentity === "string" ? body.rowIdentity : "";
+    const discussed = Boolean(body.discussed);
+    const result = await setFeedbackDiscussed(req.user!.email, tactId, rowIdentity, discussed);
+    if (result && typeof result === "object" && "error" in result) {
+      const status = result.error === "FORBIDDEN" ? 403 : result.error === "INVALID_INPUT" ? 400 : 500;
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Team Tracker: failed to update discussed feedback mark:", err);
+    return res.status(500).json({ error: `Failed to update discussed feedback mark: ${err.message}` });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Knowledge Base ("Ask the Playbook") — admin-only CRUD for categories,
 // resources (PDFs today; web/sheet ingestion is a later phase), and
@@ -5564,7 +6950,7 @@ const kbPdfUpload = multer({
 
 app.get("/api/kb/playbook/connect-google", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Connecting Google Sheets"))) return;
     const state = crypto.randomBytes(16).toString("hex");
     res.cookie(KB_PLAYBOOK_OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
@@ -5608,7 +6994,7 @@ app.get("/api/kb/playbook/connection-status", requireAuth, async (req, res) => {
 
 app.delete("/api/kb/playbook/connection", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Disconnecting Google Sheets"))) return;
     const { kbPlaybookConnection } = createRepositories(getDb());
     await kbPlaybookConnection.clear();
     invalidatePlaybookSheetsAuthCache();
@@ -5621,7 +7007,7 @@ app.delete("/api/kb/playbook/connection", requireAuth, async (req, res) => {
 
 app.post("/api/kb/playbook/resync", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Resyncing the Product Playbook"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Resyncing the Product Playbook"))) return;
     const repos = createRepositories(getDb());
     const result = await syncPlaybook(repos, req.user!.email);
     if (result.resource.status === "error") {
@@ -5632,6 +7018,12 @@ app.post("/api/kb/playbook/resync", requireAuth, expensiveActionLimiter, async (
       skipped: result.skipped,
       planFactCount: result.planFactCount,
       narrativeChunkCount: result.narrativeChunkCount,
+      previousPlanFactCount: result.previousPlanFactCount,
+      previousNarrativeChunkCount: result.previousNarrativeChunkCount,
+      plansAdded: result.plansAdded,
+      plansRemoved: result.plansRemoved,
+      plansChanged: result.plansChanged,
+      plansUnchanged: result.plansUnchanged,
       resource: result.resource,
     });
   } catch (err: any) {
@@ -5646,7 +7038,7 @@ app.post("/api/kb/playbook/resync", requireAuth, expensiveActionLimiter, async (
 
 app.get("/api/kb/faq/connect-google", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Connecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Connecting Google Sheets"))) return;
     const state = crypto.randomBytes(16).toString("hex");
     res.cookie(KB_FAQ_OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
@@ -5665,7 +7057,7 @@ app.get("/api/kb/faq/connection-status", requireAuth, async (req, res) => {
   try {
     const { kbFaqConnection, kbResources, faqRecords } = createRepositories(getDb());
     const row = await kbFaqConnection.get();
-    const resource = (await kbResources.list({})).find(r => r.type === "sheet" && r.title === "Ditto FAQ");
+    const resource = (await kbResources.list({})).find(r => r.type === "sheet" && r.title === FAQ_DITTO_RESOURCE_TITLE);
     const records = resource ? await faqRecords.list({ resourceId: resource.id }) : [];
     return res.json({
       connected: !!row,
@@ -5694,7 +7086,7 @@ app.get("/api/kb/faq/connection-status", requireAuth, async (req, res) => {
 
 app.delete("/api/kb/faq/connection", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Disconnecting Google Sheets"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Disconnecting Google Sheets"))) return;
     const { kbFaqConnection } = createRepositories(getDb());
     await kbFaqConnection.clear();
     invalidateFaqSheetsAuthCache();
@@ -5707,7 +7099,7 @@ app.delete("/api/kb/faq/connection", requireAuth, async (req, res) => {
 
 app.post("/api/kb/faq/resync", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Resyncing the Ditto FAQ"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Resyncing the Ditto FAQ"))) return;
     const repos = createRepositories(getDb());
     const result = await syncFaq(repos, req.user!.email);
     if (result.resource.status === "error") {
@@ -5732,13 +7124,23 @@ app.post("/api/kb/faq/resync", requireAuth, expensiveActionLimiter, async (req, 
 // Admin review listing — every record (including incomplete/conflicting,
 // per spec §17/§18: "may remain visible to authorized Knowledge Hub users
 // for administrative review"), never exposed to advisors outside this
-// Admin/Developer-gated route.
+// gated route. This route (and its Term FAQ sibling below) is fetched only
+// from the Connections page's Health FAQ card (KnowledgeBaseFaqConnection.tsx,
+// which already gates its own manage actions on hasAccess("connections",
+// "Editor")) — so it belongs to "connections", not "knowledge_base". Was
+// requireAdminOrDeveloper (a hardcoded tier check); switched to
+// requireFeatureAccess (2026-09 permission architecture fix) so this
+// matches the rest of the Connections page's routes.
 app.get("/api/kb/faq/records", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Ditto FAQ"))) return;
+    if (!(await requireFeatureAccess(req, res, "connections", "Viewer", "Viewing the Ditto FAQ"))) return;
     const { faqRecords } = createRepositories(getDb());
     const category = typeof req.query.category === "string" && FAQ_CATEGORIES.includes(req.query.category) ? (req.query.category as any) : undefined;
-    const entries = await faqRecords.list({ category });
+    // ?hasConflict=true — used by the Connections page's "N flagged for
+    // review" detail, so it can list the actual conflicting question/answer
+    // pairs instead of just showing the count.
+    const hasConflict = req.query.hasConflict === "true" ? true : req.query.hasConflict === "false" ? false : undefined;
+    const entries = await faqRecords.list({ category, hasConflict });
     return res.json({ entries });
   } catch (err: any) {
     console.error("Failed to list Ditto FAQ records:", err);
@@ -5779,13 +7181,273 @@ app.patch("/api/kb/faq/records/:id", requireAuth, async (req, res) => {
   }
 });
 
+// --- Term FAQ: "Connect Google Sheets" + Resync (see
+// src/server/knowledgeBase/termFaqIngest.ts / termFaqSheetsClient.ts) — same
+// shape as the Ditto/Health FAQ routes above, own OAuth grant/table/resource,
+// own Google Sheet (7 tabs, see termFaqIngest.ts's TERM_FAQ_TABS). ---
+
+app.get("/api/kb/term-faq/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Connecting Google Sheets"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(TERM_FAQ_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getTermFaqSheetsAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start Term FAQ Google Sheets connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+app.get("/api/kb/term-faq/connection-status", requireAuth, async (req, res) => {
+  try {
+    const { termFaqConnection, kbResources, termFaqRecords } = createRepositories(getDb());
+    const row = await termFaqConnection.get();
+    const resource = (await kbResources.list({})).find(r => r.type === "sheet" && r.title === TERM_FAQ_RESOURCE_TITLE);
+    const records = resource ? await termFaqRecords.list({ resourceId: resource.id }) : [];
+    return res.json({
+      connected: !!row,
+      connectedEmail: row?.connectedEmail ?? null,
+      connectedAt: row?.connectedAt ?? null,
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${TERM_FAQ_SPREADSHEET_ID}/edit`,
+      resource: resource
+        ? {
+            status: resource.status,
+            lastFetchedAt: resource.lastFetchedAt,
+            errorMessage: resource.errorMessage,
+            totalRecords: records.length,
+            answerableCount: records.filter(r => r.isAnswerable && !r.hasConflict).length,
+            incompleteCount: records.filter(r => !r.isAnswerable && !r.hasConflict).length,
+            conflictingCount: records.filter(r => r.hasConflict).length,
+          }
+        : null,
+    });
+  } catch (err: any) {
+    console.error("Term FAQ: failed to load connection status:", err);
+    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/term-faq/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Disconnecting Google Sheets"))) return;
+    const { termFaqConnection } = createRepositories(getDb());
+    await termFaqConnection.clear();
+    invalidateTermFaqSheetsAuthCache();
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Term FAQ: failed to disconnect Google Sheets:", err);
+    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/term-faq/resync", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Resyncing the Term FAQ"))) return;
+    const repos = createRepositories(getDb());
+    const result = await syncTermFaq(repos, req.user!.email);
+    if (result.resource.status === "error") {
+      return res.status(500).json({ error: result.resource.errorMessage || "Sync failed.", resource: result.resource });
+    }
+    return res.json({
+      ok: true,
+      skipped: result.skipped,
+      totalRecords: result.totalRecords,
+      answerableCount: result.answerableCount,
+      incompleteCount: result.incompleteCount,
+      conflictingCount: result.conflictingCount,
+      duplicatesCollapsed: result.duplicatesCollapsed,
+      resource: result.resource,
+    });
+  } catch (err: any) {
+    console.error("Term FAQ: resync failed:", err);
+    return res.status(500).json({ error: `Resync failed: ${err.message}` });
+  }
+});
+
+// Admin review listing — every record (including incomplete/conflicting),
+// never exposed to advisors outside this gated route. Same "connections",
+// not "knowledge_base" reasoning as /api/kb/faq/records above — fetched
+// only from the Connections page's Term FAQ card.
+app.get("/api/kb/term-faq/records", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Viewer", "Viewing the Term FAQ"))) return;
+    const { termFaqRecords } = createRepositories(getDb());
+    const category = typeof req.query.category === "string" ? req.query.category : undefined;
+    // ?hasConflict=true — used by the Connections page's "N flagged for
+    // review" detail, so it can list the actual conflicting question/answer
+    // pairs instead of just showing the count.
+    const hasConflict = req.query.hasConflict === "true" ? true : req.query.hasConflict === "false" ? false : undefined;
+    const entries = await termFaqRecords.list({ category, hasConflict });
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list Term FAQ records:", err);
+    return res.status(500).json({ error: `Failed to load FAQ records: ${err.message}` });
+  }
+});
+
+// The only write this table supports outside a full resync — retiring a
+// bad/outdated record without waiting for the next sheet edit. Never edits
+// question/answer text itself: the Sheet remains the sole authoring source.
+app.patch("/api/kb/term-faq/records/:id", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Editing a Term FAQ record"))) return;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id." });
+    if (typeof req.body.isActive !== "boolean") return res.status(400).json({ error: "isActive (boolean) is required." });
+    const { termFaqRecords, changeLogs, users: usersRepo } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    const updated = await termFaqRecords.setActive(id, req.body.isActive);
+    if (!updated) return res.status(404).json({ error: "FAQ record not found." });
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: req.body.isActive ? "Term FAQ Record Activated" : "Term FAQ Record Deactivated",
+        planName: null,
+        description: `${req.body.isActive ? "Activated" : "Deactivated"} Term FAQ record #${id}: "${updated.question}"`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Term FAQ record update:", logErr);
+    }
+    return res.json({ record: updated });
+  } catch (err: any) {
+    console.error("Failed to update Term FAQ record:", err);
+    return res.status(500).json({ error: `Failed to update: ${err.message}` });
+  }
+});
+
+// --- Term Product Playbook: "Connect Google Sheets" + Resync (see
+// src/server/knowledgeBase/termPlaybookIngest.ts / termPlaybookSheetsClient.ts) —
+// same shape as the Health Playbook routes above, own OAuth grant/table/
+// resource, own Google Sheet. ---
+
+app.get("/api/kb/term-playbook/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Connecting Google Sheets"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(TERM_PLAYBOOK_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getTermPlaybookSheetsAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start Term Playbook Google Sheets connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+app.get("/api/kb/term-playbook/connection-status", requireAuth, async (req, res) => {
+  try {
+    const { termPlaybookConnection, kbResources, kbPlaybookPlanFacts } = createRepositories(getDb());
+    const row = await termPlaybookConnection.get();
+    const resource = (await kbResources.list({})).find(r => r.type === "sheet" && r.title === TERM_PLAYBOOK_RESOURCE_TITLE);
+    const planFactCount = resource ? (await kbPlaybookPlanFacts.listByResource(resource.id)).length : 0;
+    return res.json({
+      connected: !!row,
+      connectedEmail: row?.connectedEmail ?? null,
+      connectedAt: row?.connectedAt ?? null,
+      sheetUrl: `https://docs.google.com/spreadsheets/d/${TERM_PLAYBOOK_SPREADSHEET_ID}/edit`,
+      resource: resource
+        ? {
+            status: resource.status,
+            lastFetchedAt: resource.lastFetchedAt,
+            errorMessage: resource.errorMessage,
+            planFactCount,
+            narrativeChunkCount: resource.chunkCount,
+          }
+        : null,
+    });
+  } catch (err: any) {
+    console.error("Term Playbook: failed to load connection status:", err);
+    return res.status(500).json({ error: `Failed to load connection status: ${err.message}` });
+  }
+});
+
+app.delete("/api/kb/term-playbook/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Disconnecting Google Sheets"))) return;
+    const { termPlaybookConnection } = createRepositories(getDb());
+    await termPlaybookConnection.clear();
+    invalidateTermPlaybookSheetsAuthCache();
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Term Playbook: failed to disconnect Google Sheets:", err);
+    return res.status(500).json({ error: `Failed to disconnect: ${err.message}` });
+  }
+});
+
+app.post("/api/kb/term-playbook/resync", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "connections", "Editor", "Resyncing the Term Playbook"))) return;
+    const repos = createRepositories(getDb());
+    const result = await syncTermPlaybook(repos, req.user!.email);
+    if (result.resource.status === "error") {
+      return res.status(500).json({ error: result.resource.errorMessage || "Sync failed.", resource: result.resource });
+    }
+    return res.json({
+      ok: true,
+      skipped: result.skipped,
+      planFactCount: result.planFactCount,
+      narrativeChunkCount: result.narrativeChunkCount,
+      previousPlanFactCount: result.previousPlanFactCount,
+      previousNarrativeChunkCount: result.previousNarrativeChunkCount,
+      plansAdded: result.plansAdded,
+      plansRemoved: result.plansRemoved,
+      plansChanged: result.plansChanged,
+      plansUnchanged: result.plansUnchanged,
+      resource: result.resource,
+    });
+  } catch (err: any) {
+    console.error("Term Playbook: resync failed:", err);
+    return res.status(500).json({ error: `Resync failed: ${err.message}` });
+  }
+});
+
+// --- Did You Know card: combined daily-rotating Health + Term FAQ feed
+// (see src/server/knowledgeBase/didYouKnow.ts). Replaces the old dedicated
+// GET /api/announcements/insight route — visibility is tag-based, not
+// admin-authored. ---
+app.get("/api/did-you-know", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    const caller = await repos.users.findByEmail(req.user!.email);
+    // Same visibility rule as /api/announcements: Health-tagged -> Health
+    // only, Term-tagged -> Term only, both/neither -> undefined (no
+    // restriction, i.e. both categories) — see teamForTags above.
+    const team = teamForTags(caller?.tags);
+    // Fire-and-forget lazy staleness refresh for the Health/Term FAQ sheets
+    // this feed reads from — never awaited, so a slow/failed refresh can
+    // never delay this response (same pattern as Product Assist's own
+    // maybeRefreshFaqIfStale usage above).
+    void maybeRefreshFaqIfStale(repos);
+    void maybeRefreshTermFaqIfStale(repos);
+    const items = await getDidYouKnowFeed(repos, team);
+    return res.json({ items });
+  } catch (err: any) {
+    console.error("Failed to load the Did You Know feed:", err);
+    return res.status(500).json({ error: `Failed to load: ${err.message}` });
+  }
+});
+
 // --- Categories ---
 
 app.get("/api/kb/categories", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Knowledge Base"))) return;
+    // Was requireAdminOrDeveloper (a hardcoded tier check) — switched to
+    // knowledge_base Viewer (2026-09 permission architecture fix) to match
+    // the write routes below, which already gate on knowledge_base Editor.
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Viewer", "Viewing the Knowledge Base"))) return;
+    const { domain } = req.query;
     const { kbCategories } = createRepositories(getDb());
-    const entries = await kbCategories.list();
+    const entries = await kbCategories.list(isValidAnnouncementTeam(domain) ? { domain } : {});
     return res.json({ entries });
   } catch (err: any) {
     console.error("Failed to list KB categories:", err);
@@ -5796,11 +7458,24 @@ app.get("/api/kb/categories", requireAuth, async (req, res) => {
 app.post("/api/kb/categories", requireAuth, async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "knowledge_base", "Editor", "Adding a Knowledge Base category"))) return;
-    const { name, type, sortOrder } = req.body;
+    const { name, type, sortOrder, domain } = req.body;
     if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "name is required." });
-    if (type !== "insurer" && type !== "general") return res.status(400).json({ error: 'type must be "insurer" or "general".' });
+    if (type !== "insurer" && type !== "general" && type !== "fundamentals") {
+      return res.status(400).json({ error: 'type must be "insurer", "general", or "fundamentals".' });
+    }
+    // domain defaults to "Health" (the DB column's own default) when
+    // omitted, so every pre-Term caller of this route keeps working
+    // unchanged — see kb_categories.domain's schema.ts comment.
+    if (domain !== undefined && !isValidAnnouncementTeam(domain)) {
+      return res.status(400).json({ error: 'domain must be "Health" or "Term".' });
+    }
     const { kbCategories } = createRepositories(getDb());
-    const category = await kbCategories.create({ name: name.trim(), type, sortOrder: typeof sortOrder === "number" ? sortOrder : 0 });
+    const category = await kbCategories.create({
+      name: name.trim(),
+      type,
+      sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+      ...(isValidAnnouncementTeam(domain) ? { domain } : {}),
+    });
     return res.json({ category });
   } catch (err: any) {
     console.error("Failed to create KB category:", err);
@@ -5814,8 +7489,8 @@ app.patch("/api/kb/categories/:id", requireAuth, async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid category id." });
     const { name, type, sortOrder, planNames, disabledPlanNames } = req.body;
-    if (type !== undefined && type !== "insurer" && type !== "general") {
-      return res.status(400).json({ error: 'type must be "insurer" or "general".' });
+    if (type !== undefined && type !== "insurer" && type !== "general" && type !== "fundamentals") {
+      return res.status(400).json({ error: 'type must be "insurer", "general", or "fundamentals".' });
     }
     if (planNames !== undefined) {
       if (!Array.isArray(planNames) || !planNames.every((t: unknown) => typeof t === "string")) {
@@ -5928,7 +7603,9 @@ app.post("/api/kb/categories/:id/rename-plan", requireAuth, async (req, res) => 
 
 app.get("/api/kb/resources", requireAuth, async (req, res) => {
   try {
-    if (!(await requireAdminOrDeveloper(req, res, "Viewing the Knowledge Base"))) return;
+    // Was requireAdminOrDeveloper — same knowledge_base Viewer fix as
+    // /api/kb/categories above.
+    if (!(await requireFeatureAccess(req, res, "knowledge_base", "Viewer", "Viewing the Knowledge Base"))) return;
     const categoryId = req.query.categoryId !== undefined ? Number(req.query.categoryId) : undefined;
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const { kbResources } = createRepositories(getDb());
@@ -6105,13 +7782,14 @@ app.delete("/api/kb/resources/:id", requireAuth, async (req, res) => {
 app.get("/api/kb/special-instructions", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Viewing Special Instructions"))) return;
-    const { topic, instructionType, insurerCategoryId, isActive } = req.query;
+    const { topic, instructionType, insurerCategoryId, isActive, domain } = req.query;
     const { specialInstructions } = createRepositories(getDb());
     const entries = await specialInstructions.list({
       ...(typeof topic === "string" && topic.trim() ? { topic: topic.trim() } : {}),
       ...(typeof instructionType === "string" && SPECIAL_INSTRUCTION_TYPES.includes(instructionType) ? { instructionType: instructionType as any } : {}),
       ...(insurerCategoryId !== undefined && Number.isInteger(Number(insurerCategoryId)) ? { insurerCategoryId: Number(insurerCategoryId) } : {}),
       ...(isActive === "true" ? { isActive: true } : isActive === "false" ? { isActive: false } : {}),
+      ...(isValidAnnouncementTeam(domain) ? { domain } : {}),
     });
     return res.json({ entries });
   } catch (err: any) {
@@ -6127,13 +7805,18 @@ app.post("/api/kb/special-instructions", requireAuth, async (req, res) => {
     if (!isDeveloperPower(callerTier)) {
       return res.status(403).json({ error: "Only the Developer or Platform Admin role can create Special Instructions." });
     }
-    const { topic, instructionText, instructionType, insurerCategoryId, productPlanName } = req.body;
+    const { topic, instructionText, instructionType, insurerCategoryId, productPlanName, domain } = req.body;
     if (typeof topic !== "string" || !topic.trim()) return res.status(400).json({ error: "topic is required." });
     if (typeof instructionText !== "string" || !instructionText.trim()) {
       return res.status(400).json({ error: "instructionText is required." });
     }
     if (typeof instructionType !== "string" || !SPECIAL_INSTRUCTION_TYPES.includes(instructionType)) {
       return res.status(400).json({ error: `instructionType must be one of: ${SPECIAL_INSTRUCTION_TYPES.join(", ")}.` });
+    }
+    // domain defaults to "Health" (the DB column's own default) when
+    // omitted — see special_instructions.domain's schema.ts comment.
+    if (domain !== undefined && !isValidAnnouncementTeam(domain)) {
+      return res.status(400).json({ error: 'domain must be "Health" or "Term".' });
     }
     let resolvedInsurerCategoryId: number | null = null;
     if (insurerCategoryId !== undefined && insurerCategoryId !== null && insurerCategoryId !== "") {
@@ -6154,6 +7837,7 @@ app.post("/api/kb/special-instructions", requireAuth, async (req, res) => {
       insurerCategoryId: resolvedInsurerCategoryId,
       productPlanName: resolvedProductPlanName,
       topicEmbedding,
+      ...(isValidAnnouncementTeam(domain) ? { domain } : {}),
       createdBy: `${req.user!.name} (${req.user!.email})`,
       updatedBy: `${req.user!.name} (${req.user!.email})`,
     });
@@ -6304,11 +7988,12 @@ app.delete("/api/kb/special-instructions/:id", requireAuth, async (req, res) => 
 app.get("/api/kb/acronyms", requireAuth, async (req, res) => {
   try {
     if (!(await requireAdminOrDeveloper(req, res, "Viewing the Acronym Dictionary"))) return;
-    const { search, isActive } = req.query;
+    const { search, isActive, domain } = req.query;
     const { kbAcronyms } = createRepositories(getDb());
     const entries = await kbAcronyms.list({
       ...(typeof search === "string" && search.trim() ? { search: search.trim() } : {}),
       ...(isActive === "true" ? { isActive: true } : isActive === "false" ? { isActive: false } : {}),
+      ...(isValidAnnouncementTeam(domain) ? { domain } : {}),
     });
     return res.json({ entries });
   } catch (err: any) {
@@ -6324,15 +8009,21 @@ app.post("/api/kb/acronyms", requireAuth, async (req, res) => {
     if (!isDeveloperPower(callerTier)) {
       return res.status(403).json({ error: "Only the Developer or Platform Admin role can add Acronym Dictionary entries." });
     }
-    const { acronym, expansion, notes } = req.body;
+    const { acronym, expansion, notes, domain } = req.body;
     if (typeof acronym !== "string" || !acronym.trim()) return res.status(400).json({ error: "acronym is required." });
     if (typeof expansion !== "string" || !expansion.trim()) return res.status(400).json({ error: "expansion is required." });
+    // domain defaults to "Health" (the DB column's own default) when
+    // omitted — see kb_acronyms.domain's schema.ts comment.
+    if (domain !== undefined && !isValidAnnouncementTeam(domain)) {
+      return res.status(400).json({ error: 'domain must be "Health" or "Term".' });
+    }
 
     const entry = await kbAcronyms.create({
       acronym: acronym.trim(),
       expansion: expansion.trim(),
       notes: typeof notes === "string" && notes.trim() ? notes.trim() : null,
       isActive: true,
+      ...(isValidAnnouncementTeam(domain) ? { domain } : {}),
       createdBy: `${req.user!.name} (${req.user!.email})`,
       updatedBy: `${req.user!.name} (${req.user!.email})`,
     });
@@ -6470,8 +8161,14 @@ function isAddOnOnlyPlanName(planName: string, resources: { planTags: string[]; 
 // content or chunk data is exposed here, only category metadata.
 app.get("/api/product-assist/categories", requireAuth, async (req, res) => {
   try {
-    const { kbCategories, kbResources } = createRepositories(getDb());
-    const [entries, resources] = await Promise.all([kbCategories.list(), kbResources.list({ status: "active" })]);
+    const { kbCategories, kbResources, users: usersRepo } = createRepositories(getDb());
+    const caller = await usersRepo.findByEmail(req.user!.email);
+    const resolved = resolveCallerDomain(req.query.domain, caller?.tags);
+    if ("error" in resolved) return res.status(403).json({ error: resolved.error });
+    const [entries, resources] = await Promise.all([
+      kbCategories.list({ domain: resolved.domain }),
+      kbResources.list({ status: "active" }),
+    ]);
     const resourcesByCategory = new Map<number, typeof resources>();
     for (const r of resources) {
       const list = resourcesByCategory.get(r.categoryId);
@@ -6518,8 +8215,14 @@ function toLibraryResource(r: { id: number; title: string; documentType: string;
 // /api/product-assist/categories above.
 app.get("/api/product-assist/library", requireAuth, async (req, res) => {
   try {
-    const { kbCategories, kbResources } = createRepositories(getDb());
-    const [categories, resources] = await Promise.all([kbCategories.list(), kbResources.list({ status: "active" })]);
+    const { kbCategories, kbResources, users: usersRepo } = createRepositories(getDb());
+    const caller = await usersRepo.findByEmail(req.user!.email);
+    const resolved = resolveCallerDomain(req.query.domain, caller?.tags);
+    if ("error" in resolved) return res.status(403).json({ error: resolved.error });
+    const [categories, resources] = await Promise.all([
+      kbCategories.list({ domain: resolved.domain }),
+      kbResources.list({ status: "active" }),
+    ]);
 
     const resourcesByCategory = new Map<number, typeof resources>();
     for (const r of resources) {
@@ -6528,7 +8231,11 @@ app.get("/api/product-assist/library", requireAuth, async (req, res) => {
       else resourcesByCategory.set(r.categoryId, [r]);
     }
 
-    const playbookResource = resources.find(r => r.type === "sheet" && r.title === PLAYBOOK_RESOURCE_TITLE);
+    // Domain-appropriate Playbook resource — Health and Term each have their
+    // own kb_resources row (2026-09: Term Playbook added), identified by
+    // title exactly like PLAYBOOK_RESOURCE_TITLE's own doc comment describes.
+    const playbookResourceTitle = resolved.domain === "Health" ? PLAYBOOK_RESOURCE_TITLE : TERM_PLAYBOOK_RESOURCE_TITLE;
+    const playbookResource = resources.find(r => r.type === "sheet" && r.title === playbookResourceTitle);
 
     const insurers = categories
       .filter(c => c.type === "insurer")
@@ -6652,7 +8359,7 @@ app.post("/api/product-assist/warning-reset", requireAuth, async (req, res) => {
 // nothing here reads from or writes to kb_chat_sessions/kb_chat_messages.
 app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
-    const { categoryId, planTags, question, history } = req.body;
+    const { categoryId, planTags, question, history, domain } = req.body;
     if (typeof question !== "string" || !question.trim()) {
       return res.status(400).json({ error: "question is required." });
     }
@@ -6672,60 +8379,96 @@ app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (
 
     const repos = createRepositories(getDb());
 
-    // Credit & Usage Management (2026-08) — checked BEFORE the AI call, per
-    // productAssistQuota.ts's doc comment. Blocks only when a real cap is
-    // already exhausted; never touches retrieval/prompt/answer logic below.
+    // Health/Term isolation (2026-09) — validated against the caller's own
+    // users.tags server-side, never trusted purely from the client, per the
+    // confirmed tag-based access rule (see resolveCallerDomain's comment).
+    const caller = await repos.users.findByEmail(req.user!.email);
+    const resolvedDomain = resolveCallerDomain(domain, caller?.tags);
+    if ("error" in resolvedDomain) return res.status(403).json({ error: resolvedDomain.error });
+
+    // Credit & Usage Management (2026-08, enforcement revised 2026-09) —
+    // checked BEFORE the AI call, per productAssistQuota.ts's doc comment.
+    // Monthly is the sole gate now (the daily figure is informational
+    // pacing only, never blocking by itself — see that file's ENFORCEMENT
+    // MODEL comment), so this only ever fires once the monthly allowance
+    // itself is exhausted; never touches retrieval/prompt/answer logic
+    // below.
     const callerEmail = req.user!.email;
     const { allowed, status: quotaStatus } = await checkQuota(repos, callerEmail);
     if (!allowed) {
       return res.status(429).json({
-        error:
-          quotaStatus.dailyRemaining !== null && quotaStatus.dailyRemaining <= 0
-            ? "Daily Product Assist credit limit reached. It resets at midnight (IST)."
-            : "Monthly Product Assist credit limit reached. Contact a Developer/Platform Admin for extra credits.",
+        error: "Monthly Product Assist credit limit reached. Contact a Developer/Platform Admin for extra credits.",
         quota: quotaStatus,
       });
     }
 
-    // Fire-and-forget: refreshes the Product Playbook in the background if
-    // the last sync is stale (see maybeRefreshPlaybookIfStale) — never
-    // awaited, so a slow or failed refresh can never delay this answer.
-    void maybeRefreshPlaybookIfStale(repos);
-    // Same lazy staleness check for the Ditto FAQ (see maybeRefreshFaqIfStale) —
-    // also fire-and-forget, independent of the Playbook's own refresh.
-    void maybeRefreshFaqIfStale(repos);
+    // Fire-and-forget staleness refreshes — never awaited, so a slow or
+    // failed refresh can never delay this answer. Both domains now have a
+    // Playbook and a FAQ to keep fresh (2026-09: Term Playbook added).
+    if (resolvedDomain.domain === "Health") {
+      void maybeRefreshPlaybookIfStale(repos);
+      void maybeRefreshFaqIfStale(repos);
+    } else {
+      void maybeRefreshTermPlaybookIfStale(repos);
+      void maybeRefreshTermFaqIfStale(repos);
+    }
     const scope = { categoryId: categoryId ?? null, planTags: Array.isArray(planTags) ? planTags : [] };
-    const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : []);
+    const result = await answerQuery(repos, scope, question.trim(), Array.isArray(history) ? history : [], resolvedDomain.domain);
 
     // Record actual consumption SYNCHRONOUSLY (awaited, unlike the
-    // temporary product_assist_logs write below) — this is the quota
-    // system's real source of truth. Null tokens means no AI call actually
-    // happened (e.g. a deterministic Special-Instruction-conflict answer),
-    // so there's nothing to charge for.
+    // product_assist_logs write below) — this is the quota system's real
+    // source of truth. Null tokens means no AI call actually happened (e.g.
+    // a deterministic Special-Instruction-conflict answer), so there's
+    // nothing to charge for.
     let quotaAfter = quotaStatus;
+    let usageLedgerId: number | null = null;
     if (result.meta.inputTokens !== null && result.meta.outputTokens !== null) {
-      await recordUsage(repos, callerEmail, result.meta.inputTokens, result.meta.outputTokens);
+      const ledgerRow = await recordUsage(repos, callerEmail, result.meta.inputTokens, result.meta.outputTokens);
+      usageLedgerId = ledgerRow.id;
       quotaAfter = await getQuotaStatus(repos, callerEmail);
+
+      // Cross-feature usage tracking (2026-09, visibility only — see
+      // ai_usage_log's schema.ts comment). Mirrors the same call this
+      // ledger row above already recorded for enforcement; fire-and-forget
+      // since a failure here must never affect the advisor's answer or the
+      // quota system that already recorded above.
+      void repos.aiUsageLog
+        .record({
+          source: "product_assist",
+          userEmail: callerEmail,
+          model: result.meta.modelName ?? "unknown",
+          inputTokens: result.meta.inputTokens,
+          outputTokens: result.meta.outputTokens,
+        })
+        .catch(err => console.error("AI usage log: failed to record Product Assist entry (non-fatal):", err));
     }
 
-    // TEMPORARY (see product_assist_logs's schema comment): fire-and-forget,
-    // never awaited — a logging failure must never affect the advisor's
-    // actual answer, which has already been computed above regardless of
-    // what happens here. Gated by PRODUCT_ASSIST_LOG_ENABLED so this can be
-    // turned off (set to "false") once enough real data has been collected
-    // for the Product Assist optimization review's test set; unset/anything
-    // else defaults to enabled.
+    // Resolved once, shared by both fire-and-forget writes below (the
+    // temporary analysis log and the permanent Unresolved Queries record)
+    // so a question with categoryId set only pays for one kbCategories.list
+    // call rather than two.
+    const categoryNamePromise: Promise<string | null> =
+      scope.categoryId !== null
+        ? repos.kbCategories.list({ domain: resolvedDomain.domain }).then(cats => cats.find(c => c.id === scope.categoryId)?.name ?? null)
+        : Promise.resolve(null);
+
+    // Query-detail log (see product_assist_logs's schema comment — a
+    // permanent record as of 2026-09): fire-and-forget, never awaited — a
+    // logging failure must never affect the advisor's actual answer, which
+    // has already been computed above regardless of what happens here.
+    // Gated by PRODUCT_ASSIST_LOG_ENABLED so this can be turned off (set to
+    // "false"); unset/anything else defaults to enabled. usageLedgerId links
+    // this row back to the ledger entry above (null when no AI call
+    // happened, e.g. a Special-Instruction-conflict answer) so the Usage
+    // History admin tab can look up one usage row's full detail directly.
     if (process.env.PRODUCT_ASSIST_LOG_ENABLED !== "false") {
       void (async () => {
         try {
-          const categoryName =
-            scope.categoryId !== null
-              ? (await repos.kbCategories.list()).find(c => c.id === scope.categoryId)?.name ?? null
-              : null;
           await repos.productAssistLogs.create({
             userEmail: req.user!.email,
+            usageLedgerId,
             categoryId: scope.categoryId,
-            categoryName,
+            categoryName: await categoryNamePromise,
             planTags: scope.planTags,
             question: question.trim(),
             answer: result.answer,
@@ -6737,10 +8480,33 @@ app.post("/api/product-assist/ask", requireAuth, expensiveActionLimiter, async (
             historyTurnCount: result.meta.historyTurnCount,
             inputTokens: result.meta.inputTokens,
             outputTokens: result.meta.outputTokens,
+            modelName: result.meta.modelName,
             latencyMs: result.meta.latencyMs,
           });
         } catch (logErr) {
-          console.error("Product Assist: failed to write temporary analysis log row (non-fatal):", logErr);
+          console.error("Product Assist: failed to write analysis log row (non-fatal):", logErr);
+        }
+      })();
+    }
+
+    // PERMANENT (see product_assist_unresolved_queries's schema comment) —
+    // unlike the log above, this is never gated by PRODUCT_ASSIST_LOG_ENABLED
+    // and is never cleared by an export: it's the durable "AI had nothing to
+    // answer with" queue the AI Usage & Limits > Unresolved Queries tab is
+    // built around. Also fire-and-forget for the same reason as above.
+    if (result.hadNoMatches) {
+      void (async () => {
+        try {
+          await repos.productAssistUnresolvedQueries.create({
+            domain: resolvedDomain.domain,
+            userEmail: req.user!.email,
+            categoryId: scope.categoryId,
+            categoryName: await categoryNamePromise,
+            planTags: scope.planTags,
+            question: question.trim(),
+          });
+        } catch (unresolvedErr) {
+          console.error("Product Assist: failed to record unresolved query (non-fatal):", unresolvedErr);
         }
       })();
     }
@@ -6775,20 +8541,29 @@ app.get("/api/product-assist/quota", requireAuth, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Product Assist Credit & Usage Management — admin routes. Every route
-// below is restricted to Developer + Platform Admin ONLY (isDeveloperPower)
-// server-side, deliberately narrower than the typical Admin-Zone gate
-// (isAdminPower) per the user's explicit access-control decision — a plain
-// Admin cannot view or change anyone's quota. The "AI Usage & Limits" page
-// additionally gates itself client-side via DEVELOPER_ONLY_FEATURES.
+// below goes through requireQuotaAdmin() -> requireFeatureAccess() against
+// the "product_assist_quota" governed feature, whose shipped default keeps
+// it Developer + Platform Admin ONLY — deliberately narrower than the
+// typical Admin-Zone gate (isAdminPower) per the user's explicit access-
+// control decision, a plain Admin cannot view or change anyone's quota by
+// default. No longer a hardcoded isDeveloperPower-only gate as of 2026-09
+// (DEVELOPER_ONLY_FEATURES is now empty — see featurePermissions.ts), so a
+// Developer can reassign this from the Permissions tab like any other
+// feature. The "AI Usage & Limits" page mirrors this client-side via
+// hasAccess("product_assist_quota", ...).
 // ─────────────────────────────────────────────────────────────────────────
 
-async function requireQuotaAdmin(req: any, res: any, usersRepo: UsersRepository): Promise<string | null> {
-  const callerTier = await getCallerTier(req, usersRepo);
-  if (!isDeveloperPower(callerTier)) {
-    res.status(403).json({ error: "Product Assist usage & limits are restricted to the Developer or Platform Admin." });
-    return null;
-  }
-  return callerTier;
+// Was a hardcoded isDeveloperPower-only gate (matching product_assist_quota's
+// old DEVELOPER_ONLY_FEATURES membership). That Set is now empty (2026-09 —
+// see featurePermissions.ts), so this routes through the same
+// requireFeatureAccess() every other governed feature uses, meaning a
+// Permissions-tab / Access Rule / Custom Grant on "product_assist_quota"
+// actually takes effect here instead of being silently ignored.
+// actionType defaults to "Editor" (every route below except the 5 GET reads
+// passes "Viewer" explicitly) since most of what this gates is a write.
+async function requireQuotaAdmin(req: any, res: any, usersRepo: UsersRepository, actionType: "Viewer" | "Editor" = "Editor"): Promise<string | null> {
+  if (!(await requireFeatureAccess(req, res, "product_assist_quota", actionType, "Product Assist usage & limits"))) return null;
+  return getCallerTier(req, usersRepo);
 }
 
 // GET /api/product-assist/quota/settings — the global defaults/conversion/
@@ -6796,7 +8571,7 @@ async function requireQuotaAdmin(req: any, res: any, usersRepo: UsersRepository)
 app.get("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, productAssistQuotaSettings } = createRepositories(getDb());
-    if (!(await requireQuotaAdmin(req, res, usersRepo))) return;
+    if (!(await requireQuotaAdmin(req, res, usersRepo, "Viewer"))) return;
     const settings = await productAssistQuotaSettings.get();
     return res.json({ settings });
   } catch (err: any) {
@@ -6808,21 +8583,16 @@ app.get("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
 // PUT /api/product-assist/quota/settings — update the global defaults.
 // Every field is optional (partial update); numeric fields are validated
 // as positive numbers/integers so a typo can't silently zero out quotas.
+// Eligibility/default-credit fields live on product_assist_eligibility_groups
+// as of 2026-09-07 (see the /eligibility-groups routes below), not here.
 app.put("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, productAssistQuotaSettings, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
+    const { users: usersRepo, productAssistQuotaSettings, changeLogs } = createRepositories(getDb());
     const callerTier = await requireQuotaAdmin(req, res, usersRepo);
     if (!callerTier) return;
 
     const b = req.body ?? {};
-    const intFields = [
-      "defaultDailyCredits",
-      "defaultMonthlyCredits",
-      "trialMonthlyCredits",
-      "tokensPerCredit",
-      "warningThresholdPercent",
-      "budgetWarningThresholdPercent",
-    ] as const;
+    const intFields = ["tokensPerCredit", "warningThresholdPercent", "budgetWarningThresholdPercent"] as const;
     const numFields = ["monthlyBudget", "inputPricePerMillionTokens", "outputPricePerMillionTokens"] as const;
     const patch: Record<string, unknown> = {};
     for (const f of intFields) {
@@ -6852,34 +8622,6 @@ app.put("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
         return res.status(400).json({ error: "modelName must be a non-empty string." });
       }
       patch.modelName = b.modelName.trim();
-    }
-
-    // Eligibility catalog IDs (migration 0049) — Department/Team/Role a
-    // user must simultaneously hold (alongside the Health tag) to land in
-    // the health_advisor bucket. Each is nullable (null = un-configure
-    // that piece, which makes the rule un-satisfiable overall — see
-    // resolveQuotaBucket()) but if provided as a number must reference a
-    // real, existing catalog row so a typo can't silently no-op.
-    const eligibilityIdFields = [
-      { field: "eligibleDepartmentId", repo: departments, label: "eligibleDepartmentId", noun: "department" },
-      { field: "eligibleOrgTeamId", repo: orgTeams, label: "eligibleOrgTeamId", noun: "team" },
-      { field: "eligibleRoleId", repo: roles, label: "eligibleRoleId", noun: "role" },
-    ] as const;
-    for (const { field, repo, noun } of eligibilityIdFields) {
-      if (b[field] === undefined) continue;
-      if (b[field] === null) {
-        patch[field] = null;
-        continue;
-      }
-      const id = Number(b[field]);
-      if (!Number.isInteger(id)) {
-        return res.status(400).json({ error: `${field} must be a whole number ID or null.` });
-      }
-      const row = await repo.get(id);
-      if (!row) {
-        return res.status(400).json({ error: `${field} does not reference an existing ${noun}.` });
-      }
-      patch[field] = id;
     }
 
     if ((patch.warningThresholdPercent as number | undefined) !== undefined && (patch.warningThresholdPercent as number) > 100) {
@@ -6915,22 +8657,294 @@ app.put("/api/product-assist/quota/settings", requireAuth, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// AI Model Pricing (2026-09) — see ai_model_pricing's schema.ts comment.
+// Used exclusively by the cross-feature Overview cost estimate
+// (GET /api/product-assist/quota/overview's allSources); Product Assist's
+// own single-model budget tracking above is unaffected. Same
+// requireQuotaAdmin gate as every other route in this section.
+// ─────────────────────────────────────────────────────────────────────────
+
+// GET /api/product-assist/quota/model-pricing — every configured model's
+// price (Settings tab's pricing editor).
+app.get("/api/product-assist/quota/model-pricing", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, aiModelPricing } = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, usersRepo, "Viewer"))) return;
+    const pricing = await aiModelPricing.list();
+    return res.json({ pricing });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load model pricing:", err);
+    return res.status(500).json({ error: `Failed to load model pricing: ${err.message}` });
+  }
+});
+
+// PUT /api/product-assist/quota/model-pricing/:modelName — set one model's
+// input/output price. Upsert (create-or-update) so a new model any AI
+// call site starts using can be priced without a separate "add" step.
+app.put("/api/product-assist/quota/model-pricing/:modelName", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, aiModelPricing, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const modelName = String(req.params.modelName).trim();
+    if (!modelName) return res.status(400).json({ error: "modelName is required." });
+
+    const { inputPricePerMillionTokens, outputPricePerMillionTokens } = req.body ?? {};
+    const inputPrice = Number(inputPricePerMillionTokens);
+    const outputPrice = Number(outputPricePerMillionTokens);
+    if (!Number.isFinite(inputPrice) || inputPrice < 0) {
+      return res.status(400).json({ error: "inputPricePerMillionTokens must be a non-negative number." });
+    }
+    if (!Number.isFinite(outputPrice) || outputPrice < 0) {
+      return res.status(400).json({ error: "outputPricePerMillionTokens must be a non-negative number." });
+    }
+
+    const updated = await aiModelPricing.upsert({
+      modelName,
+      inputPricePerMillionTokens: inputPrice,
+      outputPricePerMillionTokens: outputPrice,
+      updatedBy: req.user!.email,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "AI Model Pricing Changed",
+        planName: null,
+        description: `Updated AI model pricing for "${modelName}".`,
+        snapshot: { after: updated },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for model pricing update:", logErr);
+    }
+
+    return res.json({ pricing: updated });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to update model pricing:", err);
+    return res.status(500).json({ error: `Failed to update model pricing: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Product Assist Eligibility Groups (2026-09-07) — CRUD for the ordered
+// list of admin-defined groups that decide which users get which
+// daily/monthly credit allowance, replacing the single global Department/
+// Team/Role rule + trial fallback. See schema.ts's doc comment on
+// product_assist_eligibility_groups and productAssistQuota.ts's header
+// comment for the full reasoning. Same requireQuotaAdmin gate as every
+// other route in this section.
+// ─────────────────────────────────────────────────────────────────────────
+
+// GET /api/product-assist/quota/eligibility-groups — every group, in
+// display order (Settings tab).
+app.get("/api/product-assist/quota/eligibility-groups", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistEligibilityGroups } = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, usersRepo, "Viewer"))) return;
+    const groups = await productAssistEligibilityGroups.list();
+    return res.json({ groups });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to list eligibility groups:", err);
+    return res.status(500).json({ error: `Failed to load eligibility groups: ${err.message}` });
+  }
+});
+
+// Shared body-parsing/validation for POST (create) and PATCH (update)
+// below — each of the four matching conditions is optional/nullable
+// ("any" when unset), but if provided as an ID must reference a real,
+// existing catalog row so a typo can't silently no-op. Returns an error
+// string on failure, or the validated patch fields on success.
+async function parseEligibilityGroupBody(
+  b: any,
+  catalogs: { departments: { get(id: number): Promise<unknown> }; orgTeams: { get(id: number): Promise<unknown> }; roles: { get(id: number): Promise<unknown> } },
+  { partial }: { partial: boolean }
+): Promise<{ error: string } | { patch: Record<string, unknown> }> {
+  const patch: Record<string, unknown> = {};
+
+  if (!partial || b.name !== undefined) {
+    if (typeof b.name !== "string" || !b.name.trim()) return { error: "name is required." };
+    patch.name = b.name.trim();
+  }
+
+  const idFields = [
+    { field: "departmentId", repo: catalogs.departments, noun: "department" },
+    { field: "orgTeamId", repo: catalogs.orgTeams, noun: "business unit" },
+    { field: "roleId", repo: catalogs.roles, noun: "role" },
+  ] as const;
+  for (const { field, repo, noun } of idFields) {
+    if (partial && b[field] === undefined) continue;
+    if (b[field] === null || b[field] === undefined || b[field] === "") {
+      patch[field] = null;
+      continue;
+    }
+    const id = Number(b[field]);
+    if (!Number.isInteger(id)) return { error: `${field} must be a whole number ID or null.` };
+    const row = await repo.get(id);
+    if (!row) return { error: `${field} does not reference an existing ${noun}.` };
+    patch[field] = id;
+  }
+
+  if (!partial || b.tag !== undefined) {
+    patch.tag = typeof b.tag === "string" && b.tag.trim() ? b.tag.trim() : null;
+  }
+
+  for (const field of ["dailyCredits", "monthlyCredits"] as const) {
+    if (partial && b[field] === undefined) continue;
+    if (b[field] === null || b[field] === undefined || b[field] === "") {
+      patch[field] = null;
+      continue;
+    }
+    const n = Number(b[field]);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return { error: `${field} must be a non-negative whole number, or blank for uncapped.` };
+    }
+    patch[field] = n;
+  }
+
+  if (b.sortOrder !== undefined) {
+    const n = Number(b.sortOrder);
+    if (!Number.isInteger(n)) return { error: "sortOrder must be a whole number." };
+    patch.sortOrder = n;
+  }
+
+  return { patch };
+}
+
+// POST /api/product-assist/quota/eligibility-groups — create a new group.
+app.post("/api/product-assist/quota/eligibility-groups", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistEligibilityGroups, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const parsed = await parseEligibilityGroupBody(req.body ?? {}, { departments, orgTeams, roles }, { partial: false });
+    if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+
+    const row = await productAssistEligibilityGroups.create({
+      name: parsed.patch.name as string,
+      departmentId: (parsed.patch.departmentId as number | null) ?? null,
+      orgTeamId: (parsed.patch.orgTeamId as number | null) ?? null,
+      roleId: (parsed.patch.roleId as number | null) ?? null,
+      tag: (parsed.patch.tag as string | null) ?? null,
+      dailyCredits: (parsed.patch.dailyCredits as number | null) ?? null,
+      monthlyCredits: (parsed.patch.monthlyCredits as number | null) ?? null,
+      sortOrder: (parsed.patch.sortOrder as number | undefined) ?? 0,
+      createdBy: `${req.user!.name} (${callerTier})`,
+    });
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Product Assist Eligibility Group Created",
+        planName: null,
+        description: `Created Product Assist eligibility group "${row.name}".`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for eligibility group creation:", logErr);
+    }
+
+    return res.json({ group: row });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to create eligibility group:", err);
+    return res.status(500).json({ error: `Failed to create eligibility group: ${err.message}` });
+  }
+});
+
+// PATCH /api/product-assist/quota/eligibility-groups/:id — partial update.
+app.patch("/api/product-assist/quota/eligibility-groups/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistEligibilityGroups, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid eligibility group id." });
+    const existing = await productAssistEligibilityGroups.get(id);
+    if (!existing) return res.status(404).json({ error: "Eligibility group not found." });
+
+    const parsed = await parseEligibilityGroupBody(req.body ?? {}, { departments, orgTeams, roles }, { partial: true });
+    if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+
+    const row = await productAssistEligibilityGroups.update(id, parsed.patch);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Product Assist Eligibility Group Edited",
+        planName: null,
+        description: `Updated Product Assist eligibility group "${existing.name}" (${Object.keys(parsed.patch).join(", ") || "no fields"}).`,
+        snapshot: { before: existing, after: row },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for eligibility group edit:", logErr);
+    }
+
+    return res.json({ group: row });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to update eligibility group:", err);
+    return res.status(500).json({ error: `Failed to update eligibility group: ${err.message}` });
+  }
+});
+
+// DELETE /api/product-assist/quota/eligibility-groups/:id — real deletion
+// (unlike access_rules, a group has no dependent rows anywhere else).
+app.delete("/api/product-assist/quota/eligibility-groups/:id", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, productAssistEligibilityGroups, changeLogs } = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, usersRepo);
+    if (!callerTier) return;
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid eligibility group id." });
+    const existing = await productAssistEligibilityGroups.get(id);
+    if (!existing) return res.status(404).json({ error: "Eligibility group not found." });
+
+    await productAssistEligibilityGroups.delete(id);
+
+    try {
+      await changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Product Assist Eligibility Group Deleted",
+        planName: null,
+        description: `Deleted Product Assist eligibility group "${existing.name}".`,
+        snapshot: { before: existing, after: null },
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for eligibility group deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to delete eligibility group:", err);
+    return res.status(500).json({ error: `Failed to delete eligibility group: ${err.message}` });
+  }
+});
+
 // GET /api/product-assist/quota/overview — company-wide totals for the
 // Overview tab (this-IST-month credits/tokens used, request count, and a
 // budget estimate from the configured pricing — visibility only, never an
 // auto-stop, per product decision).
 app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
   try {
-    const { users: usersRepo, productAssistQuotaSettings, productAssistUsageLedger } = createRepositories(getDb());
-    if (!(await requireQuotaAdmin(req, res, usersRepo))) return;
+    const { users: usersRepo, productAssistQuotaSettings, productAssistUsageLedger, aiUsageLog, aiModelPricing } = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, usersRepo, "Viewer"))) return;
 
     const settings = await productAssistQuotaSettings.get();
     const now = new Date();
     const monthStart = startOfMonthIST(now);
     const dayStart = startOfDayIST(now);
-    const [monthTotals, todayTotals] = await Promise.all([
+    const [monthTotals, todayTotals, monthByModel, priceMap] = await Promise.all([
       productAssistUsageLedger.companyTotals(monthStart),
       productAssistUsageLedger.companyTotals(dayStart),
+      aiUsageLog.companyTotalsByModel(monthStart),
+      aiModelPricing.getMap(),
     ]);
     const estimatedCostThisMonth = estimateCost(monthTotals.totalInputTokens, monthTotals.totalOutputTokens, {
       inputPricePerMillionTokens: Number(settings.inputPricePerMillionTokens),
@@ -6938,6 +8952,45 @@ app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
     });
     const monthlyBudget = Number(settings.monthlyBudget);
     const budgetUtilizationPercent = monthlyBudget > 0 ? Math.round((estimatedCostThisMonth / monthlyBudget) * 100) : null;
+
+    // Cross-feature usage breakdown (2026-09, visibility only — see
+    // ai_usage_log's schema.ts comment). Cost per (source, model) row uses
+    // ai_model_pricing, not product_assist_quota_settings's single price —
+    // several of these sources try more than one model, so a per-model
+    // lookup is required for an accurate total; a model with no configured
+    // price contributes 0 to cost but still counts toward tokens, and is
+    // flagged via hasUnpricedModel so the UI can say the total is a
+    // undercount rather than silently implying completeness.
+    const bySource = new Map<
+      string,
+      { inputTokens: number; outputTokens: number; totalTokens: number; requestCount: number; estimatedCost: number; hasUnpricedModel: boolean }
+    >();
+    for (const row of monthByModel) {
+      const entry = bySource.get(row.source) ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        requestCount: 0,
+        estimatedCost: 0,
+        hasUnpricedModel: false,
+      };
+      entry.inputTokens += row.inputTokens;
+      entry.outputTokens += row.outputTokens;
+      entry.totalTokens += row.totalTokens;
+      entry.requestCount += row.requestCount;
+      const price = priceMap.get(row.model);
+      if (price) {
+        entry.estimatedCost += estimateCost(row.inputTokens, row.outputTokens, price);
+      } else {
+        entry.hasUnpricedModel = true;
+      }
+      bySource.set(row.source, entry);
+    }
+    const allSources = Array.from(bySource.entries()).map(([source, totals]) => ({
+      source,
+      ...totals,
+      estimatedCost: Math.round(totals.estimatedCost * 100) / 100,
+    }));
 
     return res.json({
       settings,
@@ -6950,6 +9003,7 @@ app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
         budgetUtilizationPercent,
         warningThresholdPercent: settings.budgetWarningThresholdPercent,
       },
+      allSources,
     });
   } catch (err: any) {
     console.error("Product Assist quota: failed to load overview:", err);
@@ -6962,7 +9016,7 @@ app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
 app.get("/api/product-assist/quota/users", requireAuth, async (req, res) => {
   try {
     const repos = createRepositories(getDb());
-    if (!(await requireQuotaAdmin(req, res, repos.users))) return;
+    if (!(await requireQuotaAdmin(req, res, repos.users, "Viewer"))) return;
     const summaries = await listAllUserQuotaStatuses(repos);
     return res.json({ users: summaries });
   } catch (err: any) {
@@ -6976,7 +9030,7 @@ app.get("/api/product-assist/quota/users", requireAuth, async (req, res) => {
 app.get("/api/product-assist/quota/users/:email", requireAuth, async (req, res) => {
   try {
     const repos = createRepositories(getDb());
-    if (!(await requireQuotaAdmin(req, res, repos.users))) return;
+    if (!(await requireQuotaAdmin(req, res, repos.users, "Viewer"))) return;
     const email = String(req.params.email).toLowerCase();
     const [status, override, grants] = await Promise.all([
       getQuotaStatus(repos, email),
@@ -7045,7 +9099,7 @@ app.put("/api/product-assist/quota/users/:email/override", requireAuth, async (r
 });
 
 // DELETE /api/product-assist/quota/users/:email/override — revert a user
-// back to their computed eligibility-bucket default.
+// back to their computed eligibility-group default(s).
 app.delete("/api/product-assist/quota/users/:email/override", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, productAssistUserQuotaOverrides, changeLogs } = createRepositories(getDb());
@@ -7062,7 +9116,7 @@ app.delete("/api/product-assist/quota/users/:email/override", requireAuth, async
         role: callerTier,
         actionType: "Product Assist Quota Override Removed",
         planName: null,
-        description: `Reverted ${email} to their default Product Assist quota bucket.`,
+        description: `Reverted ${email} to their default Product Assist quota (based on the eligibility group(s) they match).`,
         snapshot: { before: before ?? null, after: null },
       });
     } catch (logErr) {
@@ -7152,7 +9206,7 @@ app.post("/api/product-assist/quota/users/:email/extra-credits", requireAuth, as
 app.get("/api/product-assist/quota/usage", requireAuth, async (req, res) => {
   try {
     const repos = createRepositories(getDb());
-    if (!(await requireQuotaAdmin(req, res, repos.users))) return;
+    if (!(await requireQuotaAdmin(req, res, repos.users, "Viewer"))) return;
 
     const { userEmail, from, to, limit, offset } = req.query;
     const filter: Parameters<typeof repos.productAssistUsageLedger.list>[0] = {};
@@ -7171,10 +9225,168 @@ app.get("/api/product-assist/quota/usage", requireAuth, async (req, res) => {
     if (Number.isFinite(parsedOffset) && parsedOffset >= 0) filter.offset = parsedOffset;
 
     const rows = await repos.productAssistUsageLedger.list(filter);
-    return res.json({ rows });
+    // Attach modelName (2026-09) so the Usage History tab's collapsed row
+    // shows which Gemini model answered without a per-row fetch — a bulk
+    // lookup keyed by ledger id, not a join, so this stays a plain
+    // best-effort enrichment of an otherwise-unrelated ledger query.
+    const modelNames = await repos.productAssistLogs.findModelNamesByUsageLedgerIds(rows.map((r) => r.id));
+    const rowsWithModel = rows.map((r) => ({ ...r, modelName: modelNames[r.id] ?? null }));
+    return res.json({ rows: rowsWithModel });
   } catch (err: any) {
     console.error("Product Assist quota: failed to load usage history:", err);
     return res.status(500).json({ error: `Failed to load usage history: ${err.message}` });
+  }
+});
+
+// GET /api/product-assist/quota/usage/:id/detail — full query detail for one
+// Usage History row (2026-09), expand-in-place on the admin tab. Looked up
+// via product_assist_logs.usageLedgerId — see that column's schema.ts
+// comment. Returns { detail: null } (not a 404) when no log row is linked,
+// since that's an expected, non-error state (logging disabled for that
+// request, or it predates the usageLedgerId link) the client should render
+// as a plain "no detail recorded" message rather than an error.
+app.get("/api/product-assist/quota/usage/:id/detail", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, repos.users, "Viewer"))) return;
+
+    const ledgerId = Number(req.params.id);
+    if (!Number.isInteger(ledgerId)) return res.status(400).json({ error: "Invalid usage row id." });
+
+    const detail = await repos.productAssistLogs.findByUsageLedgerId(ledgerId);
+    return res.json({ detail });
+  } catch (err: any) {
+    console.error("Product Assist quota: failed to load usage row detail:", err);
+    return res.status(500).json({ error: `Failed to load usage row detail: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Unresolved Queries (2026-09) — see product_assist_unresolved_queries's
+// schema.ts comment for the full design. Same requireQuotaAdmin gate as
+// every other AI Usage & Limits route above (this is that page's
+// "Unresolved Queries" tab); resolving a row by actually CREATING a Special
+// Instruction still goes through the separately-authorized POST /api/kb/
+// special-instructions route (Developer/Platform Admin only, unchanged) —
+// the PATCH route below only ever links an already-created instruction's id
+// to a row, it never creates one itself.
+// ─────────────────────────────────────────────────────────────────────────
+
+// GET /api/product-assist/quota/unresolved-queries — filterable list for the
+// Unresolved Queries tab (date range, status, domain).
+app.get("/api/product-assist/quota/unresolved-queries", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    if (!(await requireQuotaAdmin(req, res, repos.users, "Viewer"))) return;
+
+    const { domain, status, from, to } = req.query;
+    const filter: Parameters<typeof repos.productAssistUnresolvedQueries.list>[0] = {};
+    if (isValidAnnouncementTeam(domain)) filter.domain = domain;
+    if (status === "unresolved" || status === "resolved" || status === "skipped") filter.status = status;
+    if (typeof from === "string" && from.trim()) {
+      const d = new Date(from);
+      if (!Number.isNaN(d.getTime())) filter.from = d;
+    }
+    if (typeof to === "string" && to.trim()) {
+      const d = new Date(to);
+      if (!Number.isNaN(d.getTime())) filter.to = d;
+    }
+
+    const rows = await repos.productAssistUnresolvedQueries.list(filter);
+    return res.json({ rows });
+  } catch (err: any) {
+    console.error("Unresolved Queries: failed to load list:", err);
+    return res.status(500).json({ error: `Failed to load Unresolved Queries: ${describeDbError(err)}` });
+  }
+});
+
+// PATCH /api/product-assist/quota/unresolved-queries/:id — resolve (linking
+// an already-created Special Instruction), skip, or reopen a row.
+app.patch("/api/product-assist/quota/unresolved-queries/:id", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, repos.users);
+    if (!callerTier) return;
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid Unresolved Query id." });
+    const existing = await repos.productAssistUnresolvedQueries.get(id);
+    if (!existing) return res.status(404).json({ error: "Unresolved Query not found." });
+
+    const { status, resolvedSpecialInstructionId } = req.body;
+    if (status !== "unresolved" && status !== "resolved" && status !== "skipped") {
+      return res.status(400).json({ error: 'status must be "unresolved", "resolved", or "skipped".' });
+    }
+    let linkedInstructionId: number | null = null;
+    if (status === "resolved" && resolvedSpecialInstructionId !== undefined && resolvedSpecialInstructionId !== null) {
+      const idNum = Number(resolvedSpecialInstructionId);
+      if (!Number.isInteger(idNum)) return res.status(400).json({ error: "Invalid resolvedSpecialInstructionId." });
+      const instruction = await repos.specialInstructions.get(idNum);
+      if (!instruction) return res.status(400).json({ error: "Special Instruction not found." });
+      linkedInstructionId = idNum;
+    }
+
+    const row = await repos.productAssistUnresolvedQueries.updateStatus(id, {
+      status,
+      resolvedBy: `${req.user!.name} (${req.user!.email})`,
+      resolvedSpecialInstructionId: linkedInstructionId,
+    });
+    if (!row) return res.status(404).json({ error: "Unresolved Query not found." });
+
+    try {
+      const actionType =
+        status === "resolved" ? "Unresolved Query Resolved" : status === "skipped" ? "Unresolved Query Skipped" : "Unresolved Query Reopened";
+      await repos.changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType,
+        planName: null,
+        description: `${actionType} — "${row.question.slice(0, 120)}${row.question.length > 120 ? "…" : ""}"${
+          linkedInstructionId !== null ? ` (linked to Special Instruction #${linkedInstructionId})` : ""
+        }.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Unresolved Query status change:", logErr);
+    }
+
+    return res.json({ row });
+  } catch (err: any) {
+    console.error("Unresolved Queries: failed to update status:", err);
+    return res.status(500).json({ error: `Failed to update this Unresolved Query: ${describeDbError(err)}` });
+  }
+});
+
+// POST /api/product-assist/quota/unresolved-queries/export — pushes the full
+// current snapshot to the "Unresolved - Health"/"Unresolved - Term" tabs of
+// the same Sheet Product Assist Log Export already writes to (see
+// productAssistUnresolvedQueriesSheetsClient.ts's header comment).
+app.post("/api/product-assist/quota/unresolved-queries/export", requireAuth, async (req, res) => {
+  try {
+    const repos = createRepositories(getDb());
+    const callerTier = await requireQuotaAdmin(req, res, repos.users);
+    if (!callerTier) return;
+
+    const rows = await repos.productAssistUnresolvedQueries.listAll();
+    await exportUnresolvedQueryRows(rows);
+
+    try {
+      await repos.changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Unresolved Queries Exported",
+        planName: null,
+        description: `Exported ${rows.length} Unresolved Quer${rows.length === 1 ? "y" : "ies"} to Google Sheets (Health/Term tabs).`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for Unresolved Queries export:", logErr);
+    }
+
+    return res.json({ ok: true, exportedCount: rows.length });
+  } catch (err: any) {
+    console.error("Unresolved Queries: export failed:", err);
+    return res.status(500).json({ error: `Export failed: ${describeDbError(err)}` });
   }
 });
 

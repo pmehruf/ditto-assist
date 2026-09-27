@@ -8,7 +8,7 @@
  *
  * Mirrors specialInstructions.ts's cosine-similarity-against-a-reused-query-
  * embedding approach: rather than a second embedding call, the SAME query
- * embedding queryAssist.ts already computed for kb_chunks retrieval is
+ * embedding productAssist.ts already computed for kb_chunks retrieval is
  * compared against each FAQ record's questionEmbedding (which, per
  * schema.ts's comment, is computed from the QUESTION text alone — never the
  * answer). That alone is what gives "FAQ question receives the strongest
@@ -25,8 +25,7 @@
  * similarity.
  */
 
-import type { Repositories } from "../db/repositories/index.js";
-import type { FaqRecordRow } from "../db/schema.js";
+import type { FaqRecordRow, TermFaqRecordRow } from "../db/schema.js";
 
 // Was 0.6 ("slightly stricter than Special Instructions' 0.55"), on the
 // assumption that full-sentence FAQ-question embeddings cluster tightly
@@ -65,24 +64,39 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 export interface MatchedFaq {
   id: number;
-  category: FaqRecordRow["category"];
+  category: string;
   question: string;
   answer: string;
   score: number;
 }
+
+/** Either Health's faq_records or Term's term_faq_records — the two tables
+ * share every field resolveApplicableFaqs actually needs (question, answer,
+ * category, questionEmbedding), just typed slightly differently (faq_records
+ * .category is a 2-value enum; term_faq_records.category is free text, one
+ * of its 7 tab names — see that column's schema.ts comment). Structural
+ * typing lets one function serve both without either table knowing about
+ * the other. */
+type FaqLikeRow = Pick<FaqRecordRow, "id" | "question" | "answer" | "questionEmbedding"> & {
+  category: FaqRecordRow["category"] | TermFaqRecordRow["category"];
+};
 
 /**
  * Returns the FAQ records (if any) relevant enough to this question to
  * participate in the answer, sorted by relevance (highest first), capped at
  * MAX_FAQ_MATCHES. Empty array = nothing crossed the relevance bar, which is
  * the normal case for a question the FAQ has nothing to do with — see
- * queryAssist.ts's buildDittoConstitutionBlock, which renders "" (adds
+ * productAssist.ts's buildDittoConstitutionBlock, which renders "" (adds
  * nothing to the prompt) when this returns empty, keeping behavior
  * byte-identical to before this feature existed for every question it
  * doesn't apply to.
+ *
+ * `rows` is already the caller's domain-appropriate `listAnswerableActive()`
+ * result (Health's faq_records or Term's term_faq_records, per
+ * productAssist.ts's domain switch) — this function itself has no opinion
+ * on which vertical it's serving, only on relevance scoring.
  */
-export async function resolveApplicableFaqs(repos: Repositories, queryEmbedding: number[]): Promise<MatchedFaq[]> {
-  const rows = await repos.faqRecords.listAnswerableActive();
+export function resolveApplicableFaqs(rows: FaqLikeRow[], queryEmbedding: number[]): MatchedFaq[] {
   const scored = rows
     .filter(row => row.questionEmbedding !== null)
     .map(row => ({ row, score: cosineSimilarity(queryEmbedding, row.questionEmbedding as unknown as number[]) }))

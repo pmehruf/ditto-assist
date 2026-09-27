@@ -24,9 +24,13 @@
 import {
   getAdvisorByEmail,
   findAdvisorByTactId,
+  findAdvisorByTactIdAsOf,
   getAllAdvisors,
+  getAllAdvisorsAsOf,
   getAdvisorsForGuide,
   getAdvisorsForMentor,
+  getAdvisorsForGuideAsOf,
+  getAdvisorsForMentorAsOf,
   getAdvisorMetrics,
   getAdvisorsBatchMetrics,
   getAdvisorFeedback,
@@ -120,7 +124,14 @@ export async function getDashboardData(
       return { advisor: null, metrics: null, isAdmin: false, isGuide: false, isMentor: false, error: "NOT_AN_ADVISOR", message: `No advisor record found for ${email}` };
     }
 
-    const advisor = await findAdvisorByTactId(targetTactId);
+    // Which Mentor/Guide is SHOWN for this advisor reflects the period
+    // being viewed (dateFilters.checkedFrom), not today's relationship —
+    // "who they belonged to" is reporting, same as the metrics beside it
+    // (see qaDataEngine.ts's "Rewire Advisor Mapping" section comment). The
+    // team-membership ACCESS check above this stays on the CURRENT
+    // relationship by design — a Guide/Mentor's own ability to open this
+    // advisor never depends on which period they happen to be viewing.
+    const advisor = await findAdvisorByTactIdAsOf(targetTactId, dateFilters.checkedFrom);
     const parsed = parseDateFilters(dateFilters);
     const metrics = await getAdvisorMetrics(targetTactId, parsed, dateFilters);
 
@@ -209,10 +220,17 @@ export async function getAdvisorsDashboardListFor(
     if (!role.isAdmin && !role.isGuide && !role.isMentor) {
       return { error: "FORBIDDEN", message: "Not authorized to list advisors" };
     }
+    // Period-based (2026-09 "Rewire Advisor Mapping"): this roster is a
+    // reporting view, not an access-control check, so it's resolved as of
+    // the selected period's own START date rather than today — an advisor
+    // who has since moved to a different Guide/Mentor, or left the
+    // company, still shows up here for a period during which they were
+    // active and under this Guide/Mentor. See qaDataEngine.ts's "Advisor
+    // Relationship Mapping" section comment.
     let pool: Advisor[];
-    if (role.isAdmin) pool = await getAllAdvisors();
-    else if (role.isGuide) pool = await getAdvisorsForGuide(role.callerName);
-    else pool = await getAdvisorsForMentor(role.callerName);
+    if (role.isAdmin) pool = await getAllAdvisorsAsOf(dateFilters.checkedFrom);
+    else if (role.isGuide) pool = await getAdvisorsForGuideAsOf(role.callerName, dateFilters.checkedFrom);
+    else pool = await getAdvisorsForMentorAsOf(role.callerName, dateFilters.checkedFrom);
     // No allowlist filter — see the comment on listAdvisorsForCaller above.
 
     const tactIds = pool.map((a) => String(a.tactId).trim());
@@ -284,7 +302,8 @@ export async function getCompanyWideQaAggregateFor(
   | ErrorResult
 > {
   try {
-    const pool = await getAllAdvisors();
+    // Period-based, same reasoning as getAdvisorsDashboardListFor above.
+    const pool = await getAllAdvisorsAsOf(dateFilters.checkedFrom);
     // No allowlist filter — see the comment on listAdvisorsForCaller above.
 
     const tactIds = pool.map((a) => String(a.tactId).trim());

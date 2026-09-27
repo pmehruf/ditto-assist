@@ -44,6 +44,7 @@ const HEADER_ROW = [
   "history_turn_count",
   "input_tokens",
   "output_tokens",
+  "model_name",
   "latency_ms",
 ];
 
@@ -86,6 +87,23 @@ export function invalidateProductAssistLogSheetsAuthCache(): void {
   cachedOAuthClient = null;
 }
 
+// ── Export health (2026-09) — same passive-tracking pattern as
+// sheetsClient.ts's getQaSheetsHealth: records the outcome of every real
+// export attempt (manual "Export & Clear Now" or the monthly Cloud
+// Scheduler run), no dedicated probe. Surfaced by GET
+// /api/product-assist-logs/connection-status so "Connected" can't mask a
+// genuinely broken/expired grant the way a stored-row-only check would. ──
+interface ProductAssistLogExportHealth {
+  lastSuccessAt: Date | null;
+  lastErrorAt: Date | null;
+  lastErrorMessage: string | null;
+}
+const exportHealth: ProductAssistLogExportHealth = { lastSuccessAt: null, lastErrorAt: null, lastErrorMessage: null };
+
+export function getProductAssistLogExportHealth(): ProductAssistLogExportHealth {
+  return { ...exportHealth };
+}
+
 function rowToValues(row: ProductAssistLogRow): (string | number | boolean)[] {
   return [
     row.id,
@@ -103,6 +121,7 @@ function rowToValues(row: ProductAssistLogRow): (string | number | boolean)[] {
     row.historyTurnCount,
     row.inputTokens ?? "",
     row.outputTokens ?? "",
+    row.modelName ?? "",
     row.latencyMs ?? "",
   ];
 }
@@ -118,33 +137,42 @@ function rowToValues(row: ProductAssistLogRow): (string | number | boolean)[] {
 export async function appendProductAssistLogRows(rows: ProductAssistLogRow[]): Promise<void> {
   if (rows.length === 0) return;
 
-  const client = await getStoredWriteGrantClient();
-  if (!client) {
-    throw new Error(
-      'Product Assist Log Export is not connected. Click "Connect Google Sheets" for Product Assist Log Export in Connections first.'
-    );
+  try {
+    const client = await getStoredWriteGrantClient();
+    if (!client) {
+      throw new Error(
+        'Product Assist Log Export is not connected. Click "Connect Google Sheets" for Product Assist Log Export in Connections first.'
+      );
+    }
+
+    const sheetId = getTargetSheetId();
+    const tab = getTargetTabName();
+    const range = encodeURIComponent(`'${tab}'`);
+
+    // Check whether the sheet already has a header row (first cell of the
+    // tab is non-empty) — a brand-new sheet the user just created will be
+    // completely empty, so this export is also responsible for laying down
+    // HEADER_ROW exactly once.
+    const existing = await client.request<{ values?: unknown[][] }>({
+      url: `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(`'${tab}'!A1`)}`,
+    });
+    const hasHeader = (existing.data.values?.length ?? 0) > 0;
+
+    const values = hasHeader ? rows.map(rowToValues) : [HEADER_ROW, ...rows.map(rowToValues)];
+
+    await client.request({
+      url:
+        `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}:append` +
+        `?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+      method: "POST",
+      data: { values },
+    });
+    exportHealth.lastSuccessAt = new Date();
+    exportHealth.lastErrorAt = null;
+    exportHealth.lastErrorMessage = null;
+  } catch (err) {
+    exportHealth.lastErrorAt = new Date();
+    exportHealth.lastErrorMessage = err instanceof Error ? err.message : String(err);
+    throw err;
   }
-
-  const sheetId = getTargetSheetId();
-  const tab = getTargetTabName();
-  const range = encodeURIComponent(`'${tab}'`);
-
-  // Check whether the sheet already has a header row (first cell of the
-  // tab is non-empty) — a brand-new sheet the user just created will be
-  // completely empty, so this export is also responsible for laying down
-  // HEADER_ROW exactly once.
-  const existing = await client.request<{ values?: unknown[][] }>({
-    url: `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(`'${tab}'!A1`)}`,
-  });
-  const hasHeader = (existing.data.values?.length ?? 0) > 0;
-
-  const values = hasHeader ? rows.map(rowToValues) : [HEADER_ROW, ...rows.map(rowToValues)];
-
-  await client.request({
-    url:
-      `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}:append` +
-      `?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-    method: "POST",
-    data: { values },
-  });
 }

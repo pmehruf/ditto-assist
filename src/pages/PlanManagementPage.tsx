@@ -25,6 +25,16 @@ interface PlanManagementPageProps {
   confirmDestructiveAction: (actionDescription: string, onConfirm: () => void) => void;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
   currentUser?: LoggedUser | null;
+  /** True when App.tsx's hasAccess("plan_scope", "Editor") passes. Added
+   * 2026-09 (permission architecture fix): every CRUD button here used to
+   * gate on hardcoded tier checks (`canEdit`/`isDeveloper`, derived straight
+   * from `effectiveTier`) that ignored the "plan_scope" featurePermissions
+   * entry, any override, and any Custom Grant entirely — even though the
+   * server's own /api/plans routes already resolve access through
+   * requireFeatureAccess("plan_scope", "Editor", ...). An Admin explicitly
+   * downgraded to Viewer (or a General user explicitly granted Editor) saw
+   * the OLD hardcoded UI regardless of what Permissions actually said. */
+  canManage: boolean;
 }
 
 type FormQuestion = PlanQuestionEntry & { key: string };
@@ -120,13 +130,20 @@ export function PlanManagementPage({
   confirmDestructiveAction,
   setChangeLogs,
   currentUser,
+  canManage,
 }: PlanManagementPageProps) {
   const dark = theme === "dark";
-  const canEdit = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
-  // Edit/Delete are actionable Developer(+Platform Admin)-only — Admin still
-  // sees the buttons (so the UI doesn't look feature-incomplete) but they
-  // render disabled. Add Plan stays fully enabled for Admin.
-  const isDeveloper = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
+  // Corrected 2026-09 (permission architecture fix): this used to hardcode
+  // canEdit to Admin/Platform Admin/Developer, and further hardcoded a
+  // SEPARATE isDeveloper-only restriction on top of it for Edit/Delete/
+  // toggle-disabled specifically — both ignored the "plan_scope"
+  // featurePermissions entry, which the server already enforces
+  // (requireFeatureAccess("plan_scope", "Editor", ...) on every mutating
+  // /api/plans route). A single centralized flag now drives every action
+  // here, matching what the server actually allows: whatever "plan_scope"
+  // Editor resolves to for this caller (tier default, override, Access
+  // Rule, or Custom Grant), not a fixed tier list.
+  const canEdit = canManage;
 
   useEffect(() => {
     fetchPlanConfigs();
@@ -968,11 +985,14 @@ export function PlanManagementPage({
             header separator instead (see below), directly above the card
             it controls. */}
         {planMgmtView === "plans" && view === "list" && canEdit && (
+          // variant="action" (2026-09): shared --action-navy token instead
+          // of the old bg-blue-600 family.
           <ClippedButton
             onClick={openNewPlanForm}
             size="md"
+            variant="action"
             cornerBg={dark ? "#10141b" : "#e6f0fb"}
-            className="relative z-10 shrink-0 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-blue-500/20"
+            className="relative z-10 shrink-0 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide px-4 py-2.5 shadow-md"
           >
             <Plus className="w-3.5 h-3.5" /> Add Plan
           </ClippedButton>
@@ -1190,13 +1210,14 @@ export function PlanManagementPage({
                   >
                     Cancel
                   </ClippedButton>
+                  {/* variant="action" (2026-09): shared --action-navy token
+                      instead of the old bg-blue-600 family. */}
                   <ClippedButton
                     onClick={handleSaveManageCatMap}
                     disabled={manageCatSaving}
+                    variant="action"
                     cornerBg={dark ? "#0e2236" : "#ffffff"}
-                    className={`text-xs font-bold uppercase tracking-wide px-4 py-2 ${
-                      dark ? "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 border border-blue-500/30" : "bg-blue-600 text-white hover:bg-blue-700"
-                    }`}
+                    className="text-xs font-bold uppercase tracking-wide px-4 py-2"
                   >
                     {manageCatSaving ? "Saving…" : "Save Category Mapping"}
                   </ClippedButton>
@@ -1242,7 +1263,7 @@ export function PlanManagementPage({
                 <div
                   key={name}
                   className={`rounded-xl border transition-all ${
-                    dark ? "border-white/[0.06] bg-white/[0.02]" : "border-stone-100 bg-stone-50/60"
+                    dark ? "border-white/[0.06] bg-white/[0.02]" : "border-stone-100 bg-surface-solid"
                   }`}
                 >
                   <div
@@ -1296,38 +1317,30 @@ export function PlanManagementPage({
                       <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <ClippedButton
                           onClick={() => handleQuickToggleDisabled(name, !!dbRow?.disabled)}
-                          disabled={!isDeveloper || togglingPlan === name}
+                          disabled={togglingPlan === name}
                           cornerBg={dark ? "#0e2236" : "#ffffff"}
                           className={`p-2 flex items-center gap-1 ${
                             dbRow?.disabled
                               ? (dark ? "hover:bg-emerald-500/15 text-amber-300 hover:text-emerald-300" : "hover:bg-emerald-50 text-amber-600 hover:text-emerald-700")
                               : (dark ? "hover:bg-rose-500/15 text-stone-300 hover:text-rose-400" : "hover:bg-rose-50 text-stone-600 hover:text-rose-600")
                           }`}
-                          title={
-                            !isDeveloper
-                              ? "Developer clearance required to change plan availability"
-                              : dbRow?.disabled
-                                ? "Re-enable this plan for advisors"
-                                : "Disable this plan — advisors won't be able to search it"
-                          }
+                          title={dbRow?.disabled ? "Re-enable this plan for advisors" : "Disable this plan — advisors won't be able to search it"}
                         >
                           <PowerOff className="w-3.5 h-3.5" />
                         </ClippedButton>
                         <ClippedButton
                           onClick={() => openEditForm(name)}
-                          disabled={!isDeveloper}
                           cornerBg={dark ? "#0e2236" : "#ffffff"}
                           className={`p-2 ${dark ? "hover:bg-white/10 text-stone-300" : "hover:bg-stone-200 text-stone-600"}`}
-                          title={!isDeveloper ? "Developer clearance required to edit plans" : dbRow ? "Edit plan" : "Customize this built-in plan"}
+                          title={dbRow ? "Edit plan" : "Customize this built-in plan"}
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </ClippedButton>
                         <ClippedButton
                           onClick={() => handleDelete(name)}
-                          disabled={!isDeveloper}
                           cornerBg={dark ? "#0e2236" : "#ffffff"}
                           className={`p-2 ${dark ? "hover:bg-red-500/15 text-stone-300 hover:text-red-400" : "hover:bg-red-50 text-stone-600 hover:text-red-600"}`}
-                          title={!isDeveloper ? "Developer clearance required to delete plans" : dbRow ? "Delete this plan" : "Remove this built-in plan"}
+                          title={dbRow ? "Delete plan" : "Remove this built-in plan"}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </ClippedButton>
@@ -1371,11 +1384,14 @@ export function PlanManagementPage({
               {isNewPlan ? "Add Plan" : formMode === "view" ? `Viewing "${originalPlanName}"` : `Edit "${originalPlanName}"`}
             </h3>
             <div className="flex items-center gap-2">
-              {!isNewPlan && formMode === "view" && isDeveloper && (
+              {!isNewPlan && formMode === "view" && canEdit && (
+                // variant="action" (2026-09): shared --action-navy token
+                // instead of the old bg-blue-600 family.
                 <ClippedButton
                   onClick={() => setFormMode("edit")}
+                  variant="action"
                   cornerBg={dark ? "#0e2236" : "#ffffff"}
-                  className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-3 py-1.5 ${dark ? "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30" : "bg-blue-600 text-white hover:bg-blue-700"}`}
+                  className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-3 py-1.5"
                 >
                   <Pencil className="w-3 h-3" /> Edit
                 </ClippedButton>
@@ -1703,13 +1719,14 @@ export function PlanManagementPage({
               >
                 Cancel
               </ClippedButton>
+              {/* variant="action" (2026-09): shared --action-navy token
+                  instead of the old bg-blue-600 family. */}
               <ClippedButton
                 onClick={handleSave}
                 disabled={saving}
+                variant="action"
                 cornerBg={dark ? "#0e2236" : "#ffffff"}
-                className={`text-xs font-bold uppercase tracking-wide px-4 py-2 ${
-                  dark ? "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 border border-blue-500/30" : "bg-blue-600 text-white hover:bg-blue-700"
-                }`}
+                className="text-xs font-bold uppercase tracking-wide px-4 py-2"
               >
                 {saving ? "Saving…" : isNewPlan ? "Save & Go Live" : "Save Changes"}
               </ClippedButton>
@@ -1730,7 +1747,7 @@ export function PlanManagementPage({
         <div className="fixed inset-0 z-55 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
           <div
             className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl text-left ${
-              dark ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-white border-stone-200 text-stone-900"
+              dark ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
             }`}
           >
             <div className={`flex justify-between items-center pb-3 border-b ${dark ? "border-white/[0.08]" : "border-stone-200"}`}>

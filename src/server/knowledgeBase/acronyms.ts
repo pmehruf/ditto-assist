@@ -19,6 +19,8 @@
 import type { Repositories } from "../db/repositories/index.js";
 import type { KbAcronymRow } from "../db/schema.js";
 
+type Domain = KbAcronymRow["domain"];
+
 export interface MatchedAcronym {
   acronym: string;
   expansion: string;
@@ -26,19 +28,21 @@ export interface MatchedAcronym {
 }
 
 /** Escapes a string for safe use inside a RegExp — mirrors
- * queryAssist.ts's detectMentionedPlanNames escaping convention. */
+ * productAssist.ts's detectMentionedPlanNames escaping convention. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
- * Returns every active acronym whose exact token appears in `question`
- * (word-boundary, case-insensitive — "OS" matches "the OS plan" but not
- * "COST" or "OSes"). Order matches the DB's default listing order; callers
- * needing determinism should not assume a particular order beyond that.
+ * Returns every active acronym (scoped to the given Health/Term domain —
+ * see kb_acronyms.domain's schema.ts comment) whose exact token appears in
+ * `question` (word-boundary, case-insensitive — "OS" matches "the OS plan"
+ * but not "COST" or "OSes"). Order matches the DB's default listing order;
+ * callers needing determinism should not assume a particular order beyond
+ * that.
  */
-export async function resolveMatchedAcronyms(repos: Repositories, question: string): Promise<MatchedAcronym[]> {
-  const rows = await repos.kbAcronyms.listActive();
+export async function resolveMatchedAcronyms(repos: Repositories, question: string, domain: Domain): Promise<MatchedAcronym[]> {
+  const rows = await repos.kbAcronyms.listActive(domain);
   if (rows.length === 0) return [];
   return rows
     .filter((row: KbAcronymRow) => {
@@ -53,7 +57,7 @@ export async function resolveMatchedAcronyms(repos: Repositories, question: stri
  * Of the matched acronyms, which ones expand to a real plan name in
  * `rosterPlanNames` (case-insensitive exact match) — these should be
  * treated as if the advisor had named that plan directly (see
- * queryAssist.ts's detectMentionedPlanNames, which this complements: that
+ * productAssist.ts's detectMentionedPlanNames, which this complements: that
  * function matches a plan's full name appearing literally in the question;
  * this one catches the same intent expressed as a habitual shorthand, e.g.
  * "OS" for "Optima Secure").

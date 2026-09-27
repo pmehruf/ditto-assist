@@ -20,6 +20,10 @@ export interface SpecialInstructionFilter {
   instructionType?: SpecialInstructionRow["instructionType"];
   insurerCategoryId?: number;
   isActive?: boolean;
+  /** Health/Term vertical — see special_instructions.domain's schema.ts
+   * comment. Omitted = every domain (the admin table's own listing, which
+   * itself switches domain via a toggle and passes this explicitly). */
+  domain?: SpecialInstructionRow["domain"];
 }
 
 /** Data Access Layer for `special_instructions` — Product Assist's
@@ -38,6 +42,7 @@ export class SpecialInstructionsRepository {
     if (filter.instructionType) conditions.push(eq(specialInstructions.instructionType, filter.instructionType));
     if (filter.insurerCategoryId !== undefined) conditions.push(eq(specialInstructions.insurerCategoryId, filter.insurerCategoryId));
     if (filter.isActive !== undefined) conditions.push(eq(specialInstructions.isActive, filter.isActive));
+    if (filter.domain !== undefined) conditions.push(eq(specialInstructions.domain, filter.domain));
     return this.db
       .select()
       .from(specialInstructions)
@@ -45,17 +50,20 @@ export class SpecialInstructionsRepository {
       .orderBy(desc(specialInstructions.updatedAt), asc(specialInstructions.topic));
   }
 
-  /** Every active instruction, for query-time matching — see
+  /** Every active instruction for ONE domain, for query-time matching — see
    * src/server/knowledgeBase/specialInstructions.ts. Deliberately fetches
-   * ALL active rows rather than pre-filtering by scope in SQL: this table
-   * is admin-curated and expected to stay small (tens, not thousands of
-   * rows), topic relevance has to be computed in JS via embedding cosine
-   * similarity anyway (pgvector isn't used for ranking here, just storage),
-   * and doing the scope+topic resolution together in one place keeps the
-   * specificity-ladder and conflict-detection logic auditable in one
-   * function instead of split across SQL and JS. */
-  async listActive(): Promise<SpecialInstructionRow[]> {
-    return this.db.select().from(specialInstructions).where(eq(specialInstructions.isActive, true));
+   * ALL active rows for that domain rather than pre-filtering by scope in
+   * SQL too: this table is admin-curated and expected to stay small (tens,
+   * not thousands of rows), topic relevance has to be computed in JS via
+   * embedding cosine similarity anyway (pgvector isn't used for ranking
+   * here, just storage), and doing the scope+topic resolution together in
+   * one place keeps the specificity-ladder and conflict-detection logic
+   * auditable in one function instead of split across SQL and JS. */
+  async listActive(domain: SpecialInstructionRow["domain"]): Promise<SpecialInstructionRow[]> {
+    return this.db
+      .select()
+      .from(specialInstructions)
+      .where(and(eq(specialInstructions.isActive, true), eq(specialInstructions.domain, domain)));
   }
 
   async get(id: number): Promise<SpecialInstructionRow | undefined> {

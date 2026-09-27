@@ -14,6 +14,7 @@ function acronymRow(overrides: Partial<KbAcronymRow> = {}): KbAcronymRow {
     acronym: "OS",
     expansion: "Optima Secure",
     notes: null,
+    domain: "Health",
     isActive: true,
     createdBy: "test",
     updatedBy: "test",
@@ -24,48 +25,56 @@ function acronymRow(overrides: Partial<KbAcronymRow> = {}): KbAcronymRow {
 }
 
 function reposWith(rows: KbAcronymRow[]): Repositories {
-  return { kbAcronyms: { listActive: async () => rows.filter(r => r.isActive) } } as unknown as Repositories;
+  return {
+    kbAcronyms: { listActive: async (domain: KbAcronymRow["domain"]) => rows.filter(r => r.isActive && r.domain === domain) },
+  } as unknown as Repositories;
 }
 
 describe("resolveMatchedAcronyms", () => {
   it("returns nothing when the table is empty", async () => {
-    const matches = await resolveMatchedAcronyms(reposWith([]), "What is the bonus in OS?");
+    const matches = await resolveMatchedAcronyms(reposWith([]), "What is the bonus in OS?", "Health");
     expect(matches).toHaveLength(0);
   });
 
   it("matches a whole-word, case-insensitive acronym in the question", async () => {
-    const matches = await resolveMatchedAcronyms(reposWith([acronymRow()]), "what's the bonus in os?");
+    const matches = await resolveMatchedAcronyms(reposWith([acronymRow()]), "what's the bonus in os?", "Health");
     expect(matches).toHaveLength(1);
     expect(matches[0]).toEqual({ acronym: "OS", expansion: "Optima Secure", notes: null });
   });
 
   it("does not match a substring occurrence — word boundaries only", async () => {
-    const matches = await resolveMatchedAcronyms(reposWith([acronymRow()]), "What does this COST, and how do OSes differ?");
+    const matches = await resolveMatchedAcronyms(reposWith([acronymRow()]), "What does this COST, and how do OSes differ?", "Health");
     expect(matches).toHaveLength(0);
   });
 
   it("does not match when the acronym is absent from the question", async () => {
-    const matches = await resolveMatchedAcronyms(reposWith([acronymRow()]), "What is the room rent limit?");
+    const matches = await resolveMatchedAcronyms(reposWith([acronymRow()]), "What is the room rent limit?", "Health");
     expect(matches).toHaveLength(0);
   });
 
   it("skips inactive acronyms", async () => {
-    const matches = await resolveMatchedAcronyms(reposWith([acronymRow({ isActive: false })]), "What is the bonus in OS?");
+    const matches = await resolveMatchedAcronyms(reposWith([acronymRow({ isActive: false })]), "What is the bonus in OS?", "Health");
     expect(matches).toHaveLength(0);
   });
 
   it("matches multiple distinct acronyms in one question", async () => {
     const rows = [acronymRow(), acronymRow({ id: 2, acronym: "CBB", expansion: "Cumulative Bonus Super" })];
-    const matches = await resolveMatchedAcronyms(reposWith(rows), "Does OS include CBB?");
+    const matches = await resolveMatchedAcronyms(reposWith(rows), "Does OS include CBB?", "Health");
     expect(matches.map(m => m.acronym).sort()).toEqual(["CBB", "OS"]);
   });
 
   it("carries the notes field through when present", async () => {
     const matches = await resolveMatchedAcronyms(
       reposWith([acronymRow({ notes: "HDFC ERGO only" })]),
-      "What is the bonus in OS?"
+      "What is the bonus in OS?",
+      "Health"
     );
     expect(matches[0].notes).toBe("HDFC ERGO only");
+  });
+
+  it("does not match an acronym from a different domain", async () => {
+    const matches = await resolveMatchedAcronyms(reposWith([acronymRow({ domain: "Term" })]), "What is the bonus in OS?", "Health");
+    expect(matches).toHaveLength(0);
   });
 });
 

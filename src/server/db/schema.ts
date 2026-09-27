@@ -98,7 +98,23 @@ export const announcementTypeEnum = pgEnum("announcement_type", [
 // and everyone else (no tags, or tagged BOTH Health and Term) sees both.
 // Defaults to "Health" so every pre-existing announcement (posted before
 // this concept existed) is retroactively tagged Health, per spec.
+//
+// NOTE: this enum is also reused (unchanged, strictly binary) as the
+// Health/Term "domain" column type on kb_categories, kb_playbook_plan_facts,
+// special_instructions, product_assist_unresolved_queries, and kb_acronyms —
+// all of which must never accept a "Both" value for Product Assist's
+// domain-isolation logic (see productAssist.ts). That's why the "Both
+// Advisors" audience option added below (2026-09) lives on a brand-new,
+// dedicated enum instead of being added as a third value here.
 export const announcementTeamEnum = pgEnum("announcement_team", ["Health", "Term"]);
+
+// Dedicated to announcements.team only — see the note above for why this
+// isn't just a third value on announcementTeamEnum. "Both" means the
+// announcement is visible to Health advisors and Term advisors alike (in
+// addition to advisors with no/mixed team tags, who already see
+// everything), letting the Announcement Manager post one common
+// announcement instead of two near-duplicates.
+export const announcementAudienceEnum = pgEnum("announcement_audience", ["Health", "Term", "Both"]);
 
 export const announcements = pgTable("announcements", {
   id: serial("id").primaryKey(),
@@ -110,7 +126,7 @@ export const announcements = pgTable("announcements", {
   type: announcementTypeEnum("type").default("QA Announcement"),
   validTillDate: date("valid_till_date"),
   title: text("title"),
-  team: announcementTeamEnum("team").notNull().default("Health"),
+  team: announcementAudienceEnum("team").notNull().default("Health"),
   // Distinct from effectiveDate (when the policy/rule described actually
   // kicks in — can be future-dated) and from createdAt (an exact server
   // timestamp). This is the admin-editable "posted on" date shown to
@@ -207,11 +223,22 @@ export const users = pgTable("users", {
   tactId: varchar("tact_id", { length: 64 }).notNull(),
   tier: userTierEnum("tier").notNull().default("General"),
   status: userStatusEnum("status").notNull().default("Active"),
-  // Schema-only for now (not yet populated/displayed) — createdAt is set on
-  // insert; lastLogin stays null until a follow-up wires the OAuth callback
-  // to stamp it on each sign-in.
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Stamped on every successful Google OAuth sign-in (server.ts's callback
+  // route) — was schema-only/never wired until the same callback started
+  // also persisting `picture` below (2026-09-02), at which point stamping
+  // this in the same UPDATE cost nothing extra.
   lastLogin: timestamp("last_login", { withTimezone: true }),
+  // The signed-in Google account's profile photo URL, captured from the ID
+  // token's `picture` claim on every login (server.ts's OAuth callback) and
+  // overwritten each time — so this is always that person's CURRENT Google
+  // avatar as of their last sign-in, not a one-time snapshot. Null for a
+  // user who has never signed in yet (e.g. an advisor added to the
+  // directory but who hasn't logged in themselves), or whose Google account
+  // has no photo — callers fall back to an initials avatar. Used by Team
+  // Tracker's Guide/Mentor picker (MentorGuideList) to show a real photo
+  // per person instead of a generic icon.
+  picture: text("picture"),
   // Skill-domain tags — any subset of "Health" and "Term". Replaces the old
   // single-value advisor_role ("Health advisor"/"Term advisor"/"Both
   // advisor"/"Manager") — see drizzle/0026_advisor_tags.sql. Empty array =
@@ -847,13 +874,18 @@ export type NewPageVisibilityRow = typeof pageVisibility.$inferInsert;
 // seeding and behaves exactly as it does today until a Developer explicitly
 // overrides it.
 //
-// Deliberately does NOT cover the 3 ids in constants/featurePermissions.ts's
-// DEVELOPER_ONLY_FEATURES set ("owner_controls", "connections", "smoke_test")
-// — those stay a hardcoded hard-gate checked before this table is ever
-// consulted (see hasAccess() in App.tsx), specifically so they can never
-// leak to a lower tier via a stale/incomplete permission list. The PUT
-// route below also refuses to write an override row for those 3 ids, so
-// the two mechanisms can't drift out of sync.
+// Through 2026-08 this table deliberately did NOT cover the ids in
+// constants/featurePermissions.ts's DEVELOPER_ONLY_FEATURES set
+// ("owner_controls", "connections", "smoke_test", "product_assist_quota")
+// — those stayed a hardcoded hard-gate checked before this table was ever
+// consulted (see hasAccess() in App.tsx), specifically so they could never
+// leak to a lower tier via a stale/incomplete permission list, and the PUT
+// route below refused to write an override row for them.
+//
+// As of 2026-09, DEVELOPER_ONLY_FEATURES is an empty Set (see
+// featurePermissions.ts's doc comment for why) — all four ids are now
+// ordinary governed features whose General/Admin access this table can
+// override like any other, and the PUT route no longer special-cases them.
 // ─────────────────────────────────────────────────────────────────────────
 export const featureAccessLevelEnum = pgEnum("feature_access_level", ["None", "Viewer", "Editor"]);
 
@@ -882,26 +914,36 @@ export type NewFeatureAccessOverrideRow = typeof featureAccessOverrides.$inferIn
 // departments — purely organizational metadata (Advisory, QA, Operations,
 // etc.), managed from the "Departments" tab on Access Control Center.
 // Introduced with the Access Control system (2026-08) alongside
-// feature_access_overrides above, but deliberately UNRELATED to it: a
-// user's department has zero effect on what they can do. It exists so the
-// org structure can be represented and evolve (Developer can add/rename/
-// deactivate departments, Admin+Developer can assign a user to one — see
-// users.department_id below) without the authorization model assuming that
-// structure implies any permission. If department-scoped permissions are
-// ever genuinely needed, that's a deliberate, separate, auditable follow-up
-// — not something this table does implicitly.
+// feature_access_overrides above, but deliberately UNRELATED to it at the
+// time: a user's department on its own has never granted or denied
+// anything — assigning someone to a department doesn't imply a permission
+// by itself. It exists so the org structure can be represented and evolve
+// (Developer can add/rename/deactivate/delete departments, Admin+Developer
+// can assign a user to one — see users.department_id below) independently
+// of the authorization model.
+//
+// UPDATE (Access Control Center Phase 3, 2026-09): department-scoped
+// permissions are now a real, deliberate, auditable feature — an Access
+// Rule (see `accessRules` below) can condition on departmentId, and
+// Product Assist's eligibility settings can require one. A department
+// still grants nothing on its own; it only matters if something else
+// (an Access Rule, Product Assist eligibility) is explicitly configured to
+// key off it.
 //
 // No seed rows: every department a Developer hasn't explicitly created
 // simply doesn't exist yet, and every existing user starts with
 // department_id = null ("unassigned") — there is no current organizational
 // data to migrate into this.
 //
-// Deactivating (active=false) rather than deleting is the only path exposed
-// in the UI, so a department already referenced by users.department_id
-// never needs its members silently reassigned — they keep pointing at the
-// (now-inactive) department, which the UI can grey out, and reactivating
-// restores it cleanly. onDelete: "set null" on the FK below is only a
-// defensive backstop for a row removed directly in the database.
+// Deactivating (active=false) was originally the only removal path exposed
+// in the UI; Phase 4 (2026-09) added a real delete, gated behind a
+// dependency check (src/server/accessControl/catalogDependencies.ts) since
+// deleting a department a live Access Rule or Product Assist's eligibility
+// setting still references would silently widen/break that configuration —
+// see that module's header comment. Deactivating remains available and is
+// still the safer default for a department with users still assigned to
+// it. onDelete: "set null" on the FK below is the DB-level backstop either
+// way (a delete can never corrupt a referencing row).
 // ─────────────────────────────────────────────────────────────────────────
 export const departments = pgTable("departments", {
   id: serial("id").primaryKey(),
@@ -922,21 +964,29 @@ export type NewDepartmentRow = typeof departments.$inferInsert;
 // 2026-08). Deliberately named "org_teams" in the database (never "teams")
 // to avoid any confusion with the pre-existing, completely unrelated
 // announcement_team enum (Health/Term skill-domain, see the `announcements`
-// table above) — the UI still just calls this "Team".
+// table above). The UI called this "Team" through 2026-09; renamed to
+// "Business Unit" in the UI only (2026-09) — column/table names, FKs, and
+// every other identifier here are unchanged, so this comment block still
+// applies verbatim.
 //
 // Same shape and same reasoning as `departments` above: a freely-managed
-// catalog (Developer/Platform Admin can add/rename/deactivate), no seed
-// membership assumed for existing users, deactivate-not-delete as the only
-// removal path. Seeded here with Bliss/Falcon/Central as convenience
-// starting rows ONLY — still a real, editable table, not a hardcoded enum,
-// specifically so a 4th team can be added later without a migration.
+// catalog (Developer/Platform Admin can add/rename/deactivate/delete — see
+// departments' comment for the Phase 4 delete note, identical here), no
+// seed membership assumed for existing users. Seeded here with Bliss/
+// Falcon/Central as convenience starting rows ONLY — still a real, editable
+// table, not a hardcoded enum, specifically so a 4th team can be added
+// later without a migration.
 //
-// UNLIKE department_id, this is meant to eventually participate in actual
-// data-scoping decisions (which pages someone can see, once that
-// enforcement is built — not yet, as of this migration: see roles/
-// user_relationships below for the rest of that foundation). It carries no
-// access effect on its own today; it is inert metadata until a future page
-// explicitly consults it, exactly like department_id already is.
+// This comment originally anticipated org_teams eventually participating
+// in row-level data-scoping decisions (which OTHER users' records someone
+// can see) — that specific mechanism is still unbuilt (still a proposal in
+// DATA_SCOPING_ARCHITECTURE.md, deferred as Phase 6 of
+// ACCESS_CONTROL_CENTER_PHASE_PLAN.md). Separately, and sooner than that:
+// Access Control Center Phase 3 (2026-09) DID wire org_teams into
+// feature-level access — an Access Rule (see `accessRules` below) can
+// condition on orgTeamId, and Product Assist's eligibility settings can
+// require one. Same caveat as departments: a team grants nothing on its
+// own, only if something else is configured to key off it.
 // ─────────────────────────────────────────────────────────────────────────
 export const orgTeams = pgTable("org_teams", {
   id: serial("id").primaryKey(),
@@ -955,7 +1005,9 @@ export type NewOrgTeamRow = typeof orgTeams.$inferInsert;
 // ─────────────────────────────────────────────────────────────────────────
 // roles — job-function role (Advisor, Mentor, Guide, Ops, ...), Access
 // Control system Phase 2 (2026-08). Same shape/reasoning as departments and
-// org_teams above (freely-managed catalog, deactivate-not-delete).
+// org_teams above (freely-managed catalog; Developer/Platform Admin can
+// add/rename/deactivate, and Access Control Center Phase 4 added a real,
+// dependency-checked delete — see departments' comment).
 //
 // Deliberately a NEW, independent field — NOT the same thing as `tier`
 // (General/Admin/Platform Admin/Developer, an access level) and NOT the
@@ -991,27 +1043,77 @@ export type NewRoleRow = typeof roles.$inferInsert;
 // "extensible without another migration" reasoning as org_teams/roles.
 // Seeded with "Mentor" and "Guide" to match the concrete example given when
 // this system was designed (a mentor scoped to their mapped mentees).
+//
+// departmentId (added migration 0071) optionally scopes a group to one
+// Department — e.g. "Mentor" linked to the "Mentor Excellence" department.
+// When set, the Groups tab's roster builder narrows its "owner"
+// picker to that department's members instead of showing everyone; purely a
+// UI convenience, this has no effect on access. NULL (the default) means
+// unscoped, the original behavior. ON DELETE SET NULL, matching every other
+// FK onto departments — deleting a department un-links the group rather
+// than blocking the delete.
+//
+// Renamed from relationship_types (migration 0078, 2026-09) — purely a
+// naming change, same table/rows/FKs otherwise.
 // ─────────────────────────────────────────────────────────────────────────
-export const relationshipTypes = pgTable("relationship_types", {
+// Group Tier (2026-09, migration 0082) — deliberately its OWN, narrower enum
+// rather than reusing userTierEnum: a group's tier selects WHICH tier of
+// member the Group Access Restriction ceiling applies to (see groupTier
+// column below and resolveAccess()'s groupAllowedFeatureIds gate in
+// accessRuleEvaluator.ts), and "Developer" must never be a legal value there
+// — Developer stays permanently exempt from Group Access Restriction no
+// matter how a group is configured.
+export const groupTierEnum = pgEnum("group_tier", ["General", "Admin", "Platform Admin"]);
+
+export const relationshipGroups = pgTable("relationship_groups", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
   active: boolean("active").notNull().default(true),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  // Group Access Restriction (2026-09) — see group_tool_access below.
+  // Whether THIS group's owner->subject rows count as group-owner ->
+  // group-member mappings for that feature. Deliberately a flag an admin
+  // opts each group into, not a match on the group's name: this table
+  // already carries Mentor/Guide rows populated for nearly every advisor
+  // via the Advisor Directory sync (for QA Dashboard/Team Tracker
+  // attribution — see GroupsManagement.tsx), so if EVERY group
+  // activated the ceiling, shipping this would have silently blocked those
+  // tools for most of the advisor base the moment it deployed. An admin can
+  // name a group anything ("Trainer", "Coach", "New Hires") and flip this
+  // on for it from the Groups tab; nothing activates until they do,
+  // and Mentor/Guide stay inert unless someone deliberately opts them in
+  // too.
+  usedForGroupAccess: boolean("used_for_group_access").notNull().default(false),
+  // Group Tier (2026-09, migration 0082) — which tier of member THIS
+  // group's usedForGroupAccess ceiling restricts. Independent of the
+  // group's owner's own tier/permissions: an Admin can own and manage a
+  // "General"-tier group (restricting its General-tier members) exactly as
+  // before, or a group can instead be configured to restrict its
+  // Admin-tier or Platform-Admin-tier members. A member whose own tier
+  // doesn't match the group's groupTier is entirely unaffected by that
+  // group's restriction. Defaults to "General" so every pre-existing group
+  // (created before this column existed) keeps restricting General-tier
+  // members exactly as it always did — this default is what makes adding
+  // Group Tier fully backward-compatible with zero data migration. See
+  // getGroupAllowedFeatureIds()'s callerTier parameter in
+  // evaluateAccess.ts for where the match is applied.
+  groupTier: groupTierEnum("group_tier").notNull().default("General"),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  nameUnique: uniqueIndex("relationship_types_name_unique").on(table.name),
+  nameUnique: uniqueIndex("relationship_groups_name_unique").on(table.name),
 }));
 
-export type RelationshipTypeRow = typeof relationshipTypes.$inferSelect;
-export type NewRelationshipTypeRow = typeof relationshipTypes.$inferInsert;
+export type RelationshipGroupRow = typeof relationshipGroups.$inferSelect;
+export type NewRelationshipGroupRow = typeof relationshipGroups.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // user_relationships — explicit person-to-person mappings (e.g. "this
 // Mentor's mentees are exactly these advisors"), Access Control system
 // Phase 2 (2026-08). This is the concrete answer to "mapped to that
 // particular member" from the original spec: a generic (owner, subject,
-// relationship type) triple rather than a single hardcoded "reports to"
+// relationship group) triple rather than a single hardcoded "reports to"
 // field, so one person can hold multiple relationship kinds at once (e.g.
 // mentored by one person AND guided by another) without another migration.
 //
@@ -1030,15 +1132,72 @@ export const userRelationships = pgTable("user_relationships", {
   id: serial("id").primaryKey(),
   ownerEmail: varchar("owner_email", { length: 320 }).notNull().references(() => users.email, { onDelete: "cascade" }),
   subjectEmail: varchar("subject_email", { length: 320 }).notNull().references(() => users.email, { onDelete: "cascade" }),
-  relationshipTypeId: integer("relationship_type_id").notNull().references(() => relationshipTypes.id, { onDelete: "restrict" }),
+  relationshipGroupId: integer("relationship_group_id").notNull().references(() => relationshipGroups.id, { onDelete: "restrict" }),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  tripleUnique: uniqueIndex("user_relationships_triple_unique").on(table.ownerEmail, table.subjectEmail, table.relationshipTypeId),
+  tripleUnique: uniqueIndex("user_relationships_triple_unique").on(table.ownerEmail, table.subjectEmail, table.relationshipGroupId),
 }));
 
 export type UserRelationshipRow = typeof userRelationships.$inferSelect;
 export type NewUserRelationshipRow = typeof userRelationships.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// group_tool_access — 2026-09, the Groups tab's tool restriction. A
+// "restricted member" is anyone who is the SUBJECT of an active
+// user_relationships row whose relationship group has
+// relationship_groups.usedForGroupAccess = true (an admin-controlled flag,
+// toggled from the Groups tab — see that column's own comment for why
+// this is a flag rather than a match on the group's name). Once someone is
+// a restricted member this way, their own tier (General, almost always) no
+// longer gets them the normal default set of workspace tools:
+// accessRuleEvaluator.ts's resolveAccess() caps every
+// GROUP_RESTRICTABLE_FEATURES id (featurePermissions.ts — the five original
+// Advisor Zone tools plus, since 2026-09, the Quality and Library pages) to
+// whatever rows exist here for THEIR relationship group, and a granted row
+// resolves to COMPLETE ("Editor") access to that feature, not just the
+// tier's own default level — every feature not in GROUP_RESTRICTABLE_FEATURES,
+// and every admin page, is completely unaffected by this table, and the
+// restriction never applies above General tier (see that constant's own
+// comment for the full reasoning).
+//
+// One row per (relationship group, tool) that group's members may use — a
+// group with zero rows here (correctly) sees none of the restrictable tools
+// yet, fail-closed by design until an admin configures something on the
+// Groups tab (Access Control Center).
+//
+// PERMISSIONS ARE GROUP-LEVEL, NOT OWNER-LEVEL (corrected 2026-09, migration
+// 0081): relationshipGroupId is the key, not who currently owns the group.
+// An owner is purely a user_relationships-level attribute — the person who
+// manages a group's roster (its Owner column on the Group Level Access
+// page) — and has zero bearing on what that group's members can access.
+// One owner can manage several distinct groups, each with its own,
+// independently configured tool set; before migration 0081 this table was
+// keyed by groupOwnerEmail instead, which meant every group a single owner
+// managed was forced to share one tool set — that was the bug this column
+// fixes. Every member under the same relationshipGroupId shares that one
+// group-wide tool set; there is deliberately no per-member override,
+// matching this feature's original framing (a whole group, not individual
+// members within it).
+//
+// Renamed from training_cohort_tool_access (migration 0080, 2026-09) —
+// trainer_email became group_owner_email; migration 0081 (2026-09) then
+// replaced group_owner_email with relationship_group_id, backfilling each
+// existing owner-level row onto every group that owner managed at the time
+// so existing members' access was unchanged the moment it deployed.
+// ─────────────────────────────────────────────────────────────────────────
+export const groupToolAccess = pgTable("group_tool_access", {
+  id: serial("id").primaryKey(),
+  relationshipGroupId: integer("relationship_group_id").notNull().references(() => relationshipGroups.id, { onDelete: "cascade" }),
+  featureId: text("feature_id").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  groupFeatureUnique: uniqueIndex("group_tool_access_group_feature_unique").on(table.relationshipGroupId, table.featureId),
+}));
+
+export type GroupToolAccessRow = typeof groupToolAccess.$inferSelect;
+export type NewGroupToolAccessRow = typeof groupToolAccess.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // custom_access_grants — per-INDIVIDUAL access overrides for when the
@@ -1075,6 +1234,78 @@ export const customAccessGrants = pgTable("custom_access_grants", {
 
 export type CustomAccessGrantRow = typeof customAccessGrants.$inferSelect;
 export type NewCustomAccessGrantRow = typeof customAccessGrants.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// access_rules — the condition-based rule engine for feature access (Access
+// Control Center Phase 3, 2026-09; see docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md
+// Phase 1). Generalizes custom_access_grants' per-INDIVIDUAL model to
+// per-POPULATION: "anyone whose Team/Department/Role/Product Tag matches
+// gets this level", instead of naming one person's email.
+//
+// resourceKey reuses the existing featurePermissions id space (same
+// identifier as feature_access_overrides.featureId/page_visibility.featureId)
+// — deliberately NOT a new catalog, so an Access Rule targets the exact same
+// resource a Developer already sees on the Permissions tab. This is
+// different from DATA_SCOPING_ARCHITECTURE.md's proposed (still unbuilt)
+// data_scope_rules.resource_key, which solves a different problem (row-level
+// filtering of OTHER users' records, not "can I use this feature") and is
+// kept on its own table by design — see that doc's §4.
+//
+// Each condition column is independently nullable = "don't care" for that
+// dimension, exactly like DATA_SCOPING_ARCHITECTURE.md §3.2's caller-
+// eligibility columns (structured columns, not a JSON condition tree — same
+// decision, same reasoning: cheap admin UI, additive escape hatch later if
+// ever needed). All non-null conditions on one rule are AND'd together;
+// multiple active rules for the same resourceKey are OR'd (any matching rule
+// grants its level) — the same "list of independently-active rows, any
+// match wins" pattern feature_access_overrides/custom_access_grants already
+// use, so this stays consistent with the rest of the admin surface rather
+// than introducing a boolean-expression language.
+//
+// grantedLevel reuses feature_access_level (None/Viewer/Editor) — same
+// bundle model as everywhere else in this app; Access Rules do not grant
+// fine-grained capabilities beyond that, matching how custom_access_grants
+// already works.
+//
+// Shipped inert in Phase 1; Access Control Center Phase 3 (2026-09) is what
+// actually wired evaluateAccess()/resolveAccess() into hasAccess()/
+// requireFeatureAccess(), so rows here are live, not inert. Effective level
+// is additive/grant-only, same as custom_access_grants — an Access Rule can
+// only RAISE a caller's level above their tier-resolved default, never
+// lower it, and can never change `tier` itself (Team/Department/Role/
+// Product Tag must never elevate someone to Admin/Platform Admin/
+// Developer — see resolveAccess() in src/accessRuleEvaluator.ts).
+//
+// Unlike departments/org_teams/roles (which Phase 4 gave a real,
+// dependency-checked delete endpoint — see departments' comment above),
+// access_rules still has no delete endpoint as of Phase 5: `active=false`
+// is the only removal path for a rule today. Deliberate, not an oversight
+// — deactivating a rule is reversible and self-contained (no dependents to
+// check, unlike deleting a department/team/role that other rows still
+// reference).
+// ─────────────────────────────────────────────────────────────────────────
+export const accessRules = pgTable("access_rules", {
+  id: serial("id").primaryKey(),
+  resourceKey: text("resource_key").notNull(),
+  name: text("name").notNull(),
+  active: boolean("active").notNull().default(true),
+  // Caller-eligibility conditions — null on any of these four means "don't
+  // care about this dimension" for this rule. All non-null ones must match
+  // simultaneously (AND).
+  orgTeamId: integer("org_team_id").references(() => orgTeams.id, { onDelete: "set null" }),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  roleId: integer("role_id").references(() => roles.id, { onDelete: "set null" }),
+  // Matches against one entry of the caller's users.tags array (e.g.
+  // "Health"). Free text, not a FK, mirroring how tags themselves are a
+  // free text[] column on users, not a catalog table.
+  productTag: text("product_tag"),
+  grantedLevel: featureAccessLevelEnum("granted_level").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AccessRuleRow = typeof accessRules.$inferSelect;
+export type NewAccessRuleRow = typeof accessRules.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // qa_dashboard_google_connection — the QA Dashboard's stored Google OAuth
@@ -1116,6 +1347,23 @@ export const kbPlaybookConnection = pgTable("kb_playbook_connection", {
 export type KbPlaybookConnectionRow = typeof kbPlaybookConnection.$inferSelect;
 export type NewKbPlaybookConnectionRow = typeof kbPlaybookConnection.$inferInsert;
 
+// term_playbook_connection — the Term Product Playbook Google Sheet's stored
+// OAuth grant (2026-09). Same shape/purpose as kb_playbook_connection above,
+// kept as its own table since the Term Playbook Sheet has a different
+// owner/account than the Health one — same reasoning as term_faq_connection
+// vs kb_faq_connection. Encrypted at rest — see
+// src/server/knowledgeBase/termPlaybookTokenCrypto.ts.
+export const termPlaybookConnection = pgTable("term_playbook_connection", {
+  id: text("id").primaryKey().default("default"),
+  connectedEmail: text("connected_email").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedBy: text("connected_by").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type TermPlaybookConnectionRow = typeof termPlaybookConnection.$inferSelect;
+export type NewTermPlaybookConnectionRow = typeof termPlaybookConnection.$inferInsert;
+
 // qa_dashboard_roles — who holds Admin/Guide/Mentor access on the QA
 // Dashboard (src/server/qaDashboard/qaRoles.ts), managed from the "QA
 // Dashboard Access" tab in User Directory & Management. Replaces the former
@@ -1140,12 +1388,28 @@ export const qaDashboardRoles = pgTable("qa_dashboard_roles", {
 export type QaDashboardRoleRow = typeof qaDashboardRoles.$inferSelect;
 export type NewQaDashboardRoleRow = typeof qaDashboardRoles.$inferInsert;
 
-// qa_evaluation_history — one-time archival import of QA evaluation rows
-// (Checked Date, Mistake Date, TACT ID, Advisor, Chat ID, Domain, Score)
-// covering June 2025-May 2026, a period the live master_feedback_dump
-// Google Sheet (src/server/qaDashboard/qaDataEngine.ts) no longer holds —
-// confirmed before building this table, so there's no overlap/double-count
-// risk with the live Sheet. Imported via scripts/importQaEvaluationHistory.ts.
+// qa_evaluation_history — one-time archival imports of QA evaluation rows
+// (Checked Date, Mistake Date, TACT ID, Advisor, Chat ID, Domain, Score),
+// stitched in alongside the live master_feedback_dump Google Sheet
+// (src/server/qaDashboard/qaDataEngine.ts) by getMergedFeedbackDumpRows() so
+// score/blunder aggregates cover rows the Sheet itself is missing.
+//
+// Two batches so far, with two different overlap situations:
+//   - The original import (source_batch NULL), June 2025-May 2026 —
+//     confirmed before that table/script existed to be a period the live
+//     Sheet never held at all, so there was no overlap/double-count risk by
+//     construction. scripts/importQaEvaluationHistory.ts.
+//   - The 2026-06 gap-fill batch (source_batch "2026-06-manual-backfill"),
+//     covering June 2026 rows the freshly-launched live Sheet is missing —
+//     this one DOES overlap the Sheet's own June 2026 date range by design
+//     (the whole point is filling gaps within a range the Sheet also
+//     covers), so the "no overlap" guarantee no longer holds by
+//     construction for every batch. getMergedFeedbackDumpRows() instead
+//     enforces it at read time: any archive row matching a live Sheet row on
+//     (checked date, TACT ID, chat ID, domain, score) is dropped from the
+//     merge, so a row present in both never double-counts, including if the
+//     Sheet is later completed with the very rows this batch fills in.
+//     scripts/importJune2026QaBackfill.ts.
 //
 // checkedDate/mistakeDate are stored as "yyyy-MM-dd" text rather than a
 // native `date` column, matching the rest of the QA Dashboard's date-string
@@ -1153,14 +1417,9 @@ export type NewQaDashboardRoleRow = typeof qaDashboardRoles.$inferInsert;
 // directly into sheetsClient.ts's dateStringToSerial() with no
 // driver-specific date-object handling to reconcile.
 //
-// qaDataEngine.ts's getMergedFeedbackDumpRows() reads this table and
-// stitches its rows in alongside the live Sheet's rows (converted to the
-// same serial-number cell-array shape) before any of the existing
-// aggregation/reporting functions run, so a date range that falls in this
-// window returns real data instead of nothing. This table only carries the
-// six identification columns above — no dispute/escalation/feedback-text
-// columns — so archive rows never appear in dispute/escalation review
-// listings, only in score aggregates.
+// This table only carries the six identification columns above — no
+// dispute/escalation/feedback-text columns — so archive rows never appear in
+// dispute/escalation review listings, only in score aggregates.
 export const qaEvaluationHistory = pgTable(
   "qa_evaluation_history",
   {
@@ -1172,6 +1431,11 @@ export const qaEvaluationHistory = pgTable(
     chatId: text("chat_id").notNull(),
     domain: text("domain").notNull(), // "CHAT" | "FIRST_CALL" | "PAYMENT_CALL"
     score: integer("score"), // nullable — ~31 source rows have no recorded score
+    // Nullable — NULL means the original June 2025-May 2026 import (which
+    // predates this column). Every import since stamps its own id here so
+    // deleteByBatch() can wipe and re-import just one batch (see the table
+    // comment above) instead of the whole table.
+    sourceBatch: text("source_batch"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -1229,18 +1493,48 @@ export type NewFlaggedIssueRow = typeof flaggedIssues.$inferInsert;
 // and above generic PDF/web content in that same precedence — see
 // productAssist.ts's SYSTEM_INSTRUCTION SOURCE PRECEDENCE list.
 // ─────────────────────────────────────────────────────────────────────────
-export const kbCategoryTypeEnum = pgEnum("kb_category_type", ["insurer", "general"]);
+export const kbCategoryTypeEnum = pgEnum("kb_category_type", ["insurer", "general", "fundamentals"]);
 
 // A category is either one insurer's resource bucket (HDFC Ergo, Care
-// Health, ...) or the catch-all "general" bucket (IRDAI, cross-insurer
-// FAQs, etc.). Deliberately just a plain table (not a hardcoded enum of
-// insurer names) so new categories can be added from the admin UI at any
+// Health, ...), the catch-all "general" bucket (IRDAI, cross-insurer
+// FAQs, etc.), or a "fundamentals" bucket (2026-09 — see below).
+// Deliberately just a plain table (not a hardcoded enum of insurer names)
+// so new categories can be added from the admin UI at any
 // time without a migration — the one open requirement from the original
 // ask ("possibility of adding new categories in future").
+//
+// type: "fundamentals" — a dedicated, domain-scoped conceptual-knowledge
+// layer (e.g. "Insurance Fundamentals" for Health, later a separate one for
+// Term — domain keeps the two isolated exactly like every other category)
+// holding background material on how insurance mechanics work and how
+// policy provisions relate to each other, deliberately separate from the
+// catch-all "general" ("General / Others") bucket: unlike "general"
+// resources, which only ever enter retrieval for a "General" question with
+// no insurer selected (see productAssist.ts's resolveEligibleResourceIds),
+// "fundamentals" resources are retrieved via their own always-on, tightly
+// bounded, relevance-thresholded channel (see productAssist.ts's
+// retrieveFundamentalsChunks) regardless of whether an insurer/plan is
+// selected — never blended into the normal Policy Wording -> Prospectus ->
+// Brochure/other staged retrieval, and never treated as authoritative for a
+// product-specific fact (SOURCE PRECEDENCE #5 in SYSTEM_INSTRUCTION). Kept
+// out of resolveEligibleResourceIds's General-question category pool (and
+// out of the plan/insurer-name detectors) for exactly this reason — see
+// that function's own comment.
 export const kbCategories = pgTable("kb_categories", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   type: kbCategoryTypeEnum("type").notNull().default("insurer"),
+  // Which Product Assist/Knowledge Base vertical this category belongs to
+  // (2026-09, Term insurance rollout) — reuses the exact `announcement_team`
+  // enum/values announcements.team already established for the identical
+  // Health/Term skill-domain concept (see that column's comment), rather
+  // than defining a parallel enum with the same two values. A Health-
+  // tagged user only ever sees domain="Health" categories in Product
+  // Assist/Knowledge Base, a Term-tagged user only "Term" ones, and a user
+  // with both tags (or none — same convention as announcements.team) gets
+  // a toggle between them. Every category that existed before this column
+  // was added is a Health insurer/general bucket, hence the default.
+  domain: announcementTeamEnum("domain").notNull().default("Health"),
   sortOrder: integer("sort_order").notNull().default(0),
   // Admin-curated list of this insurer's plan names — the suggestion source
   // for tagging a resource (kb_resources.planTags, 0029) so an admin picks
@@ -1366,6 +1660,16 @@ export const kbPlaybookPlanFacts = pgTable(
   {
     id: serial("id").primaryKey(),
     resourceId: integer("resource_id").notNull().references(() => kbResources.id, { onDelete: "cascade" }),
+    // Which Product Assist vertical these facts belong to (2026-09, Term
+    // Playbook rollout) — same announcement_team enum/reasoning as
+    // kb_categories.domain. Every row already lives under a single
+    // per-domain resourceId (the Health Playbook resource vs the Term
+    // Playbook resource), so this column is a belt-and-suspenders guard
+    // against findMatching()'s cross-resource `listAll()` scan ever
+    // blending a Term plan's facts into a Health answer or vice versa,
+    // rather than the primary isolation mechanism. Every row that existed
+    // before this column was added is Health-authored, hence the default.
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
     // Free text, matched case-insensitively against kb_categories.name at
     // query time (see productAssist.ts) — not a foreign key, since one
     // Playbook tab's plans can span category names that don't exist yet as
@@ -1381,6 +1685,23 @@ export const kbPlaybookPlanFacts = pgTable(
     // status panel.
     sourceTab: text("source_tab").notNull(),
     content: text("content").notNull(),
+    // Cell notes/comments from the source sheet (2026-09, Product Playbook
+    // advisor UI) — the little hover-only annotation Google Sheets attaches
+    // to a cell, captured separately from `content` above rather than
+    // folded into it, since `content` is what's injected verbatim into the
+    // Product Assist prompt (see productAssist.ts's playbookInputs) and
+    // must stay byte-identical to before this feature existed. One entry
+    // per note found: a note on the plan's own header cell (label: "Plan"),
+    // or a note on a specific feature/sub-feature's value cell for this
+    // plan (label: that row's feature/sub-feature label, e.g. "Room Rent —
+    // Single Private Room"). Empty array on every row synced before notes
+    // support existed, or when the sheet simply has no notes for that plan.
+    // See playbookIngest.ts's parseMatrixTab / termPlaybookIngest.ts's
+    // parseTermMatrixTab for how this is populated, and
+    // playbookSheetsClient.ts's fetchPlaybookSheetNotes for how the note
+    // grid itself is fetched (same spreadsheets.readonly OAuth scope
+    // already granted for values — no new consent needed).
+    notes: jsonb("notes").$type<{ label: string; note: string }[]>().notNull().default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -1468,25 +1789,39 @@ export type KbChatMessageRow = typeof kbChatMessages.$inferSelect;
 export type NewKbChatMessageRow = typeof kbChatMessages.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
-// product_assist_logs — TEMPORARY server-side record of Product Assist
-// conversations, added 2026-08 specifically to build a real representative
-// test set for the optimization-review testing strategy (Product Assist
-// Quality-Preserving Optimization Review, Section 6) — Product Assist's
-// normal design deliberately keeps NO server-side record of conversations
-// (see productAssist.ts / ProductAssistPage.tsx's doc comments: history lives
-// only in the advisor's own browser). This table is an explicit, knowingly
-// time-boxed exception to that, gated by the PRODUCT_ASSIST_LOG_ENABLED env
-// flag so it can be turned off once enough real data has been collected —
-// it is not meant to become a permanent record. Rows are periodically
-// pushed to a Google Sheet and deleted from here (see
-// src/server/knowledgeBase/productAssistLogExport.ts), so this table isn't
-// meant to grow indefinitely either.
+// product_assist_logs — server-side record of Product Assist conversations,
+// added 2026-08 to build a real representative test set for the
+// optimization-review testing strategy (Product Assist Quality-Preserving
+// Optimization Review, Section 6) — Product Assist's normal design
+// deliberately keeps NO server-side record of conversations otherwise (see
+// productAssist.ts / ProductAssistPage.tsx's doc comments: chat history
+// itself still lives only in the advisor's own browser; this table exists
+// purely for admin-side quality review and cost/usage visibility). Gated by
+// the PRODUCT_ASSIST_LOG_ENABLED env flag so it can be turned off entirely.
+//
+// PERMANENCE (revised 2026-09): originally time-boxed and deleted from the
+// DB once exported to the connected Google Sheet. Changed to a permanent
+// record on direct user request, specifically so the "AI Usage & Limits" >
+// Usage History admin tab can always expand any row (old or new) to show
+// its full query detail, matching everything the Sheet export already
+// carries — see exportedAt below and productAssistLogExport.ts. The Sheet
+// export is now a periodic COPY (rows are marked exported, never deleted),
+// not a move-and-clear.
 // ─────────────────────────────────────────────────────────────────────────
 export const productAssistLogs = pgTable(
   "product_assist_logs",
   {
     id: serial("id").primaryKey(),
     userEmail: text("user_email").notNull(),
+    // Links this row to the exact product_assist_usage_ledger entry the same
+    // /ask request wrote (2026-09, migration 0067) — lets the Usage History
+    // admin tab look up one usage row's full query detail directly instead
+    // of a fragile timestamp/user match. Nullable: rows written before this
+    // column existed, and any future call path that records usage without
+    // logging (or vice versa), have no link. onDelete: "set null" rather than
+    // cascade — a usage ledger row is never deleted in normal operation, but
+    // this log row's own detail should survive regardless.
+    usageLedgerId: integer("usage_ledger_id").references(() => productAssistUsageLedger.id, { onDelete: "set null" }),
     // Denormalized alongside categoryId (not just a FK) so a row still
     // reads meaningfully in the exported Sheet even if the category is
     // later renamed or deleted from kb_categories.
@@ -1511,10 +1846,27 @@ export const productAssistLogs = pgTable(
     // includes them — nullable since that's not guaranteed on every call.
     inputTokens: integer("input_tokens"),
     outputTokens: integer("output_tokens"),
+    // The actual resolved model Gemini reports back via
+    // response.modelVersion (2026-09, migration 0066) — not just the
+    // GENERATION_MODEL alias productAssist.ts requested, since Google can
+    // route an alias to a specific dated snapshot behind the scenes. Null
+    // for the deterministic Special-Instruction-conflict answer path (see
+    // buildConflictAnswer), where no AI call is made at all.
+    modelName: text("model_name"),
     latencyMs: integer("latency_ms"),
+    // Null = not yet exported to the Sheet (still in the "next export batch"
+    // — see productAssistLogsRepository.ts's listUnexported()). Set once
+    // appendProductAssistLogRows() confirms the append succeeded (2026-09,
+    // migration 0067) — the row itself is never deleted afterward; see this
+    // table's PERMANENCE comment above.
+    exportedAt: timestamp("exported_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("product_assist_logs_created_at_idx").on(table.createdAt)]
+  (table) => [
+    index("product_assist_logs_created_at_idx").on(table.createdAt),
+    index("product_assist_logs_exported_at_idx").on(table.exportedAt),
+    index("product_assist_logs_usage_ledger_id_idx").on(table.usageLedgerId),
+  ]
 );
 
 export type ProductAssistLogRow = typeof productAssistLogs.$inferSelect;
@@ -1543,24 +1895,44 @@ export type ProductAssistLogExportConnectionRow = typeof productAssistLogExportC
 export type NewProductAssistLogExportConnectionRow = typeof productAssistLogExportConnection.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
-// Product Assist Credit & Usage Management (2026-08). A NEW administrative
-// quota layer sitting entirely around the existing Product Assist AI call —
-// it does not read from or write to product_assist_logs above (that table
-// is explicitly temporary/disableable and written fire-and-forget, so it
-// cannot be trusted as quota's source of truth). Four tables:
+// Product Assist Credit & Usage Management (2026-08, eligibility model
+// revised 2026-09-07 — "multiple eligibility groups, no trial fallback").
+// A NEW administrative quota layer sitting entirely around the existing
+// Product Assist AI call — it does not read from or write to
+// product_assist_logs above (that table is explicitly temporary/disableable
+// and written fire-and-forget, so it cannot be trusted as quota's source of
+// truth). Five tables:
 //
-//   - product_assist_quota_settings: single global settings row (default
-//     daily/monthly credit limits, the "everyone else" trial allotment,
-//     the token->credit conversion rate, warning threshold, company
-//     monthly budget, and API pricing) — every knob a Developer/Platform
-//     Admin can tune from the "AI Usage & Limits" Settings tab without a
-//     code change or redeploy.
+//   - product_assist_quota_settings: single global settings row (the
+//     token->credit conversion rate, warning threshold, company monthly
+//     budget, and API pricing) — every knob a Developer/Platform Admin can
+//     tune from the "AI Usage & Limits" Settings tab without a code change
+//     or redeploy. As of 2026-09-07 this table no longer holds any
+//     eligibility or default-credit fields — those moved to
+//     product_assist_eligibility_groups below, since a single global
+//     Department/Team/Role/Tag rule with one shared allowance couldn't
+//     express "give this other group of users a different limit" without
+//     overwriting the first group.
+//   - product_assist_eligibility_groups: an ordered list of admin-defined
+//     groups, each with its own optional Department/Team/Role/Tag matching
+//     conditions (same "null = don't care about this dimension, AND across
+//     the ones that are set" semantics as access_rules — see
+//     ruleMatchesCaller() in accessRuleEvaluator.ts, which this mirrors)
+//     and its own daily/monthly credit limits (each independently nullable
+//     = uncapped on that dimension). A user can match more than one group;
+//     see resolveMatchedGroups()/deriveGroupLimits() in
+//     productAssistQuota.ts for how the limits combine (highest wins,
+//     independently per dimension). A user matching NO group gets zero
+//     monthly credits (blocked) — as of 2026-09-07 there is no automatic
+//     "everyone else" trial allotment; an admin who wants to give a
+//     specific non-matching user access uses the per-user override or
+//     extra-credit mechanisms below, or a deliberately blank/wildcard
+//     group.
 //   - product_assist_user_quota_overrides: sparse, one row per user who has
 //     ANY override set (custom daily/monthly limit, limits disabled
 //     entirely, or explicit unlimited access). No row = "use the computed
-//     default for this user's eligibility bucket" — see
-//     resolveQuotaBucket() in productAssistQuota.ts for how tier/tags/role
-//     decide that bucket.
+//     default from this user's matched eligibility group(s)" — see
+//     resolveMatchedGroups() in productAssistQuota.ts.
 //   - product_assist_extra_credit_grants: append-only ledger of admin
 //     top-ups (and removals/reductions, recorded as a negative-amount
 //     entry rather than mutating a past row). Grants never expire BY
@@ -1579,11 +1951,6 @@ export type NewProductAssistLogExportConnectionRow = typeof productAssistLogExpo
 // ─────────────────────────────────────────────────────────────────────────
 export const productAssistQuotaSettings = pgTable("product_assist_quota_settings", {
   id: text("id").primaryKey().default("default"),
-  defaultDailyCredits: integer("default_daily_credits").notNull().default(30),
-  defaultMonthlyCredits: integer("default_monthly_credits").notNull().default(250),
-  // The small monthly-only allotment for every user NOT in the eligible
-  // Health-Advisor bucket and not a Developer — see resolveQuotaBucket().
-  trialMonthlyCredits: integer("trial_monthly_credits").notNull().default(10),
   // 1 credit = this many actual AI tokens (input + output combined) —
   // configurable rather than hardcoded anywhere in the enforcement code.
   tokensPerCredit: integer("tokens_per_credit").notNull().default(1000),
@@ -1597,25 +1964,55 @@ export const productAssistQuotaSettings = pgTable("product_assist_quota_settings
   modelName: text("model_name").notNull().default("gemini-2.5-flash"),
   inputPricePerMillionTokens: numeric("input_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
   outputPricePerMillionTokens: numeric("output_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
-  // The Department/Team/Role a user must simultaneously hold (alongside the
-  // "Health" tag, checked separately) to fall into the health_advisor
-  // bucket — see resolveQuotaBucket() in productAssistQuota.ts. Added
-  // migration 0049. Null = unset, meaning no user currently qualifies via
-  // this rule (falls through to Developer-unlimited or trial exactly as
-  // before this migration existed) until a Developer/Platform Admin picks
-  // all three from "AI Usage & Limits". onDelete: "set null" so deleting
-  // (deactivating doesn't delete) the referenced catalog row can't leave a
-  // dangling reference — it just quietly un-configures eligibility rather
-  // than erroring.
-  eligibleDepartmentId: integer("eligible_department_id").references(() => departments.id, { onDelete: "set null" }),
-  eligibleOrgTeamId: integer("eligible_org_team_id").references(() => orgTeams.id, { onDelete: "set null" }),
-  eligibleRoleId: integer("eligible_role_id").references(() => roles.id, { onDelete: "set null" }),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export type ProductAssistQuotaSettingsRow = typeof productAssistQuotaSettings.$inferSelect;
 export type NewProductAssistQuotaSettingsRow = typeof productAssistQuotaSettings.$inferInsert;
+
+// Added migration 0064, replacing product_assist_quota_settings'
+// eligibleDepartmentId/eligibleOrgTeamId/eligibleRoleId (a single global
+// rule) plus its defaultDailyCredits/defaultMonthlyCredits/
+// trialMonthlyCredits (one shared allowance for that rule, plus a fallback
+// for everyone else). See this section's header comment above for the full
+// reasoning; see resolveMatchedGroups()/deriveGroupLimits() in
+// productAssistQuota.ts for how a user's matched group(s) become their
+// effective limits.
+export const productAssistEligibilityGroups = pgTable("product_assist_eligibility_groups", {
+  id: serial("id").primaryKey(),
+  // Admin-facing label only (e.g. "Falcon Advisory Team") — never matched
+  // against anything, purely so the Settings tab and Users tab can show
+  // which group(s) a user qualifies through.
+  name: text("name").notNull(),
+  // Matching conditions — null on any of these four means "don't care
+  // about this dimension" for this group; every non-null one must match
+  // simultaneously (AND). A group with all four null matches every user (a
+  // deliberate, if unusual, wildcard — same allowance as access_rules).
+  // onDelete: "set null" so deactivating (not deleting) a referenced
+  // catalog row can't leave a dangling reference — it just quietly widens
+  // that dimension to "any" rather than erroring.
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  orgTeamId: integer("org_team_id").references(() => orgTeams.id, { onDelete: "set null" }),
+  roleId: integer("role_id").references(() => roles.id, { onDelete: "set null" }),
+  // Matches against one entry of the user's users.tags array (e.g.
+  // "Health"). Free text, not a FK, mirroring access_rules.productTag —
+  // ADVISOR_TAG_OPTIONS (AdvisorTagCheckboxes.tsx) is the admin UI's
+  // dropdown source, not a DB-enforced constraint.
+  tag: text("tag"),
+  // This group's own limits — independently nullable (null = uncapped on
+  // that dimension for a user matching this group). See
+  // deriveGroupLimits() for how multiple matched groups combine.
+  dailyCredits: integer("daily_credits"),
+  monthlyCredits: integer("monthly_credits"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ProductAssistEligibilityGroupRow = typeof productAssistEligibilityGroups.$inferSelect;
+export type NewProductAssistEligibilityGroupRow = typeof productAssistEligibilityGroups.$inferInsert;
 
 export const productAssistUserQuotaOverrides = pgTable("product_assist_user_quota_overrides", {
   userEmail: varchar("user_email", { length: 320 })
@@ -1682,6 +2079,85 @@ export type ProductAssistUsageLedgerRow = typeof productAssistUsageLedger.$infer
 export type NewProductAssistUsageLedgerRow = typeof productAssistUsageLedger.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// ai_usage_log (2026-09, migration 0068) — cross-feature AI usage tracking,
+// "for visibility only." product_assist_usage_ledger above stays the ONE
+// source of truth for Product Assist's credit ENFORCEMENT (unchanged by
+// this table); this one exists purely so "AI Usage & Limits" > Overview can
+// show a real total-cost picture across every Gemini call site in the app,
+// per direct user request — Declaration Assist's PED-to-question matching
+// (/api/match), Specific Illness Check's "Check with AI" fallback, and Plan
+// Management's "Refine with AI" workflow, alongside Product Assist itself
+// (mirrored here too, from the exact same call that writes the ledger
+// above, so Product Assist's own row counts once towards enforcement and
+// once towards this cross-feature total — see server.ts's /ask route).
+// Deliberately lightweight — no quota/limit logic ever reads this table,
+// and none ever will; it only ever gates the enforcement-specific ledger
+// above, per the user's explicit instruction that "the limits should be
+// applicable to only product assist."
+// ─────────────────────────────────────────────────────────────────────────
+export const aiUsageSourceEnum = pgEnum("ai_usage_source", [
+  "product_assist",
+  "declaration_assist_match",
+  "specific_illness_ai_check",
+  "plan_management_ai_workflow",
+]);
+
+export const aiUsageLog = pgTable(
+  "ai_usage_log",
+  {
+    id: serial("id").primaryKey(),
+    source: aiUsageSourceEnum("source").notNull(),
+    userEmail: varchar("user_email", { length: 320 }).notNull(),
+    // The actual model that answered (see productAssist.ts's
+    // response.modelVersion precedent) — several of these sources try
+    // multiple models in sequence on transient failures, so this is never
+    // assumed from a single constant the way Product Assist's own
+    // GENERATION_MODEL used to be.
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    totalTokens: integer("total_tokens").notNull(),
+    // Short, source-specific context for an admin glancing at raw rows —
+    // e.g. the PED condition text or plan name — never the full
+    // question/answer detail Product Assist's own product_assist_logs
+    // carries (this table is a lightweight tally, not a query-detail log).
+    // Truncated by the caller before insert; nullable since not every
+    // source has an obvious single label.
+    label: text("label"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("ai_usage_log_created_at_idx").on(table.createdAt),
+    index("ai_usage_log_source_created_idx").on(table.source, table.createdAt),
+  ]
+);
+
+export type AiUsageLogRow = typeof aiUsageLog.$inferSelect;
+export type NewAiUsageLogRow = typeof aiUsageLog.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// ai_model_pricing (2026-09, migration 0068) — admin-editable $/million-
+// token pricing per Gemini model, keyed by model name. Exists because
+// ai_usage_log above spans several call sites that each try more than one
+// model (see aiUsageLog's own comment), so the single global model/price
+// pair on product_assist_quota_settings (which only ever needs to describe
+// Product Assist's own one model) can't accurately cost a mixed-model
+// total. Used exclusively by the cross-feature Overview cost estimate;
+// Product Assist's own existing budget tracking keeps reading
+// product_assist_quota_settings's pricing fields, unchanged.
+// ─────────────────────────────────────────────────────────────────────────
+export const aiModelPricing = pgTable("ai_model_pricing", {
+  modelName: text("model_name").primaryKey(),
+  inputPricePerMillionTokens: numeric("input_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
+  outputPricePerMillionTokens: numeric("output_price_per_million_tokens", { precision: 12, scale: 4 }).notNull().default("0"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AiModelPricingRow = typeof aiModelPricing.$inferSelect;
+export type NewAiModelPricingRow = typeof aiModelPricing.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // special_instructions — Product Assist's "Special Instructions" layer
 // (Knowledge Base, 2026-08). A small, admin-curated set of controlled
 // instructions Product Assist checks BEFORE consulting the normal
@@ -1742,6 +2218,16 @@ export const specialInstructions = pgTable(
     // supportable per the spec, and plan-name rosters are themselves free
     // text (kb_categories.planNames).
     productPlanName: text("product_plan_name"),
+    // Which Product Assist vertical this instruction applies to (2026-09,
+    // Term insurance rollout) — same `announcement_team` enum/reasoning as
+    // kb_categories.domain above. Checked as an additional, deterministic
+    // condition in scopeMatches() alongside insurerCategoryId/productPlanName
+    // — a Term query never sees a Health-authored instruction and vice
+    // versa, even one with insurerCategoryId left null ("applies across
+    // insurers" was never meant to mean "applies across verticals too").
+    // Every instruction that existed before this column was added is
+    // Health-authored, hence the default.
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
     // gemini-embedding-001 at 768 dims (RETRIEVAL_DOCUMENT task type),
     // embedding just the Topic string — recomputed on every create/update
     // that changes `topic`. See embeddings.ts's KB_EMBEDDING_DIMENSIONS.
@@ -1760,6 +2246,80 @@ export const specialInstructions = pgTable(
 
 export type SpecialInstructionRow = typeof specialInstructions.$inferSelect;
 export type NewSpecialInstructionRow = typeof specialInstructions.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// product_assist_unresolved_queries (2026-09) — a PERSISTENT record of every
+// Product Assist question the AI couldn't answer at all, distinct from and
+// unrelated to product_assist_logs above (that table is explicitly
+// temporary/disableable and gets periodically exported-and-cleared — a poor
+// fit for a queue admins are meant to work through and keep a durable
+// history of). One row is created automatically, fire-and-forget, from
+// server.ts's POST /api/product-assist/ask whenever answerQuery() returns
+// hadNoMatches=true (see productAssist.ts's ProductAssistAnswer.hadNoMatches
+// doc comment — "nothing usable was found in scope": no document chunks, no
+// Playbook facts, no FAQ match, and no Special Instruction matched). This is
+// deliberately NOT deduplicated against prior rows for the same/similar
+// question — a topic that keeps recurring is itself useful signal for which
+// gap to prioritize closing, and the admin workflow (see
+// ProductAssistQuotaPage.tsx's "Unresolved Queries" tab) is built around
+// working through/filtering the raw list, not a pre-collapsed one.
+//
+// Resolution workflow: an admin reviews a row and either
+//   - Resolves it by adding a Special Instruction (Override Rule or
+//     Additional Information) covering the topic via the exact same form
+//     Knowledge Base > Special Instructions uses (see
+//     SpecialInstructionFormModal.tsx) — once that instruction is active, a
+//     future matching question naturally stops producing hadNoMatches=true
+//     (see specialInstructions.ts's resolveApplicableInstructions() and
+//     productAssist.ts's hadNoMatches computation, which already counts
+//     overrideRules/advisory hits as "found something"). This row is then
+//     linked to the created instruction via resolvedSpecialInstructionId so
+//     the connection is traceable later.
+//   - Skips it (status="skipped") when no KB change is warranted — e.g. a
+//     one-off, out-of-scope, or nonsensical question.
+// Both actions, plus a manual reopen back to "unresolved", are simple status
+// PATCHes (see server.ts) — creating the Special Instruction itself goes
+// through the existing, separately-authorized POST /api/kb/special-
+// instructions route (Developer/Platform Admin only), never duplicated here.
+// ─────────────────────────────────────────────────────────────────────────
+export const unresolvedQueryStatusEnum = pgEnum("unresolved_query_status", ["unresolved", "resolved", "skipped"]);
+
+export const productAssistUnresolvedQueries = pgTable(
+  "product_assist_unresolved_queries",
+  {
+    id: serial("id").primaryKey(),
+    // Health/Term — see special_instructions.domain's comment above for the
+    // same reasoning; scopes both the admin UI's filter and the Google
+    // Sheets export's Health/Term tab split.
+    domain: announcementTeamEnum("domain").notNull(),
+    userEmail: text("user_email").notNull(),
+    // Denormalized alongside categoryId (not just a FK), same convention as
+    // product_assist_logs.categoryName — a row stays meaningful even if the
+    // category is later renamed/deleted.
+    categoryId: integer("category_id").references(() => kbCategories.id, { onDelete: "set null" }),
+    categoryName: text("category_name"),
+    planTags: text("plan_tags").array().notNull().default([]),
+    question: text("question").notNull(),
+    status: unresolvedQueryStatusEnum("status").notNull().default("unresolved"),
+    // Set only when status="resolved" via the "add a Special Instruction"
+    // path — onDelete: "set null" so deleting the instruction later doesn't
+    // break this historical row, it just quietly loses the traceable link.
+    resolvedSpecialInstructionId: integer("resolved_special_instruction_id").references(() => specialInstructions.id, {
+      onDelete: "set null",
+    }),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("product_assist_unresolved_queries_created_at_idx").on(table.createdAt),
+    index("product_assist_unresolved_queries_status_idx").on(table.status),
+    index("product_assist_unresolved_queries_domain_idx").on(table.domain),
+  ]
+);
+
+export type ProductAssistUnresolvedQueryRow = typeof productAssistUnresolvedQueries.$inferSelect;
+export type NewProductAssistUnresolvedQueryRow = typeof productAssistUnresolvedQueries.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // kb_acronyms — the Acronym Dictionary: shorthand advisors habitually type
@@ -1793,6 +2353,15 @@ export const kbAcronyms = pgTable(
     // uses OS for a different plan"), never shown to the advisor directly;
     // folded into the prompt's reference block only if present.
     notes: text("notes"),
+    // Which Product Assist vertical this acronym belongs to (2026-09, Term
+    // insurance rollout) — same `announcement_team` enum/reasoning as
+    // kb_categories.domain above. A Health-tagged advisor's questions are
+    // only ever expanded against Health acronyms, a Term-tagged advisor's
+    // only against Term ones — a shorthand like "OS" ("Optima Secure", a
+    // Health plan) has no business firing on a Term question. Every acronym
+    // that existed before this column was added is Health-authored, hence
+    // the default.
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
     isActive: boolean("is_active").notNull().default(true),
     createdBy: text("created_by").notNull(),
     updatedBy: text("updated_by").notNull(),
@@ -1910,6 +2479,66 @@ export type FaqRecordRow = typeof faqRecords.$inferSelect;
 export type NewFaqRecordRow = typeof faqRecords.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
+// term_faq_connection / term_faq_records — "Term FAQ" (2026-09): imported
+// read-only from its own Google Sheet (7 tabs — see
+// src/server/knowledgeBase/termFaqIngest.ts). Originally built to feed only
+// the Did You Know card's Term side (src/server/knowledgeBase/didYouKnow.ts)
+// with no questionEmbedding column at all — Term Product Assist (added
+// later the same month) reuses this exact table as its Org Constitution
+// #1b peer, the same role faq_records plays for Health, which is why
+// questionEmbedding exists below now. Same shape as kbFaqConnection/
+// faqRecords above in every other respect. `category` is plain text here
+// (the tab name itself, e.g. "ADD-ONS/ RIDERS") rather than a pgEnum — 7
+// tabs today, vs. Health's 2, and more likely to be renamed/added to over
+// time.
+// ─────────────────────────────────────────────────────────────────────────
+export const termFaqConnection = pgTable("term_faq_connection", {
+  id: text("id").primaryKey().default("default"),
+  connectedEmail: text("connected_email").notNull(),
+  encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+  connectedBy: text("connected_by").notNull(),
+  connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type TermFaqConnectionRow = typeof termFaqConnection.$inferSelect;
+export type NewTermFaqConnectionRow = typeof termFaqConnection.$inferInsert;
+
+export const termFaqRecords = pgTable(
+  "term_faq_records",
+  {
+    id: serial("id").primaryKey(),
+    resourceId: integer("resource_id").notNull().references(() => kbResources.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    question: text("question").notNull(),
+    answer: text("answer").notNull().default(""),
+    isAnswerable: boolean("is_answerable").notNull().default(true),
+    hasConflict: boolean("has_conflict").notNull().default(false),
+    conflictGroupKey: text("conflict_group_key"),
+    // gemini-embedding-001 at 768 dims (RETRIEVAL_DOCUMENT task type),
+    // embedding ONLY the question text — added 2026-09 when Term Product
+    // Assist started retrieving Term FAQ the same way Health's faq_records.
+    // questionEmbedding already works (see that column's comment for the
+    // "question receives the strongest retrieval weight" reasoning). Null
+    // for every row synced before this column existed, and for any row
+    // that must never be used as an authoritative answer (isAnswerable=
+    // false or hasConflict=true) — same convention as faq_records.
+    questionEmbedding: vector("question_embedding", { dimensions: 768 }),
+    sourceRowNumber: integer("source_row_number").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("term_faq_records_resource_id_idx").on(table.resourceId),
+    index("term_faq_records_category_idx").on(table.category),
+    index("term_faq_records_is_active_idx").on(table.isActive),
+  ]
+);
+
+export type TermFaqRecordRow = typeof termFaqRecords.$inferSelect;
+export type NewTermFaqRecordRow = typeof termFaqRecords.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // advisor_directory_sync_state — one row per directory user this app's
 // Advisor Directory Sync (src/server/qaDashboard/advisorDirectorySync.ts)
 // has ever touched, tracking EXACTLY what it last wrote to that user's
@@ -2017,3 +2646,173 @@ export type CoachingSessionRow = typeof coachingSessions.$inferSelect;
 export type NewCoachingSessionRow = typeof coachingSessions.$inferInsert;
 export type CoachingActionableRow = typeof coachingActionables.$inferSelect;
 export type NewCoachingActionableRow = typeof coachingActionables.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// qa_feedback_discussed_marks — the Advisor Insight Page's "Mark as
+// Discussed" checkbox on a QA Feedback row (TeamTrackerPage.tsx). QA
+// Feedback rows themselves come from an external sheet, not a DB table
+// this app owns, so there's no row id to attach a boolean column to —
+// instead each mark is its own row here, keyed by (tactId, rowIdentity)
+// where rowIdentity is the same stable "Chat ID|Checked Date|Domain"
+// string the client already builds to identify a feedback row. Presence
+// of a row = discussed; un-marking deletes it. Backend-persisted (not
+// localStorage) so the mark is visible to every Guide/Mentor/Admin who
+// opens that advisor, not just the browser that set it.
+// ─────────────────────────────────────────────────────────────────────────
+export const qaFeedbackDiscussedMarks = pgTable(
+  "qa_feedback_discussed_marks",
+  {
+    id: serial("id").primaryKey(),
+    tactId: text("tact_id").notNull(),
+    rowIdentity: text("row_identity").notNull(),
+    markedByEmail: varchar("marked_by_email", { length: 320 }).notNull(),
+    markedAt: timestamp("marked_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("qa_feedback_discussed_marks_tact_row_idx").on(table.tactId, table.rowIdentity),
+    index("qa_feedback_discussed_marks_tact_id_idx").on(table.tactId),
+  ]
+);
+
+export type QaFeedbackDiscussedMarkRow = typeof qaFeedbackDiscussedMarks.$inferSelect;
+export type NewQaFeedbackDiscussedMarkRow = typeof qaFeedbackDiscussedMarks.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// guide_mentor_advisor_mappings — the Master Advisors page's Guide/Mentor ->
+// Advisor mapping (2026-09; that page split out of Access Control Center's
+// Relationships tab, since renamed to the Groups tab — see
+// MasterAdvisorsManagement.tsx). Populated by a manual sync
+// (src/server/qaDashboard/guideMentorRelationshipsSync.ts) that reads
+// master_advisors' Guide/Mentor columns — the exact same sheet/columns
+// Team Tracker and the QA Dashboard already read live at request time (see
+// qaDataEngine.ts's getAdvisorsForGuide/getAdvisorsForMentor) — and mirrors
+// them into this table so the Master Advisors page has something to display
+// and edit. Deliberately NOT wired as those pages' read path yet: this is
+// phase 1 (build + display), migrating Team Tracker/QA Dashboard to read
+// from here instead of the live sheet is a separate follow-up once this
+// sync has been run and verified in production.
+//
+// Keyed by tact_id, NOT by a `users` row — unlike user_relationships above,
+// an advisor here does not need a login/directory account to be mapped and
+// shown (many won't have one yet), so this intentionally carries its own
+// copy of name/email/status rather than joining against `users`. A sync
+// run upserts every sheet row by tact_id, overwriting name/email/
+// guideName/mentorName/status/skillDomain from the sheet every time — the
+// sheet is the actual source of the mapping, this table is a mirror of it.
+// Rows can still be hand-edited between syncs (e.g. to correct a typo'd
+// Guide name before the sheet itself is fixed) — manuallyEdited/
+// lastEditedAt/lastEditedBy record that a row was touched by hand, purely
+// informational, since the NEXT sync run overwrites it from the sheet
+// regardless (predictable "sync always matches the sheet" behavior, rather
+// than silently-sticky edits nobody remembers making).
+// ─────────────────────────────────────────────────────────────────────────
+export const guideMentorAdvisorMappings = pgTable(
+  "guide_mentor_advisor_mappings",
+  {
+    id: serial("id").primaryKey(),
+    tactId: text("tact_id").notNull(),
+    name: text("name").notNull(),
+    // master_advisors "Email ID" column, lowercased — best-effort, may be
+    // null (see qaDataEngine.ts's readEmail). No FK: this advisor may not
+    // have a `users` row at all yet.
+    email: varchar("email", { length: 320 }),
+    // Raw free-text Guide/Mentor column values from the sheet — not an FK
+    // to `users`, for the same "no account required" reason as tactId
+    // above. Grouping in the UI is by this text, case/whitespace-
+    // insensitively, same best-effort name-matching precedent as
+    // teamTrackerService.ts's buildPictureLookup.
+    guideName: text("guide_name"),
+    mentorName: text("mentor_name"),
+    // Raw Status/Employment Status cell (e.g. "Currently Employed",
+    // "Resigned", ...) — see qaDataEngine.ts's MasterAdvisorsRow.statusRaw.
+    status: text("status"),
+    // master_advisors column F ("Health"/"Term"/"Both") — see
+    // qaDataEngine.ts's skillDomainColIndex.
+    skillDomain: text("skill_domain"),
+    // Free text — see qaDataEngine.ts's batchColIndex.
+    batchNumber: text("batch_number"),
+    // "Date of moving out to a different role" / "Last working day" — the
+    // sheet's own two possible end-of-advisor-tenure dates (see
+    // qaDataEngine.ts's movedOutColIndex/lastWorkingDayColIndex). The
+    // Master Advisors page's own "Active Till" column is the earlier of the
+    // two, computed at read time rather than stored — see
+    // MasterAdvisorsManagement.tsx.
+    dateOfMovingOut: date("date_of_moving_out"),
+    lastWorkingDay: date("last_working_day"),
+    // Whether this row's guideName/mentorName/status/skillDomain still
+    // reflect the last sync verbatim, or have been hand-edited since (see
+    // the table comment above) — shown in the UI so an editor can tell a
+    // synced value from a manual correction at a glance.
+    manuallyEdited: boolean("manually_edited").notNull().default(false),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSyncedBy: text("last_synced_by").notNull(),
+    lastEditedAt: timestamp("last_edited_at", { withTimezone: true }),
+    lastEditedBy: text("last_edited_by"),
+  },
+  (table) => [uniqueIndex("guide_mentor_advisor_mappings_tact_id_unique").on(table.tactId)]
+);
+
+export type GuideMentorAdvisorMappingRow = typeof guideMentorAdvisorMappings.$inferSelect;
+export type NewGuideMentorAdvisorMappingRow = typeof guideMentorAdvisorMappings.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// guide_mentor_relationship_history — per-advisor Mentor/Guide relationship
+// timeline (2026-09), a companion to guide_mentor_advisor_mappings above.
+// That table only ever holds an advisor's CURRENT Guide/Mentor (overwritten
+// in place on every edit or sync) — this table is the append-only record of
+// every past assignment, so a "who was this advisor's Mentor/Guide during
+// [past period]" question (needed for historical QA Dashboard/Team Tracker
+// attribution) has an answer.
+//
+// One row per assignment PERIOD, not per advisor: an advisor accumulates a
+// new row here every time their Guide or Mentor changes. Guide and Mentor
+// are two fully independent timelines (the `kind` column) — replacing one
+// never touches the other's rows. At most one row per (tactId, kind) has
+// isActive = true at a time; changing that relationship terminates the old
+// active row (endDate + isActive:false) and inserts a new active row — it
+// never overwrites or deletes the old row (see
+// guideMentorAdvisorMappingsRepository.ts's update()/upsertFromSync(),
+// which both call GuideMentorRelationshipHistoryRepository.changeRelationship
+// for this). Sync participates in this same lifecycle instead of blindly
+// overwriting the way it used to, so the timeline stays accurate even
+// though most real-world changes arrive via a sync run rather than a hand
+// edit — source records which path created a given row.
+//
+// endDate is deliberately a different concept from
+// guide_mentor_advisor_mappings.dateOfMovingOut/its derived "Active Till"
+// display (the point an ADVISOR themselves stops being active) — this
+// endDate marks when a specific RELATIONSHIP ended, which can happen while
+// the advisor themselves stays active (they just moved to a different
+// Mentor/Guide). The UI labels these two concepts distinctly to avoid
+// confusion (see MasterAdvisorsManagement.tsx).
+// ─────────────────────────────────────────────────────────────────────────
+export const guideMentorRelationshipHistory = pgTable(
+  "guide_mentor_relationship_history",
+  {
+    id: serial("id").primaryKey(),
+    tactId: text("tact_id").notNull(),
+    // "guide" | "mentor" — plain text rather than a pg enum, matching this
+    // schema's existing convention for small closed vocabularies.
+    kind: text("kind").notNull(),
+    personName: text("person_name").notNull(),
+    startDate: date("start_date").notNull(),
+    // null while isActive is true ("current, no end yet"); set to the
+    // effective date this relationship was terminated/replaced once
+    // isActive flips to false.
+    endDate: date("end_date"),
+    isActive: boolean("is_active").notNull().default(true),
+    // "manual" (an edit made on this tab) or "sync" (detected during a
+    // "Sync From Advisor Directory" run) — purely informational, shown in
+    // the history view so a change is traceable to its source.
+    source: text("source").notNull(),
+    recordedBy: text("recorded_by").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("guide_mentor_relationship_history_tact_id_idx").on(table.tactId),
+    index("guide_mentor_relationship_history_tact_kind_idx").on(table.tactId, table.kind),
+  ]
+);
+
+export type GuideMentorRelationshipHistoryRow = typeof guideMentorRelationshipHistory.$inferSelect;
+export type NewGuideMentorRelationshipHistoryRow = typeof guideMentorRelationshipHistory.$inferInsert;

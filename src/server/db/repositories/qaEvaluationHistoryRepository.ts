@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, count, gte, lte } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNull, lte } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { qaEvaluationHistory, type QaEvaluationHistoryRow, type NewQaEvaluationHistoryRow } from "../schema.js";
 
@@ -13,10 +13,11 @@ export type NewQaEvaluationHistoryEntry = Omit<NewQaEvaluationHistoryRow, "id" |
  * each archived row — `id` and `createdAt` are selected by neither
  * listAll() nor listInRange() below, since nothing downstream uses them
  * (verified 2026-08-17: only checkedDate/mistakeDate/tactId/advisorName/
- * chatId/domain/score are ever touched). Narrowing the SELECT to these 7
- * columns instead of `db.select()` (all 9) trims ~12 of ~77.6 average
- * bytes/row (pg_column_size-measured) off every fetch, on top of the much
- * bigger win from listInRange()'s row-count reduction. */
+ * chatId/domain/score are ever touched; sourceBatch added 2026-09 for the
+ * dedupe key — see that function's comment). Narrowing the SELECT to these
+ * columns instead of `db.select()` (all columns) trims bytes off every
+ * fetch, on top of the much bigger win from listInRange()'s row-count
+ * reduction. */
 export type QaEvaluationHistoryColumns = Omit<QaEvaluationHistoryRow, "id" | "createdAt">;
 
 const HISTORY_COLUMNS = {
@@ -27,6 +28,7 @@ const HISTORY_COLUMNS = {
   chatId: qaEvaluationHistory.chatId,
   domain: qaEvaluationHistory.domain,
   score: qaEvaluationHistory.score,
+  sourceBatch: qaEvaluationHistory.sourceBatch,
 } as const;
 
 // Chunk size for bulkInsert — a single multi-row INSERT for tens of
@@ -92,11 +94,31 @@ export class QaEvaluationHistoryRepository {
     return inserted;
   }
 
-  /** Wipes the table — backs the import script's --replace flag so
+  /** Wipes the table — backs the ORIGINAL import script's --replace flag so
    * re-running after a corrected CSV doesn't duplicate rows. There's no
    * natural unique key across the source data to upsert against instead
-   * (see scripts/importQaEvaluationHistory.ts header). */
+   * (see scripts/importQaEvaluationHistory.ts header). Only ever wipes rows
+   * with a NULL source_batch (the original June 2025-May 2026 import,
+   * predating that column) — never a batch-stamped import, so this can't
+   * accidentally destroy a later batch (e.g. the June 2026 backfill) even if
+   * called after one exists. Newer, batch-stamped imports use
+   * deleteByBatch() below instead. */
   async deleteAll(): Promise<void> {
-    await this.db.delete(qaEvaluationHistory);
+    await this.db.delete(qaEvaluationHistory).where(isNull(qaEvaluationHistory.sourceBatch));
+  }
+
+  /** Wipes only the rows stamped with the given source_batch id — backs a
+   * batch-stamped import script's own --replace flag, so re-running after a
+   * corrected CSV only touches that one batch's rows and can never reach the
+   * original (NULL source_batch) archive import or any other batch. */
+  async deleteByBatch(sourceBatch: string): Promise<void> {
+    await this.db.delete(qaEvaluationHistory).where(eq(qaEvaluationHistory.sourceBatch, sourceBatch));
+  }
+
+  /** Row count for a single batch — used by an import script's dry-run
+   * summary to report what a --replace would wipe before it happens. */
+  async countByBatch(sourceBatch: string): Promise<number> {
+    const [row] = await this.db.select({ n: count() }).from(qaEvaluationHistory).where(eq(qaEvaluationHistory.sourceBatch, sourceBatch));
+    return Number(row?.n ?? 0);
   }
 }

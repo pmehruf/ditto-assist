@@ -110,8 +110,8 @@ export function AuditPage({
 }: AuditPageProps) {
   // Explicit per-<th> sticky-header background (see the comment at each
   // table's <thead> for why this can't just live on <thead> + bg-inherit).
-  const auditThBg = theme === "dark" ? "bg-[#132c46] text-stone-300 border-stone-800" : "bg-stone-50 text-[#111827] border-stone-300";
-  const changeLogThBg = theme === "dark" ? "bg-[#132c46] text-stone-300 border-stone-800" : "bg-stone-50 text-[#111827] border-stone-200";
+  const auditThBg = theme === "dark" ? "bg-[#132c46] text-stone-300 border-stone-800" : "bg-[var(--table-header-bg)] text-[#111827] border-stone-300";
+  const changeLogThBg = theme === "dark" ? "bg-[#132c46] text-stone-300 border-stone-800" : "bg-[var(--table-header-bg)] text-[#111827] border-stone-200";
 
   // Which rows have their explanation expanded (keyed by row index).
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());

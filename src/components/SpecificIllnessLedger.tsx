@@ -619,13 +619,14 @@ export function SpecificIllnessLedger({
                 >
                   Cancel
                 </ClippedButton>
+                {/* variant="action" (2026-09): shared --action-navy token
+                    instead of the old bg-blue-600 family. */}
                 <ClippedButton
                   onClick={handleSaveManageRows}
                   disabled={manageSaving}
+                  variant="action"
                   cornerBg={dark ? "#0e2236" : "#ffffff"}
-                  className={`text-xs font-bold uppercase tracking-wide px-4 py-2 ${
-                    dark ? "bg-blue-600/20 text-blue-300 hover:bg-blue-600/30" : "bg-blue-600 text-white hover:bg-blue-700"
-                  }`}
+                  className="text-xs font-bold uppercase tracking-wide px-4 py-2"
                 >
                   {manageSaving ? "Saving…" : "Save Illness List"}
                 </ClippedButton>

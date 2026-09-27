@@ -11,11 +11,12 @@ import { ChangeLogEntry } from "../types/changeLog";
 import { ProfileAccessManagement } from "../components/ProfileAccessManagement";
 import { QaDashboardAccessManagement } from "../components/QaDashboardAccessManagement";
 import { FeatureAccessManagement } from "../components/FeatureAccessManagement";
-import { DepartmentsManagement } from "../components/DepartmentsManagement";
-import { TeamsManagement } from "../components/TeamsManagement";
-import { RolesManagement } from "../components/RolesManagement";
-import { RelationshipsManagement } from "../components/RelationshipsManagement";
+import { OrganizationManagement } from "../components/OrganizationManagement";
+import { GroupsManagement } from "../components/GroupsManagement";
 import { CustomGrantsManagement } from "../components/CustomGrantsManagement";
+import { AccessRulesManagement } from "../components/AccessRulesManagement";
+import { AccessControlChangeHistory } from "../components/AccessControlChangeHistory";
+import { MasterAdvisorsManagement } from "../components/MasterAdvisorsManagement";
 
 interface ProfileAccessPageProps {
   theme: "light" | "dark";
@@ -33,6 +34,30 @@ interface ProfileAccessPageProps {
   roles: AppRole[];
   onRolesChanged: () => void;
   hiddenPages: string[];
+  /** True when App.tsx's hasAccess("group_management", "Editor") passes —
+   * Platform Admin/Developer always, plus anyone else holding an explicit
+   * Custom Grant for it (see featurePermissions.ts's "group_management"
+   * entry for why this is its own narrower capability, not "profile_access"
+   * Editor). Threaded down to the Groups tab so its canEdit gate respects
+   * the grant instead of only ever checking tier. */
+  canManageGroups: boolean;
+  /** True when App.tsx's hasAccess("master_advisors", "Editor") passes —
+   * same delegation pattern as canManageGroups above, threaded to the
+   * Master Advisors tab so its edit/delete gate respects a Custom Grant
+   * instead of only ever checking tier. */
+  canManageMasterAdvisors: boolean;
+  /** True when App.tsx's hasAccess("group_management", "Viewer") passes.
+   * Unlike canManageGroups above, this decides whether the "Groups" sub-tab
+   * is shown at all — 2026-09 permission architecture fix: previously this
+   * sub-tab was always visible to anyone who could open the Access Control
+   * Center, so setting group_management to "None" in Permissions had no
+   * client-side effect (the server's own routes already enforced Viewer
+   * correctly, so nothing leaked, but the tab itself didn't hide). */
+  canViewGroups: boolean;
+  /** True when App.tsx's hasAccess("master_advisors", "Viewer") passes —
+   * same "does the tab even show" fix as canViewGroups above, for the
+   * "Master Advisors" sub-tab. */
+  canViewMasterAdvisors: boolean;
 }
 
 /**
@@ -49,17 +74,18 @@ interface ProfileAccessPageProps {
  * All reads/writes go through the server so a Developer's edit is reflected
  * for every user immediately, not just the editor's own browser/localStorage.
  */
-type SubTab = "directory" | "permissions" | "departments" | "teams" | "roles" | "relationships" | "custom_grants" | "qa_access";
+type SubTab = "directory" | "permissions" | "organization" | "access_rules" | "groups" | "custom_grants" | "qa_access" | "master_advisors" | "change_history";
 
 const SUB_TAB_BLURBS: Record<SubTab, string> = {
   directory: "", // computed dynamically below (depends on effectiveTier)
   permissions: "Which tier can view or edit each feature — the Developer-editable override of this app's shipped access defaults.",
-  departments: "Organizational metadata only — departments have no effect on what anyone can access.",
-  teams: "Bliss / Falcon / Central — foundation metadata for future access scoping. No effect on access yet.",
-  roles: "Advisor / Mentor / Guide / ... — independent of both tier and the QA Dashboard's own role. No effect on access yet.",
-  relationships: "Explicit person-to-person mappings (e.g. a Mentor's mentees) — the vocabulary and the mappings themselves. No effect on access yet.",
-  custom_grants: "Per-individual, add-only access overrides — the flexibility valve for when Team/Department/Role structure doesn't fit someone. Can only raise access, never lower it.",
+  organization: "Business Units, Departments, and Roles — organizational metadata. On its own, none of these grant anything; they can affect access only if an Access Rule or Product Assist eligibility setting is configured to key off them.",
+  access_rules: "Population-level grants keyed off Business Unit/Department/Role/Product Tag — everyone matching a rule gets its level, on top of their tier's default access.",
+  groups: "Person-to-person mappings (e.g. a Mentor's mentees), grouped under a named group — pick or create a group to manage its roster and, if enabled, restrict its members to specific tools.",
+  custom_grants: "Per-individual, add-only access overrides — the flexibility valve for when Business Unit/Department/Role structure doesn't fit someone. Can only raise access, never lower it.",
   qa_access: "Who holds Admin/Guide/Mentor access on the QA Dashboard, separate from the WebApp tiers above.",
+  master_advisors: "Every advisor's Guide/Mentor assignment and Tact ID/status/employment snapshot, synced from the Advisor Directory sheet.",
+  change_history: "Every change made on the other tabs here, including the Directory — who changed what, and when.",
 };
 
 export function ProfileAccessPage({
@@ -78,14 +104,26 @@ export function ProfileAccessPage({
   roles,
   onRolesChanged,
   hiddenPages,
+  canManageGroups,
+  canManageMasterAdvisors,
+  canViewGroups,
+  canViewMasterAdvisors,
 }: ProfileAccessPageProps) {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("directory");
   const dark = theme === "dark";
 
   // Shared local-state audit entry, same pattern used by every admin page on
-  // this app (see ProfileAccessManagement's own logAction) — the server
-  // already durably records the change via changeLogs.create() in the
-  // relevant route; this just gives the Audit tab an entry without a refetch.
+  // this app. Pushing onto setChangeLogs is not merely local: App.tsx wraps
+  // setChangeLogs so every entry pushed here is also durably POSTed to
+  // /api/change-logs (see App.tsx's setChangeLogs wrapper) — this IS how
+  // Created/Edited actions on the Permissions/Departments/Teams/Roles/
+  // Relationships/Custom Grants tabs get their durable audit record; those
+  // routes don't separately call changeLogs.create() server-side. (Access
+  // Rule Created/Edited, Delete actions on Departments/Teams/Roles, and all
+  // User Directory mutations, are exceptions — those write server-side via
+  // changeLogs.create()/describeUserAccessChanges() directly and don't use
+  // this function, to avoid a duplicate entry — see AccessRulesManagement,
+  // ProfileAccessManagement, and describeUserAccessChanges.ts.)
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
       {
@@ -123,16 +161,27 @@ export function ProfileAccessPage({
       </div>
 
       <nav className={`flex gap-1 border-b-2 ${dark ? "border-white/10" : "border-stone-200"}`}>
-        {([
-          { id: "directory", label: "Directory" },
-          { id: "permissions", label: "Permissions" },
-          { id: "departments", label: "Departments" },
-          { id: "teams", label: "Teams" },
-          { id: "roles", label: "Roles" },
-          { id: "relationships", label: "Relationships" },
-          { id: "custom_grants", label: "Custom Grants" },
-          { id: "qa_access", label: "QA Dashboard Access" },
-        ] as const).map((tab) => (
+        {(
+          [
+            { id: "directory", label: "Directory" },
+            { id: "permissions", label: "Permissions" },
+            { id: "organization", label: "Organization" },
+            { id: "access_rules", label: "Access Rules" },
+            { id: "groups", label: "Groups" },
+            { id: "custom_grants", label: "Custom Grants" },
+            { id: "qa_access", label: "QA Dashboard Access" },
+            { id: "master_advisors", label: "Master Advisors" },
+            { id: "change_history", label: "Change History" },
+          ] as { id: SubTab; label: string }[]
+        )
+          // Groups/Master Advisors sub-tabs only show when the caller holds
+          // at least Viewer on that feature (2026-09 permission architecture
+          // fix) — everything else on this page is Admin+'s own
+          // administrative surface (deliberately un-gated by Permissions,
+          // see this component's own doc comment), but these two are
+          // ordinary governed features with their own Permissions row.
+          .filter((tab) => (tab.id === "groups" ? canViewGroups : tab.id === "master_advisors" ? canViewMasterAdvisors : true))
+          .map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveSubTab(tab.id)}
@@ -149,28 +198,42 @@ export function ProfileAccessPage({
 
       <div className="space-y-5 pb-6">
         {activeSubTab === "directory" && (
-          <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} currentUser={currentUser} setChangeLogs={setChangeLogs} departments={departments} orgTeams={orgTeams} roles={roles} featureAccessOverrides={featureAccessOverrides} hiddenPages={hiddenPages} />
+          <ProfileAccessManagement theme={theme} usersList={usersList} setUsersList={setUsersList} effectiveTier={effectiveTier} departments={departments} orgTeams={orgTeams} roles={roles} featureAccessOverrides={featureAccessOverrides} hiddenPages={hiddenPages} />
         )}
         {activeSubTab === "permissions" && (
           <FeatureAccessManagement theme={theme} effectiveTier={effectiveTier} overrides={featureAccessOverrides} onChanged={onFeatureAccessChanged} logAction={logAction} />
         )}
-        {activeSubTab === "departments" && (
-          <DepartmentsManagement theme={theme} effectiveTier={effectiveTier} departments={departments} usersList={usersList} onChanged={onDepartmentsChanged} logAction={logAction} />
+        {activeSubTab === "organization" && (
+          <OrganizationManagement
+            theme={theme}
+            effectiveTier={effectiveTier}
+            orgTeams={orgTeams}
+            departments={departments}
+            roles={roles}
+            usersList={usersList}
+            onOrgTeamsChanged={onOrgTeamsChanged}
+            onDepartmentsChanged={onDepartmentsChanged}
+            onRolesChanged={onRolesChanged}
+            logAction={logAction}
+          />
         )}
-        {activeSubTab === "teams" && (
-          <TeamsManagement theme={theme} effectiveTier={effectiveTier} orgTeams={orgTeams} usersList={usersList} onChanged={onOrgTeamsChanged} logAction={logAction} />
+        {activeSubTab === "access_rules" && (
+          <AccessRulesManagement theme={theme} effectiveTier={effectiveTier} departments={departments} orgTeams={orgTeams} roles={roles} />
         )}
-        {activeSubTab === "roles" && (
-          <RolesManagement theme={theme} effectiveTier={effectiveTier} roles={roles} usersList={usersList} onChanged={onRolesChanged} logAction={logAction} />
-        )}
-        {activeSubTab === "relationships" && (
-          <RelationshipsManagement theme={theme} effectiveTier={effectiveTier} usersList={usersList} logAction={logAction} />
+        {activeSubTab === "groups" && canViewGroups && (
+          <GroupsManagement theme={theme} effectiveTier={effectiveTier} usersList={usersList} departments={departments} orgTeams={orgTeams} roles={roles} logAction={logAction} canManageGroups={canManageGroups} />
         )}
         {activeSubTab === "custom_grants" && (
           <CustomGrantsManagement theme={theme} effectiveTier={effectiveTier} usersList={usersList} logAction={logAction} />
         )}
         {activeSubTab === "qa_access" && (
           <QaDashboardAccessManagement theme={theme} effectiveTier={effectiveTier} />
+        )}
+        {activeSubTab === "master_advisors" && canViewMasterAdvisors && (
+          <MasterAdvisorsManagement theme={theme} effectiveTier={effectiveTier} usersList={usersList} departments={departments} logAction={logAction} canManage={canManageMasterAdvisors} />
+        )}
+        {activeSubTab === "change_history" && (
+          <AccessControlChangeHistory theme={theme} />
         )}
       </div>
     </div>

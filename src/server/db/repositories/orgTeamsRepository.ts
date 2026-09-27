@@ -46,4 +46,11 @@ export class OrgTeamsRepository {
     const [row] = await this.db.update(orgTeams).set(patch).where(eq(orgTeams.id, id)).returning();
     return row;
   }
+
+  /** Hard delete — see departmentsRepository.ts's `delete()` doc comment;
+   * same reasoning and the same caller obligation to run
+   * countCatalogDependencies() first. */
+  async delete(id: number): Promise<void> {
+    await this.db.delete(orgTeams).where(eq(orgTeams.id, id));
+  }
 }

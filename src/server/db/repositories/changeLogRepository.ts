@@ -24,6 +24,16 @@ export interface ChangeLogListOptions {
   search?: string;
   /** Prefix match against actionType (e.g. "Draft" matches "Draft Approved", "Draft Created") — mirrors the old `.startsWith` filter. */
   actionType?: string;
+  /**
+   * OR-of-prefix match against actionType — e.g. ["Department", "Team",
+   * "Role"] matches any actionType starting with any of those. Used by the
+   * Access Control Center's "Change History" tab (server.ts's
+   * `scope=access-control` handling on GET /api/change-logs), which needs
+   * to match several unrelated actionType families in one query — something
+   * the single-prefix `actionType` filter above can't express. Ignored if
+   * `actionType` is also set (that single-prefix filter wins).
+   */
+  actionTypePrefixes?: string[];
   from?: string;
   to?: string;
   /** Whitelisted to "timestamp" | "userName" | "role" | "actionType" | "planName" | "description"; defaults to "timestamp". */
@@ -96,7 +106,11 @@ export class ChangeLogRepository {
       const pattern = containsPattern(options.search);
       conditions.push(or(ilike(changeLogs.planName, pattern), ilike(changeLogs.description, pattern), ilike(changeLogs.userName, pattern)));
     }
-    if (options.actionType) conditions.push(ilike(changeLogs.actionType, startsWithPattern(options.actionType)));
+    if (options.actionType) {
+      conditions.push(ilike(changeLogs.actionType, startsWithPattern(options.actionType)));
+    } else if (options.actionTypePrefixes?.length) {
+      conditions.push(or(...options.actionTypePrefixes.map((p) => ilike(changeLogs.actionType, startsWithPattern(p)))));
+    }
     if (options.from) conditions.push(gte(changeLogs.timestamp, new Date(options.from)));
     if (options.to) conditions.push(lte(changeLogs.timestamp, new Date(options.to)));
     const where = conditions.length ? and(...conditions) : undefined;
@@ -120,13 +134,17 @@ export class ChangeLogRepository {
   /** Same filter/search/sort as `listPaginated` but WITHOUT limit/offset —
    * used only by the Modification History "Export" button, which downloads
    * the whole matching set rather than just the visible page. */
-  async listMatching(options: Pick<ChangeLogListOptions, "search" | "actionType" | "from" | "to" | "sortBy" | "sortDir"> = {}): Promise<ChangeLogRow[]> {
+  async listMatching(options: Pick<ChangeLogListOptions, "search" | "actionType" | "actionTypePrefixes" | "from" | "to" | "sortBy" | "sortDir"> = {}): Promise<ChangeLogRow[]> {
     const conditions = [];
     if (options.search) {
       const pattern = containsPattern(options.search);
       conditions.push(or(ilike(changeLogs.planName, pattern), ilike(changeLogs.description, pattern), ilike(changeLogs.userName, pattern)));
     }
-    if (options.actionType) conditions.push(ilike(changeLogs.actionType, startsWithPattern(options.actionType)));
+    if (options.actionType) {
+      conditions.push(ilike(changeLogs.actionType, startsWithPattern(options.actionType)));
+    } else if (options.actionTypePrefixes?.length) {
+      conditions.push(or(...options.actionTypePrefixes.map((p) => ilike(changeLogs.actionType, startsWithPattern(p)))));
+    }
     if (options.from) conditions.push(gte(changeLogs.timestamp, new Date(options.from)));
     if (options.to) conditions.push(lte(changeLogs.timestamp, new Date(options.to)));
     const where = conditions.length ? and(...conditions) : undefined;

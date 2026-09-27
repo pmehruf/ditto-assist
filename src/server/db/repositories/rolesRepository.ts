@@ -46,4 +46,11 @@ export class RolesRepository {
     const [row] = await this.db.update(roles).set(patch).where(eq(roles.id, id)).returning();
     return row;
   }
+
+  /** Hard delete — see departmentsRepository.ts's `delete()` doc comment;
+   * same reasoning and the same caller obligation to run
+   * countCatalogDependencies() first. */
+  async delete(id: number): Promise<void> {
+    await this.db.delete(roles).where(eq(roles.id, id));
+  }
 }

@@ -130,6 +130,39 @@ export async function fetchPlaybookSheetValues(sheetName: string): Promise<unkno
   return res.data.values || [];
 }
 
+/** Response shape of spreadsheets.get scoped to one sheet's row/cell notes
+ * — deliberately narrowed via `fields` to just the `note` property (never
+ * the cell's formatting/value/etc.), keeping the response small. */
+interface GridDataResponse {
+  sheets?: { data?: { rowData?: { values?: { note?: string }[] }[] }[] }[];
+}
+
+/**
+ * Fetches every cell NOTE (the small hover-only annotation Google Sheets
+ * shows with a red-triangle marker in the corner of a cell — distinct from
+ * threaded "comments", a separate Drive-API concept this app doesn't use)
+ * for one tab, as a 2D grid parallel to fetchPlaybookSheetValues's own
+ * row/column indices. A cell with no note is simply absent from its row
+ * array (sparse) — callers should read via `notes[r]?.[c]`, never assume
+ * every row is present. Uses the exact same spreadsheets.readonly OAuth
+ * scope already granted for fetchPlaybookSheetValues (the Sheets API's
+ * `ranges` param triggers grid-data return with no extra consent needed —
+ * see https://developers.google.com/sheets/api/reference/rest/v4/spreadsheets/get),
+ * so this never prompts a re-connect.
+ */
+export async function fetchPlaybookSheetNotes(sheetName: string): Promise<(string | undefined)[][]> {
+  const client = await getActiveAuthClient();
+
+  const range = encodeURIComponent(`'${sheetName}'`);
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${PLAYBOOK_SPREADSHEET_ID}` +
+    `?ranges=${range}&fields=${encodeURIComponent("sheets.data.rowData.values.note")}`;
+
+  const res = await client.request<GridDataResponse>({ url });
+  const rowData = res.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
+  return rowData.map(row => (row.values ?? []).map(cell => cell.note));
+}
+
 /** Clears cached auth — exposed for tests only. */
 export function _resetPlaybookSheetsClientForTests(): void {
   invalidatePlaybookSheetsAuthCache();

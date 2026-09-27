@@ -5,11 +5,11 @@
 
 import type { Repositories } from "../db/repositories/index.js";
 import type { CreateKbPlaybookPlanFactEntry } from "../db/repositories/kbPlaybookPlanFactsRepository.js";
-import type { KbResourceRow } from "../db/schema.js";
+import type { KbResourceRow, KbPlaybookPlanFactRow } from "../db/schema.js";
 import { chunkText } from "./chunking.js";
 import { embedDocumentChunks } from "./embeddings.js";
 import { contentHash } from "./pdfIngest.js";
-import { fetchPlaybookSheetValues, PLAYBOOK_SPREADSHEET_ID } from "./playbookSheetsClient.js";
+import { fetchPlaybookSheetValues, fetchPlaybookSheetNotes, PLAYBOOK_SPREADSHEET_ID } from "./playbookSheetsClient.js";
 
 /**
  * Per-tab column layout for the Playbook's feature x plan comparison tabs
@@ -40,6 +40,23 @@ const MATRIX_TABS: Record<
 const NARRATIVE_TABS = ["Recommendation specifics", "Feature Description", "FAQs & Narratives"];
 
 export const ALL_PLAYBOOK_TABS = [...Object.keys(MATRIX_TABS), ...NARRATIVE_TABS];
+
+// 2026-09 — bump this whenever splitInsurerAndPlan/parseMatrixTab/
+// parseNarrativeTab's OUTPUT changes for the same raw Sheet input (a new
+// KNOWN_INSURER_PREFIXES entry, a new PREFIX_IS_PART_OF_PLAN_NAME/
+// PLAN_HEADER_INSURER_OVERRIDE exception, a reshaping of `content`, etc.).
+// Root-caused 2026-09: syncPlaybook's hash (below) was computed purely from
+// the fetched Sheet content, so a parser bugfix deployed to production never
+// actually took effect against already-ingested plans — every resync kept
+// hitting `previousHash === hash` (the Sheet itself hadn't changed) and
+// returning early without ever re-running the fixed parser, leaving stale,
+// wrongly-parsed rows (e.g. Care Health's "Care Supreme" stored as
+// insurerName="Care"/planName="Supreme" instead of planName="Care Supreme")
+// in kb_playbook_plan_facts indefinitely, no matter how many times an admin
+// clicked Resync or how many times the app was redeployed. Folding this
+// version into the hash means a parser change forces a real re-parse even
+// when the Sheet is byte-identical to last time.
+const PLAYBOOK_PARSER_VERSION = "2026-09-24.1";
 
 // Extracted from syncPlaybook's inline literal so other call sites (the
 // Product Assist Library's Core Resources section — see server.ts's
@@ -72,14 +89,56 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Entries in KNOWN_INSURER_PREFIXES above whose brand name is also
+// genuinely part of the PLAN's own marketed name for at least some of that
+// insurer's plans — e.g. Care Health markets its retail plans as "Care
+// Supreme", "Care Freedom", "Care Heart", with "Care" itself as part of the
+// product name, not a redundant insurer label the advisor's Plans selector
+// expects stripped off (unlike "HDFC Ergo Optima Secure+", where "Optima
+// Secure+" is the standalone product name and "HDFC Ergo" genuinely is
+// redundant once the advisor has already picked that insurer separately).
+// Discovered 2026-09 via a live wrong-answer report: every Care Health plan
+// fact was being stored as "Supreme"/"Freedom"/"Heart"/etc. — silently
+// unmatchable against kb_categories.planNames's actual roster ("Care
+// Supreme", "Care Freedom", "Care Heart"), so findMatching() always
+// returned zero rows for Care Health and Product Assist silently fell back
+// to DOCUMENT EXCERPTS with no Playbook backing, and with the "not Playbook-
+// confirmed" caveat also not printing (a separate prompt-side gap). For a
+// prefix in this set, the insurer is still identified from it, but it is
+// NOT stripped from the stored plan name.
+const PREFIX_IS_PART_OF_PLAN_NAME = new Set(["Care"]);
+
+// Full plan-column headers (in the master multi-insurer tab) whose insurer
+// can't be inferred by prefix-matching at all, because — unlike every other
+// case KNOWN_INSURER_PREFIXES/PREFIX_IS_PART_OF_PLAN_NAME handles — the
+// header doesn't literally start with the insurer's own brand word.
+// "Ultimate Care" is a real, named Care Health plan, but its header is just
+// "Ultimate Care" with no leading "Care" for the KNOWN_INSURER_PREFIXES loop
+// below to catch, so it used to fall through to the final
+// `{ insurer: clean, plan: clean }` fallback and get stored with
+// insurerName="Ultimate Care" — which then never loosely matched the "Care
+// Health" category name in findMatching's insurer check
+// (kbPlaybookPlanFactsRepository.ts), so this one plan's facts silently
+// never surfaced (found 2026-09, same investigation as
+// PREFIX_IS_PART_OF_PLAN_NAME above). Keyed lowercase, matched against the
+// full cleaned header — deliberately a small, explicit table of known
+// exceptions rather than a broader "does this header contain some insurer's
+// brand word anywhere" heuristic, which would risk misassigning an
+// unrelated plan whose name happens to contain another insurer's word.
+const PLAN_HEADER_INSURER_OVERRIDE: Record<string, string> = {
+  "ultimate care": "Care",
+};
+
 /**
  * Splits a plan column's full header text (e.g. "HDFC Ergo Optima
  * Secure+") into an insurer name and a bare plan name (e.g. "HDFC Ergo" /
  * "Optima Secure+") — the bare plan name is what's stored, so it matches
  * the advisor's Plans selector, which doesn't repeat the insurer already
- * chosen separately via the Insurer selector. When fallbackInsurer is
- * given (the per-insurer tabs), that insurer's own name is stripped
- * case-insensitively instead of guessing from KNOWN_INSURER_PREFIXES.
+ * chosen separately via the Insurer selector (except where
+ * PREFIX_IS_PART_OF_PLAN_NAME says the selector's own plan names DO repeat
+ * it — see that set's comment). When fallbackInsurer is given (the
+ * per-insurer tabs), that insurer's own name is stripped case-insensitively
+ * instead of guessing from KNOWN_INSURER_PREFIXES.
  */
 export function splitInsurerAndPlan(fullHeader: string, fallbackInsurer?: string): { insurer: string; plan: string } {
   const clean = fullHeader.replace(/\s+/g, " ").trim();
@@ -88,9 +147,12 @@ export function splitInsurerAndPlan(fullHeader: string, fallbackInsurer?: string
     const stripped = clean.replace(re, "").trim();
     return { insurer: fallbackInsurer, plan: stripped || clean };
   }
+  const overrideInsurer = PLAN_HEADER_INSURER_OVERRIDE[clean.toLowerCase()];
+  if (overrideInsurer) return { insurer: overrideInsurer, plan: clean };
   for (const prefix of KNOWN_INSURER_PREFIXES) {
     const re = new RegExp(`^${escapeRegex(prefix)}\\b\\s*`, "i");
     if (re.test(clean)) {
+      if (PREFIX_IS_PART_OF_PLAN_NAME.has(prefix)) return { insurer: prefix, plan: clean };
       const stripped = clean.replace(re, "").trim();
       return { insurer: prefix, plan: stripped || clean };
     }
@@ -111,8 +173,17 @@ function cellText(v: unknown): string {
  * feature: value" line is emitted per (row, plan-column) pair that has a
  * value. Returns entries with resourceId left at 0 — the caller
  * (syncPlaybook) fills in the real id.
+ *
+ * `notesGrid` (2026-09, Product Playbook advisor UI) is an optional sparse
+ * grid of cell notes, same row/column indices as `rows` — see
+ * playbookSheetsClient.ts's fetchPlaybookSheetNotes. When given, a note on
+ * a plan's header cell is captured as {label: "Plan", note}, and a note on
+ * a specific (row, plan-column) value cell is captured as {label, note}
+ * using that row's own feature/sub-feature label — attached to the emitted
+ * entry's `notes` array, entirely separate from `content` (which stays
+ * exactly as before regardless of whether notes are present).
  */
-export function parseMatrixTab(rows: unknown[][], tabName: string): CreateKbPlaybookPlanFactEntry[] {
+export function parseMatrixTab(rows: unknown[][], tabName: string, notesGrid?: (string | undefined)[][]): CreateKbPlaybookPlanFactEntry[] {
   const config = MATRIX_TABS[tabName];
   if (!config || rows.length === 0) return [];
 
@@ -125,7 +196,12 @@ export function parseMatrixTab(rows: unknown[][], tabName: string): CreateKbPlay
   if (planCols.length === 0) return [];
 
   const planLines = new Map<number, string[]>();
-  for (const p of planCols) planLines.set(p.col, []);
+  const planNotes = new Map<number, { label: string; note: string }[]>();
+  for (const p of planCols) {
+    planLines.set(p.col, []);
+    const headerNote = notesGrid?.[0]?.[p.col];
+    planNotes.set(p.col, headerNote ? [{ label: "Plan", note: headerNote }] : []);
+  }
 
   let currentFeature = "";
   let currentSubFeature = "";
@@ -155,6 +231,8 @@ export function parseMatrixTab(rows: unknown[][], tabName: string): CreateKbPlay
       const value = cellText(row[p.col]);
       if (!value) continue;
       planLines.get(p.col)!.push(`${label}: ${value}`);
+      const note = notesGrid?.[r]?.[p.col];
+      if (note) planNotes.get(p.col)!.push({ label, note });
     }
   }
 
@@ -169,6 +247,7 @@ export function parseMatrixTab(rows: unknown[][], tabName: string): CreateKbPlay
       planName: plan,
       sourceTab: tabName,
       content: `### ${p.header}\n\n${lines.join("\n\n")}`,
+      notes: planNotes.get(p.col)!,
     });
   }
   return entries;
@@ -236,6 +315,57 @@ export interface SyncPlaybookResult {
   planFactCount: number;
   narrativeChunkCount: number;
   skipped: boolean;
+  // Resync visibility (2026-09, by advisor/admin request — the resync
+  // button used to report only the new totals, giving no way to tell
+  // whether a resync actually changed anything or just re-confirmed the
+  // same data). Counts are computed by diffPlanFacts() below, comparing
+  // this run's plan facts against whatever was stored for this resource
+  // immediately before this sync (an empty set on a brand-new resource, so
+  // a first-ever sync simply reports everything as "added"). Left at 0 in
+  // the `skipped` (unchanged) and error-caught paths, where nothing was
+  // actually compared/written.
+  previousPlanFactCount: number;
+  previousNarrativeChunkCount: number;
+  plansAdded: number;
+  plansRemoved: number;
+  plansChanged: number;
+  plansUnchanged: number;
+}
+
+/**
+ * Compares this sync's freshly-parsed plan facts against whatever was
+ * stored for this resource going into this sync, keyed by (insurer, plan) —
+ * the same case-insensitive key used to identify "the same plan" elsewhere.
+ * A plan present in both with identical `content` is unchanged; different
+ * `content` (a feature/sub-feature value, a note, anything the sheet
+ * reshapes into that string) counts as changed. Deliberately content-only
+ * (not notes) — notes are supplementary annotations, not the facts
+ * Product Assist actually reads, so a notes-only edit isn't surfaced here as
+ * a plan "change" the advisor needs to know about.
+ */
+export function diffPlanFacts(
+  previous: KbPlaybookPlanFactRow[],
+  next: CreateKbPlaybookPlanFactEntry[]
+): { added: number; removed: number; changed: number; unchanged: number } {
+  const keyOf = (insurerName: string, planName: string) => `${insurerName.trim().toLowerCase()}::${planName.trim().toLowerCase()}`;
+  const previousByKey = new Map(previous.map(f => [keyOf(f.insurerName, f.planName), f]));
+  const nextKeys = new Set<string>();
+  let added = 0;
+  let changed = 0;
+  let unchanged = 0;
+  for (const entry of next) {
+    const key = keyOf(entry.insurerName, entry.planName);
+    nextKeys.add(key);
+    const prior = previousByKey.get(key);
+    if (!prior) added++;
+    else if (prior.content !== entry.content) changed++;
+    else unchanged++;
+  }
+  let removed = 0;
+  for (const key of previousByKey.keys()) {
+    if (!nextKeys.has(key)) removed++;
+  }
+  return { added, removed, changed, unchanged };
 }
 
 /**
@@ -246,11 +376,16 @@ export interface SyncPlaybookResult {
  * left in an "error" state.
  */
 export async function syncPlaybook(repos: Repositories, triggeredBy: string): Promise<SyncPlaybookResult> {
-  const categories = await repos.kbCategories.list();
+  // Explicitly scoped to Health — see faqIngest.ts's syncFaq for why an
+  // unscoped kbCategories.list() here is a latent version of the exact bug
+  // termFaqIngest.ts's syncTermFaq had (2026-09 fix): it "works" today only
+  // because Health's Org Constitution happens to be the first "general"
+  // category created, not because it's actually guaranteed to be Health's.
+  const categories = await repos.kbCategories.list({ domain: "Health" });
   const generalCategory = categories.find(c => c.type === "general");
   if (!generalCategory) {
     throw new Error(
-      'No "General" Knowledge Base category exists yet — create one first in Knowledge Base Management, then resync the Playbook.'
+      'No "General" Knowledge Base category exists yet for Health — create one first in Knowledge Base Management, then resync the Playbook.'
     );
   }
 
@@ -259,7 +394,20 @@ export async function syncPlaybook(repos: Repositories, triggeredBy: string): Pr
   // the FAQ's row instead and overwrite it with Playbook data. (No legacy-
   // title concern here, unlike faqIngest.ts's rename — this title has never
   // changed.)
-  const existing = (await repos.kbResources.list({})).find(r => r.type === "sheet" && r.title === PLAYBOOK_RESOURCE_TITLE);
+  //
+  // Defense-in-depth (2026-09): if more than one kb_resources row ever
+  // matches (title/type) — which shouldn't happen given the guard above,
+  // but did once historically before the guard existed, see
+  // deleteOrphanedForDomain's comment for the full story — the highest id
+  // (most recently created) is treated as canonical, and any other exact
+  // title/type match is cleaned up so it can never silently linger.
+  const matches = (await repos.kbResources.list({})).filter(r => r.type === "sheet" && r.title === PLAYBOOK_RESOURCE_TITLE);
+  const existing = matches.length > 0 ? matches.reduce((newest, r) => (r.id > newest.id ? r : newest)) : undefined;
+  for (const duplicate of matches) {
+    if (duplicate.id === existing!.id) continue;
+    await repos.kbPlaybookPlanFacts.deleteByResource(duplicate.id);
+    await repos.kbResources.delete(duplicate.id);
+  }
   const wasErrored = existing?.status === "error";
   let resource = existing;
   if (!resource) {
@@ -277,33 +425,79 @@ export async function syncPlaybook(repos: Repositories, triggeredBy: string): Pr
       addedBy: triggeredBy,
     });
   } else {
-    resource = (await repos.kbResources.update(resource.id, { status: "processing", errorMessage: null }))!;
+    // Re-pins categoryId to Health's own general category every sync too —
+    // belt-and-suspenders against the same wrong-domain-category bug
+    // termFaqIngest.ts's syncTermFaq had (2026-09 fix); a no-op once
+    // already correct.
+    resource = (await repos.kbResources.update(resource.id, { status: "processing", errorMessage: null, categoryId: generalCategory.id }))!;
   }
   const resourceId = resource!.id;
+
+  // 2026-09 data-integrity fix, found via a live production DB query: 8
+  // Health rows (Care Health's plan facts, stored with the OLD, un-fixed
+  // plan names — e.g. "Advantage" instead of "Care Advantage") were sitting
+  // under a resourceId that turned out to belong to the ACTIVE, legitimate
+  // Health FAQ resource, not a duplicate Playbook resource. Likely history:
+  // before the title-matching guard above existed, an earlier sync matched
+  // by type==="sheet" alone and could grab any sheet-type resource it found
+  // first, then wrote Playbook facts under ITS resourceId — here, the FAQ's.
+  // Once the guard was added, every later sync correctly reused the real
+  // Playbook resource, but those old mistagged rows were never touched by
+  // anything since (findMatching/findAllForInsurer scan the whole table
+  // with no resourceId filter), so they kept competing with the correct
+  // rows for the same plan forever. Deliberately NOT "delete that other
+  // resource" — it may be a real, unrelated, actively-used resource (as the
+  // FAQ is here) — only rows that don't belong under THIS domain's
+  // canonical Playbook resourceId are removed. Runs unconditionally, before
+  // the hash check below, so it self-heals on every sync regardless of
+  // whether this run turns out to skip re-parsing.
+  await repos.kbPlaybookPlanFacts.deleteOrphanedForDomain("Health", resourceId);
+
   const previousHash = existing?.contentHash ?? null;
+  // Snapshotted before any write below — see diffPlanFacts and
+  // SyncPlaybookResult's own comments. [] on a brand-new resource, exactly
+  // like the "skipped" branch already relied on listByResource returning.
+  const previousFacts = await repos.kbPlaybookPlanFacts.listByResource(resourceId);
+  const previousNarrativeChunkCount = resource!.chunkCount;
 
   try {
     const tabData: Record<string, unknown[][]> = {};
     for (const tabName of ALL_PLAYBOOK_TABS) {
       tabData[tabName] = await fetchPlaybookSheetValues(tabName);
     }
+    // Cell notes (2026-09, Product Playbook advisor UI) — only fetched for
+    // the matrix tabs, since only those feed kb_playbook_plan_facts.notes;
+    // narrative tabs are chunked/embedded as prose and have no per-cell
+    // note concept here. Folded into the hash below alongside tabData so a
+    // sheet edit that changes ONLY a note (no value) still triggers a
+    // resync — otherwise a stale note could linger forever undetected.
+    const notesData: Record<string, (string | undefined)[][]> = {};
+    for (const tabName of Object.keys(MATRIX_TABS)) {
+      notesData[tabName] = await fetchPlaybookSheetNotes(tabName);
+    }
 
-    const hash = contentHash(JSON.stringify(tabData));
+    const hash = contentHash(JSON.stringify({ tabData, notesData, parserVersion: PLAYBOOK_PARSER_VERSION }));
     if (!wasErrored && previousHash === hash) {
       const unchanged = await repos.kbResources.update(resourceId, { status: "active", lastFetchedAt: new Date() });
-      const existingFacts = await repos.kbPlaybookPlanFacts.listByResource(resourceId);
       return {
         resource: unchanged!,
-        planFactCount: existingFacts.length,
+        planFactCount: previousFacts.length,
         narrativeChunkCount: unchanged!.chunkCount,
         skipped: true,
+        previousPlanFactCount: previousFacts.length,
+        previousNarrativeChunkCount,
+        plansAdded: 0,
+        plansRemoved: 0,
+        plansChanged: 0,
+        plansUnchanged: previousFacts.length,
       };
     }
 
     const planFacts: CreateKbPlaybookPlanFactEntry[] = [];
     for (const tabName of Object.keys(MATRIX_TABS)) {
-      planFacts.push(...parseMatrixTab(tabData[tabName] ?? [], tabName).map(e => ({ ...e, resourceId })));
+      planFacts.push(...parseMatrixTab(tabData[tabName] ?? [], tabName, notesData[tabName]).map(e => ({ ...e, resourceId })));
     }
+    const planDiff = diffPlanFacts(previousFacts, planFacts);
     await repos.kbPlaybookPlanFacts.replaceForResource(resourceId, planFacts);
 
     const narrativeText = NARRATIVE_TABS.map(tabName => parseNarrativeTab(tabData[tabName] ?? [], tabName))
@@ -326,11 +520,33 @@ export async function syncPlaybook(repos: Repositories, triggeredBy: string): Pr
       errorMessage: null,
     });
 
-    return { resource: updated!, planFactCount: planFacts.length, narrativeChunkCount: chunks.length, skipped: false };
+    return {
+      resource: updated!,
+      planFactCount: planFacts.length,
+      narrativeChunkCount: chunks.length,
+      skipped: false,
+      previousPlanFactCount: previousFacts.length,
+      previousNarrativeChunkCount,
+      plansAdded: planDiff.added,
+      plansRemoved: planDiff.removed,
+      plansChanged: planDiff.changed,
+      plansUnchanged: planDiff.unchanged,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const errored = await repos.kbResources.update(resourceId, { status: "error", errorMessage: message });
-    return { resource: errored!, planFactCount: 0, narrativeChunkCount: 0, skipped: false };
+    return {
+      resource: errored!,
+      planFactCount: 0,
+      narrativeChunkCount: 0,
+      skipped: false,
+      previousPlanFactCount: previousFacts.length,
+      previousNarrativeChunkCount,
+      plansAdded: 0,
+      plansRemoved: 0,
+      plansChanged: 0,
+      plansUnchanged: 0,
+    };
   }
 }
 

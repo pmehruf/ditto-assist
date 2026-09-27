@@ -44,7 +44,7 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
-    team: row.team === "Term" ? "Term" : "Health",
+    team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
   };
 }
 
@@ -359,7 +359,12 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
                   {entries.map((item, idx) => (
                     <tr
                       key={item.id}
-                      className={`border-b transition-colors ${dark ? "border-white/[0.06] odd:bg-white/[0.015]" : "border-stone-100 odd:bg-black/[0.015] hover:bg-stone-50"}`}
+                      // 2026-09: dark theme had no row-hover at all here,
+                      // while light theme did (hover:bg-stone-50, mapped to
+                      // the opaque --table-row-hover token) -- added the
+                      // equivalent dark-theme hover so both themes give the
+                      // same feedback.
+                      className={`border-b transition-colors ${dark ? "border-white/[0.06] odd:bg-white/[0.015] hover:bg-[var(--table-row-hover)]" : "border-stone-100 odd:bg-black/[0.015] hover:bg-stone-50"}`}
                     >
                       <td className={`${tdClass} font-mono font-bold text-center`}>
                         {(page - 1) * PAGE_SIZE + idx + 1}

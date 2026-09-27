@@ -101,4 +101,41 @@ describe("AnnouncementsRepository", () => {
       expect(await repo.getById(oldGeneral.id)).toBeDefined();
     });
   });
+
+  // "Both Advisors" audience (2026-09) — lets one announcement post to Health
+  // AND Term advisors at once instead of needing two near-duplicates. A
+  // "Both"-tagged row must surface for a Health-restricted viewer's query AND
+  // a Term-restricted viewer's query, on every filtered listing method.
+  describe("team filtering with the 'Both' audience", () => {
+    beforeEach(async () => {
+      await repo.create({ ...baseEntry, announcement: "health only", team: "Health" });
+      await repo.create({ ...baseEntry, announcement: "term only", team: "Term" });
+      await repo.create({ ...baseEntry, announcement: "both audiences", team: "Both" });
+    });
+
+    it("list(): a Health-restricted viewer sees Health + Both, not Term", async () => {
+      const rows = await repo.list({ team: "Health" });
+      expect(rows.map((r) => r.announcement).sort()).toEqual(["both audiences", "health only"].sort());
+    });
+
+    it("list(): a Term-restricted viewer sees Term + Both, not Health", async () => {
+      const rows = await repo.list({ team: "Term" });
+      expect(rows.map((r) => r.announcement).sort()).toEqual(["both audiences", "term only"].sort());
+    });
+
+    it("list(): an unrestricted viewer (no team filter) sees all three", async () => {
+      const rows = await repo.list();
+      expect(rows).toHaveLength(3);
+    });
+
+    it("listPaginated(): applies the same OR-with-Both matching as list()", async () => {
+      const result = await repo.listPaginated({ team: "Health" });
+      expect(result.data.map((r) => r.announcement).sort()).toEqual(["both audiences", "health only"].sort());
+    });
+
+    it("listMatching(): applies the same OR-with-Both matching as list()", async () => {
+      const rows = await repo.listMatching({ team: "Term" });
+      expect(rows.map((r) => r.announcement).sort()).toEqual(["both audiences", "term only"].sort());
+    });
+  });
 });

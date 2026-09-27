@@ -36,6 +36,13 @@ interface PedSuggestionsManagementProps {
   effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
   currentUser: LoggedUser | null;
   setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+  /** Whether the caller can add/edit/delete entries here — resolved from
+   * hasAccess("ped_suggestions", "Editor") in App.tsx (2026-09 permission
+   * architecture fix). This legacy page shares the same "ped_suggestions"
+   * feature id and the same /api/ped-suggestions routes as
+   * PedRepositoryManagement (which replaced it in the actual PED Repository
+   * tab) — see that component's own doc comment. */
+  canManage: boolean;
 }
 
 const PAGE_SIZE = 50;
@@ -127,17 +134,16 @@ function renderAddedBy(addedBy: string, dark: boolean) {
  * effect.
  *
  * Read access is open to any signed-in user via GET /api/ped-suggestions;
- * writes are gated to Admin/Developer both client- and server-side
- * (requireAdminOrDeveloper in server.ts) — unlike Plan Management and User
- * Directory, Admin gets full, non-disabled edit/delete rights here,
- * matching what the backend already permits.
+ * writes go through requireFeatureAccess("ped_suggestions", "Editor", ...)
+ * server-side (2026-09 permission architecture fix — previously
+ * requireAdminOrDeveloper, a hardcoded tier check), matching this
+ * component's own canManage prop.
  *
  * Seeded with ~1,223 terms, so this list is paginated (PAGE_SIZE) rather
  * than rendered flat like the much smaller User Directory table.
  */
-export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, setChangeLogs }: PedSuggestionsManagementProps) {
+export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: PedSuggestionsManagementProps) {
   const dark = theme === "dark";
-  const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
@@ -542,7 +548,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[640px]">
             <thead>
-              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
+              <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-[var(--table-header-bg)] border-stone-200"}`}>
                 <SortableTh label="Term" sortKey="term" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 <SortableTh label="Category" sortKey="category" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 <SortableTh label="Added By" sortKey="addedBy" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
@@ -551,7 +557,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
             </thead>
             <tbody>
               {addingNew && (
-                <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-sky-50/60"}`}>
+                <tr className={`border-b ${dark ? "border-stone-850 bg-sky-950/10" : "border-stone-150 bg-accent-subtle"}`}>
                   <td className={tdClass}>
                     <input
                       className={inputClass}
@@ -606,7 +612,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
                   <tr
                     key={entry.id}
                     className={`border-b last:border-b-0 align-top ${dark ? "border-stone-850" : "border-stone-150"} ${
-                      idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-stone-50/60") : ""
+                      idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""
                     }`}
                   >
                     <td className={tdClass}>

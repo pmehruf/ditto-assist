@@ -45,4 +45,16 @@ export class DepartmentsRepository {
     const [row] = await this.db.update(departments).set(patch).where(eq(departments.id, id)).returning();
     return row;
   }
+
+  /** Hard delete — Access Control Center Phase 4
+   * (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md). Callers must run
+   * countCatalogDependencies() (src/server/accessControl/catalogDependencies.ts)
+   * first and honor its block/confirm decision — this method performs no
+   * dependency check of its own, matching every other repository's
+   * single-table scope. Every referencing FK is `ON DELETE SET NULL`, so
+   * this can never fail with a foreign-key violation; it can, however,
+   * silently null out a live reference if the caller skipped the check. */
+  async delete(id: number): Promise<void> {
+    await this.db.delete(departments).where(eq(departments.id, id));
+  }
 }

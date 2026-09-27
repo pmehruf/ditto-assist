@@ -18,14 +18,26 @@
  * smaller advisor CSV backfill, this file has at least one row with a
  * legitimately quoted comma inside a field.
  *
+ * NOTE (2026-09): a second, later batch now shares this same table — see
+ * scripts/importJune2026QaBackfill.ts, which backfills June 2026 gaps in the
+ * live Sheet and (unlike this batch) DOES overlap the Sheet's own date
+ * range by design, relying on qaDataEngine.ts's getMergedFeedbackDumpRows()
+ * to de-dupe at read time instead of a guaranteed non-overlapping range.
+ * Rows this script inserts are unaffected — they still carry no source_batch
+ * (NULL), which is what --replace below wipes; the newer batch is stamped
+ * and wiped independently via deleteByBatch(), never by this script's
+ * --replace.
+ *
  * SAFETY
  *  - Read-only against the CSV; writes only to this app's own
  *    qa_evaluation_history table.
  *  - No natural unique key across the source rows to upsert against (the
  *    same Chat ID can legitimately appear multiple times — repeat
  *    evaluations of the same chat). Re-running with --commit therefore
- *    APPENDS by default; pass --replace together with --commit to wipe the
- *    table first instead (use after re-importing a corrected CSV).
+ *    APPENDS by default; pass --replace together with --commit to wipe this
+ *    (NULL source_batch) import first instead (use after re-importing a
+ *    corrected CSV) — this can never touch the separately-batched June 2026
+ *    backfill.
  *
  * USAGE
  *   npx tsx scripts/importQaEvaluationHistory.ts                    # dry run, prints a summary

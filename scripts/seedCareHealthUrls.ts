@@ -5,13 +5,13 @@
  * ONE-TIME SEED — imports Care Health's dedicated per-plan Brochure /
  * Prospectus documents (from cms.careinsurance.com) into the Knowledge
  * Base, via webIngest.ts's URL ingestion, tagged with documentType so
- * queryAssist.ts can apply the Policy Wording > Prospectus > Brochure
+ * productAssist.ts can apply the Policy Wording > Prospectus > Brochure
  * authority precedence — see scripts/seedHdfcErgoUrls.ts for the original
  * pattern this follows.
  *
  * NOTE: this batch is Brochure + Prospectus only — Care Health did not
  * provide Policy Wording URLs for these plans. Policy Wording is the
- * HIGHEST-authority document type in queryAssist.ts's SOURCE PRECEDENCE
+ * HIGHEST-authority document type in productAssist.ts's SOURCE PRECEDENCE
  * (the plan's actual contract language), so until dedicated Policy Wording
  * PDFs are added per plan, Product Assist's Care Health answers for these
  * plans are grounded in Prospectus/Brochure content only — a Prospectus is

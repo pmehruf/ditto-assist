@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestDb, type TestDb } from "../db/testUtils.js";
 import { createRepositories, type Repositories } from "../db/repositories/index.js";
-import { resolveQuotaBucket } from "../knowledgeBase/productAssistQuota.js";
+import { groupMatchesUser, type EligibilityGroupLike } from "../knowledgeBase/productAssistQuota.js";
 import type { MasterAdvisorsRow } from "./qaDataEngine.js";
 
 const getMasterAdvisorsRowsForSyncMock = vi.fn<() => Promise<{ totalRows: number; rows: MasterAdvisorsRow[] }>>();
@@ -37,6 +37,9 @@ function sheetRow(overrides: Partial<MasterAdvisorsRow> = {}): MasterAdvisorsRow
     skillDomain: "Health",
     email: "priya@joinditto.in",
     statusRaw: "Currently Employed",
+    batchNumber: null,
+    dateOfMovingOut: null,
+    lastWorkingDay: null,
     ...overrides,
   };
 }
@@ -266,23 +269,47 @@ describe("syncAdvisorDirectory", () => {
     await syncAdvisorDirectory(repos, "tester (Developer)");
 
     const user = await repos.users.findByEmail("priya@joinditto.in");
-    const bucket = resolveQuotaBucket(
-      { tier: user!.tier, tags: user!.tags, departmentId: user!.departmentId, orgTeamId: user!.orgTeamId, roleId: user!.roleId },
-      { eligibleDepartmentId: advisoryId, eligibleOrgTeamId: blissId, eligibleRoleId: advisorId }
-    );
-    expect(bucket).toBe("health_advisor");
+    const healthAdvisorsGroup: EligibilityGroupLike = {
+      id: 1,
+      name: "Health Advisors",
+      departmentId: advisoryId,
+      orgTeamId: blissId,
+      roleId: advisorId,
+      tag: "Health",
+      dailyCredits: null,
+      monthlyCredits: null,
+    };
+    const matches = groupMatchesUser(healthAdvisorsGroup, {
+      tags: user!.tags,
+      departmentId: user!.departmentId,
+      orgTeamId: user!.orgTeamId,
+      roleId: user!.roleId,
+    });
+    expect(matches).toBe(true);
   });
 
-  it("a synced Term-only advisor is NOT recognized as health_advisor (no Health tag)", async () => {
+  it("a synced Term-only advisor does NOT match a Health-tagged eligibility group (no Health tag)", async () => {
     await repos.users.create({ email: "priya@joinditto.in", name: "Priya Sharma", tactId: "TACT1001", tier: "General", status: "Active" });
     mockSheet([sheetRow({ skillDomain: "Term" })]);
     await syncAdvisorDirectory(repos, "tester (Developer)");
 
     const user = await repos.users.findByEmail("priya@joinditto.in");
-    const bucket = resolveQuotaBucket(
-      { tier: user!.tier, tags: user!.tags, departmentId: user!.departmentId, orgTeamId: user!.orgTeamId, roleId: user!.roleId },
-      { eligibleDepartmentId: advisoryId, eligibleOrgTeamId: blissId, eligibleRoleId: advisorId }
-    );
-    expect(bucket).toBe("trial");
+    const healthAdvisorsGroup: EligibilityGroupLike = {
+      id: 1,
+      name: "Health Advisors",
+      departmentId: advisoryId,
+      orgTeamId: blissId,
+      roleId: advisorId,
+      tag: "Health",
+      dailyCredits: null,
+      monthlyCredits: null,
+    };
+    const matches = groupMatchesUser(healthAdvisorsGroup, {
+      tags: user!.tags,
+      departmentId: user!.departmentId,
+      orgTeamId: user!.orgTeamId,
+      roleId: user!.roleId,
+    });
+    expect(matches).toBe(false);
   });
 });

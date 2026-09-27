@@ -9,7 +9,7 @@ import { kbChatSessions, type KbChatSessionRow, type NewKbChatSessionRow } from 
 
 export type CreateKbChatSessionEntry = Omit<NewKbChatSessionRow, "id" | "createdAt" | "updatedAt">;
 
-/** Data Access Layer for `kb_chat_sessions` — Query Assist's per-advisor
+/** Data Access Layer for `kb_chat_sessions` — Product Assist's per-advisor
  * conversation threads (each scoped to one insurer/plan selection, or
  * "General" — see schema.ts's comment above kbChatSessions). */
 export class KbChatSessionsRepository {

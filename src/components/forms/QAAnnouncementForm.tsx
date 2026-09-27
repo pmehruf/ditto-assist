@@ -134,20 +134,24 @@ export function QAAnnouncementForm({
   // it describes actually takes effect, which stays optional/blank).
   const todayStr = () => new Date().toISOString().slice(0, 10);
 
-  // "General Announcement" is kept in this union (NOT offered as a
-  // selectable Type below — see the dropdown's options) purely so editing
-  // a legacy row that was never reclassified (see migration 0056) doesn't
-  // hit a TypeScript error assigning `item.type` into this state. Its
-  // CustomSelect will simply show no matching option ("Select…") when that
-  // happens — the admin picks a real type (Product Announcement / Insurance
-  // Operations / QA Announcement) to save it as going forward.
+  // "General Announcement" and "Insight" are kept in this union (NEITHER is
+  // offered as a selectable Type below — see the dropdown's options) purely
+  // so editing a legacy row that still carries one of them (General:
+  // unreclassified by migration 0056; Insight: retired 2026-09, see this
+  // file's Type dropdown comment) doesn't hit a TypeScript error assigning
+  // `item.type` into this state. Its CustomSelect will simply show no
+  // matching option ("Select…") when that happens — the admin picks a real
+  // type (Product Announcement / Insurance Operations / QA Announcement) to
+  // save it as going forward.
   const [announcementType, setAnnouncementType] = useState<
     "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight"
   >("QA Announcement");
   // Which advisor audience this announcement targets — see teamForTags
   // in server.ts. Defaults to "Health" (matches the column default and the
-  // spec's retroactive backfill of pre-existing announcements).
-  const [announcementTeam, setAnnouncementTeam] = useState<"Health" | "Term">("Health");
+  // spec's retroactive backfill of pre-existing announcements). "Both"
+  // (2026-09) posts one announcement visible to Health AND Term advisors
+  // alike, instead of needing two near-duplicate announcements.
+  const [announcementTeam, setAnnouncementTeam] = useState<"Health" | "Term" | "Both">("Health");
   const [text, setText] = useState("");
   const [date, setDate] = useState(""); // Effective Date — Optional, when the policy/rule takes effect
   const [announcementDate, setAnnouncementDate] = useState(todayStr()); // Announcement Date — when this notice was posted; defaults to today but editable
@@ -646,7 +650,7 @@ export function QAAnnouncementForm({
       if (item) {
         const itemType = item.type || "QA Announcement";
         setAnnouncementType(itemType);
-        setAnnouncementTeam(item.team === "Term" ? "Term" : "Health");
+        setAnnouncementTeam(item.team === "Term" ? "Term" : item.team === "Both" ? "Both" : "Health");
         const announcementText = item.announcement || "";
         setText(announcementText);
         loadIntoEditor(announcementText);
@@ -712,7 +716,7 @@ export function QAAnnouncementForm({
     title: row.title ?? undefined,
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
-    team: row.team === "Term" ? "Term" : "Health",
+    team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -933,12 +937,15 @@ export function QAAnnouncementForm({
               theme={theme === "dark" ? "dark" : "light"}
               value={announcementType}
               onChange={(val) => setAnnouncementType(val as "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight")}
-              // "General Announcement" is intentionally NOT an option here —
-              // it's replaced by the two dedicated types below. If this form
-              // is editing a legacy row still carrying that type (see
-              // migration 0056), CustomSelect finds no matching option and
-              // shows its placeholder ("Select…") instead — picking any real
-              // type here and saving reclassifies that row for good.
+              // "General Announcement" and "Insight" are intentionally NOT
+              // options here — General is replaced by the two dedicated
+              // types below, and Insight was retired 2026-09 (the Did You
+              // Know card is now a live Health/Term FAQ feed, not
+              // admin-authored — see server.ts's GET /api/did-you-know). If
+              // this form is editing a legacy row still carrying either type,
+              // CustomSelect finds no matching option and shows its
+              // placeholder ("Select…") instead — picking any real type here
+              // and saving reclassifies that row for good.
               triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
                 theme === "dark"
                   ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
@@ -948,7 +955,6 @@ export function QAAnnouncementForm({
                 { value: "QA Announcement", label: "QA Announcement" },
                 { value: "Product Announcement", label: "Product Announcement" },
                 { value: "Insurance Operations", label: "Insurance Operations" },
-                { value: "Insight", label: "Insight" },
               ]}
             />
           </Field>
@@ -963,7 +969,7 @@ export function QAAnnouncementForm({
               <CustomSelect
                 theme={theme === "dark" ? "dark" : "light"}
                 value={announcementTeam}
-                onChange={(val) => setAnnouncementTeam(val as "Health" | "Term")}
+                onChange={(val) => setAnnouncementTeam(val as "Health" | "Term" | "Both")}
                 triggerClassName={`w-full flex items-center justify-between gap-2 text-xs font-semibold pl-2.5 pr-8 py-2 rounded-lg border outline-none cursor-pointer relative ${
                   theme === "dark"
                     ? "bg-[#12151A] border-[#252A34] text-white focus:border-blue-500"
@@ -972,6 +978,7 @@ export function QAAnnouncementForm({
                 options={[
                   { value: "Health", label: "Health Advisors" },
                   { value: "Term", label: "Term Advisors" },
+                  { value: "Both", label: "Both Advisors" },
                 ]}
               />
             </Field>
@@ -1256,7 +1263,7 @@ export function QAAnnouncementForm({
                   <div className="fixed inset-0 z-10" onClick={() => setColorPickerOpen(false)} />
                   <div
                     className={`absolute top-full left-0 mt-1 z-20 p-2 rounded-lg border shadow-lg ${
-                      theme === "dark" ? "bg-[#151920] border-[#252A34]" : "bg-white border-stone-200"
+                      theme === "dark" ? "bg-[#151920] border-[#252A34]" : "bg-[#ffffff] border-stone-200"
                     }`}
                   >
                     <div className="flex items-center gap-1.5">
@@ -1351,12 +1358,14 @@ export function QAAnnouncementForm({
                     : "bg-white border-stone-250 text-stone-850 focus:border-blue-500 placeholder-stone-400"
                 }`}
               />
+              {/* Shared --action-navy token (2026-09) instead of the old
+                  bg-blue-600 family. */}
               <button
                 type="button"
                 title="Insert link"
                 onClick={confirmLinkPrompt}
                 disabled={!linkUrl.trim()}
-                className="text-[11px] font-bold px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white cursor-pointer"
+                className="text-[11px] font-bold px-2.5 py-1 rounded-md bg-[var(--action-navy)] hover:bg-[var(--action-navy-hover)] disabled:opacity-40 disabled:cursor-not-allowed text-[var(--on-action-navy)] cursor-pointer"
               >
                 Insert
               </button>
@@ -1431,11 +1440,14 @@ export function QAAnnouncementForm({
       <div className="shrink-0 pt-2 mt-2 border-t border-light-stone/5 dark:border-stone-800">
         {editingAnnouncementId ? (
           <div className="flex gap-2">
+            {/* variant="action" (2026-09): shared --action-navy token
+                instead of the old bg-blue-600 family. */}
             <ClippedButton
               type="submit"
               size="lg"
+              variant="action"
               cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-              className="flex-grow py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
+              className="flex-grow py-2 text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md"
             >
               <Check className="w-4 h-4" />
               <span>Save Changes</span>
@@ -1451,11 +1463,14 @@ export function QAAnnouncementForm({
             </ClippedButton>
           </div>
         ) : (
+          // variant="action" (2026-09): shared --action-navy token instead
+          // of the old bg-blue-600 family.
           <ClippedButton
             type="submit"
             size="lg"
+            variant="action"
             cornerBg={theme === "dark" ? "#0e2236" : "#ffffff"}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md hover:shadow-blue-500/10"
+            className="w-full py-2 text-xs font-extrabold uppercase tracking-widest gap-2 shadow-md"
           >
             <Plus className="w-4 h-4" />
             <span>Add Announcement</span>

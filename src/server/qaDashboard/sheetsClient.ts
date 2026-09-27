@@ -159,21 +159,53 @@ async function getActiveAuthClient(): Promise<{ request<T>(opts: { url: string }
   );
 }
 
+// ── Connection health (2026-09) ────────────────────────────────────────
+// Passively tracks the outcome of every real fetchSheetValues() call —
+// not a dedicated probe/heartbeat, so it costs zero extra Sheets API
+// calls, but it does mean health only updates when something in the app
+// actually reads the sheet (which happens often enough in practice: the QA
+// Dashboard page, Team Tracker, the Home dashboard's QA widgets, and the
+// Advisor Directory Sync all go through this same function). Exposed to
+// GET /api/qa-dashboard/connection-status (server.ts) so the Connections
+// page can show real "last checked"/"last error" info instead of just
+// "a grant is stored" — see that route for how this is surfaced. In-memory
+// only, so it resets on a cold start/redeploy; the next real read repopulates
+// it within moments, same trade-off qaDataEngine.ts's own sheetCache makes.
+interface QaSheetsHealth {
+  lastSuccessAt: Date | null;
+  lastErrorAt: Date | null;
+  lastErrorMessage: string | null;
+}
+const qaSheetsHealth: QaSheetsHealth = { lastSuccessAt: null, lastErrorAt: null, lastErrorMessage: null };
+
+export function getQaSheetsHealth(): QaSheetsHealth {
+  return { ...qaSheetsHealth };
+}
+
 /** Fetches every row (including the header row) of a single sheet/tab as a
  * 2D array of raw cell values, exactly like Apps Script's
  * sheet.getDataRange().getValues() — except date cells are Sheets serial
  * numbers (see file header) rather than JS Date objects; qaDataEngine.ts's
  * column-aware readers convert only the columns it knows are dates. */
 export async function fetchSheetValues(sheetName: string): Promise<unknown[][]> {
-  const client = await getActiveAuthClient();
+  try {
+    const client = await getActiveAuthClient();
 
-  const range = encodeURIComponent(`'${sheetName}'`);
-  const url =
-    `https://sheets.googleapis.com/v4/spreadsheets/${QA_MASTER_SPREADSHEET_ID}/values/${range}` +
-    `?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`;
+    const range = encodeURIComponent(`'${sheetName}'`);
+    const url =
+      `https://sheets.googleapis.com/v4/spreadsheets/${QA_MASTER_SPREADSHEET_ID}/values/${range}` +
+      `?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`;
 
-  const res = await client.request<{ values?: unknown[][] }>({ url });
-  return res.data.values || [];
+    const res = await client.request<{ values?: unknown[][] }>({ url });
+    qaSheetsHealth.lastSuccessAt = new Date();
+    qaSheetsHealth.lastErrorAt = null;
+    qaSheetsHealth.lastErrorMessage = null;
+    return res.data.values || [];
+  } catch (err) {
+    qaSheetsHealth.lastErrorAt = new Date();
+    qaSheetsHealth.lastErrorMessage = err instanceof Error ? err.message : String(err);
+    throw err;
+  }
 }
 
 const SHEETS_SERIAL_EPOCH = Date.UTC(1899, 11, 30); // day 0 of the Sheets/Excel serial system
@@ -204,7 +236,26 @@ export function serialToDMY(serial: number): string {
   return `${dd}-${mm}-${yy}`;
 }
 
+/** Converts a sheet date serial to "yyyy-MM-dd" — unlike serialToDMY's
+ * display format, this is for storage/comparison: ISO 8601 date strings
+ * sort and compare lexicographically exactly like their underlying dates,
+ * so callers can find the "earliest" of several such strings with a plain
+ * string comparison (used by guideMentorRelationshipsSync.ts for its
+ * "Active Till" calculation). Same pure calendar math as serialToDMY, no
+ * timezone involved. */
+export function serialToISODate(serial: number): string {
+  const ms = SHEETS_SERIAL_EPOCH + Math.floor(serial) * MS_PER_DAY;
+  const d = new Date(ms);
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 /** Clears cached auth — exposed for tests only. */
 export function _resetSheetsClientForTests(): void {
   invalidateQaSheetsAuthCache();
+  qaSheetsHealth.lastSuccessAt = null;
+  qaSheetsHealth.lastErrorAt = null;
+  qaSheetsHealth.lastErrorMessage = null;
 }

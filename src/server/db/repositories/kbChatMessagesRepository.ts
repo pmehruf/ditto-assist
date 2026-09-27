@@ -10,7 +10,7 @@ import { kbChatMessages, type KbChatMessageRow, type NewKbChatMessageRow } from 
 export type CreateKbChatMessageEntry = Omit<NewKbChatMessageRow, "id" | "createdAt">;
 
 /** Data Access Layer for `kb_chat_messages` — one row per turn (user
- * question or assistant answer) in a Query Assist session. */
+ * question or assistant answer) in a Product Assist session. */
 export class KbChatMessagesRepository {
   constructor(private readonly db: AnyDb) {}
 

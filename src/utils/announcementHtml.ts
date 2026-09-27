@@ -400,8 +400,14 @@ export function editorHtmlToStoredContent(editorHtml: string, theme: "light" | "
   return HTML_ANNOUNCEMENT_SENTINEL + sanitizeAnnouncementHtml(editorHtml, theme);
 }
 
-const RATING_REGEX =
-  /\b(Rating\s*:\s*-?[1-5]|Rating\s+-?[1-5]|Rated\s*:\s*-?[1-5]|Rated\s+-?[1-5]|rating\s*:\s*-?[1-5]|rating\s+-?[1-5]|rated\s*:\s*-?[1-5]|rated\s+-?[1-5]|R-?[1-5]|r-?[1-5])\b/g;
+// Note: the no-colon alternatives use \s* (zero or more), not \s+ — recent
+// announcement content has started coming out as "Rated-3" (a hyphen glued
+// directly onto the word, no space at all), which \s+ can't match. \s* covers
+// that glued form plus every previously-working spaced/unspaced variant
+// ("Rated 3", "Rated  -3", "Rated3"), consistent with how R-3/r-3 already
+// allow a directly-attached hyphen with no whitespace requirement.
+export const RATING_REGEX =
+  /\b(Rating\s*:\s*-?[1-5]|Rating\s*-?[1-5]|Rated\s*:\s*-?[1-5]|Rated\s*-?[1-5]|rating\s*:\s*-?[1-5]|rating\s*-?[1-5]|rated\s*:\s*-?[1-5]|rated\s*-?[1-5]|R-?[1-5]|r-?[1-5])\b/g;
 const URL_REGEX = /(https?:\/\/[^\s<>"')]+)/g;
 
 function ratingChipClasses(n: number, theme: "light" | "dark"): string {
