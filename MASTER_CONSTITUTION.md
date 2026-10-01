@@ -126,7 +126,7 @@ Only principles provable from the implementation. Aspirational rules are exclude
 
 **Mapping-control layer (`MAPPING_ENGINE=db`)** — [CURRENT] (added 2026-10-01). `src/mapping/routingEngine.ts` interprets the `routing_rules`, `ped_aliases`, `ped_repository` and `categories` tables and reproduces the legacy pipeline exactly. Equality with production's day-one behaviour was proven on 113,130 (term, plan) pairs, including explanation text, umbrella recommendations and supporting flags (`src/__tests__/mappingControl.equality.test.ts`; frozen baseline `src/__tests__/fixtures/mapping/production-day-one.*`). The legacy engine in `src/engine.ts` is untouched and remains the migration oracle and the default (`MAPPING_ENGINE` unset) until its removal is approved.
 - *Order (first stage that returns wins; each row is a `routing_rules` row or a named primitive):* admin plan-specific PED mapping (primitive) → life-stage firewall → plan-scoped rules (AFP sleep apnea, AFP vascular, Care Supreme IBD, Optima autoimmune-joint; **fixed categories** — they no longer follow a changed dictionary category, approved 2026-10-01) → shields A–I → exact plan wording / P0 (primitive) → dictionary stage: alias lookup (primitive), benign-CNS reassignment, category short-circuits (vascular_fallback, autoimmune on Optima, acute_infection, allergy, gynecomastia, ambiguous_symptom, eosinophilia_finding, lifestyle, natural_life_stage, acute_trauma, neuro_mild, investigation_procedure, benign_growth), then the Plan Decision (primitive) → disease-family rules in the legacy order → generic shields → unresolved (AI step). Post-processing: sanitize → post-guards (rules; skipped for plan overrides) → finalize.
-- *Alias compatibility controls* — per alias, applied only at the dictionary stage; they never override exact wording, plan overrides, shields or plan rules: `routing_enabled = false` → the alias has no dictionary entry; else `category_key_override`, when set, replaces the PED's category; else the PED's own category is used. The category then passes through the same short-circuits and Plan Decision as before. They exist so the data-driven engine can reproduce production without deleting or changing any PED data; each is visible and editable in the PED Library ("Matching options") and shown in the lookup trace.
+- *Alias compatibility controls* — per alias, applied only at the dictionary stage; they never override exact wording, plan overrides, shields or plan rules: `routing_enabled = false` → the alias has no dictionary entry; else `category_key_override`, when set, replaces the PED's category; else the PED's own category is used. The category then passes through the same short-circuits and Plan Decision as before. Third control (approved 2026-10-01): `fallback_category_key` is a last-resort category — only if the whole pipeline resolved nothing with the primary category is the pipeline run once more with this category in the dictionary stage. It reproduces production's browser-then-server two-pass behaviour (the browser classifies with the compiled dictionary; only if that finds nothing does the server run with `ped_mapping_overrides` merged in) for the aliases where those two differ. They exist so the data-driven engine can reproduce production without deleting or changing any PED data; each is visible and editable in the PED Library ("Matching options") and shown in the lookup trace.
 - *Named engine primitives (code, no editable mapping data):* admin plan-override matching, exact-wording match, dictionary lookup, Plan Decision, confirmed-diabetes handling, hypertension complication handling, and the diabetes-restriction post-guard; plus sanitize/finalize post-processing and umbrella-question detection. Their patterns, tables and message templates are held as rule parameters.
 - *Live propagation:* every lookup reads the single-row `mapping_state.version`; each instance reloads its snapshot when the number changed. Writes that can change a routing result bump it, so a change is live on every instance on its next lookup. The decision trace (`decision_trace`: deciding rule, post-guard, dictionary source) is returned with each result.
 - *Rollback:* set `MAPPING_ENGINE=legacy` (environment change, no redeploy). The migration is additive; nothing is removed.
@@ -575,11 +575,14 @@ v1.2  (2026-10-01)  — mapping-control Phase 2 (equality migration)
 - Regression sign-off: full-corpus equality (113,130 pairs, zero primary and
   zero strict differences), plus the named audit checks, in
   src/__tests__/mappingControl.{equality,propagation,audit}.test.ts.
-- Not yet recorded here (not yet implemented or not yet approved): the ordered
-  category chain (approved A4, Phase 4), UI-managed exceptions and audit/undo
-  (approved A5/A1, Phase 3), category management (approved A3, Phase 3), and one
-  open item awaiting owner approval — a third alias control (a last-resort
-  category) needed to reproduce a production quirk (see the Phase 2 report).
+- Third alias control `fallback_category_key` (last-resort category): approved
+  by the owner 2026-10-01; needed to preserve current production behaviour for
+  the 32 (condition, plan) pairs where the browser-then-server two-pass quirk
+  decides the result. Documented in Part IV.
+- Not yet recorded here (not yet implemented): the ordered category chain
+  (approved A4, Phase 4), UI-managed exceptions and audit/undo (approved A5/A1,
+  Phase 3), category management (approved A3, Phase 3), and PED Category
+  Governance (a later named phase, see docs/MAPPING_CONTROL_PLAN.md).
 ```
 
 Each future entry must summarize what changed and cite its Change Impact classification. A version that changes runtime behavior must reference the regression sign-off.
