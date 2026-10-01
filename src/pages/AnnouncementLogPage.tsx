@@ -141,7 +141,7 @@ interface AnnouncementLogPageProps {
  * "Announcement Manager" (qa_announcement_log) tab content. Extracted
  * verbatim from App.tsx (Phase 1.3). The `activeTab === "qa_announcement_log"`
  * condition and wrapping `<motion.div key="qa_announcement_log">`
- * deliberately stay in App.tsx (see ResourcesPage.tsx for why).
+ * deliberately stay in App.tsx (see the AnimatePresence block in App.tsx for why).
  *
  * List side is a table (not the old masonry tile gallery) — same
  * column/click-to-expand shape as the advisor-facing Announcements archive

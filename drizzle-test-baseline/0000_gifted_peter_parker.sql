@@ -8,7 +8,6 @@ CREATE TYPE "public"."collision_type" AS ENUM('alias', 'category', 'plan', 'ai',
 CREATE TYPE "public"."faq_category" AS ENUM('health_product', 'operations_health');--> statement-breakpoint
 CREATE TYPE "public"."feature_access_level" AS ENUM('None', 'Viewer', 'Editor');--> statement-breakpoint
 CREATE TYPE "public"."flagged_issue_status" AS ENUM('Pending', 'Urgent', 'Resolved', 'Ignored');--> statement-breakpoint
-CREATE TYPE "public"."group_tier" AS ENUM('General', 'Admin', 'Platform Admin');--> statement-breakpoint
 CREATE TYPE "public"."kb_category_type" AS ENUM('insurer', 'general', 'fundamentals');--> statement-breakpoint
 CREATE TYPE "public"."kb_chat_role" AS ENUM('user', 'assistant');--> statement-breakpoint
 CREATE TYPE "public"."kb_document_type" AS ENUM('brochure', 'policy_wording', 'prospectus', 'addon', 'other');--> statement-breakpoint
@@ -246,6 +245,7 @@ CREATE TABLE "group_tool_access" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"relationship_group_id" integer NOT NULL,
 	"feature_id" text NOT NULL,
+	"level" "feature_access_level" DEFAULT 'Editor' NOT NULL,
 	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -486,7 +486,8 @@ CREATE TABLE "plan_overrides" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"plan_name" text NOT NULL,
 	"ped_id" integer NOT NULL,
-	"category_key" text NOT NULL,
+	"category_key" text,
+	"target_question" text,
 	"reason" text,
 	"added_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -662,7 +663,6 @@ CREATE TABLE "relationship_groups" (
 	"active" boolean DEFAULT true NOT NULL,
 	"department_id" integer,
 	"used_for_group_access" boolean DEFAULT false NOT NULL,
-	"group_tier" "group_tier" DEFAULT 'General' NOT NULL,
 	"created_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -29,9 +29,21 @@ import {
   X,
   Search,
   Layers,
+  RotateCcw,
+  Copy,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 import { CustomSelect, type CustomSelectOption } from "../components/CustomSelect";
+import { DateInputDMY } from "../components/DateInputDMY";
+import {
+  combineSessionNotes,
+  filterFeedbackEntries,
+  feedbackOwners,
+  feedbackCountLabel,
+  isFeedbackFilterActive,
+  EMPTY_FEEDBACK_FILTER,
+  type FeedbackFilter,
+} from "../utils/sessionFeedback";
 
 /**
  * TEAM QA PERFORMANCE TRACKER ("Team Tracker")
@@ -674,13 +686,14 @@ interface SessionFeedbackActionableDraft {
 }
 interface SessionFeedbackDraft {
   meetingDate: string; // "yyyy-MM-dd"
-  discussionPoints: string;
-  meetingNotes: string;
+  /** Single "Session Notes" field — saved to the existing meeting_notes
+   * column (see src/utils/sessionFeedback.ts). */
+  sessionNotes: string;
   actionables: SessionFeedbackActionableDraft[];
 }
 function emptySessionFeedbackDraft(): SessionFeedbackDraft {
   const d = new Date();
-  return { meetingDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, discussionPoints: "", meetingNotes: "", actionables: [] };
+  return { meetingDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, sessionNotes: "", actionables: [] };
 }
 function sessionFeedbackDraftKey(tactId: string): string {
   return `ditto_session_feedback_draft_${tactId}`;
@@ -693,7 +706,14 @@ function loadSessionFeedbackDraft(tactId: string): SessionFeedbackDraft {
     const raw = window.localStorage.getItem(sessionFeedbackDraftKey(tactId));
     if (!raw) return emptySessionFeedbackDraft();
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && Array.isArray(parsed.actionables)) return parsed as SessionFeedbackDraft;
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.actionables)) {
+      // Drafts saved before Discussion Points + Meeting Notes were merged
+      // carry the two old fields — fold them into Session Notes so an
+      // unsaved draft is never lost.
+      const sessionNotes =
+        typeof parsed.sessionNotes === "string" ? parsed.sessionNotes : combineSessionNotes(parsed.discussionPoints, parsed.meetingNotes);
+      return { meetingDate: parsed.meetingDate, sessionNotes, actionables: parsed.actionables };
+    }
   } catch {
     /* corrupt/unreadable draft — start fresh rather than crash */
   }
@@ -714,7 +734,7 @@ function clearSessionFeedbackDraft(tactId: string) {
   }
 }
 function isSessionFeedbackDraftEmpty(d: SessionFeedbackDraft): boolean {
-  return !d.discussionPoints.trim() && !d.meetingNotes.trim() && d.actionables.every((a) => !a.description.trim());
+  return !d.sessionNotes.trim() && d.actionables.every((a) => !a.description.trim());
 }
 
 interface FeedbackSummaryActionable {
@@ -868,28 +888,63 @@ function ActionableStatusSelect({ actionableId, status, dark, onChanged }: { act
 // list on Save is deleted server-side. ──────────────────────────────────
 interface EditSessionDraft {
   meetingDate: string;
-  discussionPoints: string;
-  meetingNotes: string;
+  sessionNotes: string;
   actionables: { key: string; id?: number; description: string; dueDate: string; status: ActionableStatus }[];
 }
 function entryToEditDraft(s: FeedbackSummaryEntry): EditSessionDraft {
   return {
     meetingDate: s.meetingDate,
-    discussionPoints: s.discussionPoints || "",
-    meetingNotes: s.meetingNotes || "",
+    // Older entries may still have separate Discussion Points — editing
+    // starts from the combined text so nothing is dropped on Save.
+    sessionNotes: combineSessionNotes(s.discussionPoints, s.meetingNotes),
     actionables: s.actionables.map((a) => ({ key: `${a.id}`, id: a.id, description: a.description, dueDate: a.dueDate || "", status: a.status })),
   };
 }
 
+/** Text capped to a fixed height, with "Read more" / "Show less" shown only
+ * when the text actually overflows. Line breaks are kept as typed. */
+function ClampedText({ text, dark, maxHeightPx = 96 }: { text: string; dark: boolean; maxHeightPx?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || expanded) return;
+    const check = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text, expanded]);
+  return (
+    <div>
+      <div ref={ref} className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] overflow-hidden" style={expanded ? undefined : { maxHeight: maxHeightPx }}>
+        {text}
+      </div>
+      {(overflows || expanded) && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className={`mt-1 text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Feedback Summary — the longitudinal record of session feedback for
-// this advisor. Scannable list, newest meeting first; each actionable's
-// status is editable right here rather than only settable at creation, and
-// (Task 7) the whole entry — date, discussion, notes, actionable list —
-// can now be edited after Save via the Pencil button, not just re-created.
+// this advisor, as a table (newest meeting first, as returned by the API):
+// one row per actionable, with Date / Feedback By / Session Notes spanning
+// that session's rows. Each actionable's status is editable right here,
+// and (Task 7) the whole entry can be edited via the Pencil button.
 function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean; tactId: string; refreshSignal: number }) {
   const [entries, setEntries] = useState<FeedbackSummaryEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState<FeedbackFilter>(EMPTY_FEEDBACK_FILTER);
 
   useEffect(() => {
     let cancelled = false;
@@ -909,6 +964,9 @@ function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean
       cancelled = true;
     };
   }, [tactId, refreshSignal]);
+
+  // Filters are per advisor — start clean when switching advisors.
+  useEffect(() => setFilter(EMPTY_FEEDBACK_FILTER), [tactId]);
 
   const setActionableStatus = (sessionId: number, actionableId: number, next: ActionableStatus) => {
     setEntries((prev) => (prev ? prev.map((s) => (s.id !== sessionId ? s : { ...s, actionables: s.actionables.map((a) => (a.id === actionableId ? { ...a, status: next } : a)) })) : prev));
@@ -935,8 +993,9 @@ function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean
     try {
       const updated = await patchSessionFeedback(sessionId, {
         meetingDate: editDraft.meetingDate,
-        discussionPoints: editDraft.discussionPoints,
-        meetingNotes: editDraft.meetingNotes,
+        // Session Notes is stored in the existing meeting_notes column.
+        discussionPoints: "",
+        meetingNotes: editDraft.sessionNotes,
         actionables: editDraft.actionables.filter((a) => a.description.trim()).map((a) => ({ id: a.id, description: a.description.trim(), dueDate: a.dueDate || null, status: a.status })),
       });
       setEntries((prev) => (prev ? prev.map((s) => (s.id === sessionId ? updated : s)) : prev));
@@ -948,172 +1007,265 @@ function FeedbackSummarySection({ dark, tactId, refreshSignal }: { dark: boolean
     }
   };
 
+  const owners = useMemo(() => feedbackOwners(entries || []), [entries]);
+  const visible = useMemo(() => filterFeedbackEntries(entries || [], filter), [entries, filter]);
+  const filterActive = isFeedbackFilterActive(filter);
+
   const inputCls = `w-full rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"}`;
+  const dateCls = `${inputCls} flex items-center justify-between gap-2 text-left cursor-pointer`;
+  const filterLabelCls = "text-[10px] font-bold uppercase tracking-wider text-content-muted";
+  const ownerOptions: CustomSelectOption[] = [{ value: "", label: "Everyone" }, ...owners.map((o) => ({ value: o, label: o }))];
+  // Opaque header so rows scrolling underneath don't show through.
+  const headBg = dark ? "bg-[#0b1c2c]" : "bg-[#F6F9FC]";
+  const cellBorder = dark ? "border-white/[0.06]" : "border-stone-150";
+  const thCls = `px-2.5 py-2 text-left text-[10px] font-black uppercase tracking-wider text-content-muted border-b ${cellBorder}`;
+  const muted = dark ? "text-slate-400" : "text-stone-500";
+
+  const renderEditForm = (s: FeedbackSummaryEntry) =>
+    editDraft && (
+      <div className="space-y-2 max-w-3xl">
+        <label className="flex flex-col gap-1">
+          <span className={filterLabelCls}>Meeting Date</span>
+          <DateInputDMY theme={dark ? "dark" : "light"} value={editDraft.meetingDate} onChange={(v) => setEditDraft((d) => (d ? { ...d, meetingDate: v } : d))} displayClassName={dateCls} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={filterLabelCls}>Session Notes</span>
+          <textarea
+            rows={7}
+            value={editDraft.sessionNotes}
+            onChange={(e) => setEditDraft((d) => (d ? { ...d, sessionNotes: e.target.value } : d))}
+            className={`${inputCls} h-40 resize-none overflow-y-auto leading-relaxed`}
+          />
+        </label>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className={`flex items-center gap-1 ${filterLabelCls}`}>
+              <ListChecks className="w-3 h-3" />
+              Actionables
+            </span>
+            <button
+              type="button"
+              onClick={() => setEditDraft((d) => (d ? { ...d, actionables: [...d.actionables, { key: `new-${Date.now()}`, description: "", dueDate: "", status: "Open" }] } : d))}
+              className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}
+            >
+              + Add
+            </button>
+          </div>
+          {editDraft.actionables.map((a) => (
+            <div key={a.key} className={`rounded-lg border p-2 space-y-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+              <div className="flex items-start gap-1.5">
+                <input
+                  value={a.description}
+                  onChange={(e) => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.map((x) => (x.key === a.key ? { ...x, description: e.target.value } : x)) } : d))}
+                  placeholder="Description"
+                  className={inputCls + " flex-1"}
+                />
+                <button
+                  type="button"
+                  onClick={() => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.filter((x) => x.key !== a.key) } : d))}
+                  className={`cursor-pointer shrink-0 mt-1.5 ${dark ? "text-slate-400 hover:text-red-400" : "text-stone-400 hover:text-stone-500"}`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <DateInputDMY
+                  theme={dark ? "dark" : "light"}
+                  value={a.dueDate}
+                  onChange={(v) => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.map((x) => (x.key === a.key ? { ...x, dueDate: v } : x)) } : d))}
+                  displayClassName={dateCls}
+                />
+                <div className="w-[118px] shrink-0">
+                  <CustomSelect
+                    value={a.status}
+                    theme={dark ? "dark" : "light"}
+                    triggerClassName={`w-full flex items-center justify-between gap-1 pl-1.5 pr-5 py-1.5 rounded border outline-none text-[10px] font-black uppercase cursor-pointer relative ${
+                      dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
+                    }`}
+                    options={ACTIONABLE_STATUS_OPTIONS}
+                    onChange={(value) => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.map((x) => (x.key === a.key ? { ...x, status: value as ActionableStatus } : x)) } : d))}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        {editError && <p className="text-[11px] text-red-500 font-semibold">{editError}</p>}
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={cancelEdit}
+            disabled={editSaving}
+            className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-lg cursor-pointer ${dark ? "text-slate-300 hover:bg-white/10" : "text-stone-500 hover:bg-stone-100"}`}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => saveEdit(s.id)}
+            disabled={editSaving}
+            className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-lg cursor-pointer text-white bg-[#117FDA] hover:brightness-110 disabled:opacity-60"
+          >
+            {editSaving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    );
 
   return (
     <div className={`rounded-xl border overflow-hidden ${dark ? "border-white/[0.08] bg-white/[0.03]" : "border-[var(--border)] bg-white"}`}>
-      <div className={`px-3 py-2.5 border-b ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+      <div className={`px-3 py-2.5 border-b flex items-center justify-between gap-3 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
         <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>Feedback Summary</h4>
+        {entries && entries.length > 0 && <span className={`text-[11px] font-bold ${muted}`}>{feedbackCountLabel(visible.length)}</span>}
       </div>
-      <div className="p-3">
-        {loading ? (
-          <p className="text-[13px] text-content-muted py-2">Loading…</p>
-        ) : error ? (
-          <p className="text-[13px] text-red-500 py-2">{error}</p>
-        ) : !entries || entries.length === 0 ? (
-          <p className="text-[13px] text-content-muted py-2">No session feedback logged yet.</p>
-        ) : (
-          <ul className="space-y-2 max-h-[50vh] overflow-auto">
-            {entries.map((s) =>
-              editingId === s.id && editDraft ? (
-                <li key={s.id} className={`rounded-lg border p-2.5 space-y-2 ${dark ? "border-white/[0.12] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Date</span>
-                    <input type="date" value={editDraft.meetingDate} onChange={(e) => setEditDraft((d) => (d ? { ...d, meetingDate: e.target.value } : d))} className={inputCls} />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Discussion Points</span>
-                    <textarea rows={2} value={editDraft.discussionPoints} onChange={(e) => setEditDraft((d) => (d ? { ...d, discussionPoints: e.target.value } : d))} className={inputCls} />
-                  </label>
-                  <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Notes</span>
-                    <textarea rows={2} value={editDraft.meetingNotes} onChange={(e) => setEditDraft((d) => (d ? { ...d, meetingNotes: e.target.value } : d))} className={inputCls} />
-                  </label>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-content-muted">
-                        <ListChecks className="w-3 h-3" />
-                        Actionables
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEditDraft((d) => (d ? { ...d, actionables: [...d.actionables, { key: `new-${Date.now()}`, description: "", dueDate: "", status: "Open" }] } : d))
-                        }
-                        className={`text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300" : "text-blue-700"}`}
-                      >
-                        + Add
-                      </button>
-                    </div>
-                    {editDraft.actionables.map((a) => (
-                      <div key={a.key} className={`rounded-lg border p-2 space-y-1.5 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
-                        <div className="flex items-start gap-1.5">
-                          <input
-                            value={a.description}
-                            onChange={(e) => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.map((x) => (x.key === a.key ? { ...x, description: e.target.value } : x)) } : d))}
-                            placeholder="Description"
-                            className={inputCls + " flex-1"}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.filter((x) => x.key !== a.key) } : d))}
-                            className={`cursor-pointer shrink-0 mt-1.5 ${dark ? "text-slate-400 hover:text-red-400" : "text-stone-400 hover:text-stone-500"}`}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="date"
-                            value={a.dueDate}
-                            onChange={(e) => setEditDraft((d) => (d ? { ...d, actionables: d.actionables.map((x) => (x.key === a.key ? { ...x, dueDate: e.target.value } : x)) } : d))}
-                            className={inputCls}
-                          />
-                          <div className="w-[118px] shrink-0">
-                            <CustomSelect
-                              value={a.status}
-                              theme={dark ? "dark" : "light"}
-                              triggerClassName={`w-full flex items-center justify-between gap-1 pl-1.5 pr-5 py-1.5 rounded border outline-none text-[10px] font-black uppercase cursor-pointer relative ${
-                                dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-white border-stone-250 text-stone-850"
-                              }`}
-                              options={ACTIONABLE_STATUS_OPTIONS}
-                              onChange={(value) =>
-                                setEditDraft((d) => (d ? { ...d, actionables: d.actionables.map((x) => (x.key === a.key ? { ...x, status: value as ActionableStatus } : x)) } : d))
-                              }
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {editError && <p className="text-[11px] text-red-500 font-semibold">{editError}</p>}
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={cancelEdit}
-                      disabled={editSaving}
-                      className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-lg cursor-pointer ${dark ? "text-slate-300 hover:bg-white/10" : "text-stone-500 hover:bg-stone-100"}`}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => saveEdit(s.id)}
-                      disabled={editSaving}
-                      className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-lg cursor-pointer text-white bg-[#117FDA] hover:brightness-110 disabled:opacity-60"
-                    >
-                      {editSaving ? "Saving…" : "Save"}
-                    </button>
-                  </div>
-                </li>
-              ) : (
-                <li key={s.id} className={`rounded-lg border p-2.5 text-[12px] ${dark ? "border-white/[0.06]" : "border-stone-100"}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`font-bold ${dark ? "text-white" : "text-stone-900"}`}>{s.meetingDate}</span>
-                    <span className="flex items-center gap-2 shrink-0">
-                      <span className={dark ? "text-slate-400" : "text-stone-500"}>{s.authorName}</span>
-                      <button
-                        type="button"
-                        onClick={() => startEdit(s)}
-                        title="Edit this entry"
-                        className={`inline-flex items-center gap-1 text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
-                      >
-                        <Pencil className="w-3 h-3" />
-                        Edit
-                      </button>
-                    </span>
-                  </div>
-                  {s.discussionPoints && (
-                    <p className="mt-1">
-                      <span className="font-bold text-content-muted">Discussion: </span>
-                      {s.discussionPoints}
-                    </p>
-                  )}
-                  {s.meetingNotes && (
-                    <p className="mt-1">
-                      <span className="font-bold text-content-muted">Notes: </span>
-                      {s.meetingNotes}
-                    </p>
-                  )}
-                  {s.actionables.length > 0 && (
-                    <div className="mt-1.5">
-                      {/* Explicit "Actionable" label (Task 7 item 6) — this
-                          block used to render as generic text
-                          indistinguishable from Discussion/Notes above; the
-                          icon + label makes clear every row under it is an
-                          actionable, not more free-text commentary. */}
-                      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-content-muted mb-1">
-                        <ListChecks className="w-3 h-3" />
-                        Actionable{s.actionables.length === 1 ? "" : "s"}
-                      </span>
-                      <ul className="space-y-1">
-                        {s.actionables.map((a) => (
-                          <li key={a.id} className="flex items-center gap-2 flex-wrap">
-                            <ActionableStatusChip status={a.status} dark={dark} />
-                            <span className="flex-1 min-w-[120px]">{a.description}</span>
-                            {a.dueDate && <span className="text-content-muted">(due {a.dueDate})</span>}
-                            <ActionableStatusSelect actionableId={a.id} status={a.status} dark={dark} onChanged={(next) => setActionableStatus(s.id, a.id, next)} />
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </li>
-              )
-            )}
-          </ul>
-        )}
-      </div>
+
+      {entries && entries.length > 0 && (
+        <div className={`px-3 py-2.5 border-b flex flex-wrap items-end gap-3 ${dark ? "border-white/[0.08]" : "border-stone-150"}`}>
+          <label className="flex flex-col gap-1 w-[150px]">
+            <span className={filterLabelCls}>From</span>
+            <DateInputDMY theme={dark ? "dark" : "light"} value={filter.from} max={filter.to || undefined} onChange={(v) => setFilter((f) => ({ ...f, from: v }))} displayClassName={dateCls} />
+          </label>
+          <label className="flex flex-col gap-1 w-[150px]">
+            <span className={filterLabelCls}>To</span>
+            <DateInputDMY theme={dark ? "dark" : "light"} value={filter.to} min={filter.from || undefined} onChange={(v) => setFilter((f) => ({ ...f, to: v }))} displayClassName={dateCls} />
+          </label>
+          <div className="flex flex-col gap-1 w-[180px]">
+            <span className={filterLabelCls}>Feedback By</span>
+            <CustomSelect
+              value={filter.owner}
+              theme={dark ? "dark" : "light"}
+              triggerClassName={`${inputCls} flex items-center justify-between gap-2 pr-7 text-left cursor-pointer relative`}
+              options={ownerOptions}
+              onChange={(value) => setFilter((f) => ({ ...f, owner: value }))}
+            />
+          </div>
+          {filterActive && (
+            <button
+              type="button"
+              onClick={() => setFilter(EMPTY_FEEDBACK_FILTER)}
+              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer ${dark ? "text-slate-300 hover:bg-white/10" : "text-stone-600 hover:bg-stone-100"}`}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Reset filters
+            </button>
+          )}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="px-3 text-[13px] text-content-muted py-3">Loading…</p>
+      ) : error ? (
+        <p className="px-3 text-[13px] text-red-500 py-3">{error}</p>
+      ) : !entries || entries.length === 0 ? (
+        <p className="px-3 text-[13px] text-content-muted py-3">No session feedback logged yet.</p>
+      ) : visible.length === 0 ? (
+        <div className="px-3 py-6 text-center">
+          <p className="text-[13px] text-content-muted">No feedback matches these filters.</p>
+          <button
+            type="button"
+            onClick={() => setFilter(EMPTY_FEEDBACK_FILTER)}
+            className={`mt-1.5 text-[12px] font-bold cursor-pointer ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
+          >
+            Reset filters
+          </button>
+        </div>
+      ) : (
+        // Bounded to the viewport (shared .vp-panel/.vp-scroll rule): the
+        // table scrolls inside this box, never stretching the page.
+        <div className="vp-panel vp-scroll" style={{ "--vp-max-h": "50vh" } as CSSProperties}>
+          <table className="w-full min-w-[760px] table-fixed border-collapse text-[12px]">
+            <colgroup>
+              <col className="w-[104px]" />
+              <col className="w-[130px]" />
+              <col />
+              <col className="w-[30%]" />
+              <col className="w-[134px]" />
+              <col className="w-[64px]" />
+            </colgroup>
+            <thead className={`sticky top-0 z-10 ${headBg}`}>
+              <tr>
+                <th className={thCls}>Date</th>
+                <th className={thCls}>Feedback By</th>
+                <th className={thCls}>Session Notes</th>
+                <th className={thCls}>Actionables</th>
+                <th className={thCls}>Status</th>
+                <th className={thCls}>
+                  <span className="sr-only">Edit</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((s) => {
+                if (editingId === s.id && editDraft) {
+                  return (
+                    <tr key={s.id} className={`border-t ${cellBorder}`}>
+                      <td colSpan={6} className={`p-3 ${dark ? "bg-white/[0.02]" : "bg-surface-solid"}`}>
+                        {renderEditForm(s)}
+                      </td>
+                    </tr>
+                  );
+                }
+                const notes = combineSessionNotes(s.discussionPoints, s.meetingNotes);
+                const rows = Math.max(1, s.actionables.length);
+                return (
+                  <Fragment key={s.id}>
+                    {Array.from({ length: rows }, (_, i) => {
+                      const a = s.actionables[i];
+                      return (
+                        <tr key={a ? a.id : "none"} className={`align-top ${i === 0 ? `border-t ${cellBorder}` : ""}`}>
+                          {i === 0 && (
+                            <>
+                              <td rowSpan={rows} className={`px-2.5 py-2 font-bold whitespace-nowrap ${dark ? "text-white" : "text-stone-900"}`}>
+                                {s.meetingDate}
+                              </td>
+                              <td rowSpan={rows} className={`px-2.5 py-2 break-words ${muted}`}>
+                                {s.authorName}
+                              </td>
+                              <td rowSpan={rows} className="px-2.5 py-2">
+                                {notes ? <ClampedText text={notes} dark={dark} /> : <span className={muted}>—</span>}
+                              </td>
+                            </>
+                          )}
+                          <td className={`px-2.5 py-2 ${i > 0 ? `border-t border-dashed ${cellBorder}` : ""}`}>
+                            {a ? (
+                              <>
+                                <ClampedText text={a.description} dark={dark} maxHeightPx={56} />
+                                {a.dueDate && <span className={`block mt-0.5 text-[11px] ${muted}`}>Due {a.dueDate}</span>}
+                              </>
+                            ) : (
+                              <span className={muted}>—</span>
+                            )}
+                          </td>
+                          <td className={`px-2.5 py-2 ${i > 0 ? `border-t border-dashed ${cellBorder}` : ""}`}>
+                            {a ? (
+                              <ActionableStatusSelect actionableId={a.id} status={a.status} dark={dark} onChanged={(next) => setActionableStatus(s.id, a.id, next)} />
+                            ) : (
+                              <span className={muted}>—</span>
+                            )}
+                          </td>
+                          {i === 0 && (
+                            <td rowSpan={rows} className="px-2.5 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => startEdit(s)}
+                                title="Edit this entry"
+                                className={`inline-flex items-center gap-1 text-[11px] font-bold cursor-pointer ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                                Edit
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1153,8 +1305,9 @@ function SessionFeedbackWorkspace({ dark, tactId, advisorName, onSaved }: { dark
       await postSessionFeedback({
         tactId,
         meetingDate: draft.meetingDate,
-        discussionPoints: draft.discussionPoints,
-        meetingNotes: draft.meetingNotes,
+        // Session Notes is stored in the existing meeting_notes column.
+        discussionPoints: "",
+        meetingNotes: draft.sessionNotes,
         actionables: draft.actionables.filter((a) => a.description.trim()).map((a) => ({ description: a.description.trim(), dueDate: a.dueDate || null, status: "Open" as const })),
       });
       clearSessionFeedbackDraft(tactId);
@@ -1175,6 +1328,10 @@ function SessionFeedbackWorkspace({ dark, tactId, advisorName, onSaved }: { dark
   // that alpha let the list underneath visibly bleed through both the panel
   // shell and every input/textarea inside it in light mode.
   const inputCls = `w-full rounded-lg border px-2.5 py-1.5 text-[12px] outline-none ${dark ? "bg-[#102236] border-[#1e3e5c] text-[#eff6ff]" : "bg-[#ffffff] border-stone-250 text-stone-850"}`;
+  // The date picker's trigger is a <button>: without an explicit row layout
+  // it falls back to centred button text with the clear "x" wrapping onto
+  // a second line. Same look as the other fields, laid out as a row.
+  const dateCls = `${inputCls} flex items-center justify-between gap-2 text-left cursor-pointer`;
 
   return (
     <>
@@ -1209,28 +1366,19 @@ function SessionFeedbackWorkspace({ dark, tactId, advisorName, onSaved }: { dark
 
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Date</span>
-            <input type="date" value={draft.meetingDate} onChange={(e) => setDraft((d) => ({ ...d, meetingDate: e.target.value }))} className={inputCls} />
+            <DateInputDMY theme={dark ? "dark" : "light"} value={draft.meetingDate} onChange={(v) => setDraft((d) => ({ ...d, meetingDate: v }))} displayClassName={dateCls} />
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Discussion Points</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Session Notes</span>
+            {/* Fixed height: longer notes scroll inside the box instead of
+                stretching the form. Line breaks are saved as typed. */}
             <textarea
-              rows={3}
-              value={draft.discussionPoints}
-              onChange={(e) => setDraft((d) => ({ ...d, discussionPoints: e.target.value }))}
-              className={inputCls}
-              placeholder="What to bring up in this session…"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Meeting Notes</span>
-            <textarea
-              rows={3}
-              value={draft.meetingNotes}
-              onChange={(e) => setDraft((d) => ({ ...d, meetingNotes: e.target.value }))}
-              className={inputCls}
-              placeholder="What was actually discussed…"
+              rows={7}
+              value={draft.sessionNotes}
+              onChange={(e) => setDraft((d) => ({ ...d, sessionNotes: e.target.value }))}
+              className={`${inputCls} h-40 resize-none overflow-y-auto leading-relaxed`}
+              placeholder="What was discussed in this session…"
             />
           </label>
 
@@ -1260,7 +1408,7 @@ function SessionFeedbackWorkspace({ dark, tactId, advisorName, onSaved }: { dark
                     {/* No status picker here — new actionables always start
                         "Open"; status is only ever changed afterward, from
                         Feedback Summary. */}
-                    <input type="date" value={a.dueDate} onChange={(e) => updateActionable(a.id, { dueDate: e.target.value })} className={inputCls} />
+                    <DateInputDMY theme={dark ? "dark" : "light"} value={a.dueDate} onChange={(v) => updateActionable(a.id, { dueDate: v })} displayClassName={dateCls} />
                   </div>
                 ))}
               </div>
@@ -2527,7 +2675,11 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
                   grids it used to occupy a slot in. */}
               <div className="text-right shrink-0">
                 <span className="block text-[10px] font-bold uppercase tracking-wider text-content-muted">Total Mapped Advisors</span>
-                <span className={`text-lg font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.totalMapped}</span>
+                {tableLoading && insights.totalMapped === 0 ? (
+                  <LoadingSpinner dark={dark} size="sm" className="justify-end mt-1.5" />
+                ) : (
+                  <span className={`text-lg font-black ${dark ? "text-white" : "text-stone-900"}`}>{insights.totalMapped}</span>
+                )}
               </div>
             </div>
 
@@ -2559,6 +2711,7 @@ export function TeamTrackerPage({ theme }: TeamTrackerPageProps) {
                     />
                   }
                   periodSummary={periodSummaryDerived}
+                  loading={tableLoading}
                 />
                 <TeamPivotTable
                   dark={dark}
@@ -2688,8 +2841,22 @@ const MEDIUM_CHART_SIDE_BAR_GAP = 1; // Lead/Chat/Call bars within the Lead Scor
 const MEDIUM_CHART_SECTION_GAP = 16; // Payment section -> Lead Score section
 const MEDIUM_CHART_AXIS_BREATHING_ROOM = 14; // bottom of Call QA bar -> x-axis line
 const MEDIUM_CHART_LABEL_COL_WIDTH = 64;
-function CurrentMonthMediumChart({ dark, currentMonth }: { dark: boolean; currentMonth: CurrentMonthSnapshot | null }) {
+/** Circling "still loading" indicator — shown in place of a card's empty
+ * message while its data is still being fetched, so "no data yet" only
+ * ever appears once loading has actually finished. */
+function LoadingSpinner({ dark, size = "md", className = "" }: { dark: boolean; size?: "sm" | "md"; className?: string }) {
+  const ring = size === "sm" ? "w-4 h-4 border-2" : "w-6 h-6 border-[2.5px]";
+  return (
+    <div role="status" aria-live="polite" className={`flex items-center justify-center ${className}`}>
+      <span className={`${ring} rounded-full animate-spin ${dark ? "border-white/15 border-t-[#00D3F3]" : "border-stone-300 border-t-[#4673a9]"}`} />
+      <span className="sr-only">Loading</span>
+    </div>
+  );
+}
+
+function CurrentMonthMediumChart({ dark, currentMonth, loading = false }: { dark: boolean; currentMonth: CurrentMonthSnapshot | null; loading?: boolean }) {
   const hasData = currentMonth && (currentMonth.payment.avg !== null || currentMonth.lead.avg !== null || currentMonth.chat.avg !== null || currentMonth.call.avg !== null);
+  if (!hasData && loading) return <LoadingSpinner dark={dark} className="flex-1 py-10" />;
   if (!hasData) {
     return <div className="flex-1 flex items-center justify-center py-10 text-[13px] text-content-muted">Not enough scored data yet.</div>;
   }
@@ -2861,6 +3028,7 @@ function CurrentMonthKpiRow({
   selectedMonthKey,
   onSelectMonth,
   periodControl,
+  loading = false,
 }: {
   dark: boolean;
   monthLabel: string | null;
@@ -2882,6 +3050,9 @@ function CurrentMonthKpiRow({
   /** Rendered at the right end of this row, same line as the "Current
    * Month" heading — only passed at the team-level call site. */
   periodControl?: ReactNode;
+  /** While true and there's no month yet, show a spinner instead of the
+   * "no scored months" message. */
+  loading?: boolean;
 }) {
   const card = `rounded-xl border p-3 flex flex-col gap-1 ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`;
   const label = "text-[10px] font-bold uppercase tracking-wider text-content-muted";
@@ -2892,7 +3063,7 @@ function CurrentMonthKpiRow({
       <div className="space-y-2">
         {periodControl && <div className="flex justify-end">{periodControl}</div>}
         <div className={`rounded-xl border p-4 text-[13px] font-semibold text-content-muted ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
-          No scored months in the selected period yet.
+          {loading ? <LoadingSpinner dark={dark} size="sm" className="justify-start" /> : "No scored months in the selected period yet."}
         </div>
       </div>
     );
@@ -3176,6 +3347,7 @@ function TeamInsights({
   onChangePreferredCurrentMonthKey,
   periodControl,
   periodSummary,
+  loading = false,
 }: {
   dark: boolean;
   theme: "light" | "dark";
@@ -3193,6 +3365,9 @@ function TeamInsights({
    * the team-level, call site — CurrentMonthKpiRow's other (per-advisor)
    * call sites don't pass it, so they're unaffected. */
   periodControl?: ReactNode;
+  /** True while the team's data is still being fetched — cards show a
+   * spinner instead of their "no data yet" messages. */
+  loading?: boolean;
   /** Period view's own actual-date-range QA Performance data — see
    * getTeamTrackerPeriodSummary. Unused/ignored while period === "ongoing". */
   periodSummary: PeriodSummaryDerived;
@@ -3244,6 +3419,7 @@ function TeamInsights({
           selectedMonthKey={preferredCurrentMonthKey}
           onSelectMonth={onChangePreferredCurrentMonthKey}
           periodControl={periodControl}
+          loading={loading}
         />
       ) : (
         // No current-month info in a period view (Task item 1) — Period
@@ -3317,11 +3493,13 @@ function TeamInsights({
             <h4 className={`text-[11px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>{period === "ongoing" ? "This Month by Medium" : "Trend"}</h4>
           </div>
           {period === "ongoing" ? (
-            <CurrentMonthMediumChart dark={dark} currentMonth={insights.currentMonth} />
+            <CurrentMonthMediumChart dark={dark} currentMonth={insights.currentMonth} loading={loading} />
           ) : hasChartData ? (
             <div className="w-full h-48 font-sans text-[11px] font-bold">
               <ScoreTrendChart dark={dark} theme={theme} data={chartSeriesData} scoreLabel={METRIC_LABELS[periodMetric]} />
             </div>
+          ) : loading ? (
+            <LoadingSpinner dark={dark} className="flex-1 py-10" />
           ) : (
             <div className="flex-1 flex items-center justify-center py-10 text-[13px] text-content-muted">Not enough scored months yet.</div>
           )}
@@ -3347,7 +3525,8 @@ function TeamInsights({
             dark={dark}
             tone="good"
             onSelect={onOpenAdvisor}
-            emptyLabel={period === "ongoing" ? "No scores for the current month yet." : periodSummary.loading ? "Loading…" : "No scored advisors yet."}
+            loading={loading || (period !== "ongoing" && periodSummary.loading)}
+            emptyLabel={period === "ongoing" ? "No scores for the current month yet." : "No scored advisors yet."}
           />
         </div>
         <div className="flex flex-col gap-2">
@@ -3371,6 +3550,7 @@ function TeamInsights({
               entries={insights.potentialQip}
               dark={dark}
               onSelect={onOpenAdvisor}
+              loading={loading}
               emptyLabel="No advisors currently meet the Potential QIP criteria."
             />
           ) : (
@@ -3381,7 +3561,8 @@ function TeamInsights({
               dark={dark}
               tone="poor"
               onSelect={onOpenAdvisor}
-              emptyLabel={periodSummary.loading ? "Loading…" : "No scored advisors yet."}
+              loading={loading || periodSummary.loading}
+              emptyLabel="No scored advisors yet."
             />
           )}
         </div>
@@ -3478,6 +3659,7 @@ function RankedList({
   tone,
   onSelect,
   emptyLabel,
+  loading = false,
 }: {
   title: string;
   icon: ReactNode;
@@ -3486,6 +3668,8 @@ function RankedList({
   tone: "good" | "poor";
   onSelect: (tactId: string) => void;
   emptyLabel?: string;
+  /** Spinner instead of the empty message while data is loading. */
+  loading?: boolean;
 }) {
   return (
     <div className={`rounded-xl border p-3 ${RANK_CARD_MIN_HEIGHT_CLASS} ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
@@ -3493,7 +3677,9 @@ function RankedList({
         {icon}
         <h3 className={`text-[13px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>{title}</h3>
       </div>
-      {entries.length === 0 ? (
+      {entries.length === 0 && loading ? (
+        <LoadingSpinner dark={dark} className="py-6" />
+      ) : entries.length === 0 ? (
         <p className="text-[13px] text-content-muted py-2">{emptyLabel || "No scored advisors yet."}</p>
       ) : (
         <ol className="space-y-1">
@@ -3540,6 +3726,7 @@ function LowScoreList({
   dark,
   onSelect,
   emptyLabel,
+  loading = false,
 }: {
   title: string;
   icon: ReactNode;
@@ -3547,6 +3734,8 @@ function LowScoreList({
   dark: boolean;
   onSelect: (tactId: string) => void;
   emptyLabel?: string;
+  /** Spinner instead of the empty message while data is loading. */
+  loading?: boolean;
 }) {
   return (
     <div className={`rounded-xl border p-3 ${RANK_CARD_MIN_HEIGHT_CLASS} ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
@@ -3554,7 +3743,9 @@ function LowScoreList({
         {icon}
         <h3 className={`text-[13px] font-black uppercase tracking-wider ${dark ? "text-white" : "text-[#111827]"}`}>{title}</h3>
       </div>
-      {entries.length === 0 ? (
+      {entries.length === 0 && loading ? (
+        <LoadingSpinner dark={dark} className="py-6" />
+      ) : entries.length === 0 ? (
         <p className="text-[13px] text-content-muted py-2">{emptyLabel || "None found."}</p>
       ) : (
         // Plain table, no cell borders — the medium is the only thing that
@@ -3740,7 +3931,7 @@ function TeamPivotTable({
               {filteredPivots.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="px-3 py-6 text-center text-content-muted">
-                    {loading ? "Loading…" : search.trim() ? "No advisors match your search." : "No mapped advisors found for this scope."}
+                    {loading ? <LoadingSpinner dark={dark} /> : search.trim() ? "No advisors match your search." : "No mapped advisors found for this scope."}
                   </td>
                 </tr>
               ) : (
@@ -3752,7 +3943,10 @@ function TeamPivotTable({
               )}
               {/* Team-level summary row (Task item 6) — reads the same
                   insights.currentMonth snapshot the top QA Performance cards
-                  use, so this row is guaranteed to match them exactly. */}
+                  use, so this row is guaranteed to match them exactly.
+                  Hidden while the table is still loading (it would only
+                  show placeholder NA/0 values). */}
+              {!(loading && filteredPivots.length === 0) && (
               <tr className={`font-black border-t-2 ${dark ? "bg-white/[0.05] border-white/[0.12]" : "bg-[var(--table-header-bg)] border-stone-300"}`}>
                 <td className={cellClass}>Team Average</td>
                 {(["lead", "payment", "chat", "call"] as MediumKey[]).map((key) => {
@@ -3766,6 +3960,7 @@ function TeamPivotTable({
                 })}
                 <td className={cellClass} aria-hidden="true" />
               </tr>
+              )}
             </tbody>
           </table>
         ) : (
@@ -3785,7 +3980,7 @@ function TeamPivotTable({
               {filteredPivots.length === 0 ? (
                 <tr>
                   <td colSpan={months.length + 2} className="px-3 py-6 text-center text-content-muted">
-                    {loading ? "Loading…" : search.trim() ? "No advisors match your search." : "No mapped advisors found for this scope."}
+                    {loading ? <LoadingSpinner dark={dark} /> : search.trim() ? "No advisors match your search." : "No mapped advisors found for this scope."}
                   </td>
                 </tr>
               ) : (
@@ -4258,7 +4453,7 @@ function AdvisorDetailView({
         <div className="space-y-2">
           <div className="flex justify-end">{periodControl}</div>
           <div className={`rounded-xl border p-4 text-[13px] font-semibold text-content-muted ${dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border)]"}`}>
-            No scored months in the selected period yet.
+            {loading ? <LoadingSpinner dark={dark} size="sm" className="justify-start" /> : "No scored months in the selected period yet."}
           </div>
         </div>
       ) : (
@@ -4692,16 +4887,79 @@ function ChatIdLink({ value, dark }: { value: unknown; dark: boolean }) {
   const chatId = value === null || value === undefined || value === "" ? "" : String(value);
   if (!chatId) return null;
   return (
-    <a
-      href={chatIdLink(chatId)}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      className={`text-[11px] font-bold underline underline-offset-2 shrink-0 ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
-      title="Open chat"
+    <span className="inline-flex items-center gap-1 shrink-0">
+      <a
+        href={chatIdLink(chatId)}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className={`text-[11px] font-bold underline underline-offset-2 shrink-0 ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-700 hover:text-blue-800"}`}
+        title="Open chat"
+      >
+        {chatId}
+      </a>
+      <CopyChatIdButton chatId={chatId} dark={dark} />
+    </span>
+  );
+}
+
+/** Copies a chat ID to the clipboard. Shows a tick for ~1.5s after a
+ * successful copy. Its click never reaches the chat link or the row. */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path (e.g. insecure context) */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+function CopyChatIdButton({ chatId, dark }: { chatId: string; dark: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+  }, []);
+  const label = copied ? "Copied" : "Copy chat ID";
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (await copyTextToClipboard(chatId)) {
+          setCopied(true);
+          if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+          timerRef.current = window.setTimeout(() => setCopied(false), 1500);
+        }
+      }}
+      title={label}
+      aria-label={label}
+      className={`inline-flex items-center justify-center rounded cursor-pointer transition-colors focus:outline-none focus-visible:ring-1 ${
+        copied
+          ? "text-emerald-500"
+          : dark
+            ? "text-slate-500 hover:text-slate-300 focus-visible:ring-slate-400"
+            : "text-stone-400 hover:text-stone-600 focus-visible:ring-stone-400"
+      }`}
     >
-      {chatId}
-    </a>
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+    </button>
   );
 }
 function FlagLine({ dot, text }: { dot: string; text: string }) {

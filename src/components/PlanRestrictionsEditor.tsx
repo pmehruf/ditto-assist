@@ -8,6 +8,7 @@ import { Plus, Trash2, Pencil, X, Check, Power, PowerOff } from "lucide-react";
 import { CATEGORY_LABELS, type PlanRestriction } from "../types.js";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { useDialog } from "../hooks/useDialog";
 
 /** Live DB row shape, as returned by GET /api/plan-restrictions/:planName —
  * PlanRestriction (types.ts) plus the id/audit fields the CRUD UI needs. */
@@ -76,6 +77,7 @@ interface PlanRestrictionsEditorProps {
  */
 export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanRestrictionsEditorProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const [entries, setEntries] = useState<PlanRestrictionRowEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -181,7 +183,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
   };
 
   const deleteEntry = async (entry: PlanRestrictionRowEntry) => {
-    if (!window.confirm(`Delete the "${entry.categoryKey}" restriction on ${entry.planName}? This can't be undone.`)) return;
+    if (!(await confirm(`Delete the "${entry.categoryKey}" restriction on ${entry.planName}? This can't be undone.`))) return;
     setSaveError(null);
     try {
       const res = await fetch(`/api/plan-restrictions/${entry.id}`, { method: "DELETE" });

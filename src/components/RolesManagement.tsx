@@ -8,6 +8,7 @@ import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, IdCard, Power, Searc
 import { AppRole } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
+import { useDialog } from "../hooks/useDialog";
 
 interface RolesManagementProps {
   theme: "light" | "dark";
@@ -33,6 +34,7 @@ interface RolesManagementProps {
  */
 export function RolesManagement({ theme, effectiveTier, roles, usersList, onChanged, logAction }: RolesManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const canEdit = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   const [creating, setCreating] = useState(false);
@@ -162,7 +164,7 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
       });
       let body = await res.json().catch(() => ({}));
       if (!res.ok && body.requiresConfirmation) {
-        if (!window.confirm(`${body.error} Delete "${role.name}" anyway?`)) return;
+        if (!(await confirm(`${body.error} Delete "${role.name}" anyway?`))) return;
         res = await fetch(`/api/roles/${role.id}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -272,7 +274,7 @@ export function RolesManagement({ theme, effectiveTier, roles, usersList, onChan
               No roles match the current search/filters.
             </p>
           ) : (
-          <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+          <div className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
                 {visibleRoles.map((role, idx) => {

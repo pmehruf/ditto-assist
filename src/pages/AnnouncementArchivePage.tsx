@@ -232,7 +232,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
               </span>
             </label>
             <div className="flex items-center gap-2">
-              <DateInputDMY
+              <DateInputDMY theme={theme}
                 value={dateFrom}
                 onChange={setDateFrom}
                 max={dateTo || undefined}
@@ -240,7 +240,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
                 title="From"
               />
               <span className={`text-[10px] font-bold ${dark ? "text-stone-500" : "text-stone-400"}`}>to</span>
-              <DateInputDMY
+              <DateInputDMY theme={theme}
                 value={dateTo}
                 onChange={setDateTo}
                 min={dateFrom || undefined}

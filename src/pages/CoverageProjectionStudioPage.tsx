@@ -10,6 +10,19 @@ import { CustomSelect } from "../components/CustomSelect";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { ClippedButton } from "../components/ClippedButton";
 import { INSURER_LOGOS } from "../constants/insurerLogos";
+import { isCoverAmountEligible } from "../constants/planCoverEligibility";
+import {
+  PANEL_RADIUS,
+  STROKE_WIDTH,
+  TAB_CONTENT_GAP,
+  TAB_HEIGHT,
+  TAB_LOGO_SIZE,
+  TAB_PADDING_X,
+  TAB_WIDTH,
+  getPanelPath,
+  getTabPath,
+  useInsurerRowGeometry,
+} from "../components/InsurerConfigGeometry";
 
 // Page-scoped replacement logos for Care Health / Aditya Birla / Niva Bupa,
 // for THIS page only (2026-09-27, user-supplied assets). The shared
@@ -360,6 +373,15 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
   // other selection below starts empty/off; nothing is preselected once you
   // get past the insurer itself.
   const [insurerKey, setInsurerKey] = useState<string>(INSURER_TABS[0].key);
+  // Insurer tabs / configuration panel geometry (SVG rewrite, v7 -- see
+  // src/components/InsurerConfigGeometry.tsx). insurerShellRef wraps the tab
+  // row + panel (the SVG overlay's own coordinate origin); insurerTabRowRef
+  // and insurerPanelRef are measured live via getBoundingClientRect, never
+  // hardcoded pixel offsets or an equal-tab-width assumption.
+  const insurerShellRef = useRef<HTMLDivElement>(null);
+  const insurerTabRowRef = useRef<HTMLDivElement>(null);
+  const insurerPanelRef = useRef<HTMLElement>(null);
+  const insurerRowGeometry = useInsurerRowGeometry(insurerShellRef, insurerTabRowRef, insurerPanelRef, insurerKey);
   const [planId, setPlanId] = useState<string>("");
   // "none" (not a specific add-on) and OFF are the only valid no-preselection
   // states for a mutually-exclusive choice / a toggle, respectively.
@@ -397,12 +419,28 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
   // Sum Insured is text-backed (not a plain number) for the same reason
   // yearsText is below: a controlled numeric value snaps back to a fallback
   // mid-keystroke when the field is cleared, which turns "clear and retype"
-  // into "digits concatenate onto the fallback". Text state lets the field
-  // sit genuinely empty -- the only state that doesn't preselect an SI --
-  // while still parsing cleanly wherever the numeric value is needed.
-  const [siLakhsText, setSiLakhsText] = useState<string>("");
+  // into "digits concatenate onto the fallback" -- while still parsing
+  // cleanly wherever the numeric value is needed.
+  //
+  // Defaulted to "10" (2026-09): a plan can't be picked at all until a
+  // cover amount is set (the Plan list is gated by Sum Insured -- see
+  // planOptions below), so leaving this genuinely empty on first load made
+  // every plan look disabled before the advisor had touched anything.
+  // Defaulting it to a real, always-valid amount (10L is eligible for
+  // every single plan in planCoverEligibility.ts) means the Plan dropdown
+  // is usable immediately, while the advisor can still change or clear it
+  // like any other preset.
+  const [siLakhsText, setSiLakhsText] = useState<string>("10");
   const siLakhs = parseFloat(siLakhsText) || 0;
-  const [yearsText, setYearsText] = useState<string>("");
+  // Whether the "Custom" pill (rather than one of SI_PRESETS) is the active
+  // Sum Insured selector -- same reasoning and pattern as yearsCustomMode
+  // just below: a value-based inference can't tell "nothing entered yet"
+  // (siLakhs === 0) apart from "Custom" being the intended mode.
+  const [siCustomMode, setSiCustomMode] = useState(false);
+  // Defaulted to "5" (2026-09), alongside siLakhsText above, so a fresh
+  // page load starts on a real, immediately-usable combination rather than
+  // an empty projection length.
+  const [yearsText, setYearsText] = useState<string>("5");
   const years = clampYears(yearsText);
   // Whether the "Custom" pill (rather than one of YEARS_PRESETS) is the
   // active Projection Years selector. Kept as its own flag instead of
@@ -447,7 +485,27 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
     return PLANS.filter((p) => p.insurer === tab.matchInsurer);
   }, [insurerKey]);
 
-  const planOptions = useMemo(() => plansForInsurer.map((p) => ({ value: p.id, label: p.name })), [plansForInsurer]);
+  // Plan-wise Sum Insured eligibility (2026-09, reversed 2026-09): Sum
+  // Insured is the advisor's independent/primary choice (see siLakhsText
+  // below -- deliberately never reset by an insurer or plan switch), and
+  // the Plan list is what's gated by it now, not the other way around.
+  // A plan that doesn't offer the currently-chosen cover amount still shows
+  // in the list (never hidden -- same "visible but inert" requirement as
+  // before) but renders disabled via CustomSelect's own per-option
+  // `disabled`, which already blocks mouse/keyboard/onChange selection of a
+  // disabled row. With no Sum Insured chosen yet (siLakhs === 0), no real
+  // plan offers "0L", so isCoverAmountEligible is false for every plan and
+  // the whole list is disabled -- exactly mirroring the old "before a cover
+  // amount is picked, everything is disabled" rule, just on the other field.
+  const planOptions = useMemo(
+    () =>
+      plansForInsurer.map((p) => ({
+        value: p.id,
+        label: p.name,
+        disabled: !isCoverAmountEligible(p.id, siLakhs),
+      })),
+    [plansForInsurer, siLakhs],
+  );
 
   // No `!` assertion here on purpose: with no plan preselected (and none
   // carried over across an insurer switch), planId can genuinely fail to
@@ -460,7 +518,9 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
   // claims, results) so nothing carries over that might not apply to
   // whatever gets selected next. Sum Insured and Projection Years are
   // deliberately NOT reset here -- they're plan-agnostic cover parameters
-  // that stay valid across any plan or insurer.
+  // that stay valid across any plan or insurer (Sum Insured is now the
+  // field the Plan list is gated BY, so it has to be the one that persists;
+  // see clearPlanIfIneligible below for the direction that DOES get cleared).
   function resetPlanConfig() {
     setCareAddon("none");
     setNxtAddonOn(false);
@@ -481,6 +541,22 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
     setResults(null);
   }
 
+  // Plan-wise Sum Insured eligibility (2026-09, reversed 2026-09): the
+  // currently-selected PLAN must never be left selected once it stops being
+  // one of the newly-chosen cover amount's eligible plans -- e.g. Care Care
+  // selected, Sum Insured switched from 50L to 5L stays fine (still
+  // eligible), but switching from 50L to 7.5L (not a Care Care amount at
+  // all) must drop the plan selection rather than silently leave an
+  // inapplicable plan showing as chosen. Reads `basePlan` from the CURRENT
+  // render (called before the Sum Insured state update takes effect), same
+  // pattern as the old (now-removed) clearSiIfIneligible.
+  function clearPlanIfIneligible(nextSiLakhs: number) {
+    if (basePlan && !isCoverAmountEligible(basePlan.id, nextSiLakhs)) {
+      setPlanId("");
+      resetPlanConfig();
+    }
+  }
+
   function handleInsurerChange(key: string) {
     if (key === insurerKey) return;
     setInsurerKey(key);
@@ -489,6 +565,11 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
   }
 
   function handlePlanChange(id: string) {
+    // Belt-and-suspenders: CustomSelect already refuses to fire onChange
+    // for a disabled option, so this should be unreachable in practice --
+    // kept anyway so a plan that doesn't offer the current cover amount can
+    // never end up selected through any path.
+    if (!isCoverAmountEligible(id, siLakhs)) return;
     setPlanId(id);
     resetPlanConfig();
   }
@@ -573,9 +654,15 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
   // on -- true (no-op) for every other plan, or when it's off.
   const cashBagPremiumOk = !(basePlan?.id === "nb_reassure3" && cashBagOn) || premium > 0;
 
+  // Sum Insured must be one of the SELECTED PLAN's exact eligible amounts
+  // (see planCoverEligibility.ts) -- not just any positive number -- so
+  // Generate Illustration can't run with a cover amount the plan doesn't
+  // actually offer.
+  const siEligibleForPlan = isCoverAmountEligible(basePlan?.id, siLakhs);
+
   const canGenerate =
     !!basePlan &&
-    siLakhs > 0 &&
+    siEligibleForPlan &&
     (!basePlan.needsAspireInputs || (!!aspireVariant && !!aspireEntryAgeText)) &&
     (!basePlan.needsReassure2Variant || !!nbReassure2Variant) &&
     cashBagPremiumOk;
@@ -769,94 +856,103 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
       </div>
 
       <div className="space-y-5 pb-6">
-        {/* PLAN CONFIGURATION — "clipboard" redesign (2026-09): the insurer
-            tabs and the config card below are now ONE continuous shape
-            instead of two separately-bordered pieces. The tab strip carries
-            the top/left/right border and top corners; the card carries the
-            bottom/left/right border and bottom corners, with NO top border
-            of its own -- stacked with zero gap so the two pieces' left/right
-            border lines run on as a single unbroken line, top to bottom.
-            The active tab additionally gets its own bordered, open-bottomed
-            "flap" (motion layoutId, sliding smoothly between tabs) that
-            reads as physically attached to the card underneath it, while
-            inactive tabs stay flat text so only the open (selected) one
-            looks connected -- the "clip holding a sheet" metaphor this was
-            asked to match. Logos stay small (30px, unchanged) so the tab
-            row reads as a row of tabs, not a row of buttons. */}
-        <div
-          role="tablist"
-          aria-label="Insurer"
-          className={`relative z-10 flex flex-wrap items-end gap-1 rounded-t-2xl border border-b-0 px-3 pt-3 pb-0 ${
-            // Same surface/border pairing the card below uses (see its own
-            // comment) so the two pieces read as one material split in two,
-            // not two different-looking boxes stacked together.
-            dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border-strong)]"
-          }`}
-        >
-          {INSURER_TABS.map((tab) => {
-            const active = tab.key === insurerKey;
-            const logo = getInsurerLogo(tab.matchInsurer);
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => handleInsurerChange(tab.key)}
-                className={`relative px-3 py-2 text-xs font-bold cursor-pointer transition-colors duration-150 ${
-                  active
-                    ? dark
-                      ? "text-white"
-                      : "text-stone-900"
-                    : dark
-                      ? "text-slate-400 hover:text-slate-200"
-                      : "text-stone-500 hover:text-stone-800"
-                }`}
-              >
-                {active && (
-                  <motion.div
-                    layoutId="insurer-pill-highlight"
-                    className={`absolute inset-0 rounded-t-lg border border-b-0 ${
-                      // Light theme: the app's own tinted-accent pair
-                      // (already used for checked toggles elsewhere on
-                      // this page) instead of the bare cyan border on
-                      // near-white bg-stone-50, which barely registered --
-                      // cyan reads strongly against dark theme's near-black
-                      // bg but needs real fill behind it to read the same
-                      // way against a light one. No bottom border/radius
-                      // (2026-09): this flap sits flush on the card's own
-                      // top edge, open at the base, so it reads as attached
-                      // to the card rather than a closed standalone pill.
-                      dark ? "border-[#00D3F3] bg-white/[0.04]" : "border-[var(--accent-border)] bg-[var(--accent-subtle-bg)]"
-                    }`}
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                  />
-                )}
-                <span className="relative flex items-center gap-2">
-                  {/* Reverted to the original 30px (2026-09): "make the
-                      logos smaller" was about the configuration section's
-                      own header logo below, not these main insurer-tile
-                      selectors. */}
-                  {logo && <img src={logo} alt={tab.label} style={{ height: 30, width: "auto", borderRadius: 6, flexShrink: 0 }} />}
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {/* PLAN CONFIGURATION — "connected tabs" redesign (2026-09, v7 --
+            every tab (active or not) is now the same slanted "file tab"
+            trapezoid, drawn by ONE shared SVG overlay from live-measured
+            geometry (useInsurerRowGeometry, via insurerShellRef /
+            insurerTabRowRef / insurerPanelRef) -- not by each button's own
+            CSS border/background. The buttons themselves stay for layout,
+            click handling, and the tab/tabpanel a11y wiring; they render
+            fully transparent so the SVG shape underneath is the only
+            visible outline. The active tab's own path omits its bottom
+            edge, and the panel's own outline omits that exact same
+            horizontal span of its top edge (with that corner's arc left
+            out entirely when the active tab sits flush against it) --
+            same measured numbers on both sides, so they can't drift out
+            of sync, and every insurer goes through the identical
+            geometry functions (no per-insurer special-casing). */}
+        <div ref={insurerShellRef} className="relative">
+          <div
+            ref={insurerTabRowRef}
+            role="tablist"
+            aria-label="Insurer"
+            style={{ position: "relative", zIndex: 10, display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 8 }}
+          >
+            {INSURER_TABS.map((tab) => {
+              const active = tab.key === insurerKey;
+              const logo = getInsurerLogo(tab.matchInsurer);
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => handleInsurerChange(tab.key)}
+                  style={{
+                    position: "relative",
+                    // Fixed width AND height, shared across all four tabs
+                    // (TAB_WIDTH/TAB_HEIGHT from InsurerConfigGeometry) --
+                    // previously each tab's width came from its own content,
+                    // so shorter labels ("HDFC Ergo") rendered visibly
+                    // narrower than longer ones ("Care Health"). The SVG
+                    // shape drawn underneath (getTabPath) uses this exact
+                    // same measured width, so the two can never disagree.
+                    width: TAB_WIDTH,
+                    height: TAB_HEIGHT,
+                    paddingLeft: TAB_PADDING_X,
+                    paddingRight: TAB_PADDING_X,
+                    background: "transparent",
+                    border: "none",
+                  }}
+                  className={`text-xs font-bold cursor-pointer transition-colors duration-150 ${
+                    active
+                      ? dark
+                        ? "text-white"
+                        : "text-stone-900"
+                      : dark
+                        ? "text-slate-300 hover:text-white"
+                        : "text-stone-600 hover:text-stone-900"
+                  }`}
+                >
+                  <span
+                    className="relative flex items-center justify-center h-full"
+                    style={{ gap: TAB_CONTENT_GAP }}
+                  >
+                    {logo && (
+                      <img
+                        src={logo}
+                        alt={tab.label}
+                        style={{
+                          height: TAB_LOGO_SIZE,
+                          width: TAB_LOGO_SIZE,
+                          objectFit: "contain",
+                          borderRadius: 6,
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <span className="truncate" style={{ minWidth: 0 }}>
+                      {tab.label}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-        <section
-          className={`rounded-b-2xl border border-t-0 p-5 space-y-5 ${
-            // Light theme (2026-09 fix): an opaque bg-white reads as a
-            // properly "raised" card against the page's --bg (#EEF1F6) --
-            // the shared --surface-elevated token is only 50% opaque and,
-            // blended over a background that's already near-white, gave the
-            // card almost no contrast of its own ("washed out"). Scoped to
-            // this page only -- --surface-elevated itself is left alone
-            // since it's used by cards across the whole app.
-            dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-white border-[var(--border-strong)] shadow-card"
-          }`}
-        >
+          <section
+            ref={insurerPanelRef}
+            role="tabpanel"
+            className={`relative p-5 space-y-5 ${dark ? "bg-white/[0.03]" : "bg-white shadow-card"}`}
+            style={{
+              // No CSS border, and no gap/margin above -- the panel starts
+              // exactly where the tab row's own TAB_HEIGHT ends, and the
+              // SVG overlay below draws the entire visible outline for
+              // both the tabs and this panel as one connected shape.
+              marginTop: 0,
+              borderRadius: PANEL_RADIUS,
+            }}
+          >
           {/* Fades the plan fields in on every insurer switch (key=
               insurerKey remounts this wrapper) so the content underneath
               the selected tab visibly flows/replaces itself rather than
@@ -903,13 +999,15 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                 <label className={`w-32 shrink-0 text-[11px] font-bold ${dark ? "text-slate-300" : "text-stone-600"}`}>
                   Sum Insured (Lakhs)
                 </label>
-                <div className="flex-1 min-w-0 flex flex-wrap gap-1.5">
+                <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                   {SI_PRESETS.map(([label, val]) => (
                     <button
                       key={label}
                       type="button"
                       onClick={() => {
+                        setSiCustomMode(false);
                         setSiLakhsText(String(val));
+                        clearPlanIfIneligible(val);
                         setResults(null);
                       }}
                       // Cross-app UI consistency pass (2026-08, revised
@@ -923,8 +1021,13 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                       // clear cyan/blue emphasis" reference. Identical
                       // literal in both themes, so no dark/light branch is
                       // needed here either.
+                      //
+                      // Plan-wise eligibility gating now lives on the PLAN
+                      // list instead of here (2026-09, reversed) -- these
+                      // presets are back to being plain, always-clickable
+                      // cover suggestions, same as before that change.
                       className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                        siLakhs === val
+                        !siCustomMode && siLakhs === val
                           ? "bg-[#01334F] border-[#01334F] text-[#AEDCF4]"
                           : dark
                             ? "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
@@ -934,6 +1037,49 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                       {label}
                     </button>
                   ))}
+                  {/* CUSTOM (2026-09) -- a free-input pill for a cover amount
+                      outside the fixed preset list (e.g. 7.5L, 30L, 3Cr),
+                      mirroring Projection Years' own Custom pill immediately
+                      below both in markup shape and in using a dedicated mode
+                      flag rather than inferring "custom" from the value not
+                      matching a preset (siLakhs === 0 before anything is
+                      typed isn't a preset value either). This is also what
+                      makes every plan-wise cover amount in
+                      planCoverEligibility.ts reachable, including the ones
+                      with no corresponding preset chip. */}
+                  <button
+                    type="button"
+                    onClick={() => setSiCustomMode(true)}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                      siCustomMode
+                        ? "bg-[#01334F] border-[#01334F] text-[#AEDCF4]"
+                        : dark
+                          ? "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
+                          : "bg-stone-100 text-stone-600 border-stone-200 hover:bg-stone-200 hover:border-stone-300"
+                    }`}
+                  >
+                    <Pencil className="w-3 h-3" />
+                    Custom
+                  </button>
+                  {siCustomMode && (
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.5"
+                      autoFocus
+                      placeholder="Lakhs"
+                      value={siLakhsText}
+                      onChange={(e) => {
+                        const text = e.target.value;
+                        setSiLakhsText(text);
+                        clearPlanIfIneligible(parseFloat(text) || 0);
+                        setResults(null);
+                      }}
+                      className={`w-24 px-2.5 py-1.5 rounded-lg border outline-none font-semibold text-input-value text-[11px] bg-[var(--input-bg)] text-[var(--input-text)] ${
+                        dark ? "border-[var(--input-border)]" : "border-[var(--input-border-hover)]"
+                      }`}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1133,9 +1279,28 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                                 key={key}
                                 type="button"
                                 onClick={() => setCareAddon(key)}
+                                // Dark-theme contrast fix (2026-09): the
+                                // light-theme selected pill (#01334F fill /
+                                // #AEDCF4 text) is a strong dark-navy-on-white
+                                // combo, but that same literal navy fill sits
+                                // almost flush against this track's own
+                                // near-black bg-black/25 backdrop in dark
+                                // theme -- there's barely any luminance step
+                                // between "selected" and "the track", which
+                                // is exactly the "almost invisible" report.
+                                // Dark theme instead reuses the app's own
+                                // already-proven selected-row treatment (see
+                                // CustomSelect's selected option) --
+                                // --accent-subtle-bg fill, --accent text,
+                                // --accent-border ring -- the same cyan
+                                // "selected" language used everywhere else
+                                // in dark theme, which reads clearly against
+                                // a dark track. Light theme is untouched.
                                 className={`px-3.5 py-1.5 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
                                   careAddon === key
-                                    ? "bg-[#01334F] text-[#AEDCF4]"
+                                    ? dark
+                                      ? "bg-[var(--accent-subtle-bg)] text-[var(--accent)] border border-[var(--accent-border)]"
+                                      : "bg-[#01334F] text-[#AEDCF4]"
                                     : dark
                                       ? "text-slate-300 hover:text-slate-100"
                                       : "text-stone-600 hover:text-stone-900"
@@ -1205,7 +1370,101 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
             </div>
           </div>
           </motion.div>
-        </section>
+          </section>
+
+          {insurerRowGeometry && (() => {
+            const activeIdx = INSURER_TABS.findIndex((t) => t.key === insurerKey);
+            const activeRect = insurerRowGeometry.tabs[activeIdx];
+            if (!activeRect) return null;
+            // Light theme border-colour fix (2026-09): var(--accent-border)
+            // (#B9D2F2, a very pale pastel blue) is what dark theme's bold,
+            // saturated cyan (#00D3F3) was mirrored to, but at 1px stroke
+            // width it has too little contrast against the light page/card
+            // backgrounds to actually be seen -- confirmed live: the tab's
+            // own border was faintly visible, but the panel's top-edge
+            // segments beside the active tab (drawn with the exact same
+            // color/width/geometry) were essentially invisible, making the
+            // tab-to-panel connection look broken even though the geometry
+            // itself (gap position, corner-drop logic) was pixel-perfect.
+            // var(--accent) (#0754B7) is the app's existing solid "selected"
+            // accent colour and gives the same strong contrast dark theme
+            // gets from its own bold cyan, without inventing a new color.
+            const accentBorder = dark ? "#00D3F3" : "var(--accent)";
+            const accentFill = dark ? "#142D42" : "var(--accent-subtle-bg)";
+            // Light theme (2026-09 parity pass): the app's own design
+            // tokens already define a translucent "frosted" surface for
+            // cards (--surface, rgba(255,255,255,0.55)) and a soft card
+            // border (--border, #D3DAE5) -- using those here instead of the
+            // flat stone-gray this used to hardcode ("#f5f5f4"/"#e7e5e4")
+            // is what makes the inactive tabs read as light glass rather
+            // than a plain gray button, and keeps this component drawing
+            // from the same palette as the rest of the app's light theme
+            // instead of its own one-off colors.
+            const inactiveFill = dark ? "rgba(255,255,255,0.05)" : "var(--surface)";
+            const inactiveBorder = dark ? "rgba(255,255,255,0.1)" : "var(--border)";
+            const totalHeight = TAB_HEIGHT + insurerRowGeometry.panelHeight;
+            return (
+              <svg
+                aria-hidden="true"
+                focusable="false"
+                style={{
+                  // Sized as a percentage of the shell -- NOT a fixed pixel
+                  // number equal to the measured width/height -- so this
+                  // element inherits exactly whatever rendering scale the
+                  // shell itself is already under (e.g. a page-level CSS
+                  // zoom). getBoundingClientRect() measurements are already
+                  // in that same post-scale pixel space; pairing them with
+                  // an explicit pixel-sized SVG box would let the ancestor
+                  // scale it a SECOND time, throwing every coordinate off
+                  // by the scale factor (this is what broke Niva Bupa's
+                  // alignment during verification -- percentage sizing is
+                  // the fix).
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: "100%",
+                  height: "100%",
+                  pointerEvents: "none",
+                  zIndex: 5,
+                }}
+                viewBox={`0 0 ${insurerRowGeometry.width} ${totalHeight}`}
+              >
+                {insurerRowGeometry.tabs.map((rect, idx) => {
+                  const tab = INSURER_TABS[idx];
+                  if (!tab || tab.key === insurerKey) return null;
+                  return (
+                    <path
+                      key={tab.key}
+                      d={getTabPath(rect.x, rect.width, TAB_HEIGHT, false)}
+                      fill={inactiveFill}
+                      stroke={inactiveBorder}
+                      strokeWidth={STROKE_WIDTH}
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  );
+                })}
+                <path
+                  d={getTabPath(activeRect.x, activeRect.width, TAB_HEIGHT, true)}
+                  fill={accentFill}
+                  stroke={accentBorder}
+                  strokeWidth={STROKE_WIDTH}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <path
+                  transform={`translate(0, ${TAB_HEIGHT})`}
+                  d={getPanelPath(insurerRowGeometry.width, insurerRowGeometry.panelHeight, activeRect.x, activeRect.width, PANEL_RADIUS)}
+                  fill="none"
+                  stroke={accentBorder}
+                  strokeWidth={STROKE_WIDTH}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            );
+          })()}
+        </div>
 
         {/* CLAIM SCENARIOS — full width, its own card. */}
         <section
@@ -1342,6 +1601,19 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
           <PrimaryCtaButton theme={theme} onClick={runSimulation} disabled={!canGenerate} className="self-start">
             Generate Illustration
           </PrimaryCtaButton>
+          {/* Plan-wise Sum Insured eligibility (2026-09, reversed 2026-09):
+              tell the advisor why Generate Illustration is disabled once a
+              cover amount is picked but no eligible plan has been chosen for
+              it yet -- with siLakhs === 0 (nothing picked at all) this stays
+              quiet, same as before the plan dropdown even had eligibility
+              gating, and the other canGenerate conditions (Aspire/ReAssure
+              2.0 inputs, Cash-Bag+ premium) already have their own inline
+              prompts elsewhere in this form. */}
+          {siLakhs > 0 && !siEligibleForPlan && (
+            <p className={`mt-2 text-[11px] font-semibold ${dark ? "text-red-400" : "text-red-600"}`}>
+              Select a plan that is available for this cover amount.
+            </p>
+          )}
         </div>
 
         {/* RESULTS — deliberately theme-independent: this card always
@@ -1513,7 +1785,7 @@ export function CoverageProjectionStudioPage({ theme }: CoverageProjectionStudio
                     combines with Base SI/Booster+/Restoration, and only
                     exists here at all when the add-on was switched on. */}
                 {results.cashBagYears && (
-                  <div style={{ padding: "0 20px 4px" }}>
+                  <div className="vp-table-wrap" style={{ padding: "0 20px 4px" }}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "10px 0 6px", flexWrap: "wrap" }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.navy }}>Cash-Bag+ Accumulation</div>
                       {/* Premium used for this run -- the balances below only

@@ -10,6 +10,36 @@ export interface FeaturePermission {
   defaultTier: "General" | "Admin" | "Platform Admin" | "Developer";
   generalAccess: "None" | "Viewer" | "Editor";
   adminAccess: "None" | "Viewer" | "Editor";
+  /**
+   * Which Group Access zone this feature belongs to (2026-09h, at the
+   * user's explicit request: "Automatically include all applicable
+   * sidebar pages and features from the existing registry... Avoid
+   * maintaining a separate hardcoded list that becomes outdated when new
+   * features are added"). Set here, right where every other property of
+   * a new feature is already declared, instead of ALSO being added to a
+   * separate Set literal elsewhere (featurePermissions.ts's
+   * ADVISOR_ZONE_FEATURES/ADMIN_ZONE_FEATURES/RESTRICT_ONLY_FEATURES,
+   * which are now DERIVED from this field, not hand-maintained) — a new
+   * feature is simply unbuildable without picking one, so the Groups
+   * tab's checklist can never silently drift out of sync with the
+   * registry the way three independent Sets could.
+   *
+   *  - "advisor": reachable by every tier — Group Access can raise OR
+   *    restrict it for any member, General and up.
+   *  - "admin": reachable by Admin/Platform Admin/Developer — Group
+   *    Access can raise OR restrict it, but only ever for Admin-tier-and-up
+   *    members (never General).
+   *  - "administrative": self-escalation-sensitive administrative
+   *    sections (Access Control Center and its tabs, Group Management,
+   *    Master Advisors) — Group Access can RESTRICT these for Admin-tier
+   *    members, but can never RAISE them; that boundary is load-bearing
+   *    security, not a hardcoded oversight, and stays enforced in code
+   *    (isFeatureGroupGrantableForTier()) regardless of this tag.
+   *  - "developer": Developer/Platform-Admin-only tooling (Feature
+   *    Visibility, Smoke Test, Clear Activity) — entirely out of Group
+   *    Access's scope, in either direction, for any tier.
+   */
+  zone: "advisor" | "admin" | "administrative" | "developer";
 }
 
 /** One row of the Developer-editable `feature_access_overrides` table — a
@@ -71,18 +101,19 @@ export interface RelationshipGroup {
    * department's members. null = unscoped (every user is a valid owner). */
   departmentId: number | null;
   /** Whether this group's owner->subject rows count toward the Groups
-   * tab's tool-visibility restriction. Admin-toggled there, not
+   * tab's Access Control grants. Admin-toggled there, not
    * derived from the group's name — see schema.ts's own comment on this
    * column for why. */
   usedForGroupAccess: boolean;
-  /** Which tier of MEMBER this group's `usedForGroupAccess` ceiling
-   * restricts (2026-09, migration 0082) — independent of the group's
-   * owner's own tier/permissions; setting this to "Admin" does not promote
-   * the owner, and a member whose own tier doesn't match this value is
-   * entirely unaffected by this group's restriction. Deliberately excludes
-   * "Developer" — a group can never be configured to restrict Developer,
-   * see schema.ts's comment on `groupTierEnum`. Defaults to "General". */
-  groupTier: "General" | "Admin" | "Platform Admin";
+}
+
+/** One row of the `group_tool_access` table — a single (feature, level)
+ * grant belonging to one relationship group (2026-09d redesign; see
+ * schema.ts's doc comment on the table for the full additive/raise-only,
+ * tier-respecting semantics). */
+export interface GroupToolAccessEntry {
+  featureId: string;
+  level: "Viewer" | "Editor";
 }
 
 /** One row of the `user_relationships` table — an explicit person-to-person

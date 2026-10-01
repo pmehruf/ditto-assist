@@ -51,7 +51,10 @@ import {
   Terminal,
   Settings2,
   Waypoints,
-  Users2
+  Users2,
+  Check,
+  Rocket,
+  ArrowRight
 } from "lucide-react";
 
 import {
@@ -60,6 +63,7 @@ import {
   TOP_PED_DICTIONARY,
   MatchOutput,
   PlanRestriction,
+  PlanPedOverride,
   guessCategoryMap
 } from "./types.js";
 
@@ -85,11 +89,11 @@ import { LoggedUser, UserProfile } from "./types/user";
 import { FeatureAccessOverride, Department, CustomAccessGrant, OrgTeam, AppRole, AccessRule } from "./types/permissions";
 import { DbPlanConfigEntry } from "./types/plans";
 import { ChangeLogEntry } from "./types/changeLog";
-import { DeclarationMapIcon, QaDashboardIcon, ProductAssistIcon } from "./components/icons";
+import { QaDashboardIcon, ProductAssistIcon } from "./components/icons";
 import { GridTexture } from "./components/GridTexture";
 import { CustomSelect } from "./components/CustomSelect";
 import { PrimaryCtaButton } from "./components/PrimaryCtaButton";
-import { AdvisorTagCheckboxes } from "./components/AdvisorTagCheckboxes";
+import { AdvisorTagCheckboxes, NOT_APPLICABLE_TAG } from "./components/AdvisorTagCheckboxes";
 import { TactIdInput } from "./components/TactIdInput";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
@@ -97,6 +101,7 @@ import { SkillDomainPromptModal } from "./components/SkillDomainPromptModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { ProductAssistDailyWarning } from "./components/ProductAssistDailyWarning";
 import { usePersistentState } from "./hooks/usePersistentState";
+import { useDialog } from "./hooks/useDialog";
 import { downloadCSV } from "./utils/csvExport";
 import { formatCompactTimestamp } from "./utils/timestamps";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
@@ -115,9 +120,6 @@ const LookupIntroPage = lazy(() =>
 );
 const LookupPage = lazy(() =>
   import("./pages/LookupPage").then((m) => ({ default: m.LookupPage }))
-);
-const ResourcesPage = lazy(() =>
-  import("./pages/ResourcesPage").then((m) => ({ default: m.ResourcesPage }))
 );
 const CoverageProjectionStudioPage = lazy(() =>
   import("./pages/CoverageProjectionStudioPage").then((m) => ({ default: m.CoverageProjectionStudioPage }))
@@ -268,7 +270,11 @@ const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "resources" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
+  // Themed confirm()/alert() replacements for window.confirm()/window.alert()
+  // (see DialogContext.tsx) — used below by confirmDestructiveAction and
+  // handleDeleteResource.
+  const { confirm, alertUser } = useDialog();
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -313,16 +319,16 @@ export default function App() {
   // myAccessGrants above. Access Control Center Phase 3
   // (docs/ACCESS_CONTROL_CENTER_PHASE_PLAN.md).
   const [myAccessRules, setMyAccessRules] = useState<AccessRule[]>([]);
-  // This signed-in user's OWN Group Access Restriction ceiling — null means
-  // "not a restricted group member, unrestricted" (the vast majority of
-  // users); an array (possibly empty) means their group owner's
-  // admin-configured tool set — see accessRuleEvaluator.ts's
-  // groupAllowedFeatureIds and GET /api/my-group-access. Same fail-open
-  // posture as myAccessGrants/myAccessRules for the fetch itself (never
-  // block the app on a network hiccup) — real enforcement always happens
-  // server-side per request regardless of what this client-side value is,
-  // see evaluateAccess.ts.
-  const [myGroupAccess, setMyGroupAccess] = useState<string[] | null>(null);
+  // This signed-in user's OWN Group Access grants — 2026-09d redesign: null
+  // means "belongs to no active, access-configured group at all" (the vast
+  // majority of users); a present key means at least one of their groups
+  // grants that featureId at least that `level` — additive, raise-only, see
+  // accessRuleEvaluator.ts's groupFeatureLevels and GET /api/my-group-access.
+  // Same fail-open posture as myAccessGrants/myAccessRules for the fetch
+  // itself (never block the app on a network hiccup) — real enforcement
+  // always happens server-side per request regardless of what this
+  // client-side value is, see evaluateAccess.ts.
+  const [myGroupAccess, setMyGroupAccess] = useState<Record<string, "Viewer" | "Editor"> | null>(null);
   // Team/Role catalogs — lifted here (not fetched locally inside
   // ProfileAccessPage) for the same reason `departmentsList` is: the
   // Directory tab's user add/edit form needs both lists for its Team/Role
@@ -463,7 +469,7 @@ export default function App() {
       const contentType = res.headers.get("content-type") || "";
       if (!res.ok || !contentType.includes("application/json")) return;
       const body = await res.json().catch(() => ({}));
-      setMyGroupAccess(body.allowedFeatureIds ?? null);
+      setMyGroupAccess(body.featureLevels ?? null);
     } catch (_) {
       // Never block the app on this — same fail-open posture as
       // myAccessGrants/myAccessRules; the server still enforces this
@@ -614,6 +620,26 @@ export default function App() {
       // server-side (its own authoritative fetch), so no lookup can ever
       // ship an unrestricted answer purely because of this failing.
       console.error("Failed to load plan restrictions from the server — client-side fast path may lag behind /api/match:", err);
+    }
+  };
+
+  // Plan-Specific PED Mappings (admin plan_overrides rows), keyed by plan
+  // name — the client fast path needs them so it classifies exactly like
+  // /api/match. Re-fetched at the start of every lookup (executeLookupAll)
+  // so an admin's change reaches every advisor without a page reload.
+  const [pedOverridesByPlan, setPedOverridesByPlan] = useState<Record<string, PlanPedOverride[]>>({});
+
+  const fetchPlanPedOverrides = async (): Promise<Record<string, PlanPedOverride[]> | null> => {
+    try {
+      const res = await fetch("/api/plan-ped-overrides");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to load plan-specific PED mappings (HTTP ${res.status}).`);
+      const next = body.overridesByPlan || {};
+      setPedOverridesByPlan(next);
+      return next;
+    } catch (err: unknown) {
+      console.error("Failed to load plan-specific PED mappings — client-side fast path will use the last known set:", err);
+      return null;
     }
   };
 
@@ -770,19 +796,17 @@ export default function App() {
     }
   };
 
-  const handleDeleteResource = (id: string, title: string) => {
-    setConfirmActionLabel(`Delete resource link "${title}"`);
-    setOnConfirmAction(() => async () => {
-      try {
-        const res = await fetch(`/api/external-resources/${id}`, { method: "DELETE" });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || `Failed to delete this resource link (HTTP ${res.status}).`);
-        setExternalResources(prev => prev.filter(r => r.id !== id));
-      } catch (err: unknown) {
-        setResourceFormError(err instanceof Error ? err.message : "Failed to delete this resource link.");
-      }
-    });
-    setIsConfirmModalOpen(true);
+  const handleDeleteResource = async (id: string, title: string) => {
+    const ok = await confirm({ message: `Delete resource link "${title}"? This cannot be undone.`, confirmLabel: "Delete" });
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/external-resources/${id}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to delete this resource link (HTTP ${res.status}).`);
+      setExternalResources(prev => prev.filter(r => r.id !== id));
+    } catch (err: unknown) {
+      setResourceFormError(err instanceof Error ? err.message : "Failed to delete this resource link.");
+    }
   };
 
   // Swaps a resource link with its up/down neighbor in the displayed order,
@@ -923,7 +947,7 @@ export default function App() {
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
     advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist"],
     quality: ["qa_dashboard", "team_tracker"],
-    reference: ["advisory_zone", "announcement_archive", "resources", "my_activity"],
+    reference: ["advisory_zone", "announcement_archive", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
     administration: ["profile_access", "audit", "flagged_responses"],
     developer: ["owner_controls", "connections", "smoke_test"],
@@ -1041,6 +1065,7 @@ export default function App() {
       fetchExternalResources();
       fetchPlanConfigs();
       fetchPlanRestrictions();
+      fetchPlanPedOverrides();
       fetchPedSuggestions();
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
@@ -1417,7 +1442,7 @@ export default function App() {
         roleId: currentUser?.roleId,
         tags: currentUser?.tags,
       },
-      groupAllowedFeatureIds: myGroupAccess,
+      groupFeatureLevels: myGroupAccess,
     });
     return levelAllows(level, actionType);
   };
@@ -1453,25 +1478,17 @@ export default function App() {
   // clicks) but is honest about what it is: a confirmation, not a
   // credential check. Real enforcement for these actions happens server-side
   // once they're wired to authenticated API routes (audit Finding 3).
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
-  const [onConfirmAction, setOnConfirmAction] = useState<(() => void) | null>(null);
-  const [confirmActionLabel, setConfirmActionLabel] = useState<string>("");
-
-  const confirmDestructiveAction = (actionDescription: string, onConfirm: () => void) => {
+  const confirmDestructiveAction = async (actionDescription: string, onConfirm: () => void) => {
     if (!hasAccess("clear_activity", "Editor")) {
-      alert(`Forbidden: Clearance Tier is ${effectiveTier}. This destructive operation requires additional permissions or higher clearance.`);
+      await alertUser({
+        title: "Access Denied",
+        message: `Forbidden: Clearance Tier is ${effectiveTier}. This destructive operation requires additional permissions or higher clearance.`,
+        tone: "danger",
+      });
       return;
     }
-    setOnConfirmAction(() => onConfirm);
-    setConfirmActionLabel(actionDescription);
-    setIsConfirmModalOpen(true);
-  };
-
-  const handleConfirmDestructiveAction = () => {
-    setIsConfirmModalOpen(false);
-    if (onConfirmAction) {
-      onConfirmAction();
-    }
+    const ok = await confirm({ message: `${actionDescription} This cannot be undone — are you sure you want to continue?` });
+    if (ok) onConfirm();
   };
 
   // Plan Configurations dynamically expanded with promoted and draft plans!
@@ -1528,11 +1545,11 @@ export default function App() {
     // server.ts for why this is fetched as its own map instead of being
     // embedded per-row above.
     Object.keys(base).forEach(name => {
-      base[name] = { ...base[name], restrictions: restrictionsByPlan[name] || [] };
+      base[name] = { ...base[name], restrictions: restrictionsByPlan[name] || [], pedOverrides: pedOverridesByPlan[name] || [] };
     });
 
     return base;
-  }, [productionPlans, planQuestionsState, dbPlanConfigs, restrictionsByPlan]);
+  }, [productionPlans, planQuestionsState, dbPlanConfigs, restrictionsByPlan, pedOverridesByPlan]);
 
   // Theme support — dark default, toggleable dark mode, persistently saved
   const [theme, setTheme] = usePersistentState<"light" | "dark">(
@@ -1579,6 +1596,16 @@ export default function App() {
   const [tempDepartmentId, setTempDepartmentId] = useState<number | null>(null);
   const [tempOrgTeamId, setTempOrgTeamId] = useState<number | null>(null);
   const [tempRoleId, setTempRoleId] = useState<number | null>(null);
+  // True when the signed-in email already had a directory row (found by
+  // GET /api/me) BUT with a blank TACT ID — i.e. someone was bulk-added via
+  // Access Control Center's "Bulk Add Users" ahead of this, first, login
+  // (see server.ts's POST /api/users/bulk-provision). Their Product
+  // Tag/Business Unit/Department/Role/Tier were already decided by whoever
+  // added them, so those sections of the form below render pre-filled and
+  // locked — only Full Name (pre-filled from the verified Google identity,
+  // still editable/correctable) and TACT ID are actually asked for. Reset
+  // to false alongside every other temp* field once setup completes.
+  const [isPreProvisioned, setIsPreProvisioned] = useState<boolean>(false);
   // Post-login nudge (NOT first-time setup) for an already-provisioned user
   // whose tags are still empty — set by the session-hydration effect below
   // whenever GET /api/me returns a user with no tags. Dismissible; reappears
@@ -1612,7 +1639,7 @@ export default function App() {
         const meData = meRes.ok ? await meRes.json().catch(() => null) : null;
         const existingUser = meData?.user as UserProfile | null | undefined;
 
-        if (existingUser && existingUser.status === "Active") {
+        if (existingUser && existingUser.status === "Active" && existingUser.tactId) {
           setCurrentUser({
             email: existingUser.email,
             name: existingUser.name,
@@ -1654,6 +1681,29 @@ export default function App() {
           }
           setShowIntro(true);
           setActiveTab("lookup");
+        } else if (existingUser && existingUser.status === "Active" && !existingUser.tactId) {
+          // Pre-provisioned by an Admin/Developer via "Bulk Add Users"
+          // (server.ts's POST /api/users/bulk-provision) — a real directory
+          // row already exists, with Business Unit/Department/Role/Tier/
+          // Product Tag already decided, but a blank TACT ID marks it as
+          // not yet completed by the person themselves. Route into the same
+          // first-time-setup screen as a brand-new signup, but pre-fill it
+          // from the existing row (name comes from the verified Google
+          // identity instead, since the row's own `name` is still blank)
+          // and mark isPreProvisioned so the form locks the
+          // already-decided fields — see the render below.
+          setTempSsoEmail(identity.email);
+          setTempSsoName(identity.name);
+          setTempTactId("");
+          setTempTags(existingUser.tags || []);
+          setTempDepartmentId(existingUser.departmentId ?? null);
+          setTempOrgTeamId(existingUser.orgTeamId ?? null);
+          setTempRoleId(existingUser.roleId ?? null);
+          setIsPreProvisioned(true);
+          setIsFirstTimeSetup(true);
+          fetchDepartments();
+          fetchOrgTeams();
+          fetchRoles();
         } else if (existingUser) {
           // A directory record exists but status isn't "Active" — this
           // means an Developer has Disabled the account (this used to also
@@ -1669,6 +1719,7 @@ export default function App() {
           setTempSsoEmail(identity.email);
           setTempSsoName(identity.name);
           setTempTactId("");
+          setIsPreProvisioned(false);
           setIsFirstTimeSetup(true);
           // The first-time-setup form's Organization dropdowns need these
           // catalogs BEFORE currentUser exists, so they can't wait for the
@@ -1696,7 +1747,7 @@ export default function App() {
     if (currentUser) {
       if (!hasAccess(activeTab, "Viewer")) {
         // Fallback sequentially to ensure user isn't stuck on a forbidden tab
-        const priorityTabs = ["lookup", "my_activity", "resources", "audit", "profile_access", "flagged_responses"] as const;
+        const priorityTabs = ["lookup", "my_activity", "audit", "profile_access", "flagged_responses"] as const;
         const available = priorityTabs.find(tab => hasAccess(tab, "Viewer")) || "lookup";
         setActiveTab(available);
       }
@@ -2236,8 +2287,23 @@ export default function App() {
       setLoginError("Business Unit, Department, and Role are all required to activate your portal account.");
       return;
     }
+    // Product Tag is required (2026-09, at the user's explicit request) —
+    // but only for someone actually choosing it here. A pre-provisioned
+    // signup (isPreProvisioned) already has this decided by whoever added
+    // them and renders the section locked/read-only, so there's nothing for
+    // this person to have "not yet chosen" — skip the check for that case.
+    if (!isPreProvisioned && tempTags.length === 0) {
+      setLoginError("Select a Product Tag — Health, Term, or Not Applicable — to activate your portal account.");
+      return;
+    }
 
     setLoginLoading(true);
+    // NOT_APPLICABLE_TAG is a client-only sentinel (AdvisorTagCheckboxes'
+    // own doc comment) — never a real tags value the server accepts.
+    // "Not Applicable" and "nothing chosen" are both just an empty
+    // products array server-side; the sentinel only exists so the client
+    // could tell those two apart for the required-field check above.
+    const tagsToSend = tempTags.includes(NOT_APPLICABLE_TAG) ? [] : tempTags;
 
     // Identity (email/name) is already server-verified via the real Google
     // session. POST /api/me/first-time-setup (server.ts) is what actually
@@ -2254,7 +2320,7 @@ export default function App() {
         body: JSON.stringify({
           name: nameClean,
           tactId: tactClean,
-          tags: tempTags,
+          tags: tagsToSend,
           departmentId: tempDepartmentId,
           orgTeamId: tempOrgTeamId,
           roleId: tempRoleId,
@@ -2291,6 +2357,7 @@ export default function App() {
 
       // Clear setup
       setIsFirstTimeSetup(false);
+      setIsPreProvisioned(false);
       setTempSsoEmail("");
       setTempSsoName("");
       setTempTactId("");
@@ -2365,7 +2432,13 @@ export default function App() {
     // Set loading
     setIsLookupLoading(true);
     const tempResults: Array<{ ped: string; result: MatchOutput; source: string }> = [];
-    const config = planConfigs[plan];
+    // Fresh admin plan-specific PED mappings, so a change made a moment ago
+    // in Plan Management applies to this lookup (falls back to the last
+    // known set if the fetch fails).
+    const freshPedOverrides = await fetchPlanPedOverrides();
+    const config = planConfigs[plan]
+      ? { ...planConfigs[plan], pedOverrides: (freshPedOverrides ?? pedOverridesByPlan)[plan] || [] }
+      : planConfigs[plan];
 
     for (const ped of peds) {
       const trimmedPed = ped.trim();
@@ -2804,11 +2877,11 @@ export default function App() {
                         <User className={`w-4 h-4 ${isDark ? "text-cyan-400" : "text-blue-600"}`} />
                       </div>
                       <h2 className={`text-sm font-black uppercase tracking-widest font-mono ${isDark ? "text-white" : "text-stone-900"}`}>
-                        Create Workforce Profile
+                        Let's Set You Up!
                       </h2>
                     </div>
                     <p className={`text-xs leading-relaxed font-semibold pt-1 ${isDark ? "text-slate-300" : "text-stone-600"}`}>
-                      First-time workspace verification detected. Complete your profile credentials to construct your permanent security card.
+                      First, let's get to know you.
                     </p>
                   </div>
 
@@ -2837,50 +2910,62 @@ export default function App() {
                       <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
                         Personal Details
                       </p>
-                      <div className="space-y-2">
-                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                          Full Name
-                        </label>
-                        <input
-                          type="text"
-                          value={tempSsoName}
-                          onChange={(e) => {
-                            setTempSsoName(e.target.value);
-                            setLoginError(null);
-                          }}
-                          placeholder="e.g. Shashank J"
-                          className={`w-full px-4 py-3 rounded-2xl border outline-none text-xs transition-all font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
-                            isDark
-                              ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500"
-                              : "bg-stone-50 border-stone-200 text-stone-900 placeholder:text-stone-400 font-bold"
-                          }`}
-                          required
-                        />
-                      </div>
+                      {/* Full Name + TACT ID share one row (2026-09, at the
+                          user's explicit request) — Full Name gets the bulk
+                          of the width since it's the longer input, TACT ID
+                          only needs room for its "TACT" prefix plus a
+                          4-5 digit number. */}
+                      <div className="flex items-start gap-3">
+                        <div className="flex-[2] min-w-0 space-y-2">
+                          <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                            Full Name
+                          </label>
+                          <input
+                            type="text"
+                            value={tempSsoName}
+                            onChange={(e) => {
+                              setTempSsoName(e.target.value);
+                              setLoginError(null);
+                            }}
+                            placeholder="e.g. Shashank J"
+                            className={`w-full px-4 py-3 rounded-2xl border outline-none text-xs transition-all font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 ${
+                              isDark
+                                ? "bg-[#102236] border-[#1e3e5c] text-white placeholder:text-slate-500"
+                                : "bg-stone-50 border-stone-200 text-stone-900 placeholder:text-stone-400 font-bold"
+                            }`}
+                            required
+                          />
+                        </div>
 
-                      <div className="space-y-2">
-                        <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                          TACT ID
-                        </label>
-                        <TactIdInput
-                          theme={theme}
-                          value={tempTactId}
-                          onChange={(val) => {
-                            setTempTactId(val);
-                            setLoginError(null);
-                          }}
-                          placeholder="e.g. 128"
-                          required
-                        />
+                        <div className="w-[128px] shrink-0 space-y-2">
+                          <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
+                            TACT ID
+                          </label>
+                          <TactIdInput
+                            theme={theme}
+                            value={tempTactId}
+                            onChange={(val) => {
+                              setTempTactId(val);
+                              setLoginError(null);
+                            }}
+                            placeholder="e.g. 128"
+                            required
+                            className={`px-3 py-3 rounded-2xl border text-xs font-bold ${
+                              isDark ? "bg-[#102236] border-[#1e3e5c] text-white" : "bg-stone-50 border-stone-200 text-stone-900"
+                            }`}
+                          />
+                        </div>
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <p className={`text-[9.5px] font-black uppercase tracking-[0.15em] ${isDark ? "text-sky-400/80" : "text-sky-600/80"}`}>
-                        Select your product(s) of expertise <span className="normal-case font-medium opacity-60">(optional)</span>
+                        Select your product tag
                       </p>
                       <p className={`text-[10.5px] leading-snug font-semibold ${isDark ? "text-slate-400" : "text-stone-500"}`}>
-                        Choose all products you're currently trained or experienced in.
+                        {isPreProvisioned
+                          ? "Already set for you by your admin."
+                          : "Choose the product(s) you're trained or experienced in, or Not Applicable."}
                       </p>
                       <AdvisorTagCheckboxes
                         theme={theme}
@@ -2890,6 +2975,8 @@ export default function App() {
                           setLoginError(null);
                         }}
                         size="md"
+                        notApplicable
+                        disabled={isPreProvisioned}
                       />
                     </div>
 
@@ -2901,16 +2988,42 @@ export default function App() {
                         <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
                           Business Unit
                         </label>
-                        <CustomSelect
-                          theme={theme}
-                          value={tempOrgTeamId != null ? String(tempOrgTeamId) : ""}
-                          onChange={(val) => {
-                            setTempOrgTeamId(val ? Number(val) : null);
-                            setLoginError(null);
-                          }}
-                          placeholder="Select your business unit"
-                          options={orgTeamsList.filter(t => t.active).map(t => ({ value: String(t.id), label: t.name }))}
-                        />
+                        {/* Capsule-style single-select, mirroring
+                            AdvisorTagCheckboxes' chip styling — "Business
+                            Unit Selection... same capsule-style selection
+                            design. Single-choice." (2026-09, user request). */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {orgTeamsList.filter(t => t.active).map((t) => {
+                            const active = tempOrgTeamId === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                disabled={isPreProvisioned}
+                                onClick={() => {
+                                  if (isPreProvisioned) return;
+                                  setTempOrgTeamId(t.id);
+                                  setLoginError(null);
+                                }}
+                                aria-pressed={active}
+                                className={`flex items-center px-3.5 py-2 text-xs gap-1.5 rounded-lg border font-bold uppercase tracking-wide transition-colors ${
+                                  isPreProvisioned ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                                } ${
+                                  active
+                                    ? isDark
+                                      ? "bg-sky-500/15 border-sky-500/40 text-sky-300"
+                                      : "bg-sky-50 border-sky-300 text-sky-700"
+                                    : isDark
+                                      ? "bg-[#060a12] border-stone-850 text-stone-400 hover:border-stone-700"
+                                      : "bg-white border-stone-200 text-stone-500 hover:border-stone-300"
+                                }`}
+                              >
+                                {active && <Check className="w-3.5 h-3.5 shrink-0" />}
+                                {t.name}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <label className={`block text-[10px] font-black uppercase tracking-wider font-mono ${isDark ? "text-slate-400" : "text-stone-500"}`}>
@@ -2925,6 +3038,7 @@ export default function App() {
                           }}
                           placeholder="Select your department"
                           options={departmentsList.filter(d => d.active).map(d => ({ value: String(d.id), label: d.name }))}
+                          disabled={isPreProvisioned}
                         />
                       </div>
                       <div className="space-y-2">
@@ -2940,6 +3054,7 @@ export default function App() {
                           }}
                           placeholder="Select your role"
                           options={rolesList.filter(r => r.active).map(r => ({ value: String(r.id), label: r.name }))}
+                          disabled={isPreProvisioned}
                         />
                       </div>
                     </div>
@@ -2953,7 +3068,11 @@ export default function App() {
                       {loginLoading ? (
                         <RefreshCw className="w-4 h-4 animate-spin text-current" />
                       ) : (
-                        <span>ACTIVATE PROFILE & LOG IN</span>
+                        <>
+                          <Rocket className="w-4 h-4" />
+                          <span>GET ME STARTED!</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
                       )}
                     </PrimaryCtaButton>
                   </form>
@@ -2962,6 +3081,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       setIsFirstTimeSetup(false);
+                      setIsPreProvisioned(false);
                       setTempSsoEmail("");
                       setTempSsoName("");
                       setTempTactId("");
@@ -3247,9 +3367,6 @@ export default function App() {
           pages: [
             navPage("advisory_zone", "Plan Reference", BookOpen, "Viewer"),
             navPage("announcement_archive", "Announcements", Newspaper, "Viewer"),
-            navPage("resources", "Declaration Map", DeclarationMapIcon, "Viewer", {
-              iconStyle: { filter: "drop-shadow(0 0 0.4px currentColor)" },
-            }),
             navPage("my_activity", "My Activity", History, "Viewer"),
           ],
         },
@@ -3268,6 +3385,20 @@ export default function App() {
             navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
             navPage("knowledge_base", "Knowledge Base", Database, "Viewer"),
             navPage("plan_scope", "DA Mapping Config", Waypoints, "Viewer"),
+            // Moved here from Developer Zone > Developer Controls (2026-09g,
+            // at the user's explicit request — "Flagged responses is a
+            // developer zone item... if this was an admin tier feature, why
+            // was it not in the control options"): its registry default
+            // (featurePermissions.ts, defaultTier: "Admin", adminAccess:
+            // "Editor") already made it an ordinary Admin-tier feature, same
+            // as every other page in this group — the Developer Zone
+            // placement was a stale mismatch with that default, not a
+            // deliberate gate. Now consistent with featurePermissions.ts's
+            // ADMIN_ZONE_FEATURES, which also picked this up (so it's
+            // configurable from the Groups tab's Access Control list too).
+            navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
+              hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
+            }),
           ],
         },
         {
@@ -3315,11 +3446,6 @@ export default function App() {
                     {visibleHiddenPagesCount}
                   </span>
                 ) : undefined,
-            }),
-            // Moved here from Admin Zone > Administration (2026-09, explicit
-            // request).
-            navPage("flagged_responses", "Flagged Responses", Flag, "Viewer", {
-              hasAlertDot: reportedIssues.filter(issue => issue.status === "Pending" || issue.status === "Urgent").length > 0,
             }),
             navPage("smoke_test", "Smoke Test", Flame, "Viewer", {
               iconColorClass: isActive => (isActive ? "#E08D4B" : RAIL_ICON_REST),
@@ -3709,7 +3835,16 @@ export default function App() {
                       {openSections[group.key] && (
                         <div className="space-y-1.5 mb-1 pl-2">
                           {group.pages.map(page => renderNavPageRow(page, () => { if (isMobile) setIsMenuOpen(false); }))}
-                          {group.key === "reference" && renderResourceLinksSection()}
+                          {/* Gated on hasAccess("resources", "Viewer") (2026-09g
+                              bug fix, at the user's explicit request —
+                              "Workspace Resources unchecked - yet other
+                              resources section is visible"): this link list
+                              is governed by the "resources" featureId
+                              (Workspace Resources), but previously rendered
+                              unconditionally regardless of that feature's
+                              resolved access — so restricting "resources"
+                              via Group Access left this section visible. */}
+                          {group.key === "reference" && hasAccess("resources", "Viewer") && renderResourceLinksSection()}
                         </div>
                       )}
                     </div>
@@ -4060,7 +4195,7 @@ export default function App() {
                                   opens the Library section, and opens the
                                   disclosure, since the link list itself only
                                   renders in the expanded sidebar's DOM. */}
-                              {group.key === "reference" && (
+                              {group.key === "reference" && hasAccess("resources", "Viewer") && (
                                 <button
                                   key="other-resources-rail"
                                   onClick={() => {
@@ -4168,7 +4303,7 @@ export default function App() {
                 style={{
                   bottom: profileMenuPos.bottom,
                   left: profileMenuPos.left,
-                  maxHeight: "calc(100vh - 24px)",
+                  maxHeight: "calc(100vh / var(--app-zoom, 1) - 24px)",
                   overflowY: "auto",
                 }}
                 className={`fixed w-72 max-w-[calc(100vw-24px)] rounded-xl border shadow-xl z-[9999] p-4 font-sans text-left backdrop-blur-xl ${
@@ -4467,8 +4602,12 @@ export default function App() {
             // pages (PED Repository, Access Control Center, QA Dashboard,
             // etc.) that don't build their own extra spacing the way
             // Declaration Assist does.
-            marginTop: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "10px",
-            marginBottom: showIntro && activeTab === "lookup" ? "2px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "18px",
+            // The Mapping Engine's input view (lookup, no results yet) is
+            // laid out to fit one desktop viewport with no page scroll
+            // (see LookupPage.tsx), so it takes a tighter 8px here; its
+            // results view keeps the 20px above.
+            marginTop: showIntro && activeTab === "lookup" ? "2px" : !showIntro && activeTab === "lookup" && !isResultsActive ? "8px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "10px",
+            marginBottom: showIntro && activeTab === "lookup" ? "2px" : !showIntro && activeTab === "lookup" && !isResultsActive ? "8px" : (!showIntro && activeTab === "lookup") || activeTab === "product_assist" ? "20px" : "18px",
           }}
           className={`flex-grow w-full p-3 sm:p-4 bg-transparent outline-none ${
             showIntro && activeTab === "lookup"
@@ -4575,7 +4714,6 @@ export default function App() {
                 specificIllnessesDict={effectiveSpecificIllnessesDict}
                 planConfigs={planConfigs}
                 checkIllnessInPlanSpecificList={checkIllnessInPlanSpecificList}
-                setActiveTab={setActiveTab}
               />
               </Suspense>
               </ErrorBoundary>
@@ -4654,24 +4792,6 @@ export default function App() {
           )}
 
 
-          {/* TAB 1C: DECLARATION MAP INTERACTIVE VIEW (content extracted to src/pages/ResourcesPage.tsx, Phase 1.3) */}
-          {activeTab === "resources" && (
-            <motion.div
-              key="resources"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6"
-            >
-              <ErrorBoundary theme={theme} label="Declaration Map">
-                <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-                  <ResourcesPage theme={theme} />
-                </Suspense>
-              </ErrorBoundary>
-            </motion.div>
-          )}
-
           {/* TAB: USER DIRECTORY (server-backed org user list; Developer can edit) */}
           {activeTab === "profile_access" && currentUser && (
             <motion.div
@@ -4704,6 +4824,10 @@ export default function App() {
                 canManageMasterAdvisors={hasAccess("master_advisors", "Editor")}
                 canViewGroups={hasAccess("group_management", "Viewer")}
                 canViewMasterAdvisors={hasAccess("master_advisors", "Viewer")}
+                canViewDirectory={hasAccess("profile_access_directory", "Viewer")}
+                canViewPermissions={hasAccess("profile_access_permissions", "Viewer")}
+                canViewQaAccessGroups={hasAccess("qa_access_groups", "Viewer")}
+                canViewChangeHistory={hasAccess("profile_access_change_history", "Viewer")}
               />
               </Suspense>
               </ErrorBoundary>
@@ -5209,7 +5333,7 @@ export default function App() {
               initial={{ scale: 0.95, y: 15 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 15 }}
-              className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl text-left ${
+              className={`w-full max-w-lg vp-modal vp-scroll p-6 rounded-2xl border shadow-2xl text-left ${
                 theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
               }`}
             >
@@ -5351,65 +5475,12 @@ export default function App() {
         />
       )}
 
-      {/* Destructive-action confirmation modal (see confirmDestructiveAction above for why this
-          is a plain confirmation and not a passcode/credential check). */}
-      <AnimatePresence>
-        {isConfirmModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-55 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.95, y: 15 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 15 }}
-              className={`w-full max-w-sm p-6 rounded-2xl border shadow-2xl text-left ${
-                theme === "dark" ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
-              }`}
-            >
-              <div className="flex justify-between items-center pb-3 border-b border-stone-200 dark:border-stone-800">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500" />
-                  <h3 className="text-xs font-black uppercase tracking-wider">Confirm Destructive Action</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsConfirmModalOpen(false)}
-                  className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-white transition-colors cursor-pointer"
-                >
-                  <XCircle className="w-5 h-5 font-bold" />
-                </button>
-              </div>
-
-              <div className="space-y-2 py-4 text-left">
-                <p className="text-xs font-semibold text-stone-500 dark:text-stone-400 leading-relaxed">
-                  {confirmActionLabel || "This is a destructive action."} This cannot be undone — are you sure you want to continue?
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-stone-200 dark:border-stone-800">
-                <button
-                  type="button"
-                  onClick={() => setIsConfirmModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-stone-400 hover:text-[#111827] dark:hover:text-white cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={handleConfirmDestructiveAction}
-                  className="px-5 py-2.5 text-xs font-black uppercase tracking-widest bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
-                >
-                  Confirm & Continue
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Destructive-action confirmation is now the shared themed dialog from
+          DialogContext.tsx (see confirmDestructiveAction above) — the
+          hand-rolled modal that used to live here was replaced so every
+          confirm/alert in the app renders through one consistent, in-app
+          system instead of a mix of this one-off modal and native
+          window.confirm()/alert() popups elsewhere. */}
       </div>
     </div>
   );

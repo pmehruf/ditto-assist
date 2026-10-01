@@ -962,7 +962,7 @@ export function PortingAssistPage({ theme }: PortingAssistPageProps) {
                 </div>
                 <div>
                   <FieldLabel dark={dark}>Inception Date</FieldLabel>
-                  <DateInputDMY
+                  <DateInputDMY theme={theme}
                     value={inceptionDate}
                     onChange={setInceptionDate}
                     displayClassName={`${textInputClass()} flex items-center justify-between`}

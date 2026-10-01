@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { Pencil, Save, X, Trash2, UserPlus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion, CheckSquare, Square, Layers } from "lucide-react";
+import { Pencil, Save, X, Trash2, UserPlus, Users, RefreshCw, ShieldCheck, AlertTriangle, Search, Download, Filter, Calendar, ShieldQuestion, CheckSquare, Square, Layers, CheckCircle2 } from "lucide-react";
 import { UserProfile } from "../types/user";
 import { Department, FeatureAccessOverride, OrgTeam, AppRole } from "../types/permissions";
 import { ClippedButton } from "./ClippedButton";
@@ -20,6 +20,7 @@ import { DateInputDMY } from "./DateInputDMY";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 import { downloadCSV } from "../utils/csvExport";
+import { useDialog } from "../hooks/useDialog";
 
 const PAGE_SIZE = 25;
 
@@ -87,6 +88,7 @@ const emptyDraft = (): UserProfile => ({
  */
 export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, departments, orgTeams, roles, featureAccessOverrides, hiddenPages }: ProfileAccessManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const isDeveloper = effectiveTier === "Developer";
   // Platform Admin gets the same edit/delete/tier-assign rights as a real
   // Developer EXCEPT for the 3 Developer-record protections enforced
@@ -348,7 +350,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
   };
 
   const deleteUser = async (email: string) => {
-    if (!window.confirm(`Remove ${email} from the user directory? This cannot be undone.`)) return;
+    if (!(await confirm(`Remove ${email} from the user directory? This cannot be undone.`))) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -403,6 +405,94 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
     }
   };
 
+  // ---- Bulk Add Users (2026-09, at the user's explicit request) ----
+  // A SEPARATE feature from the bulk-EDIT panel above (`bulkFields`/
+  // `applyBulkEdit`, which only touches rows already in the directory) — this
+  // one pre-provisions brand-new rows for people who haven't logged in yet,
+  // via POST /api/users/bulk-provision (server.ts). One config (Tier/Product
+  // Tag/Business Unit/Department/Role) applies to every email in the batch;
+  // the only per-user input is the email address itself. Each created row
+  // gets a blank name/TACT ID — see server.ts's doc comment on that route for
+  // why that's a safe, non-null-violating signal that the row is
+  // "pre-provisioned, not yet completed", which /api/me/first-time-setup
+  // (and App.tsx's session-hydration effect) both key off of to pre-fill and
+  // lock the relevant fields the first time that person actually signs in.
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [bulkAddEmails, setBulkAddEmails] = useState("");
+  const [bulkAddTags, setBulkAddTags] = useState<string[]>([]);
+  const [bulkAddTeamId, setBulkAddTeamId] = useState<number | null>(null);
+  const [bulkAddDepartmentId, setBulkAddDepartmentId] = useState<number | null>(null);
+  const [bulkAddRoleId, setBulkAddRoleId] = useState<number | null>(null);
+  const [bulkAddTier, setBulkAddTier] = useState<UserProfile["tier"]>("General");
+  const [bulkAddSaving, setBulkAddSaving] = useState(false);
+  const [bulkAddError, setBulkAddError] = useState<string | null>(null);
+  const [bulkAddResult, setBulkAddResult] = useState<{ created: string[]; skipped: { email: string; reason: string }[] } | null>(null);
+
+  const resetBulkAdd = () => {
+    setBulkAddOpen(false);
+    setBulkAddEmails("");
+    setBulkAddTags([]);
+    setBulkAddTeamId(null);
+    setBulkAddDepartmentId(null);
+    setBulkAddRoleId(null);
+    setBulkAddTier("General");
+    setBulkAddError(null);
+    setBulkAddResult(null);
+  };
+
+  const submitBulkAdd = async () => {
+    // Split on newlines and/or commas — whichever the person pasted with.
+    const rawEmails = bulkAddEmails
+      .split(/[\n,]+/)
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.length > 0);
+    const emails = rawEmails.filter((e, idx) => rawEmails.indexOf(e) === idx);
+    if (emails.length === 0) {
+      setBulkAddError("Enter at least one email address.");
+      return;
+    }
+    const invalid = emails.filter((e) => !e.includes("@"));
+    if (invalid.length > 0) {
+      setBulkAddError(`Not a valid email: ${invalid.slice(0, 3).join(", ")}${invalid.length > 3 ? "…" : ""}`);
+      return;
+    }
+    // Department/Role may be "Not in the List" (null) — only Business Unit
+    // is required for a batch (2026-09, at the user's explicit request; see
+    // server.ts's POST /api/users/bulk-provision for the matching relaxation).
+    if (bulkAddTeamId == null) {
+      setBulkAddError("Business Unit is required for a bulk batch.");
+      return;
+    }
+    setBulkAddSaving(true);
+    setBulkAddError(null);
+    setBulkAddResult(null);
+    try {
+      const res = await fetch("/api/users/bulk-provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emails,
+          tags: bulkAddTags,
+          orgTeamId: bulkAddTeamId,
+          departmentId: bulkAddDepartmentId,
+          roleId: bulkAddRoleId,
+          tier: bulkAddTier,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to bulk-add users (HTTP ${res.status}).`);
+      setBulkAddResult({ created: body.created || [], skipped: body.skipped || [] });
+      setBulkAddEmails("");
+      setPage(1);
+      setSearchInput("");
+      await loadEntries();
+    } catch (err: any) {
+      setBulkAddError(err.message || "Failed to bulk-add users. Please try again.");
+    } finally {
+      setBulkAddSaving(false);
+    }
+  };
+
   const anyBulkFieldEnabled = bulkFields.tier || bulkFields.status || bulkFields.department || bulkFields.team || bulkFields.role || bulkFields.tags;
 
   // Applies whichever fields are toggled ON in `bulkFields` to the whole
@@ -424,7 +514,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
     if (bulkFields.tags) { changes.tags = bulkTags; changedLabels.push(`Tags → ${bulkTags.length ? bulkTags.join(" + ") : "Unassigned"}`); }
 
     const confirmMsg = `Apply ${changedLabels.join(", ")} to ${selectionCount.toLocaleString()} ${selectionCount === 1 ? "user" : "users"}? This cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!(await confirm({ message: confirmMsg, tone: "neutral", confirmLabel: "Apply" }))) return;
 
     setBulkSaving(true);
     setBulkError(null);
@@ -639,16 +729,6 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <ClippedButton
-              onClick={exportCsv}
-              disabled={exporting || total === 0}
-              size="sm"
-              title="Export the filtered user directory as a CSV file"
-              className="flex items-center gap-1.5 px-3 py-2 text-white text-[10px] font-black uppercase tracking-wider bg-[#117FDA] hover:bg-[#0d6dbb] shrink-0"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span>Export CSV</span>
-            </ClippedButton>
             {canManage && !addingNew && (
             <ClippedButton
               type="button"
@@ -670,8 +750,160 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
               Add User
             </ClippedButton>
             )}
+            {canManage && (
+            <ClippedButton
+              type="button"
+              onClick={() => { if (bulkAddOpen) { resetBulkAdd(); } else { setBulkAddOpen(true); setAddingNew(false); } }}
+              cornerBg={dark ? "#0e2236" : "#ffffff"}
+              // Same solid brand navy theme as "Add User" above (2026-09, at
+              // the user's explicit request) rather than a distinct
+              // secondary/ghost look — both are peer "create" actions.
+              style={{
+                backgroundColor: "var(--action-navy)",
+                borderColor: "var(--action-navy)",
+                color: "var(--on-action-navy)",
+              }}
+              className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
+              title="Pre-provision a batch of users who share the same Business Unit"
+            >
+              <Users className="w-3.5 h-3.5 shrink-0" />
+              Add Batch
+            </ClippedButton>
+            )}
           </div>
         </div>
+
+        {canManage && bulkAddOpen && (
+          <div className={`rounded-xl border p-4 space-y-3 ${dark ? "bg-sky-950/10 border-sky-500/20" : "bg-accent-subtle border-sky-200"}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Users className={`w-4 h-4 shrink-0 ${dark ? "text-sky-400" : "text-sky-600"}`} />
+                <span className={`text-[11.5px] font-black ${dark ? "text-white" : "text-stone-900"}`}>
+                  Bulk Add Users
+                </span>
+              </div>
+              <button
+                onClick={resetBulkAdd}
+                className={`text-[10.5px] font-bold px-2 py-1 rounded-lg ${dark ? "text-stone-400 hover:bg-stone-800" : "text-stone-500 hover:bg-stone-100"}`}
+              >
+                Close
+              </button>
+            </div>
+
+            {bulkAddError && (
+              <div className="px-3 py-2 rounded-lg text-[11px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                {bulkAddError}
+              </div>
+            )}
+
+            {bulkAddResult && (
+              <div className="px-3 py-2 rounded-lg text-[11px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/25 flex items-start gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>
+                  Added {bulkAddResult.created.length.toLocaleString()} {bulkAddResult.created.length === 1 ? "user" : "users"}.
+                  {bulkAddResult.skipped.length > 0 && (
+                    <> {bulkAddResult.skipped.length.toLocaleString()} skipped: {bulkAddResult.skipped.map(s => s.email).join(", ")} (already in the directory).</>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {/* items-stretch (grid's own default, made explicit) so the
+                email textarea's column matches the right column's natural
+                height exactly — see the textarea's flex-1 below. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-stretch">
+              <div className="flex flex-col space-y-1">
+                <label className={`block text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                  Email Addresses <span className="normal-case font-medium opacity-60">(one per line, or comma-separated)</span>
+                </label>
+                <textarea
+                  value={bulkAddEmails}
+                  onChange={(e) => setBulkAddEmails(e.target.value)}
+                  placeholder={"name1@joinditto.in\nname2@joinditto.in"}
+                  className={`w-full flex-1 min-h-[132px] text-[11px] px-2.5 py-2 rounded-lg border outline-none font-semibold font-mono resize-none ${
+                    dark ? "bg-[#060a12] border-stone-850 text-white focus:border-sky-500" : "bg-white border-stone-200 text-stone-900 focus:border-sky-400"
+                  }`}
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className={`block text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Product Tag</label>
+                  <AdvisorTagCheckboxes theme={theme} value={bulkAddTags} onChange={setBulkAddTags} notApplicable />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Business Unit</label>
+                    <CustomSelect
+                      theme={theme}
+                      value={bulkAddTeamId != null ? String(bulkAddTeamId) : ""}
+                      onChange={(val) => setBulkAddTeamId(val ? Number(val) : null)}
+                      triggerClassName={selectTriggerClass}
+                      options={teamOptions(bulkAddTeamId).filter(o => o.value !== "")}
+                      placeholder="Select..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Department</label>
+                    <CustomSelect
+                      theme={theme}
+                      value={bulkAddDepartmentId != null ? String(bulkAddDepartmentId) : ""}
+                      onChange={(val) => setBulkAddDepartmentId(val ? Number(val) : null)}
+                      triggerClassName={selectTriggerClass}
+                      // "Not in the List" (2026-09, at the user's explicit
+                      // request) replaces this select's usual "Unassigned"
+                      // label for the bulk-add case — Department is optional
+                      // for a batch (unlike Business Unit), see server.ts's
+                      // POST /api/users/bulk-provision.
+                      options={[{ value: "", label: "Not in the List" }, ...departmentOptions(bulkAddDepartmentId).filter(o => o.value !== "")]}
+                      placeholder="Select..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Role</label>
+                    <CustomSelect
+                      theme={theme}
+                      value={bulkAddRoleId != null ? String(bulkAddRoleId) : ""}
+                      onChange={(val) => setBulkAddRoleId(val ? Number(val) : null)}
+                      triggerClassName={selectTriggerClass}
+                      options={[{ value: "", label: "Not in the List" }, ...roleOptions(bulkAddRoleId).filter(o => o.value !== "")]}
+                      placeholder="Select..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Tier</label>
+                    <CustomSelect
+                      theme={theme}
+                      value={bulkAddTier}
+                      onChange={(val) => setBulkAddTier(val as UserProfile["tier"])}
+                      triggerClassName={selectTriggerClass}
+                      options={assignableTiers.map(t => ({ value: t, label: t }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className={`text-[10.5px] font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              You can add multiple users with the same Business credential at once. The newly added user only needs to
+              enter their email, name and TACT ID. Everything else will already be set up.
+            </p>
+
+            <div className="flex justify-end">
+              <ClippedButton
+                onClick={submitBulkAdd}
+                disabled={bulkAddSaving}
+                cornerBg={dark ? "#0e2236" : "#ffffff"}
+                style={{ backgroundColor: "var(--action-navy)", borderColor: "var(--action-navy)", color: "var(--on-action-navy)" }}
+                className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.15em] px-3 py-2 border hover:brightness-110 shrink-0"
+              >
+                {bulkAddSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                Register
+              </ClippedButton>
+            </div>
+          </div>
+        )}
 
         {/* Filter row — Role / Tier / Status / Joined date range, all
             server-side (same /api/users?paginated=1 endpoint search already
@@ -748,7 +980,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
             <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
               <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined From</span>
             </label>
-            <DateInputDMY
+            <DateInputDMY theme={theme}
               value={joinedFrom}
               onChange={setJoinedFrom}
               max={joinedTo || undefined}
@@ -759,7 +991,7 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
           </div>
           <div className="shrink-0">
             <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>Joined To</label>
-            <DateInputDMY
+            <DateInputDMY theme={theme}
               value={joinedTo}
               onChange={setJoinedTo}
               min={joinedFrom || undefined}
@@ -933,6 +1165,22 @@ export function ProfileAccessManagement({ theme, setUsersList, effectiveTier, de
             </div>
           </div>
         )}
+
+        {/* Export CSV — moved into the table header area (2026-09, at the
+            user's explicit request: "just the download icon is enough")
+            instead of a separate labeled button in the toolbar above. */}
+        <div className="flex justify-end -mb-px">
+          <button
+            onClick={exportCsv}
+            disabled={exporting || total === 0}
+            title="Export the filtered user directory as a CSV file"
+            className={`p-1.5 rounded-t-lg border border-b-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+              dark ? "bg-white/[0.02] border-stone-850 text-stone-300 hover:text-white" : "bg-[var(--table-header-bg)] border-stone-200 text-stone-600 hover:text-stone-900"
+            }`}
+          >
+            {exporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+          </button>
+        </div>
 
         <div className={`rounded-xl border overflow-x-auto ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse min-w-[1020px]">

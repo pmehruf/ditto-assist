@@ -39,8 +39,8 @@ interface HomeAnnouncementCardProps {
  * of AnnouncementCarouselCard.tsx (that component's gradient background,
  * mascot artwork, and ~400-650px height belong to the Declaration Assist
  * page and stay there conceptually, just no longer rendered on that page —
- * see LookupPage.tsx, which now shows InstructionManualPanel in that slot
- * instead). This card matches the same bordered/rounded-2xl card language
+ * see LookupPage.tsx, which now shows a Declaration Guide section in that
+ * area instead). This card matches the same bordered/rounded-2xl card language
  * every other Home Quick Peek tile uses (see QaPerformancePeek.tsx's
  * `cardClass`).
  */

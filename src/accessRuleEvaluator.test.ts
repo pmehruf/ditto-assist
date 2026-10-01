@@ -26,7 +26,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { resolveAccess, ruleMatchesCaller, levelAllows, isDeveloperPowerTier, type AccessRuleLike, type CustomGrantLike, type FeatureOverrideLike } from "./accessRuleEvaluator";
-import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES, GROUP_RESTRICTABLE_FEATURES, isFeatureGroupRestrictableForTier } from "./constants/featurePermissions";
+import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES, ADVISOR_ZONE_FEATURES, RESTRICT_ONLY_FEATURES, isFeatureGroupGrantableForTier, isFeatureGroupRestrictableForTier } from "./constants/featurePermissions";
 
 const NO_OVERRIDES: FeatureOverrideLike[] = [];
 const NO_GRANTS: CustomGrantLike[] = [];
@@ -276,90 +276,83 @@ describe("resolveAccess — Access Rules (new in Phase 1)", () => {
   });
 });
 
-describe("Group Access Restriction", () => {
-  // "lookup"/"product_assist"/"porting_assist"/"coverage_projection"/
-  // "specific_illness_check"/"qa_dashboard"/"team_tracker"/"advisory_zone"/
-  // "announcement_archive"/"resources"/"my_activity" are the 11
-  // GROUP_RESTRICTABLE_FEATURES ids (see featurePermissions.ts — originally
-  // just the first 5, expanded 2026-09). "audit" is deliberately NOT one of
-  // them — used throughout to prove the ceiling never touches an unscoped
-  // feature.
+describe("Group Access — raise semantics (2026-09d, unchanged by the 2026-09f restriction below)", () => {
+  // ORIGINALLY 2026-09d, at the user's explicit request: a plain additive,
+  // raise-only grant — the same shape as Access Rules and Custom Grants.
+  // 2026-09f (see the two describe blocks below) layered a RESTRICTION on
+  // top of this for General/Admin tier members, but the raise side proven
+  // here is completely unchanged — it's still true for every tier,
+  // including Platform Admin/Developer, who are permanently exempt from the
+  // new restriction (see the tests below that specifically use Platform
+  // Admin/Developer to isolate the raise-only guarantees that used to apply
+  // to every tier under 2026-09d and now only unconditionally apply to
+  // those two). There is no more "Group Tier": a member's OWN tier
+  // determines whether a given grant can even apply to them (see
+  // isFeatureGroupGrantableForTier(), featurePermissions.ts). "audit" is
+  // deliberately used as an Admin-Zone-only feature throughout, to prove a
+  // General-tier caller's grants (even if one somehow existed for it) can
+  // never reach it.
   const caller = { orgTeamId: null, departmentId: null, roleId: null, tags: [] };
 
-  it("groupAllowedFeatureIds omitted/null/undefined leaves today's behavior completely unchanged (regression safety)", () => {
-    for (const groupAllowedFeatureIds of [undefined, null]) {
-      const result = resolveAccess({
-        featureId: "product_assist",
-        tier: "General",
-        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-        overrides: NO_OVERRIDES,
-        grants: NO_GRANTS,
-        accessRules: NO_RULES,
-        caller,
-        groupAllowedFeatureIds,
-      });
-      // Ordinary General-tier default for product_assist — untouched by the ceiling.
-      expect(result.source).not.toBe("Group Access Restriction");
-    }
-  });
-
-  it("an empty allow-list (fail-closed: mapped to a group owner who hasn't enabled anything yet) blocks every General-applicable restrictable feature for a General caller, and leaves every other feature GROUP_RESTRICTABLE_FEATURES now also admits (Admin/Platform-Admin-only ones, since it's a union across tiers as of 2026-09c) completely untouched", () => {
-    for (const featureId of GROUP_RESTRICTABLE_FEATURES) {
-      const result = resolveAccess({
-        featureId,
-        tier: "General",
-        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-        overrides: NO_OVERRIDES,
-        grants: NO_GRANTS,
-        accessRules: NO_RULES,
-        caller,
-        groupAllowedFeatureIds: [],
-      });
-      if (isFeatureGroupRestrictableForTier(featureId, "General")) {
-        expect(result).toEqual({ level: "None", source: "Group Access Restriction" });
-      } else {
-        // e.g. "plan_scope", "audit" — Admin/Platform-Admin-only features
-        // that GROUP_RESTRICTABLE_FEATURES now also contains (2026-09c) but
-        // that a General-tier group's checklist could never have offered in
-        // the first place; a General-tier caller's empty allow-list must
-        // never reach these. Regression coverage for the exact bug the
-        // tier-aware isFeatureGroupRestrictableForTier() gate (rather than a
-        // flat Set check) prevents — see its own doc comment.
-        expect(result.source).not.toBe("Group Access Restriction");
+  it("groupFeatureLevels omitted/null/undefined leaves today's behavior completely unchanged (regression safety) — no raise, and no restriction either, for any tier", () => {
+    for (const groupFeatureLevels of [undefined, null]) {
+      for (const tier of ["General", "Admin"] as const) {
+        const result = resolveAccess({
+          featureId: "product_assist",
+          tier,
+          featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+          overrides: NO_OVERRIDES,
+          grants: NO_GRANTS,
+          accessRules: NO_RULES,
+          caller,
+          groupFeatureLevels,
+        });
+        // null/undefined means "belongs to no active, access-configured
+        // group at all" — this layer is a complete no-op in both
+        // directions, exactly as if Group Access didn't exist for this
+        // caller. Only a PRESENT object (even an empty one) makes
+        // restriction live — see the 2026-09f describe block below.
+        expect(result.source).not.toContain("Group Access");
+        expect(result.level).toBe("Viewer"); // product_assist's ordinary General/Admin default
       }
     }
   });
 
-  it("a non-empty allow-list gives the listed features COMPLETE (Editor) access while every other General-applicable restrictable feature stays blocked — and Admin/Platform-Admin-only features are left alone entirely", () => {
-    const allowed = ["coverage_projection", "porting_assist", "qa_dashboard", "resources"];
-    for (const featureId of GROUP_RESTRICTABLE_FEATURES) {
-      const result = resolveAccess({
-        featureId,
-        tier: "General",
-        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-        overrides: NO_OVERRIDES,
-        grants: NO_GRANTS,
-        accessRules: NO_RULES,
-        caller,
-        groupAllowedFeatureIds: allowed,
-      });
-      if (!isFeatureGroupRestrictableForTier(featureId, "General")) {
-        expect(result.source).not.toBe("Group Access Restriction");
-        continue;
-      }
-      if (allowed.includes(featureId)) {
-        // Complete access — "Editor" — regardless of the feature's own
-        // generalAccess default (several of these, e.g. porting_assist,
-        // coverage_projection, resources, qa_dashboard, default to
-        // "Viewer" for ordinary General-tier users).
-        expect(result).toEqual({ level: "Editor", source: "Group Access Restriction" });
-      } else {
-        expect(result).toEqual({ level: "None", source: "Group Access Restriction" });
+  it("Platform Admin/Developer: an empty map never restricts anything — permanently exempt, so this still behaves exactly like 2026-09d", () => {
+    for (const tier of ["Platform Admin", "Developer"] as const) {
+      for (const featureId of ADVISOR_ZONE_FEATURES) {
+        const result = resolveAccess({
+          featureId,
+          tier,
+          featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+          overrides: NO_OVERRIDES,
+          grants: NO_GRANTS,
+          accessRules: NO_RULES,
+          caller,
+          groupFeatureLevels: {},
+        });
+        expect(result.source).not.toContain("Group Access");
+        expect(result.level).toBe("Editor"); // Platform Admin/Developer's own unconditional defaults, untouched
       }
     }
   });
 
-  it("a granted feature resolves to Editor even when the feature's own generalAccess default is Viewer", () => {
+  it("Platform Admin: an unconfigured feature (no key in the map at all) is untouched even when other features ARE granted — restriction never applies to this tier", () => {
+    const result = resolveAccess({
+      featureId: "team_tracker",
+      tier: "Platform Admin",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { porting_assist: "Editor" },
+    });
+    expect(result.source).not.toContain("Group Access");
+    expect(result.level).toBe("Editor"); // Platform Admin's own default, unaffected
+  });
+
+  it("a granted feature raises the level even when the feature's own generalAccess default is Viewer, and never below Editor when granted Editor", () => {
     for (const featureId of ["porting_assist", "coverage_projection", "specific_illness_check", "advisory_zone", "announcement_archive", "resources", "qa_dashboard", "team_tracker"]) {
       const ordinary = resolveAccess({ featureId, tier: "General", featureDefaults: DEFAULT_FEATURE_PERMISSIONS, overrides: NO_OVERRIDES, grants: NO_GRANTS, accessRules: NO_RULES, caller });
       expect(ordinary.level).toBe("Viewer"); // sanity-check the premise: these default to Viewer
@@ -371,107 +364,134 @@ describe("Group Access Restriction", () => {
         grants: NO_GRANTS,
         accessRules: NO_RULES,
         caller,
-        groupAllowedFeatureIds: [featureId],
+        groupFeatureLevels: { [featureId]: "Editor" },
       });
-      expect(result).toEqual({ level: "Editor", source: "Group Access Restriction" });
+      expect(result).toEqual({ level: "Editor", source: "Group Access" });
     }
   });
 
-  it("Access Rules and Custom Grants are short-circuited (not additionally consulted) once Group Access Restriction has settled the outcome", () => {
-    const rules: AccessRuleLike[] = [{ resourceKey: "porting_assist", name: "Extra rule", active: true, orgTeamId: 1, departmentId: null, roleId: null, productTag: null, grantedLevel: "Editor" }];
-    const grantedResult = resolveAccess({
-      featureId: "porting_assist",
-      tier: "General",
+  it("a Viewer-level grant never lowers a feature whose tier default is already Editor (raise-only, never lower)", () => {
+    // "audit" defaults to Editor for Admin — a Viewer-level group grant must
+    // never demote it, same as an Access Rule never demotes a stronger default.
+    const result = resolveAccess({
+      featureId: "audit",
+      tier: "Admin",
       featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
       overrides: NO_OVERRIDES,
       grants: NO_GRANTS,
-      accessRules: rules,
-      caller: { orgTeamId: 1, departmentId: null, roleId: null, tags: [] },
-      groupAllowedFeatureIds: ["porting_assist"],
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { audit: "Viewer" },
     });
-    // Already at the ceiling — a matching rule can't raise it further, and
-    // the source stays "Group Access Restriction", not the rule's.
-    expect(grantedResult).toEqual({ level: "Editor", source: "Group Access Restriction" });
-
-    const notGrantedResult = resolveAccess({
-      featureId: "porting_assist",
-      tier: "General",
-      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-      overrides: NO_OVERRIDES,
-      grants: NO_GRANTS,
-      accessRules: rules,
-      caller: { orgTeamId: 1, departmentId: null, roleId: null, tags: [] },
-      groupAllowedFeatureIds: [],
-    });
-    // Not granted — stays "None" even though a matching Access Rule exists,
-    // since the group ceiling short-circuits before rules are consulted.
-    expect(notGrantedResult).toEqual({ level: "None", source: "Group Access Restriction" });
+    expect(result).toEqual({ level: "Editor", source: "Default" });
   });
 
-  it("Developer is permanently, structurally exempt — never restricted, even with an empty allow-list explicitly passed in (2026-09, Group Tier: superseded the old 'General only' framing below, but Developer's exemption is unconditional either way)", () => {
-    for (const featureId of GROUP_RESTRICTABLE_FEATURES) {
+  it("a Viewer-level grant raises a feature whose tier default is None, but only to Viewer, not Editor", () => {
+    // "product_assist_quota" (AI Usage & Limits) is Admin Zone but defaults
+    // to None for Admin (Platform-Admin/Developer-only by default) — a
+    // legitimate case of an Admin Zone feature an Admin-tier group grant
+    // can still raise from scratch.
+    const result = resolveAccess({
+      featureId: "product_assist_quota",
+      tier: "Admin",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { product_assist_quota: "Viewer" },
+    });
+    expect(result).toEqual({ level: "Viewer", source: "Group Access" });
+  });
+
+  it("Group Access is additive alongside Access Rules and Custom Grants — the highest of all three wins, not a short-circuit", () => {
+    const rules: AccessRuleLike[] = [{ resourceKey: "porting_assist", name: "Extra rule", active: true, orgTeamId: 1, departmentId: null, roleId: null, productTag: null, grantedLevel: "Viewer" }];
+    const grants: CustomGrantLike[] = [{ active: true, grantType: "feature_access", targetId: "porting_assist", level: "Viewer" }];
+
+    // Group Access (Editor) beats both the Viewer-level rule and Viewer-level grant.
+    const result = resolveAccess({
+      featureId: "porting_assist",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants,
+      accessRules: rules,
+      caller: { orgTeamId: 1, departmentId: null, roleId: null, tags: [] },
+      groupFeatureLevels: { porting_assist: "Editor" },
+    });
+    expect(result).toEqual({ level: "Editor", source: "Group Access" });
+
+    // A stronger Custom Grant still wins over a weaker Group Access grant.
+    const strongerGrant: CustomGrantLike[] = [{ active: true, grantType: "feature_access", targetId: "porting_assist", level: "Editor" }];
+    const result2 = resolveAccess({
+      featureId: "porting_assist",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: strongerGrant,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { porting_assist: "Viewer" },
+    });
+    expect(result2).toEqual({ level: "Editor", source: "Custom Grant" });
+  });
+
+  it("Developer is permanently, structurally exempt — never affected by any Group Access grant", () => {
+    const result = resolveAccess({
+      featureId: "porting_assist",
+      tier: "Developer",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { porting_assist: "Editor" },
+    });
+    expect(result.source).not.toBe("Group Access");
+    expect(result.level).toBe("Editor"); // Developer's own unconditional bypass, unaffected.
+  });
+});
+
+describe("Group Access — restriction (2026-09f, at the user's explicit request)", () => {
+  // NEW in 2026-09f: "Access must be determined by the feature selections
+  // made during group configuration, irrespective of the user's tier...
+  // Group configuration acts as an additional restriction, allowing only
+  // the selected features to be accessible" — the user's own framing, using
+  // the "advisor trainee only needs to see one tool" / "admin trainer
+  // limited to just Group Management" examples. A PRESENT groupFeatureLevels
+  // object (even an empty one — `{}`, meaning "belongs to a qualifying
+  // group, but that group hasn't checked anything yet") now restricts every
+  // General/Admin-tier feature within that tier's own restriction scope
+  // that isn't a key in the map, down to "None" — overriding whatever the
+  // tier default/Access Rules layer computed above it. Restriction NEVER
+  // applies to Platform Admin/Developer (see the raise-semantics describe
+  // block above for that guarantee), and never to a feature
+  // isFeatureGroupGrantableForTier() excludes for this tier (Admin Zone
+  // features for a General-tier caller; profile_access/group_management for
+  // anyone, any tier).
+  const caller = { orgTeamId: null, departmentId: null, roleId: null, tags: [] };
+
+  it("an empty map (belongs to a qualifying group, but it grants nothing yet) restricts every in-scope Advisor Zone feature to None for General", () => {
+    for (const featureId of ADVISOR_ZONE_FEATURES) {
       const result = resolveAccess({
         featureId,
-        tier: "Developer",
-        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-        overrides: NO_OVERRIDES,
-        grants: NO_GRANTS,
-        accessRules: NO_RULES,
-        caller,
-        groupAllowedFeatureIds: [],
-      });
-      expect(result.source).not.toBe("Group Access Restriction");
-    }
-  });
-
-  // Admin and Platform Admin used to be unconditionally exempt here too
-  // (this test's old title/body, through 2026-09), back when the gate was
-  // hardcoded to `tier === "General"`. Group Tier (migration 0082)
-  // deliberately supersedes that: see the "Group Tier generalization"
-  // describe block below for full coverage of the new, intended behavior
-  // (a group can now target Admin or Platform Admin, and Access Rules/
-  // Custom Grants stay short-circuited for them too, exactly as they
-  // already were for General).
-
-  it("features outside GROUP_RESTRICTABLE_FEATURES are never affected, regardless of the allow-list", () => {
-    for (const groupAllowedFeatureIds of [[], ["product_assist"]]) {
-      const result = resolveAccess({
-        featureId: "audit",
         tier: "General",
         featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
         overrides: NO_OVERRIDES,
         grants: NO_GRANTS,
         accessRules: NO_RULES,
         caller,
-        groupAllowedFeatureIds,
+        groupFeatureLevels: {},
       });
-      expect(result.source).not.toBe("Group Access Restriction");
+      expect(result).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
     }
   });
-});
 
-describe("Group Access Restriction — Group Tier generalization (2026-09, migration 0082)", () => {
-  // Group Tier lets a relationship_groups row target which TIER of member
-  // its usedForGroupAccess ceiling restricts (General/Admin/Platform Admin,
-  // default General) instead of always being General-only — see schema.ts's
-  // comment on `relationshipGroups.groupTier` and evaluateAccess.ts's
-  // `getGroupAllowedFeatureIds` for the full semantics. resolveAccess()
-  // itself is DB-free and tier-agnostic about WHICH groups matched — by the
-  // time `groupAllowedFeatureIds` reaches this function it's already been
-  // computed for the specific tier in question by getGroupAllowedFeatureIds
-  // (see evaluateAccess.test.ts for coverage of THAT tier-matching logic:
-  // multiple groups, disabled groups, owner tier vs. group tier, etc. — all
-  // DB-backed concerns this pure module doesn't have visibility into). What
-  // this describe block proves is narrower and specific to this module: the
-  // gate itself must now apply for General OR Admin OR Platform Admin
-  // (CASE 1/2/3), must remain permanently inert for Developer no matter what
-  // (CASE 4's structural half), and existing precedence (Access Rules/
-  // Custom Grants short-circuited, tier default untouched when unaffected)
-  // must hold for all three tiers, not just General (CASE 8, generalized).
-  const caller = { orgTeamId: null, departmentId: null, roleId: null, tags: [] };
-
-  it("CASE 1/10 — General tier: unchanged, byte-for-byte, from before Group Tier existed (default groupTier, backward compatibility)", () => {
-    const result = resolveAccess({
+  it("an unconfigured feature is restricted to None even when a DIFFERENT feature in the same map IS granted — the 'trainee sees only the one tool selected' scenario", () => {
+    // The group checked "porting_assist" only — every OTHER Advisor Zone
+    // feature (team_tracker here) is now blocked for this General-tier
+    // member, exactly the training-group use case the user described.
+    const granted = resolveAccess({
       featureId: "porting_assist",
       tier: "General",
       featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
@@ -479,14 +499,109 @@ describe("Group Access Restriction — Group Tier generalization (2026-09, migra
       grants: NO_GRANTS,
       accessRules: NO_RULES,
       caller,
-      groupAllowedFeatureIds: ["porting_assist"],
+      groupFeatureLevels: { porting_assist: "Editor" },
     });
-    expect(result).toEqual({ level: "Editor", source: "Group Access Restriction" });
+    expect(granted).toEqual({ level: "Editor", source: "Group Access" });
+
+    const blocked = resolveAccess({
+      featureId: "team_tracker",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { porting_assist: "Editor" },
+    });
+    expect(blocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
   });
 
-  it("CASE 2 — Admin tier: a group whose groupTier is \"Admin\" can now restrict an Admin caller exactly like General used to be the only tier this ever applied to", () => {
-    for (const featureId of GROUP_RESTRICTABLE_FEATURES) {
-      const blocked = resolveAccess({
+  it("Admin-tier restriction spans BOTH zones — an unconfigured Admin Zone feature is blocked too, not just Advisor Zone ('admin trainer limited to just Group Management' scenario)", () => {
+    // The group checked "group_management"-adjacent nothing at all here
+    // (empty map) — an ordinary Admin-Zone feature like qa_announcement_log
+    // (Announcement Manager), which this Admin-tier member's tier default
+    // would otherwise reach, is restricted to None, same as an Advisor Zone
+    // feature would be.
+    const advisorZoneBlocked = resolveAccess({
+      featureId: "resources",
+      tier: "Admin",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: {},
+    });
+    expect(advisorZoneBlocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
+
+    const adminZoneBlocked = resolveAccess({
+      featureId: "qa_announcement_log",
+      tier: "Admin",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: {},
+    });
+    expect(adminZoneBlocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
+  });
+
+  it("a General-tier caller is NEVER restricted on an Admin Zone feature — Admin Zone was already outside their baseline access, exactly as the user specified ('will not affect General-tier users, as those features are already outside their baseline access')", () => {
+    const result = resolveAccess({
+      featureId: "qa_announcement_log",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: {}, // belongs to a qualifying group that grants nothing
+    });
+    // Falls straight through to the ordinary General default (None) via
+    // "Default" — the restriction branch never engages at all for this
+    // (featureId, tier) pair, since isFeatureGroupGrantableForTier already
+    // says General can't reach Admin Zone regardless of group config.
+    expect(result).toEqual({ level: "None", source: "Default" });
+  });
+
+  it("Platform Admin/Developer are permanently exempt from restriction, even with an empty map and even on a feature their tier default would otherwise reach", () => {
+    for (const tier of ["Platform Admin", "Developer"] as const) {
+      const result = resolveAccess({
+        featureId: "qa_announcement_log",
+        tier,
+        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+        overrides: NO_OVERRIDES,
+        grants: NO_GRANTS,
+        accessRules: NO_RULES,
+        caller,
+        groupFeatureLevels: {},
+      });
+      expect(result.level).toBe("Editor");
+      expect(result.source).not.toContain("restricted");
+    }
+  });
+
+  it("RESTRICT_ONLY_FEATURES (\"profile_access\", \"group_management\", etc.) are NEVER restricted for General — every one of them already defaults to None, so the restriction branch never engages", () => {
+    for (const featureId of RESTRICT_ONLY_FEATURES) {
+      const result = resolveAccess({
+        featureId,
+        tier: "General",
+        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+        overrides: NO_OVERRIDES,
+        grants: NO_GRANTS,
+        accessRules: NO_RULES,
+        caller,
+        groupFeatureLevels: {}, // belongs to a qualifying group that grants nothing
+      });
+      expect(result.source).not.toContain("Group Access");
+      expect(result.level).toBe("None");
+    }
+  });
+
+  it("RESTRICT_ONLY_FEATURES ARE now restricted for Admin (2026-09g, at the user's explicit request — \"No check box control for access control center. What if the group is not supposed to have it?\"): an empty map blocks them, unlike the old total-exclusion behavior", () => {
+    for (const featureId of RESTRICT_ONLY_FEATURES) {
+      const result = resolveAccess({
         featureId,
         tier: "Admin",
         featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
@@ -494,177 +609,202 @@ describe("Group Access Restriction — Group Tier generalization (2026-09, migra
         grants: NO_GRANTS,
         accessRules: NO_RULES,
         caller,
-        groupAllowedFeatureIds: [],
+        groupFeatureLevels: {}, // belongs to a qualifying group that grants nothing
       });
-      if (isFeatureGroupRestrictableForTier(featureId, "Admin")) {
-        expect(blocked).toEqual({ level: "None", source: "Group Access Restriction" });
-      } else {
-        // e.g. "smoke_test"/"owner_controls"/"clear_activity"/
-        // "product_assist_quota" — Platform-Admin-only (adminAccess:
-        // "None") — an Admin-tier group's empty allow-list must never
-        // reach these.
-        expect(blocked.source).not.toBe("Group Access Restriction");
-      }
+      expect(result).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
     }
-    const granted = resolveAccess({
-      featureId: "qa_dashboard",
-      tier: "Admin",
-      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-      overrides: NO_OVERRIDES,
-      grants: NO_GRANTS,
-      accessRules: NO_RULES,
-      caller,
-      groupAllowedFeatureIds: ["qa_dashboard"],
-    });
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
   });
 
-  it("CASE 3 — Platform Admin tier: same generalization applies (a group can target Platform Admin members too)", () => {
-    const blocked = resolveAccess({
-      featureId: "team_tracker",
-      tier: "Platform Admin",
-      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-      overrides: NO_OVERRIDES,
-      grants: NO_GRANTS,
-      accessRules: NO_RULES,
-      caller,
-      groupAllowedFeatureIds: [],
-    });
-    expect(blocked).toEqual({ level: "None", source: "Group Access Restriction" });
-
-    const granted = resolveAccess({
-      featureId: "team_tracker",
-      tier: "Platform Admin",
-      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-      overrides: NO_OVERRIDES,
-      grants: NO_GRANTS,
-      accessRules: NO_RULES,
-      caller,
-      groupAllowedFeatureIds: ["team_tracker"],
-    });
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
-  });
-
-  it("CASE 4 — Developer stays permanently exempt no matter what is passed in, unlike General/Admin/Platform Admin — the one tier this gate can never apply to", () => {
-    // Note the asymmetry with General/Admin/Platform Admin just above: for
-    // those three, a non-null groupAllowedFeatureIds DOES trigger the gate.
-    // For Developer it never does, regardless — this is what makes it safe
-    // for evaluateAccess.ts to skip computing groupAllowedFeatureIds for
-    // Developer entirely as a pure cost optimization (see its own comment)
-    // rather than a correctness requirement: even if it were computed and
-    // passed in anyway, this function still ignores it for Developer.
-    for (const featureId of GROUP_RESTRICTABLE_FEATURES) {
+  it("checking a RESTRICT_ONLY_FEATURES item exempts an Admin-tier member from restriction, but never RAISES them past their ordinary tier default — the self-escalation boundary still holds for the raise direction", () => {
+    for (const featureId of RESTRICT_ONLY_FEATURES) {
+      const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId)!;
       const result = resolveAccess({
         featureId,
-        tier: "Developer",
+        tier: "Admin",
         featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
         overrides: NO_OVERRIDES,
         grants: NO_GRANTS,
         accessRules: NO_RULES,
         caller,
-        groupAllowedFeatureIds: [],
+        // Even a raw API call somehow saving "Editor" here must never raise
+        // the level — isFeatureGroupGrantableForTier() is always false for
+        // RESTRICT_ONLY_FEATURES, so the raise branch never runs for them.
+        groupFeatureLevels: { [featureId]: "Editor" },
       });
-      expect(result.source).not.toBe("Group Access Restriction");
-      expect(result.level).toBe("Editor"); // Developer's own unconditional bypass, unaffected.
+      expect(result.source).not.toBe("Group Access");
+      expect(result.level).toBe(perm.adminAccess); // untouched ordinary Admin default
     }
   });
 
-  it("CASE 8 — an Admin/Platform Admin caller's Access Rules and Custom Grants are short-circuited once Group Access Restriction has settled the outcome, same as General already was", () => {
-    for (const tier of ["Admin", "Platform Admin"] as const) {
-      const rules: AccessRuleLike[] = [{ resourceKey: "porting_assist", name: "Extra rule", active: true, orgTeamId: 1, departmentId: null, roleId: null, productTag: null, grantedLevel: "Editor" }];
-      const grants: CustomGrantLike[] = [{ active: true, grantType: "feature_access", targetId: "porting_assist", level: "Editor" }];
-
-      const notGranted = resolveAccess({
-        featureId: "porting_assist",
-        tier,
-        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-        overrides: NO_OVERRIDES,
-        grants,
-        accessRules: rules,
-        caller: { orgTeamId: 1, departmentId: null, roleId: null, tags: [] },
-        groupAllowedFeatureIds: [],
-      });
-      // Not granted by the group -- stays "None" even though a matching
-      // Access Rule AND an active Custom Grant both exist, since the group
-      // ceiling short-circuits before either is consulted.
-      expect(notGranted).toEqual({ level: "None", source: "Group Access Restriction" });
+  it("RESTRICT_ONLY_FEATURES restriction never applies to Platform Admin/Developer, same exemption as every other feature", () => {
+    for (const featureId of RESTRICT_ONLY_FEATURES) {
+      for (const tier of ["Platform Admin", "Developer"] as const) {
+        const result = resolveAccess({
+          featureId,
+          tier,
+          featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+          overrides: NO_OVERRIDES,
+          grants: NO_GRANTS,
+          accessRules: NO_RULES,
+          caller,
+          groupFeatureLevels: {},
+        });
+        expect(result.level).toBe("Editor");
+        expect(result.source).not.toContain("restricted");
+      }
     }
+  });
+
+  it("isFeatureGroupRestrictableForTier() is strictly wider than isFeatureGroupGrantableForTier() — true for RESTRICT_ONLY_FEATURES at Admin/Platform Admin/Developer even though grantable stays false everywhere", () => {
+    for (const featureId of RESTRICT_ONLY_FEATURES) {
+      for (const tier of ["Admin", "Platform Admin", "Developer"] as const) {
+        expect(isFeatureGroupGrantableForTier(featureId, tier)).toBe(false);
+        expect(isFeatureGroupRestrictableForTier(featureId, tier)).toBe(true);
+      }
+      expect(isFeatureGroupRestrictableForTier(featureId, "General")).toBe(false);
+    }
+  });
+
+  it("a restriction is overridden by a Custom Grant — the 'flexibility valve' still punches through, same as it always could over a plain tier default", () => {
+    const grants: CustomGrantLike[] = [{ active: true, grantType: "feature_access", targetId: "team_tracker", level: "Editor" }];
+    const result = resolveAccess({
+      featureId: "team_tracker",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: {}, // would otherwise restrict team_tracker to None
+    });
+    expect(result).toEqual({ level: "Editor", source: "Custom Grant" });
+  });
+
+  it("a restriction overrides a level an Access Rule had already raised — Group Access's restriction step runs AFTER Access Rules in the precedence chain", () => {
+    const rules: AccessRuleLike[] = [
+      { resourceKey: "team_tracker", name: "Would-be raise", active: true, orgTeamId: null, departmentId: null, roleId: null, productTag: null, grantedLevel: "Editor" },
+    ];
+    // Without any group membership, the rule would win outright.
+    const withoutGroup = resolveAccess({
+      featureId: "team_tracker",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: rules,
+      caller,
+    });
+    expect(withoutGroup).toEqual({ level: "Editor", source: 'Access Rule ("Would-be raise")' });
+
+    // Belonging to a qualifying group that never checked team_tracker
+    // overrides that same rule's raise right back down to None.
+    const withGroup = resolveAccess({
+      featureId: "team_tracker",
+      tier: "General",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: rules,
+      caller,
+      groupFeatureLevels: {},
+    });
+    expect(withGroup).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
+  });
+
+  it("belonging to a qualifying group where the SAME feature IS checked still raises normally, even though the map is otherwise restrictive for every other feature", () => {
+    const result = resolveAccess({
+      featureId: "audit",
+      tier: "Admin",
+      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+      overrides: NO_OVERRIDES,
+      grants: NO_GRANTS,
+      accessRules: NO_RULES,
+      caller,
+      groupFeatureLevels: { audit: "Editor" },
+    });
+    // "audit" already defaults to Editor for Admin, so a Viewer-or-lower
+    // group grant can't raise it any further — this proves the restriction
+    // branch does NOT engage for a key that IS present (source stays
+    // "Default", not blocked), paired with the Admin Zone restriction test
+    // above, which proves an adjacent UNCONFIGURED Admin Zone feature in the
+    // exact same map gets blocked.
+    expect(result).toEqual({ level: "Editor", source: "Default" });
   });
 });
 
-describe("Group Access Restriction — feature list follows Group Tier, not a fixed Advisor-Zone list (2026-09c)", () => {
-  // Group Tier's actual purpose is "which tier's feature access am I
-  // configuring?" — so an Admin- or Platform-Admin-tier group must be able
-  // to restrict Admin-Zone features (Plan Management, Announcement
-  // Manager, Knowledge Base, etc.), not just the original 11 Advisor-Zone
-  // tools. See featurePermissions.ts's GROUP_RESTRICTABLE_FEATURES and
-  // isFeatureGroupRestrictableForTier() doc comments for the full
-  // reasoning; this describe block proves the resulting resolveAccess()
-  // behavior directly.
+describe("Group Access — per-member tier eligibility (2026-09d: no more Group Tier, mixed-tier groups)", () => {
+  // A group can now hold members of ANY tier at once — there is no more
+  // per-group `groupTier` selecting which tier it targets. Instead, each
+  // grant automatically applies only to members whose OWN tier can reach
+  // that feature (isFeatureGroupGrantableForTier(), featurePermissions.ts):
+  // an Advisor Zone grant applies to every tier; an Admin Zone grant applies
+  // only to Admin, Platform Admin, and Developer. resolveAccess() itself is
+  // DB-free and doesn't know which GROUPS matched — evaluateAccess.test.ts
+  // covers that DB-backed union-across-groups logic; this proves the
+  // per-(featureId, tier) eligibility check resolveAccess() itself applies.
+  // 2026-09f's restriction reuses this exact same eligibility gate (see the
+  // "Group Access — restriction" describe block above) — a feature that's
+  // not grantable for a tier is also never restrictable for that tier, so
+  // every "zero effect" test below doubles as proof restriction doesn't
+  // engage there either.
   const caller = { orgTeamId: null, departmentId: null, roleId: null, tags: [] };
 
-  it("an Admin-tier group can now grant an Admin-Zone feature (\"plan_scope\") complete access, exactly like an Advisor-Zone feature always could", () => {
-    const ordinary = resolveAccess({ featureId: "plan_scope", tier: "Admin", featureDefaults: DEFAULT_FEATURE_PERMISSIONS, overrides: NO_OVERRIDES, grants: NO_GRANTS, accessRules: NO_RULES, caller });
-    expect(ordinary).toEqual({ level: "Editor", source: "Default" }); // sanity-check the premise: Admin already gets Editor by default here
-
-    const blocked = resolveAccess({
-      featureId: "plan_scope",
-      tier: "Admin",
-      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-      overrides: NO_OVERRIDES,
-      grants: NO_GRANTS,
-      accessRules: NO_RULES,
-      caller,
-      groupAllowedFeatureIds: [], // group exists but hasn't checked "plan_scope"
-    });
-    expect(blocked).toEqual({ level: "None", source: "Group Access Restriction" });
-
+  it("an Admin Zone grant (\"product_assist_quota\") raises an Admin-tier member exactly like an Advisor Zone grant would", () => {
+    // "product_assist_quota" defaults to None for Admin (Platform-Admin/
+    // Developer-only by default) — a clean case where the group grant is
+    // what actually raises the level, rather than the tier default already
+    // being at the ceiling (as "plan_scope" already is for Admin).
     const granted = resolveAccess({
-      featureId: "plan_scope",
+      featureId: "product_assist_quota",
       tier: "Admin",
       featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
       overrides: NO_OVERRIDES,
       grants: NO_GRANTS,
       accessRules: NO_RULES,
       caller,
-      groupAllowedFeatureIds: ["plan_scope"],
+      groupFeatureLevels: { product_assist_quota: "Editor" },
     });
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
+    expect(granted).toEqual({ level: "Editor", source: "Group Access" });
   });
 
-  it("a General-tier group can never reach an Admin-Zone-only feature (\"audit\"), even with an explicit allow-list naming it — the gate is tier-aware, not a flat Set check", () => {
+  it("the SAME Admin Zone grant has zero effect on a General-tier member — even if it came from the very same group's grant map", () => {
     const result = resolveAccess({
-      featureId: "audit",
+      featureId: "product_assist_quota",
       tier: "General",
       featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
       overrides: NO_OVERRIDES,
       grants: NO_GRANTS,
       accessRules: NO_RULES,
       caller,
-      groupAllowedFeatureIds: ["audit"], // could only get here via a raw API call — the UI never offers "audit" for a General-tier group
+      // This is the crux of "mixed-tier groups": the SAME grant map is
+      // passed in regardless of the caller's own tier — resolveAccess()
+      // itself is what filters it per (featureId, tier).
+      groupFeatureLevels: { product_assist_quota: "Editor" },
     });
-    // Falls through to General's own ordinary default (None) — the group's
-    // allow-list is simply irrelevant to this featureId at General tier.
-    expect(result).toEqual({ level: "None", source: "Default" });
+    // Falls through to General's own ordinary default (None) — the grant
+    // is simply irrelevant to this featureId at General tier.
+    expect(result.source).not.toBe("Group Access");
   });
 
-  it("Platform Admin-tier group access reaches virtually every feature, including ones Developer-tier-tagged by default (e.g. \"connections\")", () => {
-    const granted = resolveAccess({
-      featureId: "connections",
-      tier: "Platform Admin",
-      featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
-      overrides: NO_OVERRIDES,
-      grants: NO_GRANTS,
-      accessRules: NO_RULES,
-      caller,
-      groupAllowedFeatureIds: ["connections"],
-    });
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
+  it("an Advisor Zone grant applies identically across General and Admin (Platform Admin/Developer already default to Editor on everything, independent of any grant)", () => {
+    for (const tier of ["General", "Admin"] as const) {
+      const result = resolveAccess({
+        featureId: "team_tracker",
+        tier,
+        featureDefaults: DEFAULT_FEATURE_PERMISSIONS,
+        overrides: NO_OVERRIDES,
+        grants: NO_GRANTS,
+        accessRules: NO_RULES,
+        caller,
+        groupFeatureLevels: { team_tracker: "Editor" },
+      });
+      expect(result).toEqual({ level: "Editor", source: "Group Access" });
+    }
   });
 
-  it("\"profile_access\" (Access Control Center) is NEVER reachable through Group Access Restriction, at any tier — the same self-escalation boundary Custom Grants already respect", () => {
+  it("\"profile_access\" (Access Control Center) is NEVER reachable through Group Access, at any tier — the same self-escalation boundary Custom Grants already respect", () => {
     for (const tier of ["General", "Admin", "Platform Admin"] as const) {
-      expect(isFeatureGroupRestrictableForTier("profile_access", tier)).toBe(false);
+      expect(isFeatureGroupGrantableForTier("profile_access", tier)).toBe(false);
       const result = resolveAccess({
         featureId: "profile_access",
         tier,
@@ -673,13 +813,13 @@ describe("Group Access Restriction — feature list follows Group Tier, not a fi
         grants: NO_GRANTS,
         accessRules: NO_RULES,
         caller,
-        groupAllowedFeatureIds: ["profile_access"], // even if a raw API call somehow saved this
+        groupFeatureLevels: { profile_access: "Editor" }, // even if a raw API call somehow saved this
       });
-      expect(result.source).not.toBe("Group Access Restriction");
+      expect(result.source).not.toBe("Group Access");
     }
   });
 
-  it("isolation regression: an Admin caller's unrelated Custom Grant on a Platform-Admin-only feature (\"clear_activity\") survives untouched while they're subject to an active Admin-tier group restriction that never mentions it — the exact bug a flat (non-tier-aware) Set check would have caused", () => {
+  it("isolation regression: an Admin caller's unrelated Custom Grant on a Platform-Admin-only feature (\"clear_activity\") survives untouched alongside an unrelated Group Access grant that never mentions it", () => {
     const grants: CustomGrantLike[] = [{ active: true, grantType: "feature_access", targetId: "clear_activity", level: "Editor" }];
     const result = resolveAccess({
       featureId: "clear_activity",
@@ -689,11 +829,9 @@ describe("Group Access Restriction — feature list follows Group Tier, not a fi
       grants,
       accessRules: NO_RULES,
       caller,
-      // This Admin-tier group restricts "plan_scope" only — "clear_activity"
-      // isn't Admin-applicable (adminAccess: "None"), so it was never an
-      // option on this group's checklist and must stay completely outside
-      // this gate's reach.
-      groupAllowedFeatureIds: ["plan_scope"],
+      // This group grants "plan_scope" only — "clear_activity" has no key
+      // here at all, so it's completely untouched by Group Access.
+      groupFeatureLevels: { plan_scope: "Editor" },
     });
     expect(result).toEqual({ level: "Editor", source: "Custom Grant" });
   });
@@ -789,11 +927,10 @@ describe("Permission architecture — Permissions/Access Rules/Custom Grants are
   // hasAccess(), server.ts's requireFeatureAccess(), and EffectiveAccessModal
   // all call. "qa_announcement_log" (Announcement Manager) and "resources"
   // (Workspace Resources) are used as the representative governed features
-  // throughout, per the acceptance-test list. Neither is in
-  // GROUP_RESTRICTABLE_FEATURES except "resources" — which is, but every
-  // test below omits groupAllowedFeatureIds (the ordinary, non-restricted-
-  // member case), so the Group Access Restriction gate never engages and
-  // doesn't interfere with what's being proven here.
+  // throughout, per the acceptance-test list. "resources" is in
+  // ADVISOR_ZONE_FEATURES, but every test below omits groupFeatureLevels
+  // (the ordinary, no-groups case), so the Group Access layer never engages
+  // and doesn't interfere with what's being proven here.
   const caller = { orgTeamId: 5, departmentId: 7, roleId: 9, tags: ["Health"] };
 
   it("1. None hides the feature entirely, regardless of tier", () => {

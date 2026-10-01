@@ -50,7 +50,7 @@
  */
 
 import type { FeaturePermission } from "./types/permissions";
-import { DEVELOPER_ONLY_FEATURES, isFeatureGroupRestrictableForTier } from "./constants/featurePermissions";
+import { DEVELOPER_ONLY_FEATURES, isFeatureGroupGrantableForTier, isFeatureGroupRestrictableForTier } from "./constants/featurePermissions";
 
 export type AccessLevel = "None" | "Viewer" | "Editor";
 export type ActionType = "Viewer" | "Editor";
@@ -155,44 +155,76 @@ export interface ResolveAccessInput {
   /** This caller's own Team/Department/Role/Product Tags. */
   caller: CallerAttributes;
   /**
-   * Feature ids this caller's relationship group has enabled for its
-   * members (Groups tab, `group_tool_access` table) — 2026-09.
-   * `null`/`undefined` means the caller isn't a restricted group member at
-   * all (they aren't the subject of an active relationship whose group has
-   * `usedForGroupAccess` set, AT the tier that group's `groupTier` targets
-   * — see below): no restriction, current behavior unchanged. An empty
-   * array means a member whose group owner hasn't enabled anything yet —
-   * every feature `isFeatureGroupRestrictableForTier()` says is
-   * restrictable AT THIS CALLER'S OWN TIER resolves to "None" until the
-   * owner's grant list is populated (fail-closed by design, see schema.ts's
-   * comment on the table). Only ever affects a feature
-   * `isFeatureGroupRestrictableForTier(featureId, tier)` returns true for —
-   * every other feature is completely unaffected even if this is set (see
-   * that function's own doc comment in featurePermissions.ts for why the
-   * gate below is tier-aware rather than checking the flat
-   * GROUP_RESTRICTABLE_FEATURES Set directly — that Set is now a union
-   * across every tier, since Group Tier can target Admin/Platform Admin
-   * too, not just a fixed "Advisor Zone" list). Two-way, not narrow-only:
-   * an id in this list resolves straight to
-   * "Editor" (complete access to that feature, regardless of its own
-   * generalAccess/adminAccess default), an id NOT in this list resolves
-   * straight to "None" — see resolveAccess()'s own comment.
+   * The caller's Group Access grants — 2026-09f redesign, at the user's
+   * explicit request: "access must be determined by the feature selections
+   * made during group configuration, irrespective of the user's tier...
+   * Group configuration acts as an additional restriction, allowing only
+   * the selected features to be accessible." Membership in an active,
+   * access-configured group is now BOTH a raise (same as Access Rules and
+   * Custom Grants — a checked item's `level` can only ever raise a member
+   * above their tier default, never lower it) AND a restriction: within
+   * that tier's restriction scope (see below), any feature NOT checked in
+   * ANY of the caller's qualifying groups resolves to "None", overriding
+   * whatever the tier default / Access Rules layer above computed.
    *
-   * TIER SCOPE (2026-09, Group Tier / migration 0082): each relationship
-   * group has its own `groupTier` (`General`/`Admin`/`Platform Admin`,
-   * default `General`) selecting which tier of member its restriction
-   * ceiling applies to — independent of the group's owner's own
-   * tier/permissions. The CALLER of this module (evaluateAccess.ts /
-   * App.tsx / EffectiveAccessModal.tsx) is responsible for only computing
-   * this value from groups whose `groupTier` matches `input.tier`; by the
-   * time it reaches this function it's already tier-scoped, which is why
-   * the gate below no longer hardcodes a tier check itself. `groupTier` can
-   * never legally be `"Developer"`, so a Developer caller can never have a
-   * matching group — combined with the `tier !== "Developer"` guard below,
-   * Developer stays permanently exempt from Group Access Restriction no
-   * matter how any group is configured.
+   * `null`/`undefined` means the caller belongs to no active, access-
+   * configured group at all — this layer contributes nothing in either
+   * direction, exactly as if Group Access didn't exist for them. A present
+   * (possibly empty) object means the caller belongs to at least one such
+   * group, so restriction is live: a key present means at least one of the
+   * caller's groups has a grant on that featureId, value = the highest
+   * `level` across every such group (the CALLER of this module —
+   * evaluateAccess.ts / App.tsx / EffectiveAccessModal.tsx — computes that
+   * union-max, same as it does for merging multiple matching Access Rules);
+   * a featureId absent from the object means NO qualifying group has ever
+   * checked it. Belonging to more than one qualifying group only ever
+   * WIDENS what's accessible — each group's checked set is unioned in,
+   * never intersected — the same additive spirit as the raise side.
+   *
+   * TIER SCOPE (both for the raise AND the restriction side): a
+   * relationship group has no `groupTier` of its own — eligibility is
+   * derived per-member, per-feature, from the member's OWN tier via
+   * isFeatureGroupGrantableForTier() (featurePermissions.ts). For General
+   * tier that's Advisor Zone only (Admin Zone is never reachable by General
+   * regardless, checked or not, so restricting it would be a no-op either
+   * way). For Admin tier it's BOTH Advisor Zone and Admin Zone — "Admin-
+   * tier and above users will be restricted across both... based on the
+   * group configuration," per the user's own example: an Admin-tier
+   * trainer limited to just Group Management needs their WHOLE Admin Zone
+   * surface narrowed, not just the Advisor Zone half.
+   *
+   * RESTRICTION NEVER APPLIES to Platform Admin or Developer — deliberately
+   * exempted so a training/restriction group can never accidentally lock
+   * out the app's highest-privilege operators (raising still works
+   * identically for every tier, unchanged).
+   *
+   * RESTRICT_ONLY_FEATURES (2026-09g, featurePermissions.ts) — `profile_
+   * access`, `profile_access_directory`, `profile_access_permissions`,
+   * `qa_access_groups`, `master_advisors`, and `group_management` — are a
+   * special case, at the user's explicit request ("No check box control for
+   * access control center. What if the group is not supposed to have it?").
+   * These can now be RESTRICTED (for Admin-tier members, same as any Admin
+   * Zone feature) but can NEVER be RAISED — the self-escalation boundary
+   * that excluded them from ADMIN_ZONE_FEATURES entirely still holds for
+   * the raise direction: a group's configuration can never grant a member
+   * MORE than their tier already gives them on one of these, only take it
+   * away. `isFeatureGroupGrantableForTier()` answers "can this raise?" (false
+   * for RESTRICT_ONLY_FEATURES, always); `isFeatureGroupRestrictableForTier()`
+   * answers the wider "can this be blocked?" (true for RESTRICT_ONLY_
+   * FEATURES at Admin/Platform Admin/Developer — Platform Admin/Developer
+   * are still separately exempted from restriction itself, same as above).
+   * `group_management` specifically stays reachable by default (Admin gets
+   * Viewer unless the group unchecks it) so a restricted Admin-tier trainer
+   * can still normally see the very Groups tab that might restrict them —
+   * an admin deliberately wanting to hide even that can now do so by
+   * unchecking it, but it's no longer hard-wired unreachable. resolveAccess()
+   * re-derives all of this from the two functions above — the CALLER of
+   * this module is NOT responsible for pre-filtering groupFeatureLevels by
+   * tier eligibility (this module must see every one of the caller's group
+   * grants, unfiltered, to correctly compute what's NOT present for the
+   * restriction check).
    */
-  groupAllowedFeatureIds?: string[] | null;
+  groupFeatureLevels?: Record<string, AccessLevel> | null;
 }
 
 export interface ResolveAccessResult {
@@ -206,21 +238,25 @@ export interface ResolveAccessResult {
 
 /**
  * Resolves what `input.tier`/`input.caller` can do on `input.featureId`, and
- * why. Mirrors requireFeatureAccess()'s exact resolution order
- * (DEVELOPER_ONLY_FEATURES hard gate — a no-op as of 2026-09, the Set is now
- * empty for every feature, see featurePermissions.ts — → optional Feature
- * Visibility check → Developer bypass → registry/override default → Access
- * Rules → Custom
- * Grants, taking the max of the last three), with Access Rules folded in as
- * a new, additive-only layer between the tier default and the per-
- * individual custom grant. Security Tier is never an output of this
- * function — Access Rules and Custom Grants can only raise a Viewer/Editor
- * level within what the tier's own ceiling already resolved to; neither can
- * grant a capability a tier doesn't have a path to, and neither ever
- * changes `tier` itself.
+ * why. Precedence, in order: DEVELOPER_ONLY_FEATURES hard gate (a no-op as
+ * of 2026-09, the Set is now empty for every feature, see
+ * featurePermissions.ts) → optional Feature Visibility check → Developer
+ * bypass → registry/override tier default → Access Rules → Group Access
+ * (raise, then restrict — 2026-09f) → Custom Grants. Access Rules and
+ * Custom Grants are pure raises, taking the max against what came before.
+ * Group Access is different since 2026-09f: it still raises a checked
+ * item's level the same way, but for General/Admin-tier members of an
+ * access-configured group it ALSO restricts — any feature within that
+ * tier's restriction scope that no qualifying group ever checked resolves
+ * to "None", even overriding a level an Access Rule raised. Custom Grants
+ * are evaluated last specifically so they can still punch through a
+ * restriction as a deliberate per-individual exception (the "flexibility
+ * valve" the Custom Grants tab is documented as). Security Tier is never an
+ * output of this function, and a grant/rule/group can never widen what a
+ * tier could reach in the first place — only Group Access can narrow it.
  */
 export function resolveAccess(input: ResolveAccessInput): ResolveAccessResult {
-  const { featureId, tier, featureDefaults, overrides, hiddenPages, grants, accessRules, caller, groupAllowedFeatureIds } = input;
+  const { featureId, tier, featureDefaults, overrides, hiddenPages, grants, accessRules, caller, groupFeatureLevels } = input;
 
   if (DEVELOPER_ONLY_FEATURES.has(featureId)) {
     return isDeveloperPowerTier(tier)
@@ -230,45 +266,6 @@ export function resolveAccess(input: ResolveAccessInput): ResolveAccessResult {
 
   if (hiddenPages?.includes(featureId) && !isDeveloperPowerTier(tier)) {
     return { level: "None", source: "Hidden (Feature Visibility)" };
-  }
-
-  // Group Access Restriction — 2026-09 (expanded 2026-09 from the original
-  // 5 Advisor Workspace tools to also cover the Quality/Library group;
-  // generalized 2026-09b, Group Tier, from General-only to whichever tier
-  // a group's `groupTier` targets; widened again 2026-09c so the feature
-  // SET ITSELF follows Group Tier instead of a fixed "Advisor Zone" list —
-  // see isFeatureGroupRestrictableForTier()'s own doc comment in
-  // featurePermissions.ts for the full reasoning, including why the check
-  // below is tier-aware rather than a flat Set membership test). A hard,
-  // two-way gate on any feature that tier can be restricted on, checked
-  // before the Developer bypass immediately below would even be relevant:
-  // a feature the caller's group owner has NOT enabled resolves straight to
-  // "None", full stop; one they HAVE enabled resolves straight to "Editor"
-  // — complete, unrestricted use of that feature, not whatever the tier's
-  // own generalAccess/adminAccess default happens to be (several of these
-  // — porting_assist, coverage_projection, specific_illness_check,
-  // advisory_zone, announcement_archive, resources, qa_dashboard,
-  // team_tracker — default to "Viewer" for ordinary General-tier users;
-  // several Admin-Zone features similarly default to "Viewer" for Admin).
-  // Both branches short-circuit before Access Rules/Custom Grants run:
-  // there's nothing for either layer to usefully add once this has
-  // already settled on the system's two extremes (None has nothing to
-  // raise from without contradicting the group owner's restriction;
-  // Editor is already the ceiling, so a rule/grant could never raise it
-  // further anyway).
-  //
-  // `tier !== "Developer"` (rather than no tier check at all) is
-  // deliberate, explicit belt-and-suspenders: `groupAllowedFeatureIds` is
-  // already tier-scoped by whoever computed it (see its own doc comment),
-  // so this condition is structurally redundant today — but Developer's
-  // exemption from Group Access Restriction is a hard guarantee this
-  // module's own callers rely on, not merely an emergent property of one
-  // enum's possible values, so it stays enforced here too rather than
-  // resting entirely on the caller getting the input right.
-  if (tier !== "Developer" && groupAllowedFeatureIds != null && isFeatureGroupRestrictableForTier(featureId, tier)) {
-    return groupAllowedFeatureIds.includes(featureId)
-      ? { level: "Editor", source: "Group Access Restriction" }
-      : { level: "None", source: "Group Access Restriction" };
   }
 
   if (tier === "Developer") return { level: "Editor", source: "Developer (full access)" };
@@ -304,6 +301,59 @@ export function resolveAccess(input: ResolveAccessInput): ResolveAccessResult {
   if (bestRule && ACCESS_LEVEL_RANK[bestRule.grantedLevel] > ACCESS_LEVEL_RANK[level]) {
     level = bestRule.grantedLevel;
     source = `Access Rule ("${bestRule.name}")`;
+  }
+
+  // Group Access — 2026-09f redesign (extended 2026-09g for
+  // RESTRICT_ONLY_FEATURES), at the user's explicit request: a checked item
+  // still only ever RAISES a member above their tier default (never lowers
+  // it), but membership in an access-configured group now ALSO RESTRICTS —
+  // see groupFeatureLevels's own doc comment above for the full reasoning
+  // and the worked "training group" / "admin trainer limited to Group
+  // Management" examples that motivated this.
+  //
+  // `groupFeatureLevels` is null/undefined for a caller who belongs to no
+  // active, access-configured group at all — this whole layer is a no-op
+  // for them. Once it's a present object, raise-eligibility and restrict-
+  // eligibility are checked SEPARATELY (2026-09g) rather than via one
+  // shared gate, since RESTRICT_ONLY_FEATURES can be restricted without
+  // ever being raisable — isFeatureGroupGrantableForTier() answers the
+  // (narrower) raise question, isFeatureGroupRestrictableForTier() the
+  // (wider) restrict question. Platform Admin/Developer are excluded from
+  // restriction by name below — only raising ever applies to them.
+  if (groupFeatureLevels != null) {
+    const grantable = isFeatureGroupGrantableForTier(featureId, tier);
+    const restrictable = isFeatureGroupRestrictableForTier(featureId, tier);
+    if (grantable || restrictable) {
+      const groupLevel = groupFeatureLevels[featureId];
+      if (groupLevel && grantable) {
+        // Raise — unchanged from 2026-09d, applies to every tier
+        // isFeatureGroupGrantableForTier allows (General/Admin/Platform
+        // Admin/Developer, whichever this featureId's zone permits). Never
+        // reached for a RESTRICT_ONLY_FEATURES entry, since grantable is
+        // always false there — checking one of those only ever exempts the
+        // member from restriction below, it never raises.
+        if (ACCESS_LEVEL_RANK[groupLevel] > ACCESS_LEVEL_RANK[level]) {
+          level = groupLevel;
+          source = "Group Access";
+        }
+      } else if (!groupLevel && restrictable && (tier === "General" || tier === "Admin")) {
+        // Restriction — new in 2026-09f, widened in 2026-09g to also cover
+        // RESTRICT_ONLY_FEATURES. Deliberately narrower than the raise
+        // side: only General/Admin are ever restricted (Platform Admin/
+        // Developer keep raising, but are never blocked — see this input's
+        // own doc comment for why). In this tier's restriction scope, but
+        // no qualifying group ever checked it — blocked, regardless of
+        // what tier default/Access Rules computed above. Custom Grants
+        // below can still override this.
+        level = "None";
+        source = "Group Access (restricted — not selected for this group)";
+      }
+      // groupLevel present but NOT grantable (a checked RESTRICT_ONLY_
+      // FEATURES entry): neither branch runs — the member is exempted from
+      // restriction, but level/source stay exactly what the tier default/
+      // Access Rules layer above already computed. This is the intended
+      // "checking it just means don't take it away" behavior.
+    }
   }
 
   // Custom Access Grants — per-individual, max-of, grant-only (unchanged

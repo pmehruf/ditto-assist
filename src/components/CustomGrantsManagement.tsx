@@ -10,6 +10,7 @@ import { UserProfile } from "../types/user";
 import { DEFAULT_FEATURE_PERMISSIONS } from "../constants/featurePermissions";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { useDialog } from "../hooks/useDialog";
 
 interface CustomGrantsManagementProps {
   theme: "light" | "dark";
@@ -37,6 +38,7 @@ type AccessLevel = "None" | "Viewer" | "Editor";
  */
 export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAction }: CustomGrantsManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const canEdit = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   const [grants, setGrants] = useState<CustomAccessGrant[]>([]);
@@ -109,7 +111,7 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
   };
 
   const revokeGrant = async (grant: CustomAccessGrant) => {
-    if (!window.confirm(`Revoke ${grant.userEmail}'s custom grant for "${featureLabel(grant.targetId)}"?`)) return;
+    if (!(await confirm(`Revoke ${grant.userEmail}'s custom grant for "${featureLabel(grant.targetId)}"?`))) return;
     setSaving(true);
     setActionError(null);
     try {
@@ -196,8 +198,16 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
           <div className={`rounded-xl border p-4 space-y-3 ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-surface-solid"}`}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
-                User email
-                <input className={inputClass} placeholder="advisor@joinditto.in" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} />
+                User
+                <CustomSelect
+                  theme={theme}
+                  value={userEmail}
+                  onChange={setUserEmail}
+                  triggerClassName={selectTriggerClass}
+                  options={[{ value: "", label: "Select a user..." }, ...usersList.map((u) => ({ value: u.email, label: `${u.name} (${u.email})` }))]}
+                  searchable
+                  searchPlaceholder="Search people…"
+                />
               </label>
               <label className="flex flex-col gap-1 text-[10.5px] font-bold text-content-muted">
                 Feature
@@ -285,7 +295,7 @@ export function CustomGrantsManagement({ theme, effectiveTier, usersList, logAct
               No grants match the current search/filters.
             </p>
           ) : (
-          <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+          <div className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
                 {visibleActiveGrants.map((grant, idx) => (

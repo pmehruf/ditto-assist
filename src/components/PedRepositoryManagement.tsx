@@ -18,6 +18,7 @@ import { Pagination } from "./Pagination";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 import { formatDateDMY } from "../utils/dateFormat";
+import { useDialog } from "../hooks/useDialog";
 
 interface CategoryEntry {
   categoryKey: string;
@@ -103,6 +104,7 @@ function statusBadge(status: PedEntry["status"], dark: boolean) {
  */
 export function PedRepositoryManagement({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: PedRepositoryManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
@@ -280,7 +282,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
   };
 
   const deleteEntry = async (entry: PedEntry) => {
-    if (!window.confirm(`Delete "${entry.canonicalName}" and all of its aliases from the PED Repository? This cannot be undone.`)) return;
+    if (!(await confirm(`Delete "${entry.canonicalName}" and all of its aliases from the PED Repository? This cannot be undone.`))) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -452,7 +454,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
   };
 
   const deleteAlias = async (ped: PedEntry, alias: AliasEntry) => {
-    if (!window.confirm(`Remove alias "${alias.aliasText}" from "${ped.canonicalName}"?`)) return;
+    if (!(await confirm(`Remove alias "${alias.aliasText}" from "${ped.canonicalName}"?`))) return;
     setSaving(true);
     setAliasError(null);
     try {

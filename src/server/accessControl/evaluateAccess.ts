@@ -30,21 +30,43 @@ import { DEFAULT_FEATURE_PERMISSIONS, isFeatureGroupRestrictableForTier } from "
 import { resolveAccess, type ResolveAccessResult, type Tier } from "../../accessRuleEvaluator.js";
 
 /**
- * Resolves the Group Access Restriction ceiling for `email` — null if
- * they aren't a restricted group member at all (not the subject of an
- * active relationship whose group has been admin-flagged for this),
- * otherwise the union of every tool enabled for the specific group(s) they
- * belong to (possibly empty — see schema.ts's `group_tool_access` comment
- * on why that's fail-closed by design, not a bug).
+ * Resolves `email`'s Group Access grants. Returns null if `email` isn't the
+ * subject of any active relationship whose group is both `active` and
+ * admin-flagged `usedForGroupAccess` — no groups apply, this layer
+ * contributes nothing (no raise, no restriction — see resolveAccess()'s own
+ * doc comment on groupFeatureLevels for the 2026-09f dual raise+restrict
+ * behavior a non-null return now triggers there). Otherwise returns the
+ * union of every (featureId -> level) grant across every qualifying group
+ * this member belongs to, taking the higher level when more than one group
+ * grants the same feature (e.g. one group grants Viewer on
+ * "qa_announcement_log", another grants Editor — the member gets Editor).
+ * A featureId genuinely absent from this map — not present in ANY
+ * qualifying group's grants — is exactly what resolveAccess() now reads as
+ * "restrict this to None" for General/Admin-tier callers, within that
+ * tier's restriction scope; this function itself has no notion of
+ * restriction, it just reports the raw union of what's been granted.
+ *
+ * NO MORE GROUP TIER (2026-09d, migration 0083): a group used to have its
+ * own `groupTier` selecting which tier of member it could even apply to —
+ * removed entirely, since a group can now hold members of mixed tiers at
+ * once and per-feature eligibility is derived automatically from each
+ * member's OWN tier (see isFeatureGroupGrantableForTier(),
+ * featurePermissions.ts, and resolveAccess()'s own re-check of it). This
+ * function itself no longer takes or checks a tier at all — every grant
+ * row for a qualifying group is included in the returned map regardless of
+ * whether the CALLING member's tier can actually use it; resolveAccess()
+ * is what filters that per (featureId, tier) pair when it reads a single
+ * key back out of this map. That split keeps this function a pure "what
+ * has this member's groups granted" lookup, with all the tier-eligibility
+ * logic living in one place (isFeatureGroupGrantableForTier()) rather than
+ * being duplicated here.
  *
  * PERMISSIONS ARE GROUP-LEVEL, NOT OWNER-LEVEL (migration 0081, 2026-09):
  * this resolves via each matching relationship row's relationshipGroupId,
  * not its ownerEmail — who currently owns a group has no bearing on what
  * that group's members can access. If this member belongs to two DIFFERENT
- * groups (even ones sharing the same owner), each group's access is looked
- * up and unioned independently; before migration 0081 this instead unioned
- * by owner, which meant an owner managing two groups couldn't give them
- * different access — that was the bug this fixes.
+ * groups (even ones sharing the same owner), each group's grants are
+ * looked up and merged independently.
  *
  * "Which relationship group(s) count" is an admin-controlled flag
  * (relationship_groups.usedForGroupAccess, toggled from the Groups tab)
@@ -52,53 +74,31 @@ import { resolveAccess, type ResolveAccessResult, type Tier } from "../../access
  * comment in schema.ts for why: this table already carries Mentor/Guide
  * rows populated for nearly every advisor via the Advisor Directory sync
  * (for QA Dashboard/Team Tracker attribution), so matching on ANY
- * relationship group would fail-closed-block most of the advisor base the
- * moment this shipped. Multiple groups can be flagged at once — the result
- * is the union across all of them.
+ * relationship group would sweep in most of the advisor base the moment
+ * this shipped.
  *
- * A group also has to be `active` to count (2026-09 fix). Deactivating a
- * group ("disable" in the Groups tab) is meant to fully neutralize it —
- * before this fix, `active` was never checked here, so a disabled group
- * that was still `usedForGroupAccess` kept restricting its members exactly
- * as if it were enabled, which contradicted what "disable" plainly means
- * to an admin. Disabling now immediately drops those members back to their
- * normal tier default, same as if they'd never been mapped to a
- * restricted group at all — it does NOT touch the group's roster or its
- * `group_tool_access` rows, so re-enabling restores the exact same
- * restriction with no reconfiguration needed. Group Tier (below) doesn't
- * change any of this: a disabled group stays fully inert no matter what
- * its `groupTier` is set to.
- *
- * `callerTier` (2026-09, Group Tier / migration 0082) — a group also has to
- * have its `groupTier` equal to THIS caller's own tier to count. Each
- * group independently targets exactly one tier of member; a group whose
- * `groupTier` doesn't match this caller is simply not in `flaggedGroupIds`
- * for this call, same as if it weren't `usedForGroupAccess` at all — it may
- * still be actively restricting a DIFFERENT caller whose tier does match.
- * `groupTier` defaults to `"General"` (see schema.ts), so every group
- * created before this parameter existed keeps restricting General-tier
- * members exactly as it always did — zero behavior change for the default
- * case. `groupTier`'s own enum can never legally be `"Developer"` (see
- * schema.ts's comment on `groupTierEnum`), so passing `callerTier:
- * "Developer"` here can never match any group — Developer stays
- * permanently exempt from Group Access Restriction, exactly as before,
- * without needing a special case in this function. This does NOT change
- * the caller's own tier, and does NOT change the group owner's tier or
- * permissions — `groupTier` only ever selects which tier of MEMBER a
- * group's restriction ceiling applies to.
+ * A group also has to be `active` to count. Deactivating a group
+ * ("disable" in the Groups tab) fully neutralizes it — its grants stop
+ * counting toward this member's union immediately. If it was their ONLY
+ * qualifying group, they fall back to pure tier default (plus any other
+ * rule/grant) with no restriction at all, same as belonging to no groups.
+ * If they still belong to at least one OTHER qualifying group, that
+ * group's own checked set governs alone — restriction narrows back down to
+ * just what it grants (2026-09f). Deactivating does NOT touch the group's
+ * roster or its `group_tool_access` rows, so re-enabling restores the
+ * exact same grants with no reconfiguration needed.
  *
  * Exported so GET /api/my-group-access (server.ts) can reuse it for the
- * signed-in member's own "what am I allowed" client bootstrap fetch.
+ * signed-in member's own "what am I granted" client bootstrap fetch.
  */
-export async function getGroupAllowedFeatureIds(
+export async function getGroupFeatureLevels(
   repos: Pick<Repositories, "relationshipGroups" | "userRelationships" | "groupToolAccess">,
-  email: string,
-  callerTier: Tier
-): Promise<string[] | null> {
+  email: string
+): Promise<Record<string, "Viewer" | "Editor"> | null> {
   const normalizedEmail = email.toLowerCase();
   const flaggedGroupIds = new Set(
     (await repos.relationshipGroups.list())
-      .filter((g) => g.usedForGroupAccess && g.active && g.groupTier === callerTier)
+      .filter((g) => g.usedForGroupAccess && g.active)
       .map((g) => g.id)
   );
   if (flaggedGroupIds.size === 0) return null;
@@ -114,7 +114,21 @@ export async function getGroupAllowedFeatureIds(
   if (myGroupIds.length === 0) return null;
 
   const grants = await repos.groupToolAccess.listForGroups(myGroupIds);
-  return Array.from(new Set(grants.map((g) => g.featureId)));
+  if (grants.length === 0) return null;
+
+  const levels: Record<string, "Viewer" | "Editor"> = {};
+  for (const grant of grants) {
+    // grant.level is typed off the DB column, which reuses feature_access_level
+    // (so "None" is technically a legal TS value) — but a row here is never
+    // actually "None" in practice (see schema.ts's group_tool_access comment:
+    // a feature the admin doesn't want to grant simply has no row at all).
+    // Guarded defensively rather than asserted, so a stray "None" row is
+    // silently skipped instead of poisoning this map's value type.
+    if (grant.level !== "Viewer" && grant.level !== "Editor") continue;
+    if (levels[grant.featureId] === "Editor") continue;
+    levels[grant.featureId] = grant.level;
+  }
+  return levels;
 }
 
 /**
@@ -132,24 +146,30 @@ export async function evaluateAccess(db: AnyDb, email: string | undefined, featu
   const tier: Tier = user?.tier ?? "General";
 
   // Skip the extra relationship/grant round trips entirely when this
-  // featureId isn't even one Group Access Restriction ever governs FOR
-  // THIS CALLER'S TIER specifically, or the caller is Developer
-  // (permanently exempt — no group's groupTier can ever legally be
-  // "Developer", see getGroupAllowedFeatureIds's own doc comment) — see
-  // resolveAccess()'s own check (isFeatureGroupRestrictableForTier(),
-  // featurePermissions.ts), mirrored here purely as a query-cost
+  // featureId isn't even one Group Access can ever apply to FOR THIS
+  // CALLER'S TIER specifically, or the caller is Developer (permanently
+  // exempt, same as Access Rules/Custom Grants never apply to Developer) —
+  // see resolveAccess()'s own checks, mirrored here purely as a query-cost
   // short-circuit, not a correctness requirement (passing null/undefined
-  // would resolve identically either way, just with an avoidable DB round
-  // trip for Developer/non-restrictable features). Tier-aware, not a flat
-  // Set check (2026-09c, Group Tier widening) — e.g. a General-tier caller
-  // never triggers the extra round trip for an Admin-Zone-only feature like
-  // "plan_scope", since General tier could never be restricted on it
-  // anyway. General/Admin/Platform Admin all reach this now (2026-09,
-  // Group Tier) — it used to be General-only before a group could target
-  // any tier.
-  const groupAllowedFeatureIds =
+  // resolves identically either way, just with an avoidable DB round trip
+  // for Developer/non-eligible-for-this-tier features). Tier-aware, not a
+  // flat Set check — e.g. a General-tier caller never triggers the extra
+  // round trip for an Admin-Zone-only feature like "plan_scope", since
+  // General tier could never be granted OR restricted on it via Group
+  // Access anyway.
+  //
+  // Uses isFeatureGroupRestrictableForTier() (featurePermissions.ts), NOT
+  // the narrower isFeatureGroupGrantableForTier() — 2026-09g's
+  // RESTRICT_ONLY_FEATURES (profile_access, group_management, etc.) can be
+  // RESTRICTED for an Admin-tier caller even though they can never be
+  // RAISED. Short-circuiting on the grantable-only check would have kept
+  // skipping this fetch for those featureIds, silently missing a
+  // restriction resolveAccess() should have applied. Restrictable is the
+  // wider of the two checks (grantable implies restrictable), so this
+  // single check is a valid short-circuit for both directions at once.
+  const groupFeatureLevels =
     tier !== "Developer" && normalizedEmail && isFeatureGroupRestrictableForTier(featureId, tier)
-      ? await getGroupAllowedFeatureIds(repos, normalizedEmail, tier)
+      ? await getGroupFeatureLevels(repos, normalizedEmail)
       : null;
 
   const [overrides, activeRules, grants] = await Promise.all([
@@ -171,6 +191,6 @@ export async function evaluateAccess(db: AnyDb, email: string | undefined, featu
       roleId: user?.roleId,
       tags: user?.tags,
     },
-    groupAllowedFeatureIds,
+    groupFeatureLevels,
   });
 }

@@ -12,14 +12,12 @@ import {
   X,
   Info,
   RefreshCw,
-  RotateCcw,
   ChevronDown
 } from "lucide-react";
-import { DeclarationMapIcon } from "../components/icons";
 import { GridTexture } from "../components/GridTexture";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
 import { MascotWithFallback } from "../components/mascots/MascotWithFallback";
-import { InstructionManualPanel } from "../components/InstructionManualPanel";
+import { DeclarationGuideSection } from "../components/DeclarationGuideSection";
 import { DeclarationAssistantResults } from "../components/DeclarationAssistantResults";
 import { MatchOutput, PlanConfig } from "../types.js";
 import { ReportingItem } from "../types/lookup";
@@ -27,18 +25,6 @@ import { getPlanInsurerColor, hexToRgba, getContrastTextForPlanColor } from "../
 import { getPlanDisplayLabel } from "../utils/planDisplayLabel";
 import { buildGroupedSuggestions } from "../constants/pedSynonymGroups";
 import { CustomSelect } from "../components/CustomSelect";
-
-type TabId =
-  | "lookup"
-  | "audit"
-  | "profile_access"
-  | "plan_scope"
-  | "resources"
-  | "active_questions"
-  | "my_activity"
-  | "qa_announcement_log"
-  | "flagged_responses"
-  | "announcement_archive";
 
 interface LookupPageProps {
   theme: "light" | "dark";
@@ -83,9 +69,6 @@ interface LookupPageProps {
   specificIllnessesDict: Record<string, Array<{ category?: string; illness: string }>>;
   planConfigs: Record<string, PlanConfig>;
   checkIllnessInPlanSpecificList: (pedText: string, plan: string) => { category: string; illness: string } | null;
-
-  // Nav
-  setActiveTab: (value: TabId) => void;
 }
 
 /**
@@ -93,7 +76,7 @@ interface LookupPageProps {
  * (the `!showIntro` branch). Extracted verbatim from App.tsx (Phase 1.3). The
  * `activeTab === "lookup" && !showIntro` condition and wrapping
  * `<motion.div key="lookup">` deliberately stay in App.tsx (see
- * ResourcesPage.tsx for why — moving them here would break the
+ * the AnimatePresence block in App.tsx for why — moving them here would break the
  * AnimatePresence exit animation).
  *
  * Note: a permanently-dead `{false && (...)}` block (an old, superseded
@@ -130,7 +113,6 @@ export function LookupPage({
   specificIllnessesDict,
   planConfigs,
   checkIllnessInPlanSpecificList,
-  setActiveTab,
 }: LookupPageProps) {
   // Quiet per-plan insurer color hint for the queue card (border, queued PED
   // tags, and the total-queue counter) — same muted palette used for the PED
@@ -160,7 +142,6 @@ export function LookupPage({
             lookupResults={lookupResults}
             onReset={handleClearLookupFields}
             onMapAnotherPed={handleMapAnotherPed}
-            setActiveTab={setActiveTab}
             setReportingItem={setReportingItem}
             setReportingNotes={setReportingNotes}
             illnessSearchQuery={illnessSearchQuery}
@@ -172,167 +153,56 @@ export function LookupPage({
         </div>
       ) : (
         <>
-          <div className="mb-2" />
-
-          {/* No card/border on this section (per design feedback) — only the
-              QA Announcement panel below keeps its own bordered card. The
-              grid texture is scoped to the input area only so it doesn't
-              bleed into the announcement card. */}
-          {/* items-stretch (not items-center): the Input section carries no
-              border/card of its own (see comment above), but the
-              Instruction Manual panel does — with items-center that bordered
-              panel was vertically centered against the row's height (set by
-              whichever column is naturally taller), so its top/bottom edges
-              didn't line up with the Input section's own content. Stretching
-              both columns to the row's full height pins the Instruction
-              Manual card's bottom border to the same vertical level as the
-              Input section's last element (Find a Match/Reset Fields), on
-              every viewport.
-              lg:flex-1 lg:min-h-0: this row (and the Input section column
-              inside it, also min-h-0 below) is genuinely allowed to shrink
-              to fit whatever space is actually left above the footer — this
-              is back to the original design (a min-h-fit floor was tried in
-              between, but that just protected the WHOLE column's natural
-              height, including the title block's own vh-scaled text sizing
-              and the queue box's old 28vh-based minimum, and that combined
-              natural height could itself exceed the viewport, which is what
-              was pinning content edge-to-edge against the header/footer at
-              100% zoom). Instead, every element in the Input section that
-              must always render at full size — the title block, the plan/
-              PED selector grid, the hint text, and the Find a Match/Reset
-              Fields action row — is individually marked shrink-0 below, so
-              a real squeeze can never push them off-screen. The ONE
-              flexible element between them is the queue box (flex-1
-              min-h-0, with a smaller minHeight floor than before) — it's
-              what actually gives up space when the column is squeezed, and
-              it can never hide anything critical since its own content
-              (the empty-state mascot or the tag list) is either decorative
-              or already internally scrollable. Instruction Manual mirrors
-              this exact shape (header shrink-0, list flex-grow min-h-0
-              overflow-y-auto — see InstructionManualPanel.tsx), and
-              main-scrollable-body (App.tsx) stays overflow-y-auto at every
-              breakpoint as a last-resort safety net for a viewport too
-              short for even the shrink-0 elements alone. */}
+          {/* Single-viewport layout split into two vertical halves at lg+
+              (2026-10, at the user's explicit request): TOP = title +
+              input column + Declaration Queue, BOTTOM = Declaration Guide.
+              Each half is an equal 1fr row of the available height, but
+              never smaller than its own content (minmax(min-content, 1fr)),
+              so nothing is clipped and nothing scrolls internally. Below lg
+              the sections simply stack. */}
           <div
-            className={`w-full flex flex-col lg:flex-row items-stretch gap-10 lg:gap-16 lg:flex-1 lg:min-h-0 animate-fade-in ${
+            className={`w-full flex flex-col gap-4 lg:grid lg:grid-rows-[minmax(min-content,1fr)_minmax(min-content,1fr)] lg:flex-1 lg:min-h-0 animate-fade-in ${
               theme === "dark" ? "text-white" : "text-stone-900"
             }`}
           >
+            {/* TOP HALF — title, then the working row filling the rest. */}
+            <div className="min-h-0 flex flex-col gap-4">
+              {/* PAGE-LEVEL HEADER — the app's standard page title format
+                  (see OwnerControlsPage / Coverage Projection Studio):
+                  accent line + title, muted subtitle below. Its border-b is
+                  the single full-width separator above the working area. */}
+              <div className="shrink-0 pb-3 border-b border-stone-200 dark:border-stone-800">
+                <h1 className={`text-page-title tracking-tight flex items-center gap-2 ${
+                  theme === "dark" ? "text-white" : "text-[#111827]"
+                }`}>
+                  <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
+                  <span>Declaration Mapping Engine</span>
+                </h1>
+                <p className="text-xs mt-1 font-semibold text-content-muted">
+                  Search and map pre-existing conditions against the selected health insurance plan.
+                </p>
+              </div>
+
+            {/* WORKING ROW: input column (left, wider) + Declaration Queue
+                card (right, narrower), both starting at the same top edge
+                directly below the title separator. */}
+            <div className="w-full lg:flex-1 grid grid-cols-1 lg:grid-cols-[3fr_2fr] items-stretch gap-5 lg:gap-6">
             {/* SECTION 1: PED MAPPING ENGINE INPUTS */}
             {/* No local background/texture/glow here on purpose — a bounded
                 overlay box (even a borderless one) reads as a "card" the
-                moment it's clipped by overflow-hidden. This section now sits
+                moment it's clipped by overflow-hidden. This section sits
                 directly on the shared app-shell background (grid + ambient
                 glow blobs already rendered behind every tab in App.tsx), so
-                it blends into the page instead of looking like its own panel. */}
+                it blends into the page instead of looking like its own panel.
+                z-10 keeps the PED suggestion dropdown above the guide cards
+                below it. */}
             <div
-              className="flex-1 min-w-0 min-h-0 flex flex-col justify-start relative z-10"
+              className="min-w-0 min-h-0 flex flex-col justify-start lg:justify-center gap-2.5 relative z-10"
             >
-              {/* Title mapping section */}
-              <div
-                style={{
-                  paddingBottom: "clamp(10px, 1.5vh, 20px)",
-                  marginBottom: "0px",
-                  marginTop: "0px",
-                }}
-                className={`shrink-0 flex flex-row justify-between items-start gap-4 pb-5 border-b ${
-                  theme === "dark"
-                    ? "border-white/[0.08]"
-                    : "border-stone-400/60"
-                }`}
-              >
-                <div className="space-y-1 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 select-none mb-1">
-                    <div
-                      className="w-8 h-0.5 flex-shrink-0"
-                      style={{
-                        backgroundColor:
-                          theme === "dark" ? "#00D3F3" : "#4673a9",
-                      }}
-                    />
-                    <span
-                      style={{
-                        width: "105px",
-                        fontSize: "10px",
-                        lineHeight: "12px",
-                        color: "var(--accent)",
-                        backgroundColor: "var(--accent-subtle-bg)",
-                        borderColor: "var(--accent-border)",
-                        borderWidth: "1.5px",
-                      }}
-                      className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border flex items-center justify-center gap-1.5 shrink-0 select-none"
-                    >
-                      + AI POWERED
-                    </span>
-                  </div>
-                  <h1
-                    className="font-black tracking-wider leading-[1.0] uppercase select-none font-sans flex flex-col"
-                    style={{ marginTop: "clamp(4px, 0.8vh, 10px)" }}
-                  >
-                    <span
-                      style={{
-                        fontSize: "clamp(12px, 2.2vh, 23px)",
-                        display: "block",
-                        backgroundImage: "var(--gradient-heading)",
-                      }}
-                      className="bg-clip-text text-transparent bg-gradient-to-r"
-                    >
-                      PED DECLARATION
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "clamp(24px, 4.4vh, 46px)",
-                        display: "block",
-                        backgroundImage: "var(--gradient-accent)",
-                      }}
-                      className="bg-clip-text text-transparent bg-gradient-to-r"
-                    >
-                      MAPPING ENGINE
-                    </span>
-                  </h1>
-                  <span
-                    className={`text-xs font-medium select-none block mt-1.5 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}
-                  >
-                    Search and map conditions to find the perfect match for your
-                    declaration.
-                  </span>
-                </div>
-
-                {/* Declaration Map — helper action, top-right of title section */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("resources")}
-                  id="open-resources-btn"
-                  style={{
-                    color: theme === "dark" ? "#00D3F3" : "#0754b7",
-                    borderColor:
-                      theme === "dark"
-                        ? "rgba(0,211,243,0.25)"
-                        : "rgba(7,84,183,0.2)",
-                    backgroundColor:
-                      theme === "dark"
-                        ? "rgba(0,211,243,0.07)"
-                        : "rgba(7,84,183,0.06)",
-                  }}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide transition-all cursor-pointer select-none shrink-0 mt-1 px-3 py-1.5 rounded-lg border hover:opacity-90 active:scale-95"
-                >
-                  <DeclarationMapIcon
-                    width={14}
-                    height={14}
-                    color="currentColor"
-                    className="shrink-0"
-                  />
-                  Declaration Map
-                </button>
-              </div>
-
-              {/* Two boxed input sections, side by side — outlined only, no filled card background */}
-              <div
-                style={{ marginTop: "1vh" }}
-                className="shrink-0 grid grid-cols-1 md:grid-cols-2 gap-4"
-              >
+              {/* Two input sections, side by side */}
+              <div className="shrink-0 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* BOX A: Health Insurance Plan */}
-                <div className="rounded-2xl px-1 py-3 flex flex-col gap-3">
+                <div className="px-1 flex flex-col gap-2">
                   <label
                     className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 select-none font-sans ${
                       theme === "dark" ? "text-stone-400" : "text-stone-500"
@@ -369,11 +239,7 @@ export function LookupPage({
                 </div>
 
                 {/* BOX B: Search & Map Condition */}
-                {/* pb-1 (not py-3's uniform 12px) — the hint line under the
-                    input already adds its own visual breathing room, so the
-                    old bottom padding doubled up and pushed the PED queue
-                    card too far down. */}
-                <div className="rounded-2xl px-1 pt-3 pb-1 flex flex-col gap-3 relative">
+                <div className="px-1 flex flex-col gap-2 relative">
                   <label
                     className={`text-[10px] font-black uppercase tracking-widest font-sans flex items-center gap-1.5 select-none ${
                       theme === "dark" ? "text-stone-400" : "text-stone-500"
@@ -423,29 +289,6 @@ export function LookupPage({
                                       query,
                                       lookupPeds,
                                     )
-                                      .sort((a, b) => {
-                                        // Rank by the specific term that matched
-                                        // (insertValue), not the display label —
-                                        // a grouped row's label balloons to the
-                                        // full joined "A Or B Or C" string, which
-                                        // would otherwise make close/exact
-                                        // matches like "Hypertension" sort behind
-                                        // unrelated longer single terms (e.g.
-                                        // "Portal hypertension") and get pushed
-                                        // out of the top-6 cutoff below.
-                                        if (
-                                          a.insertValue.length !==
-                                          b.insertValue.length
-                                        ) {
-                                          return (
-                                            a.insertValue.length -
-                                            b.insertValue.length
-                                          );
-                                        }
-                                        return a.insertValue.localeCompare(
-                                          b.insertValue,
-                                        );
-                                      })
                                       .slice(0, 6)
                                   : [];
 
@@ -579,17 +422,6 @@ export function LookupPage({
                           query,
                           lookupPeds,
                         )
-                          .sort((a, b) => {
-                            // Same insertValue-based ranking as the onKeyDown
-                            // handler above — see that comment for why sorting
-                            // by the joined label buries grouped rows.
-                            if (a.insertValue.length !== b.insertValue.length) {
-                              return (
-                                a.insertValue.length - b.insertValue.length
-                              );
-                            }
-                            return a.insertValue.localeCompare(b.insertValue);
-                          })
                           .slice(0, 6);
 
                         return (
@@ -726,53 +558,132 @@ export function LookupPage({
                 </div>
               </div>
 
-              {/* QUEUE BOX — full width below the two boxes. This is the ONE
-                  flexible region in this column (flex-1 min-h-0): every
-                  sibling around it (title block, plan/PED selector grid,
-                  hint text, action row below) is shrink-0 — always rendered
-                  at its full natural size, never squeezed — so this box is
-                  what absorbs the difference when the column's available
-                  height is tighter than everything's natural total. Its own
-                  minHeight is a real floor (not just a starting point), so
-                  it never collapses smaller than the mascot/empty-state
-                  content needs. Lowered from clamp(130px, 28vh, 300px):
-                  that 28vh was sized back when this row was squeezed to fit
-                  "whatever space is left" (its old lg:min-h-0 design), so a
-                  generous vh-based floor didn't cost anything extra — once
-                  every OTHER element here got its own protected shrink-0
-                  size, that same 28vh became actual added height on top of
-                  all of it, which is what was pushing the column past the
-                  viewport on a tall monitor. */}
+              {/* Action row: Find a Match, the input area's single primary
+                  action — wrapped in a relative, overflow-hidden shell so the
+                  shared GridTexture scan-line texture shows around the
+                  button, matching the app's premium card identity. Rendered
+                  at z-0 (behind the button) so it doesn't cut across its
+                  clipped-corner notch. Deliberately NOT rounded — a rounded
+                  mask here leaks onto the button's sharp outer corners.
+                  sm:self-center: hugs the button and centers it under the
+                  combined Plan + PED input area; sm:mt-1 adds to the
+                  column's 10px gap for ~14px below the PED helper text. */}
+              <div className="shrink-0 self-stretch sm:self-center sm:mt-1 relative overflow-hidden">
+                <GridTexture theme={theme} zIndexClassName="z-0" />
+                <div
+                  className="relative z-10 flex items-center w-full"
+                  title={
+                    isSelectedPlanDisabled
+                      ? "This plan is temporarily disabled — see the note below."
+                      : !selectedPlan || lookupPeds.length === 0
+                      ? "Select a plan and add at least one condition to proceed"
+                      : ""
+                  }
+                >
+                  <PrimaryCtaButton
+                    theme={theme}
+                    onClick={() => {
+                      if (!selectedPlan || isSelectedPlanDisabled) return;
+                      executeLookupAll(lookupPeds, selectedPlan);
+                    }}
+                    disabled={
+                      isLookupLoading ||
+                      lookupPeds.length === 0 ||
+                      !selectedPlan ||
+                      isSelectedPlanDisabled
+                    }
+                    // Primary action (~432x42; full width only on narrow
+                    // screens) — sizing overridden here rather than in the
+                    // shared PrimaryCtaButton.
+                    className="w-full sm:w-[432px] sm:max-w-full h-[42px] !px-5 !flex items-center justify-center gap-2"
+                    style={{
+                      border: "none",
+                      paddingTop: 0,
+                      paddingBottom: 0,
+                    }}
+                    id="match-disclosure-button"
+                    title={
+                      isSelectedPlanDisabled
+                        ? "This plan is temporarily disabled — see the note below."
+                        : !selectedPlan || lookupPeds.length === 0
+                        ? "Select a plan and add at least one condition to proceed"
+                        : ""
+                    }
+                  >
+                    {isLookupLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin text-current inline -mt-0.5 mr-2" />
+                        Analyzing conditions...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4 text-current inline -mt-0.5 mr-2" />
+                        Find a Match
+                      </>
+                    )}
+                  </PrimaryCtaButton>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION 2: PED LOOKUP QUEUE — its own card to the right of the
+                input column (2026-09, restructured at the user's explicit
+                request: previously this same queue content sat inline at the
+                bottom of the input column; the tag list / counter / mascot /
+                disabled-plan takeover logic below is unchanged, only its
+                container moved). */}
+            <div
+              className={`min-w-0 rounded-2xl border flex flex-col overflow-hidden ${
+                theme === "dark"
+                  ? "bg-white/[0.02] border-white/[0.08]"
+                  : "bg-surface-solid border-stone-300"
+              }`}
+            >
+              {/* Compact one-line header — eyebrow + title side by side
+                  instead of stacked. */}
+              <div
+                className={`py-2 px-4 border-b flex items-center gap-3 shrink-0 select-none ${
+                  theme === "dark" ? "border-white/[0.08]" : "border-[#6a787f]"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-6 h-0.5 flex-shrink-0"
+                    style={{ backgroundColor: "var(--accent)" }}
+                  />
+                  <span
+                    style={{ color: "var(--accent)" }}
+                    className="font-mono uppercase tracking-[0.2em] text-[10px] font-bold"
+                  >
+                    PED Lookup
+                  </span>
+                </div>
+                <span
+                  className={`text-[13px] font-black uppercase tracking-wider font-sans ${
+                    theme === "dark" ? "text-white" : "text-stone-900"
+                  }`}
+                >
+                  Declaration Queue
+                </span>
+              </div>
+
               <div
                 style={{
-                  borderWidth: "1.5px",
-                  minHeight: "clamp(110px, 16vh, 210px)",
-                  // Tightened (was clamp(10px, 1.5vh, 22px)) alongside the
-                  // search box's pb-1 above — together they close the gap the
-                  // new under-input hint line opened up.
-                  marginTop: "clamp(6px, 1vh, 14px)",
-                  padding: "clamp(10px, 1.5vh, 16px)",
-                  // Quiet per-plan insurer border hint — see queueAccentHex
-                  // comment above. Falls back to the same neutral look as
-                  // before when no plan is selected/known. A disabled plan
-                  // overrides this with an amber cue instead (set via the
-                  // className branch below) rather than the insurer's own
-                  // brand color, since this card's job right now is "flag
-                  // unavailable", not "identify the plan".
+                  borderWidth: isSelectedPlanDisabled ? "1.5px" : undefined,
+                  minHeight: "clamp(68px, 7vh, 88px)",
+                  padding: "clamp(8px, 1.2vh, 12px)",
                   borderColor: isSelectedPlanDisabled ? undefined : selectedPlan ? queueAccentHex : undefined,
                 }}
-                className={`flex-1 min-h-0 rounded-2xl relative flex flex-col justify-between border overflow-hidden ${
+                className={`flex-1 min-h-0 relative flex flex-col justify-between overflow-hidden ${
                   isSelectedPlanDisabled
                     ? theme === "dark"
-                      ? "border-amber-500/30 bg-amber-500/[0.06]"
-                      : "border-amber-300 bg-amber-50/70"
-                    : theme === "dark"
-                      ? selectedPlan
-                        ? "bg-white/[0.04]"
-                        : "border-white/[0.12] bg-white/[0.04]"
-                      : selectedPlan
-                        ? "bg-stone-100/60"
-                        : "border-stone-300 bg-stone-100/60"
+                      ? "border-t border-amber-500/30 bg-amber-500/[0.06]"
+                      : "border-t border-amber-300 bg-amber-50/70"
+                    : selectedPlan
+                      ? theme === "dark"
+                        ? "border-t-[1.5px]"
+                        : "border-t-[1.5px]"
+                      : ""
                 }`}
               >
                 {isSelectedPlanDisabled ? (
@@ -782,13 +693,13 @@ export function LookupPage({
                      It replaces the normal empty-state/tag-list/counter
                      content entirely rather than squeezing a small note in
                      alongside it. */
-                  <div className="flex flex-col items-center justify-center text-center gap-3 py-2 px-2 min-h-[106px]">
+                  <div className="flex flex-row items-center justify-center text-left gap-4 py-1 px-2 h-full">
                     <MascotWithFallback
                       src="/assets/.aistudio/payment-journey-surgery.png"
                       alt="Plan temporarily unavailable"
                       type="doctor"
                       className="object-contain shrink-0"
-                      style={{ height: "clamp(110px, 20vh, 170px)", width: "auto" }}
+                      style={{ height: "clamp(80px, 11vh, 120px)", width: "auto" }}
                     />
                     <div className="max-w-md">
                       <p className={`text-sm font-black ${theme === "dark" ? "text-amber-200" : "text-amber-800"}`}>
@@ -800,22 +711,31 @@ export function LookupPage({
                     </div>
                   </div>
                 ) : (
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start justify-between gap-4 h-full">
                   {/* Selected condition list / empty text */}
-                  <div className="flex-grow text-left relative z-10 min-h-[46px] pl-20 pr-2">
+                  {/* Not `relative` while empty, so the placeholder below
+                      positions against the whole card body and centers on
+                      the card itself rather than on this padded column. */}
+                  <div className={`flex-grow text-left z-10 min-h-[46px] pl-20 pr-2 ${lookupPeds.length === 0 ? "" : "relative"}`}>
                     {lookupPeds.length === 0 ? (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none pointer-events-none">
-                        <div
-                          className={`text-xs italic font-medium font-sans ${
-                            theme === "dark"
-                              ? "text-stone-400"
-                              : "text-stone-500"
-                          }`}
+                      /* Quiet placeholder — small, regular weight, muted
+                         color set directly (the dark theme's
+                         text-stone-400/500 classes are remapped to brighter
+                         tokens in index.css, and light --text-muted is
+                         near-black).
+                         Equal left/right insets keep it optically centered
+                         in the card while clearing the mascot and the
+                         Total Queue counter. */
+                      <div className="absolute inset-y-0 left-24 right-24 flex flex-col items-center justify-center gap-0.5 text-center select-none pointer-events-none font-sans">
+                        <span
+                          className="text-[11px] font-medium leading-snug opacity-80"
+                          style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }}
                         >
                           No conditions added to the lookup queue.
-                        </div>
+                        </span>
                         <span
-                          className={`text-[10px] not-italic leading-relaxed mt-1 ${theme === "dark" ? "text-stone-500" : "text-stone-500"}`}
+                          className="text-[10px] leading-snug opacity-60"
+                          style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }}
                         >
                           Search or type a condition on the left to start.
                         </span>
@@ -908,10 +828,10 @@ export function LookupPage({
                   {/* Doctor Mascot — left end of queue card */}
                   <div
                     style={{
-                      height: "clamp(100px, 18vh, 175px)",
-                      width: "clamp(90px, 16vh, 155px)",
+                      height: "clamp(72px, 9vh, 96px)",
+                      width: "clamp(60px, 7.5vh, 76px)",
                     }}
-                    className="absolute left-0 bottom-0 pointer-events-none select-none overflow-hidden z-0 opacity-90 hidden sm:block"
+                    className="absolute left-3 bottom-0 pointer-events-none select-none overflow-hidden z-0 opacity-90 hidden sm:block"
                   >
                     <MascotWithFallback
                       src="/assets/.aistudio/doctor-mascot.png"
@@ -923,132 +843,19 @@ export function LookupPage({
                 </div>
                 )}
               </div>
-
-              {/* Helper text */}
-              <p
-                style={{
-                  marginTop: "clamp(14px, 2.4vh, 26px)",
-                  fontWeight: "bold",
-                  fontSize: "11px",
-                }}
-                className={`shrink-0 opacity-80 select-none font-sans flex items-center gap-1.5 text-left ${
-                  theme === "dark" ? "text-stone-400" : "text-stone-500"
-                }`}
-              >
-                <Info className="w-3.5 h-3.5 shrink-0" />
-                Enter one or multiple conditions to map them sequentially
-                against the selected plan wording.
-              </p>
-
-              {/* Action row: Find a Match / Reset Fields — wrapped in a relative,
-                  overflow-hidden shell so the shared GridTexture scan-line
-                  texture shows in the gaps around the buttons, matching the
-                  app's premium card identity. Rendered at z-0 (behind the
-                  buttons) so it doesn't cut across their clipped-corner
-                  notches and folded-corner accents.
-                  Deliberately NOT rounded (no rounded-2xl) — the buttons sit
-                  flush against this shell's edges, so a rounded mask here
-                  was leaking onto their outer corners (Find a Match's left
-                  side, Reset Fields' top-right), fighting the app's sharp
-                  90°-corner + single diagonal-clip button identity. */}
-              <div
-                style={{ marginTop: "clamp(8px, 1.2vh, 18px)" }}
-                className="shrink-0 relative overflow-hidden"
-              >
-                <GridTexture theme={theme} zIndexClassName="z-0" />
-                <div
-                  className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 pb-1 w-full"
-                  title={
-                    isSelectedPlanDisabled
-                      ? "This plan is temporarily disabled — see the note below."
-                      : !selectedPlan || lookupPeds.length === 0
-                      ? "Select a plan and add at least one condition to proceed"
-                      : ""
-                  }
-                >
-                  <PrimaryCtaButton
-                    theme={theme}
-                    onClick={() => {
-                      if (!selectedPlan || isSelectedPlanDisabled) return;
-                      executeLookupAll(lookupPeds, selectedPlan);
-                    }}
-                    disabled={
-                      isLookupLoading ||
-                      lookupPeds.length === 0 ||
-                      !selectedPlan ||
-                      isSelectedPlanDisabled
-                    }
-                    className="w-full sm:w-auto sm:flex-1 !flex items-center justify-center gap-2"
-                    style={{ border: "none" }}
-                    id="match-disclosure-button"
-                    title={
-                      isSelectedPlanDisabled
-                        ? "This plan is temporarily disabled — see the note below."
-                        : !selectedPlan || lookupPeds.length === 0
-                        ? "Select a plan and add at least one condition to proceed"
-                        : ""
-                    }
-                  >
-                    {isLookupLoading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin text-current inline -mt-0.5 mr-2" />
-                        Analyzing conditions...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="w-4 h-4 text-current inline -mt-0.5 mr-2" />
-                        Find a Match
-                      </>
-                    )}
-                  </PrimaryCtaButton>
-
-                  <button
-                    type="button"
-                    onClick={handleClearLookupFields}
-                    style={{
-                      clipPath:
-                        "polygon(100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 0)",
-                      paddingTop: "clamp(8px, 1.2vh, 12px)",
-                      paddingBottom: "clamp(8px, 1.2vh, 12px)",
-                    }}
-                    // Deliberately a light/outline "secondary" treatment now,
-                    // not a solid dark fill — Reset used to be a plain dark
-                    // gray (#374151) which read fine as its own thing when
-                    // Find a Match was solid blue, but now that Find a
-                    // Match's primary CTA color is ALSO a solid dark navy,
-                    // two same-weight dark buttons side by side made Reset
-                    // look like a second primary action rather than a
-                    // secondary one. Outline/ghost is the standard way to
-                    // signal "secondary" next to a solid primary.
-                    className={`w-full sm:w-auto sm:flex-1 px-6 text-xs font-mono uppercase font-bold tracking-[0.2em] duration-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer select-none relative isolate overflow-hidden border ${
-                      theme === "dark"
-                        ? "bg-white/[0.04] border-white/15 text-stone-300 hover:bg-white/[0.08] hover:border-white/25"
-                        : "bg-white/60 border-stone-300 text-stone-700 hover:bg-stone-100 hover:border-stone-400"
-                    }`}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 pointer-events-none"
-                      style={{
-                        zIndex: -1,
-                        backgroundImage:
-                          "linear-gradient(rgba(0,0,0,0) 50%, rgba(0,0,0,0.08) 50%), linear-gradient(90deg, rgba(0,0,0,0) 50%, rgba(0,0,0,0.025) 50%)",
-                        backgroundSize: "100% 3px, 3px 100%",
-                      }}
-                    />
-                    <RotateCcw className="w-3.5 h-3.5 text-current" />
-                    Reset Fields
-                  </button>
-                </div>
-              </div>
+            </div>
+            </div>
             </div>
 
-            {/* Announcements moved to the Home dashboard (see
-                HomeAnnouncementCard.tsx) — this slot now shows the
-                Instruction Manual reference card instead (previously lived
-                inline on Home's old right-hand column; see
-                InstructionManualPanel.tsx's own doc comment). */}
-            <InstructionManualPanel theme={theme} />
+            {/* SECTION 3 (BOTTOM HALF): DECLARATION GUIDE — full-width, one card per
+                branch. Its own header row doubles as the small divider
+                between the working row above and the cards below. Every
+                branch name is spelled out in full — Hospitalisation, not
+                Hospital; Investigative Tests, not Tests — see
+                DeclarationGuideSection.tsx's own doc comment. */}
+            <div className="min-h-0 flex flex-col">
+              <DeclarationGuideSection theme={theme} />
+            </div>
           </div>
         </>
       )}

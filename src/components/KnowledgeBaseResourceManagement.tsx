@@ -17,6 +17,7 @@ import { INSURER_LOGOS, matchInsurerKey } from "../constants/insurerLogos";
 import { getPlanInsurerColor, hexToRgba } from "../utils/planInsurerColors";
 import { realPlanNames } from "../utils/kbPlanNames";
 import { DittoWordmark } from "./mascots/DittoWordmark";
+import { useDialog } from "../hooks/useDialog";
 
 // Insurer-level accent color, reusing the exact same muted brand colors
 // Coverage Projection Studio and the PED result cards already use (see
@@ -336,6 +337,7 @@ interface KnowledgeBaseResourceManagementProps {
  */
 export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentUser, setChangeLogs, domain, canManage }: KnowledgeBaseResourceManagementProps) {
   const dark = theme === "dark";
+  const { confirm, alertUser } = useDialog();
 
   // Term insurers don't sell a standalone "Prospectus" document the way
   // Health plans do — explicit product request: hide the Prospectus tab,
@@ -458,10 +460,10 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
     // resources look empty and get deleted.
     const inCategory = resources.filter(r => r.categoryId === category.id);
     if (inCategory.length > 0) {
-      window.alert(`"${category.name}" has ${inCategory.length} resource(s) in it. Delete or move those first.`);
+      await alertUser(`"${category.name}" has ${inCategory.length} resource(s) in it. Delete or move those first.`);
       return;
     }
-    if (!window.confirm(`Delete the "${category.name}" category?`)) return;
+    if (!(await confirm(`Delete the "${category.name}" category?`))) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -824,7 +826,7 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
   };
 
   const deleteResource = async (resource: KbResource) => {
-    if (!window.confirm(`Delete "${resource.title}" from the Knowledge Base? This cannot be undone.`)) return;
+    if (!(await confirm(`Delete "${resource.title}" from the Knowledge Base? This cannot be undone.`))) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -1178,12 +1180,12 @@ export function KnowledgeBaseResourceManagement({ theme, effectiveTier, currentU
                                     canManage={canManage}
                                     onEditResource={r => setEditingResourceId(r.id)}
                                     onRenamePlanName={canManage ? (name: string) => setRenamingPlan({ categoryId: category.id, oldName: name, value: name }) : undefined}
-                                    onRemovePlanName={canManage ? (name: string) => {
+                                    onRemovePlanName={canManage ? async (name: string) => {
                                       const taggedCount = disabledPlanResourceCount(name, catResources);
                                       const message = taggedCount > 0
                                         ? `"${name}" still has ${taggedCount} resource(s) tagged to it, so it can't be deleted outright. Disable it instead? It'll disappear from the plan list and Product Assist's plan picker, but its tagged resources keep their tag and you can re-enable it any time.`
                                         : `Delete "${name}" from ${category.name}'s plan list? It has no resources tagged to it, so this fully removes the roster entry.`;
-                                      if (window.confirm(message)) {
+                                      if (await confirm(message)) {
                                         removeCategoryPlanName(category, name, catResources);
                                       }
                                     } : undefined}
@@ -1629,7 +1631,7 @@ function ModalShell({ theme, onClose, widthClassName, children }: { theme: "ligh
   return (
     <div className="fixed inset-0 z-[190] flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className={`absolute inset-0 backdrop-blur-md ${dark ? "bg-black/60" : "bg-stone-900/40"}`} onClick={onClose} />
-      <div className={`relative w-full ${widthClassName || "max-w-md"} rounded-2xl border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col ${dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"}`}>
+      <div className={`relative w-full ${widthClassName || "max-w-md"} rounded-2xl border shadow-2xl overflow-hidden vp-modal flex flex-col ${dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"}`}>
         {children}
       </div>
     </div>

@@ -1051,7 +1051,7 @@ export function QAAnnouncementForm({
             }`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Announced" theme={theme}>
-                  <DateInputDMY
+                  <DateInputDMY theme={theme}
                     title="Announcement date — when this notice was posted"
                     value={announcementDate}
                     onChange={setAnnouncementDate}
@@ -1065,7 +1065,7 @@ export function QAAnnouncementForm({
                 </Field>
 
                 <Field label="Effective" hint="optional" theme={theme}>
-                  <DateInputDMY
+                  <DateInputDMY theme={theme}
                     title="Effective date (optional) — when the rule takes effect"
                     value={date}
                     disabled={alreadyInForce || effectiveImmediately}
@@ -1139,7 +1139,7 @@ export function QAAnnouncementForm({
             }`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Announced" theme={theme}>
-                  <DateInputDMY
+                  <DateInputDMY theme={theme}
                     title="Announcement date — when this notice was posted"
                     value={announcementDate}
                     onChange={setAnnouncementDate}
@@ -1153,7 +1153,7 @@ export function QAAnnouncementForm({
                 </Field>
 
                 <Field label="Effective" hint="optional" theme={theme}>
-                  <DateInputDMY
+                  <DateInputDMY theme={theme}
                     title="Effective date (optional) — when the rule takes effect"
                     value={date}
                     disabled={alreadyInForce || effectiveImmediately}

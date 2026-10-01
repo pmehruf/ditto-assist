@@ -11,6 +11,7 @@ import { renderSimpleMarkdown, stripMarkdownForCopy } from "../utils/simpleMarkd
 import { realPlanNames } from "../utils/kbPlanNames";
 import { HEALTH_FAQ_LIBRARY_URL, TERM_FAQ_LIBRARY_URL } from "../constants/productAssistLibrary";
 import type { LoggedUser } from "../types/user";
+import { useDialog } from "../hooks/useDialog";
 
 /** Health/Term — see the shared "announcement_team" enum this reuses
  * (schema.ts) and server.ts's resolveCallerDomain for the authoritative,
@@ -437,6 +438,7 @@ function splitReferences(text: string): { body: string; references: string | nul
  */
 export function ProductAssistPage({ theme, currentUser }: ProductAssistPageProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
 
   // Health/Term (2026-09) — undefined restriction means the caller (no
   // tags, or both tags) may use either domain and gets an actual toggle;
@@ -605,9 +607,9 @@ export function ProductAssistPage({ theme, currentUser }: ProductAssistPageProps
     setSendError(null);
   };
 
-  const deleteSession = (session: LocalChatSession, e: MouseEvent) => {
+  const deleteSession = async (session: LocalChatSession, e: MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this conversation? This only removes it from this browser.")) return;
+    if (!(await confirm("Delete this conversation? This only removes it from this browser."))) return;
     saveSessions(sessions.filter(s => s.id !== session.id));
     if (currentSessionId === session.id) startNewChat();
   };

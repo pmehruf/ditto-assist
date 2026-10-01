@@ -4,29 +4,31 @@
  */
 
 import type { ReactNode } from "react";
-import { isoDateToDMY } from "../utils/dateFormat";
+import { CustomDatePicker } from "./CustomDatePicker";
 
 /**
- * A `<input type="date">` whose VISIBLE text is always DD-MM-YYYY, no matter
- * what date format the visitor's browser/OS locale defaults to.
+ * A themed date field whose VISIBLE text is always DD-MM-YYYY, no matter
+ * what date format the visitor's browser/OS locale defaults to, and whose
+ * calendar popup matches the app's own theme instead of the browser's.
  *
- * Why this exists: a native date input's displayed text is controlled
- * entirely by the browser using the user's locale — it can't be overridden
- * via the `value` attribute (which the HTML spec requires to stay
- * "YYYY-MM-DD") or via CSS in a reliable, cross-browser way. Left alone, the
- * same app shows "07/29/2026" to a browser defaulting to en-US and
- * "29-07-2026" to one defaulting to en-GB — exactly the inconsistency
- * reported across the Announcement form, the Announcements archive's date
- * filter, Activity Log, and the QA Dashboard's date filters.
+ * History: this originally wrapped a real, fully transparent
+ * `<input type="date">` stretched over a styled display `<div>` — the
+ * native input's own text is locale-dependent and can't be restyled, so
+ * only the popup's underlying value was used, with DD-MM-YYYY painted on
+ * top. That fixed the text-format inconsistency but left the calendar
+ * POPUP itself fully native — un-themeable beyond a `color-scheme:
+ * dark`/`light` nudge (see index.css) and inconsistent across browsers.
  *
- * The fix (first proven out ad-hoc in MyActivityPage.tsx's own date filter,
- * extracted here as the one shared implementation): render the REAL native
- * `<input type="date">` fully transparent and stretched over the control
- * (so typing, the calendar-picker button, keyboard nav, and min/max
- * validation all still work exactly as before), then paint a plain `<div>`
- * on top showing the value already reformatted to DD-MM-YYYY. The visible
- * div is `pointer-events-none` so every click/keystroke still reaches the
- * real input underneath.
+ * 2026-09 theme pass: rebuilt on CustomDatePicker (the date-field
+ * counterpart to CustomSelect.tsx — same portal/positioning architecture,
+ * same design tokens), which replaces the native input and its popup
+ * entirely with a themed trigger + calendar dropdown. This component is now
+ * a thin prop-forwarding wrapper kept only so its existing call sites
+ * (Announcement form, Announcements archive, Activity Log, QA Dashboard,
+ * Access Control Center's Directory, Porting Assist) don't need to change
+ * anything — `displayClassName` still styles the visible control exactly as
+ * before, `icon` still renders as a trailing glyph, `value`/`onChange` still
+ * use the same plain "YYYY-MM-DD" string every caller already passes.
  */
 export function DateInputDMY({
   value,
@@ -36,10 +38,11 @@ export function DateInputDMY({
   required,
   disabled,
   title,
-  placeholder = "dd-mm-yyyy",
+  placeholder = "DD-MM-YYYY",
   displayClassName,
   icon,
   wrapperClassName = "relative",
+  theme,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -49,36 +52,39 @@ export function DateInputDMY({
   disabled?: boolean;
   title?: string;
   placeholder?: string;
-  /** Full class list for the VISIBLE display box — callers keep their own
+  /** Full class list for the VISIBLE control — callers keep their own
    * per-theme background/border/sizing exactly as before. */
   displayClassName: string;
   /** Optional trailing icon (a calendar/clock glyph, matching whatever the
    * call site used before this was extracted). */
   icon?: ReactNode;
   wrapperClassName?: string;
+  /** Every existing call site already computes its own dark/light boolean
+   * for `displayClassName` but never had to pass an explicit theme prop
+   * (the underlying native input didn't need one) — accepted here as
+   * optional (defaulting to dark-styled) so this is non-breaking, but every
+   * call site should pass its real theme so the calendar POPUP (which does
+   * need to know, unlike the old native input) matches the control around
+   * it. Typed as a loose `string` (not CustomDatePicker's own strict
+   * "light" | "dark") because a couple of call sites carry `theme` through
+   * their own component tree as a plain `string` prop — normalized below
+   * rather than tightening those unrelated prop types. */
+  theme?: string;
 }) {
   return (
-    <div className={wrapperClassName}>
-      <input
-        type="date"
-        value={value}
-        min={min}
-        max={max}
-        required={required}
-        disabled={disabled}
-        title={title}
-        onChange={(e) => onChange(e.target.value)}
-        onClick={(e) => {
-          try {
-            (e.currentTarget as HTMLInputElement).showPicker();
-          } catch (_) {}
-        }}
-        className={`absolute inset-0 opacity-0 w-full h-full z-10 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
-      />
-      <div className={displayClassName}>
-        <span>{value ? isoDateToDMY(value) : placeholder}</span>
-        {icon}
-      </div>
-    </div>
+    <CustomDatePicker
+      value={value}
+      onChange={onChange}
+      min={min}
+      max={max}
+      required={required}
+      disabled={disabled}
+      title={title}
+      placeholder={placeholder}
+      theme={theme === "light" ? "light" : "dark"}
+      triggerClassName={displayClassName}
+      icon={icon}
+      wrapperClassName={wrapperClassName}
+    />
   );
 }

@@ -48,7 +48,7 @@ export function AnnouncementStatModal({
       <div className={`absolute inset-0 backdrop-blur-md ${theme === "dark" ? "bg-black/60" : "bg-stone-900/40"}`} />
 
       <div
-        className={`relative w-full max-w-xl max-h-[85vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+        className={`relative w-full max-w-xl vp-modal rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
           theme === "dark" ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"
         }`}
       >

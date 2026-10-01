@@ -2,7 +2,6 @@ import React from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   CheckCircle2,
-  Layers,
   List,
   Search,
   RefreshCw,
@@ -14,7 +13,6 @@ import {
   Compass,
 } from "lucide-react";
 import { SpecificIllnessLedgerCard } from "./SpecificIllnessLedgerCard";
-import { DeclarationMapIcon } from "./icons";
 import { MatchOutput, PlanConfig } from "../types.js";
 import { ReportingItem } from "../types/lookup";
 import { getMatchTierInfo as getSharedMatchTierInfo } from "../utils/matchTier";
@@ -37,7 +35,6 @@ interface DeclarationAssistantResultsProps {
   lookupResults: ResultItem[];
   onReset: () => void;
   onMapAnotherPed: () => void;
-  setActiveTab?: (value: string) => void;
   setReportingItem: (item: ReportingItem | null) => void;
   setReportingNotes: (notes: string) => void;
   illnessSearchQuery: string;
@@ -47,7 +44,7 @@ interface DeclarationAssistantResultsProps {
   checkIllnessInPlanSpecificList: (pedText: string, plan: string) => { category: string; illness: string } | null;
 }
 
-type SidebarCard = "overlap" | "pj" | "si";
+type SidebarCard = "pj" | "si";
 
 // ─────────────────────────────────────────────
 // Linked Narrative — chronic-condition advisory
@@ -75,8 +72,7 @@ function pedHasLinkedNarrative(ped: string): boolean {
 // rgba(239,68,68,0.07), badges at ~0.16 bg / ~0.40 border). All Quick
 // Reference card tints below are scaled to match that same muted level
 // rather than solid, fully-saturated accent colors.
-const CARD_ACCENTS: Record<SidebarCard, { hex: string; icon: typeof Layers; label: string; tint: string; tintStrong: string }> = {
-  overlap: { hex: "#ef4444", icon: Layers, label: "Overlap Rules", tint: "rgba(239,68,68,0.08)", tintStrong: "rgba(239,68,68,0.14)" },
+const CARD_ACCENTS: Record<SidebarCard, { hex: string; icon: typeof List; label: string; tint: string; tintStrong: string }> = {
   pj: { hex: "#b07cff", icon: List, label: "Payment Journey Questions", tint: "rgba(176,124,255,0.08)", tintStrong: "rgba(176,124,255,0.14)" },
   si: { hex: "#ff9f43", icon: AlertTriangle, label: "Specific Illness List", tint: "rgba(255,159,67,0.08)", tintStrong: "rgba(255,159,67,0.14)" },
 };
@@ -87,7 +83,6 @@ const CARD_ACCENTS: Record<SidebarCard, { hex: string; icon: typeof Layers; labe
 // tinge in light theme, a low-opacity hue wash in dark theme (matching the
 // Linked Narrative panel's ~0.07 alpha rather than a solid saturated fill).
 const CARD_PANEL_BG: Record<SidebarCard, { dark: string; light: string }> = {
-  overlap: { dark: "rgba(239,68,68,0.07)", light: "#FFF5F6" },
   pj: { dark: "rgba(176,124,255,0.07)", light: "#F8F4FF" },
   si: { dark: "rgba(255,159,67,0.07)", light: "#FFF8EE" },
 };
@@ -98,7 +93,6 @@ const CARD_PANEL_BG: Record<SidebarCard, { dark: string; light: string }> = {
 // muted, in the same spirit as Linked Narrative's badges) so they read as
 // nested content rather than a duplicate header.
 const CARD_SECONDARY_BG: Record<SidebarCard, { dark: string; darkGradient: string; light: string }> = {
-  overlap: { dark: "rgba(239,68,68,0.10)", darkGradient: "linear-gradient(150deg, rgba(150,55,68,0.18) 0%, rgba(38,20,25,0.45) 100%)", light: "#FFF9F9" },
   pj: { dark: "rgba(176,124,255,0.10)", darkGradient: "linear-gradient(150deg, rgba(120,80,190,0.16) 0%, rgba(29,21,48,0.45) 100%)", light: "#FBF9FF" },
   si: { dark: "rgba(255,159,67,0.10)", darkGradient: "linear-gradient(150deg, rgba(210,140,50,0.16) 0%, rgba(35,24,14,0.45) 100%)", light: "#FFFBF3" },
 };
@@ -181,7 +175,6 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
   lookupResults,
   onReset,
   onMapAnotherPed,
-  setActiveTab,
   setReportingItem,
   setReportingNotes,
   illnessSearchQuery,
@@ -197,17 +190,11 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
   const [expandedNarratives, setExpandedNarratives] = React.useState<Record<number, boolean>>({});
   const [expandedSI, setExpandedSI] = React.useState<Record<number, boolean>>({});
   const [expandedCards, setExpandedCards] = React.useState<Record<SidebarCard, boolean>>({
-    overlap: true,
     pj: false,
     si: false,
   });
-  // Each of the 4 branch cards inside the Overlap Rules sidebar card is its
-  // own independent click-to-expand accordion, keyed by branch number (1-4).
-  const [expandedOverlapBranches, setExpandedOverlapBranches] = React.useState<Record<number, boolean>>({});
 
   const toggleCard = (key: SidebarCard) => setExpandedCards((prev) => ({ ...prev, [key]: !prev[key] }));
-  const toggleOverlapBranch = (id: number) =>
-    setExpandedOverlapBranches((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const planConfig = planConfigs?.[selectedPlan];
 
@@ -333,10 +320,6 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                 </button>
               </div>
             </div>
-
-            <p className={`text-[12px] font-semibold leading-relaxed mt-2 ${dark ? "text-stone-400" : "text-slate-600"}`}>
-              If a condition fits a main question in the payment journey and an umbrella question, follow the Overlap Rules under the Quick Reference section before finalizing the declaration field.
-            </p>
           </div>
 
           {/* PED RESULTS — scrolls independently within the left column */}
@@ -390,8 +373,8 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                       }}
                     >
                       {/* ── Row 1: pin + PED name — sized to match the Quick
-                          Reference sidebar's card titles (Overlap Rules,
-                          Payment Journey Questions, etc.), not a large
+                          Reference sidebar's card titles (Payment
+                          Journey Questions, etc.), not a large
                           heading. ── */}
                       <div className="flex items-center gap-1.5 mb-1 min-w-0">
                         <img
@@ -825,20 +808,6 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                         {cfg.label}
                       </span>
                     </button>
-                    {key === "overlap" && setActiveTab && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveTab("resources");
-                        }}
-                        style={{ color: cfg.hex, borderColor: `${cfg.hex}55` }}
-                        className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wide px-2 py-1 rounded-md border shrink-0 cursor-pointer select-none transition-all active:scale-95 hover:brightness-110"
-                      >
-                        <DeclarationMapIcon width={11} height={11} color="currentColor" className="shrink-0" />
-                        Map
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => toggleCard(key)}
@@ -863,289 +832,6 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                         className="overflow-hidden"
                       >
                         <div className="p-3 pt-0.5">
-                          {key === "overlap" && (
-                            <div className="flex flex-col gap-2.5 pt-2.5">
-                              {/* ── Branch 1: PED × Medication — click-to-expand, content verbatim from Declaration Map. Light theme: near-white with a red tinge. Dark theme: warm red-to-maroon gradient — both echo the red-tinted Overlap Rules primary card. ── */}
-                              <div
-                                className="rounded-lg overflow-hidden border"
-                                style={{
-                                  borderColor: dark ? "#3b9eff40" : "#3b9eff35",
-                                  background: dark ? "linear-gradient(150deg, rgba(150,55,68,0.18) 0%, rgba(38,20,25,0.45) 100%)" : "#FFF9F9",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => toggleOverlapBranch(1)}
-                                  className="w-full p-2.5 flex gap-2 items-center text-left cursor-pointer select-none"
-                                >
-                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 border ${dark ? "bg-white/5 text-[#3b9eff] border-[#3b9eff]/28" : "bg-[#E1EAF7] text-[#1D63ED] border-[#3b9eff]/40"}`}>💊</div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className={`text-[7.5px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Branch 1</div>
-                                    <div className={`text-[10px] font-black truncate ${dark ? "text-stone-100" : "text-stone-800"}`}>PED × Medication</div>
-                                  </div>
-                                  <ChevronDown
-                                    className={`w-3.5 h-3.5 shrink-0 transition-transform ${expandedOverlapBranches[1] ? "rotate-180" : ""}`}
-                                    style={{ color: "#3b9eff" }}
-                                  />
-                                </button>
-                                <AnimatePresence initial={false}>
-                                  {expandedOverlapBranches[1] && (
-                                    <motion.div
-                                      key="branch-1-content"
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      transition={{ duration: 0.2, ease: "easeInOut" }}
-                                      className="overflow-hidden"
-                                    >
-                                      <div className="px-2.5 pb-3 text-[9.5px] leading-relaxed">
-                                        <div className="pl-2.5 border-l-2 border-[#3b9eff] space-y-2">
-                                          <p className={dark ? "text-stone-300" : "text-stone-700"}>
-                                            <strong>Declare both the PED and the medication.</strong> Use the general format — "Medications of [condition] going on" — the drug name is not required.
-                                          </p>
-                                          <div className="space-y-1">
-                                            <span className={`block text-[8px] uppercase font-bold tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Declaration Options</span>
-                                            <ol className={`list-decimal pl-3.5 space-y-0.5 font-semibold ${dark ? "text-stone-300" : "text-stone-600"}`}>
-                                              <li>PED Q + Meds in the <strong>same</strong> question</li>
-                                              <li>PED Q + Meds in the generic umbrella Meds Q</li>
-                                              <li>PED Q + Meds in the Others section</li>
-                                            </ol>
-                                          </div>
-                                          <span className={`inline-block text-[9px] font-semibold border rounded-md px-2 py-1 leading-normal ${dark ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
-                                            <span className="text-[#3b9eff] font-bold">Care:</span> PED Q = Yes + medication in <strong>Others</strong>
-                                          </span>
-                                          <p className={`pt-1 border-t border-dashed ${dark ? "border-white/10 text-stone-400" : "border-stone-200 text-stone-700"}`}>
-                                            A <strong>missing-medication flag</strong> is raised for <strong>Diabetes · Cholesterol · Hypertension · Thyroid</strong> if the PED is declared but no medication is.
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-
-                              {/* ── Branch 2: PED/No-PED × Investigative Tests — click-to-expand ── */}
-                              <div
-                                className="rounded-lg overflow-hidden border"
-                                style={{
-                                  borderColor: dark ? "#b07cff40" : "#b07cff35",
-                                  background: dark ? "linear-gradient(150deg, rgba(150,55,68,0.18) 0%, rgba(38,20,25,0.45) 100%)" : "#FFF9F9",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => toggleOverlapBranch(2)}
-                                  className="w-full p-2.5 flex gap-2 items-center text-left cursor-pointer select-none"
-                                >
-                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 border ${dark ? "bg-white/5 text-[#b07cff] border-[#b07cff]/28" : "bg-[#EBE1F7] text-[#7C3AED] border-[#b07cff]/40"}`}>🔬</div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className={`text-[7.5px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Branch 2</div>
-                                    <div className={`text-[10px] font-black truncate ${dark ? "text-stone-100" : "text-stone-800"}`}>PED/No-PED × Investigative Tests</div>
-                                  </div>
-                                  <ChevronDown
-                                    className={`w-3.5 h-3.5 shrink-0 transition-transform ${expandedOverlapBranches[2] ? "rotate-180" : ""}`}
-                                    style={{ color: "#b07cff" }}
-                                  />
-                                </button>
-                                <AnimatePresence initial={false}>
-                                  {expandedOverlapBranches[2] && (
-                                    <motion.div
-                                      key="branch-2-content"
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      transition={{ duration: 0.2, ease: "easeInOut" }}
-                                      className="overflow-hidden"
-                                    >
-                                      <div className="px-2.5 pb-3 text-[9.5px] leading-relaxed">
-                                        <div className="pl-2.5 border-l-2 border-[#b07cff] space-y-2">
-                                          <div
-                                            className="p-2 rounded-lg border font-semibold"
-                                            style={{
-                                              backgroundColor: dark ? "rgba(255,90,110,0.14)" : "rgba(254,242,242,0.9)",
-                                              borderColor: dark ? "rgba(255,90,110,0.40)" : "rgba(220,38,38,0.25)",
-                                              color: dark ? "#ffd9df" : "#991b1b",
-                                            }}
-                                          >
-                                            <span className={dark ? "text-[#ff8a9a] font-bold" : "text-red-700 font-bold"}>⚠ Mandatory declaration:</span> Disclose <strong>with or without a diagnosis</strong> (exception applicable), <strong>with or without findings</strong>, and <strong>with or without reports</strong>.
-                                          </div>
-                                          <p className={dark ? "text-stone-300" : "text-stone-700"}>
-                                            <strong>Exception:</strong> if a test was done <strong>only</strong> to diagnose an already-declared PED (e.g. an <strong>ECG</strong> that revealed a declared heart condition), you need <strong>not</strong> name it.
-                                          </p>
-                                          <div className="space-y-1">
-                                            <span className={`block text-[8px] uppercase font-bold tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Declaration Options</span>
-                                            <ol className={`list-decimal pl-3.5 space-y-0.5 font-semibold ${dark ? "text-stone-300" : "text-stone-600"}`}>
-                                              <li>Umbrella Question — Investigative Tests</li>
-                                              <li>Others Section</li>
-                                            </ol>
-                                          </div>
-                                          <div className={`p-2 rounded-lg border ${dark ? "bg-black/20 border-white/10" : "bg-white border-stone-200"}`}>
-                                            <strong className="block mb-0.5">7 critical tests — name exactly:</strong>
-                                            <p className={`font-mono text-[8.5px] font-extrabold ${dark ? "text-blue-300" : "text-indigo-500"}`}>
-                                              Angiography · TRT (Treadmill Test) / Stress Test · ECG · MRI · Endoscopy · Colonoscopy · USG
-                                            </p>
-                                          </div>
-                                          <div className={`p-2 rounded-lg border ${dark ? "bg-black/20 border-white/10" : "bg-white border-stone-200"}`}>
-                                            <strong className="block mb-0.5">Any other test:</strong>
-                                            <p className={dark ? "text-stone-400" : "text-stone-600"}>→ use the generic phrase <strong>"Medical tests were done."</strong></p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-
-                              {/* ── Branch 3: PED × Surgery — click-to-expand ── */}
-                              <div
-                                className="rounded-lg overflow-hidden border"
-                                style={{
-                                  borderColor: dark ? "#ff9f4340" : "#ff9f4335",
-                                  background: dark ? "linear-gradient(150deg, rgba(150,55,68,0.18) 0%, rgba(38,20,25,0.45) 100%)" : "#FFF9F9",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => toggleOverlapBranch(3)}
-                                  className="w-full p-2.5 flex gap-2 items-center text-left cursor-pointer select-none"
-                                >
-                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 border ${dark ? "bg-white/5 text-[#ff9f43] border-[#ff9f43]/28" : "bg-[#FEF3C7] text-[#D97706] border-[#ff9f43]/40"}`}>🔪</div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className={`text-[7.5px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Branch 3</div>
-                                    <div className={`text-[10px] font-black truncate ${dark ? "text-stone-100" : "text-stone-800"}`}>PED × Surgery</div>
-                                  </div>
-                                  <ChevronDown
-                                    className={`w-3.5 h-3.5 shrink-0 transition-transform ${expandedOverlapBranches[3] ? "rotate-180" : ""}`}
-                                    style={{ color: "#ff9f43" }}
-                                  />
-                                </button>
-                                <AnimatePresence initial={false}>
-                                  {expandedOverlapBranches[3] && (
-                                    <motion.div
-                                      key="branch-3-content"
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      transition={{ duration: 0.2, ease: "easeInOut" }}
-                                      className="overflow-hidden"
-                                    >
-                                      <div className="px-2.5 pb-3 text-[9.5px] leading-relaxed">
-                                        <div className="pl-2.5 border-l-2 border-[#ff9f43] space-y-2.5">
-                                          <div className="space-y-1">
-                                            <strong className={`block ${dark ? "text-stone-100" : "text-stone-800"}`}>
-                                              Cured / one-time (Cataract, Kidney stones) — the surgery is the key declaration.
-                                            </strong>
-                                            <span className={`block text-[8px] uppercase font-bold tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Declaration Options</span>
-                                            <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-300" : "text-stone-600"}`}>
-                                              <li>Surgeries Q or Organ/System Q <span className="font-extrabold text-teal-500">(PED Q is optional)</span></li>
-                                            </ol>
-                                            <span className={`inline-block text-[9px] font-semibold border rounded-md px-2 py-1 leading-normal ${dark ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
-                                              <span className="text-[#3b9eff] font-bold">Care:</span> Surgery Q = Yes + surgery name in <strong>Others</strong>
-                                            </span>
-                                          </div>
-                                          <div className={`space-y-1 pt-2 border-t border-dashed ${dark ? "border-white/10" : "border-stone-200"}`}>
-                                            <strong className={dark ? "text-stone-100" : "text-stone-800"}>
-                                              Linked to active PED (heart condition + Angioplasty) — PED is extremely important here; its declaration is <span className="text-red-500">mandatory</span> in the PED/Organ/System specific question, along with the surgery.
-                                            </strong>
-                                            <span className={`block text-[8px] uppercase font-bold tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Declaration Options</span>
-                                            <ol className={`list-decimal pl-3.5 space-y-0.5 font-semibold ${dark ? "text-stone-300" : "text-stone-600"}`}>
-                                              <li>Declaration of the PED in PED/Organ/System (by priority order) is <span className="text-red-500 font-black">mandatory</span></li>
-                                              <li>
-                                                Surgery declared in:
-                                                <ul className="list-disc pl-3.5 mt-0.5 space-y-0.5">
-                                                  <li>Same Q as the PED declaration</li>
-                                                  <li>Generic umbrella Surgeries Q</li>
-                                                  <li>Others Section</li>
-                                                </ul>
-                                              </li>
-                                            </ol>
-                                            <span className={`block text-[9px] font-semibold border rounded-md px-2 py-1 leading-normal ${dark ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
-                                              <span className="text-[#3b9eff] font-bold">Care:</span> PED/Organ Q = Yes → Surgery Q = Yes → Others = PED name <span className="text-red-500 font-extrabold">(mandatory)</span> + surgery name <span className="font-bold text-teal-500">(optional)</span>
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-
-                              {/* ── Branch 4: PED × Hospitalization — click-to-expand ── */}
-                              <div
-                                className="rounded-lg overflow-hidden border"
-                                style={{
-                                  borderColor: dark ? "#2ed57340" : "#2ed57335",
-                                  background: dark ? "linear-gradient(150deg, rgba(150,55,68,0.18) 0%, rgba(38,20,25,0.45) 100%)" : "#FFF9F9",
-                                }}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => toggleOverlapBranch(4)}
-                                  className="w-full p-2.5 flex gap-2 items-center text-left cursor-pointer select-none"
-                                >
-                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 border ${dark ? "bg-white/5 text-[#2ed573] border-[#2ed573]/28" : "bg-[#E1F7E8] text-[#0F766E] border-[#2ed573]/40"}`}>🛏️</div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className={`text-[7.5px] font-bold uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Branch 4</div>
-                                    <div className={`text-[10px] font-black truncate ${dark ? "text-stone-100" : "text-stone-800"}`}>PED × Hospitalization</div>
-                                  </div>
-                                  <ChevronDown
-                                    className={`w-3.5 h-3.5 shrink-0 transition-transform ${expandedOverlapBranches[4] ? "rotate-180" : ""}`}
-                                    style={{ color: "#2ed573" }}
-                                  />
-                                </button>
-                                <AnimatePresence initial={false}>
-                                  {expandedOverlapBranches[4] && (
-                                    <motion.div
-                                      key="branch-4-content"
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      transition={{ duration: 0.2, ease: "easeInOut" }}
-                                      className="overflow-hidden"
-                                    >
-                                      <div className="px-2.5 pb-3 text-[9.5px] leading-relaxed">
-                                        <div className="pl-2.5 border-l-2 border-[#2ed573] space-y-2.5">
-                                          <div className="space-y-1">
-                                            <strong className={`block ${dark ? "text-stone-100" : "text-stone-800"}`}>
-                                              Non-active PED — one-time & not organ-related (Dengue, COVID, Viral fever).
-                                            </strong>
-                                            <span className={`block text-[8px] uppercase font-bold tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Declaration Options</span>
-                                            <ol className={`list-decimal pl-3.5 font-semibold ${dark ? "text-stone-300" : "text-stone-600"}`}>
-                                              <li>Hospitalization Q only</li>
-                                            </ol>
-                                            <span className={`inline-block text-[9px] font-semibold border rounded-md px-2 py-1 leading-normal ${dark ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
-                                              <span className="text-[#3b9eff] font-bold">Care:</span> Hospitalization Q = Yes + details in <strong>Others</strong>
-                                            </span>
-                                          </div>
-                                          <div className={`space-y-1 pt-2 border-t border-dashed ${dark ? "border-white/10" : "border-stone-200"}`}>
-                                            <strong className={dark ? "text-stone-100" : "text-stone-800"}>
-                                              Active-PED-linked hospitalization (hospitalized for Diabetes).
-                                            </strong>
-                                            <span className={`block text-[8px] uppercase font-bold tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Declaration Options</span>
-                                            <ol className={`list-decimal pl-3.5 space-y-0.5 font-semibold ${dark ? "text-stone-300" : "text-stone-600"}`}>
-                                              <li>Declaration of the PED in PED/Organ/System (by priority order) is <span className="text-red-500 font-extrabold">mandatory</span></li>
-                                              <li>
-                                                Hospitalization declared in:
-                                                <ul className="list-disc pl-3.5 mt-0.5 space-y-0.5">
-                                                  <li>Same Q as the PED declaration</li>
-                                                  <li>Generic umbrella Hospitalization Q</li>
-                                                  <li>Others Section</li>
-                                                </ul>
-                                              </li>
-                                            </ol>
-                                            <span className={`block text-[9px] font-semibold border rounded-md px-2 py-1 leading-normal ${dark ? "bg-white/5 border-white/5 text-[#cfe0f5]" : "bg-[#DDE5F0] border-stone-200 text-[#1E293B]"}`}>
-                                              <span className="text-[#3b9eff] font-bold">Care:</span> PED/Organ Q = Yes → Hospitalization Q = Yes → Others = PED name <span className="text-red-500 font-extrabold">(mandatory)</span> + details <span className="font-bold text-teal-500">(optional)</span>
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
-                              </div>
-                            </div>
-                          )}
-
                           {key === "pj" && (
                             <div className="pt-2.5 max-h-[420px] overflow-y-auto custom-scrollbar -mx-1 px-1">
                               <table className="w-full text-left border-collapse font-sans">

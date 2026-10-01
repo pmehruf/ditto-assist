@@ -16,7 +16,7 @@ import {
   Gift,
   FolderOpen,
 } from "lucide-react";
-import { DeclarationMapIcon, ProductAssistIcon } from "../components/icons";
+import { ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
 import { DidYouKnowCard } from "../components/DidYouKnowCard";
 import { HomeAnnouncementCard } from "../components/HomeAnnouncementCard";
@@ -36,7 +36,6 @@ type HomeTabId =
   | "specific_illness_check"
   | "advisory_zone"
   | "announcement_archive"
-  | "resources"
   | "my_activity";
 
 interface LookupIntroPageProps {
@@ -168,10 +167,10 @@ interface QuickActionTile {
  *  2. DID YOU KNOW + QA PERFORMANCE STACK — a narrow 320px cell holding a
  *     live Health/Term FAQ feed (Did You Know — see DidYouKnowCard.tsx)
  *     next to a wider cell that stacks QA Performance, the Announcement
- *     Counter card, and the 4 reference tiles (Plan References,
- *     Announcements, Declaration Map, Other Resources — My Activity was
- *     dropped from this tile set by explicit request, though it's still
- *     reachable from the sidebar) as a 2x2 grid at the bottom. CSS Grid
+ *     Counter card, and the reference tiles (Plan References,
+ *     Announcements, Other Resources — My Activity was dropped from this
+ *     tile set by explicit request, though it's still reachable from the
+ *     sidebar) as a 2-column grid at the bottom. CSS Grid
  *     stretch sizes the Did You Know cell to match the QA Performance
  *     cell's own natural stacked height with no JS measurement (explicit
  *     request; see this row's own JSX comment below). (QA Dashboard isn't
@@ -195,7 +194,7 @@ interface QuickActionTile {
  * rather than a fixed authored height plus a shared scale factor.
  * The `activeTab === "lookup" && showIntro` condition and wrapping
  * `<motion.div key="intro">` deliberately stay in App.tsx (see
- * ResourcesPage.tsx for why — moving them here would break the
+ * the AnimatePresence block in App.tsx for why — moving them here would break the
  * AnimatePresence exit animation).
  */
 export function LookupIntroPage({
@@ -307,7 +306,7 @@ export function LookupIntroPage({
   ];
 
   // Quality/reference tools, visited less often than the above — rendered
-  // as their own 2x2 grid below (see visibleQuality below), kept as its
+  // as their own 2-column grid below (see visibleQuality below), kept as its
   // own array here only for data organization. QA Dashboard is not a tile
   // here (it's still fully reachable — the QA Performance card in Quick
   // Peek below links straight to it via "View QA Dashboard").
@@ -329,15 +328,6 @@ export function LookupIntroPage({
       icon: <Newspaper className="w-4 h-4" />,
       hex: "#FB7185",
       onOpen: () => setActiveTab("announcement_archive"),
-    },
-    {
-      id: "resources",
-      featureId: "resources",
-      title: "Declaration Map",
-      tag: "Visual rules & payout mapping",
-      icon: <DeclarationMapIcon width={16} height={16} color="currentColor" />,
-      hex: "#EC4899",
-      onOpen: () => setActiveTab("resources"),
     },
     // My Activity removed from this Home dashboard tile set by explicit
     // request (2026-09) — it's still fully reachable from the sidebar's
@@ -549,7 +539,7 @@ export function LookupIntroPage({
                 tools (Declaration Assist, Product Assist, Cover Projection
                 Assist, Specific Illness Assist) — the
                 former "References" tier (Plan References, Announcements,
-                Declaration Map, Other Resources) instead renders as a 2x2
+                Other Resources) instead renders as a 2-column
                 tile grid below QA Performance + the Announcement Counter
                 card (explicit request; see the row below). Every tile still
                 renders at the COMPACT size. Responsive: 1
@@ -569,8 +559,8 @@ export function LookupIntroPage({
                 occupy; QA Performance's column stacks THREE things — QA
                 Performance, the Announcement Counter card, and the
                 reference tiles themselves (Plan References, Announcements,
-                Declaration Map, Other Resources — My Activity was dropped
-                from this set by explicit request) as a 2x2 grid at the
+                Other Resources — My Activity was dropped
+                from this set by explicit request) as a 2-column grid at the
                 bottom. Did You Know's height is set to `qaColHeightPx` — a
                 JS measurement of this row's right cell (via `qaColRef`
                 below), NOT CSS Grid stretch (tried first; see
@@ -594,7 +584,7 @@ export function LookupIntroPage({
                 <DidYouKnowCard theme={theme} />
               </div>
               {/* RIGHT — QA Performance, Announcement Counter, then the 4
-                  reference tiles as a 2x2 grid — `ref={qaColRef}` is what
+                  reference tiles as a 2-column grid — `ref={qaColRef}` is what
                   Did You Know's height above is measured from. All three
                   stay `shrink-0` at their own natural height — including
                   the tile grid now (previously force-fit to a fixed
@@ -618,7 +608,9 @@ export function LookupIntroPage({
                 <div className="shrink-0">
                   <AnnouncementCounterCard theme={theme} allAnnouncements={allAnnouncements} onOpenStat={(title, list) => setOpenStat({ title, list })} />
                 </div>
-                <div className="shrink-0 grid grid-cols-2 grid-rows-2 gap-[clamp(6px,1vh,10px)]">
+                {/* An odd last tile spans both columns so the 2-column
+                    grid never leaves an empty cell. */}
+                <div className="shrink-0 grid grid-cols-2 gap-[clamp(6px,1vh,10px)] [&>*:last-child:nth-child(odd)]:col-span-2">
                   {visibleQuality.map((mod) => renderTile(mod, true))}
                 </div>
               </div>
@@ -665,7 +657,11 @@ export function LookupIntroPage({
                 <ArrowUpRight className="w-3 h-3" />
               </button>
             </div>
-            <div className="min-w-0 flex-1 min-h-0 [&>*]:h-full">
+            {/* Below the desktop breakpoint there's no measured height to
+                bound the card, so cap it to the viewport (shared .vp-panel
+                rule) and let the card's own body scroll a long
+                announcement instead of growing. */}
+            <div className={`min-w-0 flex-1 min-h-0 [&>*]:h-full ${isDesktop ? "" : "vp-panel flex flex-col [&>*]:min-h-0"}`}>
               <HomeAnnouncementCard
                 theme={theme}
                 activeAnnouncements={activeAnnouncements}

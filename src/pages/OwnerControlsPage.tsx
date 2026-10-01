@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Eye, EyeOff, RefreshCw, AlertTriangle } from "lucide-react";
 import { DEFAULT_FEATURE_PERMISSIONS } from "../constants/featurePermissions";
 
@@ -205,7 +205,12 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages, hasAcces
           </div>
         </div>
 
-        <div className="space-y-2">
+        {/* Bounded list (shared .vp-panel/.vp-scroll rule in index.css):
+            fills the viewport below the header/notice (~440px of app
+            chrome + page content above/below it) and scrolls internally as
+            features are added instead of growing the page; no scrollbar
+            while the list still fits. */}
+        <div className="vp-panel vp-scroll space-y-2 pr-1" style={{ "--vp-max-h": "100vh", "--vp-offset": "440px" } as CSSProperties}>
           {HIDEABLE_PAGES.map((feature) => {
             const isHidden = hiddenSet.has(feature.id);
             const isBusy = busyId === feature.id;
@@ -218,14 +223,14 @@ export function OwnerControlsPage({ theme, hiddenPages, setHiddenPages, hasAcces
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold ${dark ? "text-white" : "text-stone-900"}`}>{feature.name}</span>
+                    <span className={`vp-wrap text-xs font-bold ${dark ? "text-white" : "text-stone-900"}`}>{feature.name}</span>
                     {isHidden && (
                       <span className="text-[8.5px] font-black uppercase tracking-wide px-1.5 py-[1px] rounded border bg-rose-500/10 text-rose-500 border-rose-500/25">
                         Hidden
                       </span>
                     )}
                   </div>
-                  <p className={`text-[10.5px] mt-0.5 ${dark ? "text-stone-400" : "text-stone-500"}`}>{feature.description}</p>
+                  <p className={`vp-wrap text-[10.5px] mt-0.5 ${dark ? "text-stone-400" : "text-stone-500"}`}>{feature.description}</p>
                 </div>
 
                 {/* Visible / Hidden toggle.

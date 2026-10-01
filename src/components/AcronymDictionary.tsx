@@ -8,6 +8,7 @@ import { Plus, Pencil, Trash2, Search, X, Power } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
+import { useDialog } from "../hooks/useDialog";
 
 interface AcronymEntry {
   id: number;
@@ -41,7 +42,7 @@ function ModalShell({ theme, onClose, children }: { theme: "light" | "dark"; onC
     <div className="fixed inset-0 z-[190] flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className={`absolute inset-0 backdrop-blur-md ${dark ? "bg-black/60" : "bg-stone-900/40"}`} onClick={onClose} />
       <div
-        className={`relative w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col ${
+        className={`relative w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden vp-modal flex flex-col ${
           dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"
         }`}
       >
@@ -86,6 +87,7 @@ interface AcronymDictionaryProps {
  */
 export function AcronymDictionary({ theme, effectiveTier, currentUser, setChangeLogs, domain }: AcronymDictionaryProps) {
   const dark = theme === "dark";
+  const { confirm, alertUser } = useDialog();
   const canManage = effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
@@ -198,14 +200,14 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
       logAction(e.isActive ? "Acronym Dictionary Entry Deactivated" : "Acronym Dictionary Entry Activated", `"${e.acronym}" is now ${e.isActive ? "inactive" : "active"}.`);
       await load();
     } catch (err: any) {
-      window.alert(err.message || "Failed to update this acronym.");
+      await alertUser({ tone: "danger", message: err.message || "Failed to update this acronym." });
     } finally {
       setBusyId(null);
     }
   };
 
   const deleteEntry = async (e: AcronymEntry) => {
-    if (!window.confirm(`Delete "${e.acronym}" from the Acronym Dictionary? This can't be undone.`)) return;
+    if (!(await confirm(`Delete "${e.acronym}" from the Acronym Dictionary? This can't be undone.`))) return;
     setBusyId(e.id);
     try {
       const res = await fetch(`/api/kb/acronyms/${e.id}`, { method: "DELETE" });
@@ -214,7 +216,7 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
       logAction("Acronym Dictionary Entry Deleted", `Deleted "${e.acronym}".`);
       await load();
     } catch (err: any) {
-      window.alert(err.message || "Failed to delete this acronym.");
+      await alertUser({ tone: "danger", message: err.message || "Failed to delete this acronym." });
     } finally {
       setBusyId(null);
     }
@@ -360,7 +362,7 @@ export function AcronymDictionary({ theme, effectiveTier, currentUser, setChange
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="px-5 py-4 space-y-3 overflow-y-auto">
+          <div className="vp-scroll flex-1 px-5 py-4 space-y-3">
             {saveError && <p className="text-[11px] font-semibold text-red-500">{saveError}</p>}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Acronym <span className="text-red-500">*</span></label>

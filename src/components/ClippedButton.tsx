@@ -105,8 +105,8 @@ const INNER_HIGHLIGHT = "inset 0 1px 0 rgba(255,255,255,0.09)";
 
 /**
  * App-wide "clipped corner" button — the diagonal-cut-corner shape
- * (originated on the Home page's "LETS PUT THEM IN THEIR PLACE" CTA, later
- * on LookupPage's "Reset Fields") is the app's visual identity for any
+ * (originated on the Home page's "LETS PUT THEM IN THEIR PLACE" CTA) is
+ * the app's visual identity for any
  * button that performs a function (add/edit/delete/save/resolve/etc.).
  * This is the shared, reusable implementation — use it instead of
  * hand-rolling the clipPath + corner-chip markup per page.

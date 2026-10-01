@@ -1,5 +1,5 @@
 {
-  "id": "e2acbb69-ad2b-45cb-9af3-2dd4eaf1f26c",
+  "id": "69ff04aa-1d59-4372-b050-4235fbb48ace",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1668,6 +1668,14 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "feature_access_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Editor'"
         },
         "created_by": {
           "name": "created_by",
@@ -4789,14 +4797,6 @@
           "notNull": true,
           "default": false
         },
-        "group_tier": {
-          "name": "group_tier",
-          "type": "group_tier",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'General'"
-        },
         "created_by": {
           "name": "created_by",
           "type": "text",
@@ -5754,15 +5754,6 @@
         "Urgent",
         "Resolved",
         "Ignored"
-      ]
-    },
-    "public.group_tier": {
-      "name": "group_tier",
-      "schema": "public",
-      "values": [
-        "General",
-        "Admin",
-        "Platform Admin"
       ]
     },
     "public.kb_category_type": {

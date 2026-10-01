@@ -37,6 +37,7 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
   const [grants, setGrants] = useState<CustomAccessGrant[]>([]);
   const [grantsLoading, setGrantsLoading] = useState(true);
   const [rules, setRules] = useState<AccessRule[]>([]);
+  const [groupFeatureLevels, setGroupFeatureLevels] = useState<Record<string, "Viewer" | "Editor"> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +101,29 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
     };
   }, []);
 
+  // This user's Group Access grants (2026-09f) — GET /api/group-access/
+  // effective/:email, the arbitrary-user counterpart to GET /api/
+  // my-group-access. Admin+Developer-gated server-side, same posture as the
+  // grants/rules fetches above. Without this, resolveAccess() below would
+  // silently omit Group Access's contribution entirely — both the raise it
+  // was always missing and, since 2026-09f, the restriction it can now also
+  // apply to this user's General/Admin-tier features.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/group-access/effective/${encodeURIComponent(user.email)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (cancelled) return;
+        setGroupFeatureLevels(body.featureLevels ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setGroupFeatureLevels(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user.email]);
+
   const myActiveGrants = grants.filter((g) => g.active && g.userEmail === user.email);
 
   const departmentName = departments.find((d) => d.id === user.departmentId)?.name || "Unassigned";
@@ -118,7 +142,7 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
   return (
     <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs" onClick={onClose}>
       <div
-        className={`w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 rounded-2xl border shadow-2xl ${
+        className={`w-full max-w-lg vp-modal vp-scroll p-6 rounded-2xl border shadow-2xl ${
           dark ? "bg-[#0b1220] border-white/10" : "bg-[#ffffff] border-stone-200"
         }`}
         onClick={(e) => e.stopPropagation()}
@@ -186,7 +210,7 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
         <p className={`text-[10px] font-black uppercase tracking-wider mb-2 ${dark ? "text-stone-500" : "text-stone-400"}`}>
           Feature Access ({user.tier} tier)
         </p>
-        <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+        <div className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
           <table className="w-full border-collapse">
             <tbody>
               {DEFAULT_FEATURE_PERMISSIONS.map((perm, idx) => {
@@ -205,6 +229,7 @@ export function EffectiveAccessModal({ theme, user, departments, orgTeams, roles
                   grants: myActiveGrants,
                   accessRules: rules,
                   caller: { orgTeamId: user.orgTeamId, departmentId: user.departmentId, roleId: user.roleId, tags: user.tags },
+                  groupFeatureLevels,
                 });
                 return (
                   <tr key={perm.id} className={`border-b last:border-b-0 ${dark ? "border-stone-850" : "border-stone-150"} ${idx % 2 === 1 ? (dark ? "bg-white/[0.015]" : "bg-surface-solid") : ""}`}>

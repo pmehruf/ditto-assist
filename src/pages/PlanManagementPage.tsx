@@ -14,6 +14,8 @@ import { ClippedButton } from "../components/ClippedButton";
 import { SpecificIllnessLedger } from "../components/SpecificIllnessLedger";
 import { CustomSelect } from "../components/CustomSelect";
 import { PlanRestrictionsEditor } from "../components/PlanRestrictionsEditor";
+import { PlanPedOverridesEditor } from "../components/PlanPedOverridesEditor";
+import { useDialog } from "../hooks/useDialog";
 
 interface PlanManagementPageProps {
   theme: "light" | "dark";
@@ -133,6 +135,7 @@ export function PlanManagementPage({
   canManage,
 }: PlanManagementPageProps) {
   const dark = theme === "dark";
+  const { alertUser } = useDialog();
   // Corrected 2026-09 (permission architecture fix): this used to hardcode
   // canEdit to Admin/Platform Admin/Developer, and further hardcoded a
   // SEPARATE isDeveloper-only restriction on top of it for Edit/Delete/
@@ -697,7 +700,7 @@ export function PlanManagementPage({
         logAction("Plan Deleted", `Removed plan "${name}".`, name);
       } catch (err: unknown) {
         console.error("Failed to remove plan:", err);
-        window.alert(err instanceof Error ? err.message : "Failed to remove this plan.");
+        await alertUser({ tone: "danger", message: err instanceof Error ? err.message : "Failed to remove this plan." });
       }
     });
   };
@@ -776,7 +779,7 @@ export function PlanManagementPage({
       );
     } catch (err: unknown) {
       console.error(`Failed to ${nextDisabled ? "disable" : "enable"} plan:`, err);
-      window.alert(err instanceof Error ? err.message : `Failed to ${nextDisabled ? "disable" : "enable"} this plan.`);
+      await alertUser({ tone: "danger", message: err instanceof Error ? err.message : `Failed to ${nextDisabled ? "disable" : "enable"} this plan.` });
     } finally {
       setTogglingPlan(null);
     }
@@ -1496,6 +1499,27 @@ export function PlanManagementPage({
             <PlanRestrictionsEditor theme={theme} planName={planName || undefined} canEdit={canEdit} mode={formMode === "view" ? "view" : "edit"} />
           </div>
 
+          {/* Plan-Specific PED Mappings — pin one PED to an exact question on
+              this plan only, overriding its category mapping (e.g. OSA →
+              the Sleep disorder question on Optima Secure while other plans
+              keep Respiratory). Saved live to plan_overrides; see
+              PlanPedOverridesEditor / engine.ts's applyPlanPedOverride. */}
+          <div>
+            <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              Plan-Specific PED Mappings
+            </label>
+            <p className={`text-[11px] mb-1.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>
+              Map a specific PED to a specific question on this plan. Takes precedence over the PED's category mapping, for every advisor, from their next lookup.
+            </p>
+            <PlanPedOverridesEditor
+              theme={theme}
+              planName={planName || undefined}
+              questions={questions.filter((q) => q.tag !== "Umbrella").map((q) => q.text)}
+              canEdit={canEdit}
+              mode={formMode === "view" ? "view" : "edit"}
+            />
+          </div>
+
           {/* Declaration Questions */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -1746,7 +1770,7 @@ export function PlanManagementPage({
       {disableNoteDraft && (
         <div className="fixed inset-0 z-55 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
           <div
-            className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl text-left ${
+            className={`w-full max-w-md vp-modal vp-scroll p-6 rounded-2xl border shadow-2xl text-left ${
               dark ? "bg-[#0b1427] border-[#1c3258] text-white" : "bg-[#ffffff] border-stone-200 text-stone-900"
             }`}
           >

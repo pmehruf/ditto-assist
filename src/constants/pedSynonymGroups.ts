@@ -213,15 +213,98 @@ function groupIndexByTermLower(): Map<string, number> {
   return cachedGroupIndexByTermLower;
 }
 
+/** Ranking tiers for a PED suggestion, best first (see rankTerm). */
+export const PED_MATCH_LEVEL = {
+  EXACT: 1,
+  NAME_PREFIX: 2,
+  WORD_PREFIX: 3,
+  ALIAS_PREFIX: 4,
+  SUBSTRING: 5,
+  FUZZY: 6,
+} as const;
+
+// Word boundaries for tier 3 — spaces, hyphens, slashes, apostrophes,
+// brackets, dots, etc. Only used to find where words start; the text being
+// matched is otherwise compared exactly as before (lowercased, untrimmed
+// punctuation and all).
+const WORD_SPLIT_RE = /[^a-z0-9]+/;
+
+/** Optimal-string-alignment edit distance (insert/delete/substitute plus
+ * adjacent transposition) — small and allocation-light; only ever run on a
+ * short query against a same-length-ish word prefix. */
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const d: number[][] = Array.from({ length: rows }, (_, i) => {
+    const row = new Array<number>(cols).fill(0);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j < cols; j++) d[0][j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[rows - 1][cols - 1];
+}
+
+/** Tier 6: approximate match for typos. The query is compared against the
+ * start of each word in the term (prefixes one shorter / equal / one longer
+ * than the query, so a dropped, extra or swapped letter still lines up).
+ * Needs at least 4 typed characters (shorter queries are too ambiguous to
+ * guess at); allows 1 edit up to 5 characters and 2 edits from 6 on. */
+function isFuzzyMatch(termLower: string, q: string): boolean {
+  if (q.length < 4) return false;
+  const maxEdits = q.length >= 6 ? 2 : 1;
+  for (const word of termLower.split(WORD_SPLIT_RE)) {
+    if (!word) continue;
+    for (let len = q.length - 1; len <= q.length + 1; len++) {
+      if (len < 1 || len > word.length) continue;
+      if (editDistance(q, word.slice(0, len)) <= maxEdits) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Ranking tier of one ped_directory term for the (lowercased) query, or
+ * null when it doesn't match at all. `aliasesLower` are the term's synonym
+ * group siblings, if any.
+ *
+ *  1 exact · 2 name starts with query · 3 a word in the name starts with
+ *  query · 4 an alias starts with query · 5 query appears anywhere in the
+ *  name or an alias · 6 fuzzy (typo) match — last resort only.
+ */
+function rankTerm(termLower: string, aliasesLower: string[], q: string): number | null {
+  if (termLower === q) return PED_MATCH_LEVEL.EXACT;
+  if (termLower.startsWith(q)) return PED_MATCH_LEVEL.NAME_PREFIX;
+  if (termLower.split(WORD_SPLIT_RE).some((w) => w.startsWith(q))) return PED_MATCH_LEVEL.WORD_PREFIX;
+  if (aliasesLower.some((a) => a.startsWith(q))) return PED_MATCH_LEVEL.ALIAS_PREFIX;
+  if (termLower.includes(q) || aliasesLower.some((a) => a.includes(q))) return PED_MATCH_LEVEL.SUBSTRING;
+  if (isFuzzyMatch(termLower, q)) return PED_MATCH_LEVEL.FUZZY;
+  return null;
+}
+
 /**
  * Filters `rawSuggestions` (the flat ped_directory-backed term list) down
  * to the items matching `query`, excludes anything already in `excluded`,
- * and collapses every matched synonym-group member into a single row —
- * satisfying "1 grouped PED = 1 dropdown result" without changing what
- * gets inserted on click/Enter. Sort/cap behavior (shortest label first,
- * then alphabetical, capped by the caller) is unchanged from the
- * pre-grouping implementation; this only changes what counts as "one
- * result".
+ * collapses every matched synonym-group member into a single row ("1
+ * grouped PED = 1 dropdown result"), and returns the rows RANKED, best
+ * first — callers only cap the list (e.g. `.slice(0, 6)`).
+ *
+ * Ranking (case-insensitive): exact → name starts with the query → a word
+ * in the name starts with it → an alias starts with it → it appears
+ * anywhere in the name/alias; alphabetical within a tier. Fuzzy/typo
+ * matches are a fallback, returned only when no tier 1–5 match exists. Every synonym in a group is a real ped_directory condition name
+ * in its own right (the grouping is display-only), so each member is
+ * ranked as a name and the row takes its best-ranked member — which is
+ * also the term inserted on click/Enter (still always one real directory
+ * term, never the joined label).
  */
 export function buildGroupedSuggestions(
   rawSuggestions: string[],
@@ -242,35 +325,68 @@ export function buildGroupedSuggestions(
     if (!exactCaseByTermLower.has(s.toLowerCase())) exactCaseByTermLower.set(s.toLowerCase(), s);
   });
 
-  const seenGroupIdx = new Set<number>();
-  const results: GroupedSuggestionItem[] = [];
+  // Best-ranked member per synonym group (alphabetically first on a tie,
+  // matching the in-tier sort below), or the term itself when ungrouped.
+  const bestByGroup = new Map<number, { item: string; level: number }>();
+  const ranked: { item: string; level: number; groupIdx?: number }[] = [];
 
   for (const item of rawSuggestions) {
     if (excludedSet.has(item)) continue;
-    if (!item.toLowerCase().includes(lowerQuery)) continue;
+    const itemLower = item.toLowerCase();
+    const groupIdx = groupIdxByTerm.get(itemLower);
+    const aliasesLower =
+      groupIdx === undefined
+        ? []
+        : PED_SYNONYM_GROUPS[groupIdx].map((t) => t.toLowerCase()).filter((t) => t !== itemLower);
+    const level = rankTerm(itemLower, aliasesLower, lowerQuery);
+    if (level === null) continue;
 
-    const groupIdx = groupIdxByTerm.get(item.toLowerCase());
     if (groupIdx === undefined) {
-      // No defined group — one row per term, same as before this feature.
-      results.push({ label: item, displayName: item, aliases: [], insertValue: item });
+      ranked.push({ item, level });
       continue;
     }
-    if (seenGroupIdx.has(groupIdx)) continue; // this group already emitted a row
-    seenGroupIdx.add(groupIdx);
+    const prev = bestByGroup.get(groupIdx);
+    if (
+      !prev ||
+      level < prev.level ||
+      (level === prev.level && item.localeCompare(prev.item, undefined, { sensitivity: "base" }) < 0)
+    ) {
+      bestByGroup.set(groupIdx, { item, level });
+    }
+  }
+  bestByGroup.forEach((best, groupIdx) => ranked.push({ ...best, groupIdx }));
 
+  // Fuzzy is a true fallback: typo matches only appear when nothing matched
+  // on tiers 1–5, so they never crowd out real matches.
+  const hasNonFuzzy = ranked.some((r) => r.level < PED_MATCH_LEVEL.FUZZY);
+  if (hasNonFuzzy) {
+    for (let i = ranked.length - 1; i >= 0; i--) {
+      if (ranked[i].level === PED_MATCH_LEVEL.FUZZY) ranked.splice(i, 1);
+    }
+  }
+
+  ranked.sort(
+    (a, b) =>
+      a.level - b.level ||
+      a.item.localeCompare(b.item, undefined, { sensitivity: "base" }) ||
+      a.item.localeCompare(b.item)
+  );
+
+  return ranked.map(({ item, groupIdx }) => {
+    if (groupIdx === undefined) {
+      // No defined group — one row per term.
+      return { label: item, displayName: item, aliases: [], insertValue: item };
+    }
     const membersPresent = PED_SYNONYM_GROUPS[groupIdx]
       .map((term) => exactCaseByTermLower.get(term.toLowerCase()))
       .filter((s): s is string => Boolean(s));
     const label = membersPresent.length > 1 ? membersPresent.join(" Or ") : item;
     // Structured two-line display model derived from the same present
-    // members — purely how the row is rendered; search, grouping, and the
-    // inserted value are unchanged.
+    // members — purely how the row is rendered.
     const { displayName, aliases } = splitDisplay(membersPresent.length ? membersPresent : [item]);
     // Insert the specific synonym that actually matched the search text,
     // not the joined label — the field's value stays a real, exact-match
     // dictionary term either way.
-    results.push({ label, displayName, aliases, insertValue: item });
-  }
-
-  return results;
+    return { label, displayName, aliases, insertValue: item };
+  });
 }

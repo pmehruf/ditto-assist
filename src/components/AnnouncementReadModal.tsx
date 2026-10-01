@@ -43,7 +43,7 @@ export function AnnouncementReadModal({
       <div className={`absolute inset-0 backdrop-blur-md ${dark ? "bg-black/60" : "bg-stone-900/40"}`} onClick={onClose} />
 
       <div
-        className={`relative w-full max-w-2xl max-h-[85vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+        className={`relative w-full max-w-2xl vp-modal rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
           // Plain opaque hex, not bg-white — floating modal shell, must stay
           // fully opaque regardless of card-surface translucency.
           dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"
@@ -98,7 +98,7 @@ export function AnnouncementReadModal({
 
         {/* Body */}
         <div
-          className={`min-h-0 flex-1 overflow-y-auto px-5 py-4 text-xs leading-relaxed ${
+          className={`vp-scroll flex-1 px-5 py-4 text-xs leading-relaxed ${
             dark ? "text-stone-100" : "text-stone-850"
           }`}
         >

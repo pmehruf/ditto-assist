@@ -12,16 +12,9 @@ export interface CreateRelationshipGroupEntry {
   description: string | null;
   departmentId: number | null;
   createdBy: string;
-  /** Which tier of member this group's usedForGroupAccess ceiling will
-   * restrict (see schema.ts's doc comment on `relationshipGroups.groupTier`
-   * for the full semantics) — optional, omit to take the column's own
-   * default ("General") exactly as every group did before this field
-   * existed. Never coerced/defaulted here in code so an explicit value is
-   * never silently altered. */
-  groupTier?: RelationshipGroupRow["groupTier"];
 }
 
-export type UpdateRelationshipGroupEntry = Partial<Pick<RelationshipGroupRow, "name" | "description" | "active" | "departmentId" | "usedForGroupAccess" | "groupTier">>;
+export type UpdateRelationshipGroupEntry = Partial<Pick<RelationshipGroupRow, "name" | "description" | "active" | "departmentId" | "usedForGroupAccess">>;
 
 /**
  * Data Access Layer for `relationship_groups` (Mentor / Guide / ...) — the
@@ -50,10 +43,6 @@ export class RelationshipGroupsRepository {
         description: entry.description,
         departmentId: entry.departmentId,
         createdBy: entry.createdBy,
-        // Omit the key entirely when not provided, same convention `active`
-        // already relies on above — lets the column's own default
-        // ("General") apply rather than this layer duplicating it.
-        ...(entry.groupTier !== undefined ? { groupTier: entry.groupTier } : {}),
       })
       .returning();
     return row;

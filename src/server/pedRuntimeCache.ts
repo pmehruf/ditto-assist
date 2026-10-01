@@ -59,7 +59,7 @@ export interface DbAliasEntry {
 }
 
 export interface DbPlanOverrideEntry {
-  categoryKey: string;
+  categoryKey: string | null;
   reason: string | null;
 }
 
@@ -188,7 +188,7 @@ export function updateDbCategoryLabelCache(categoryKey: string, label: string): 
 }
 
 /** Call after a `plan_overrides` row is upserted. */
-export function updateDbPlanOverrideCache(planName: string, pedId: number, categoryKey: string, reason: string | null): void {
+export function updateDbPlanOverrideCache(planName: string, pedId: number, categoryKey: string | null, reason: string | null): void {
   planOverrideMap.set(planOverrideKey(planName, pedId), { categoryKey, reason });
 }
 

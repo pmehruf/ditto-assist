@@ -82,7 +82,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import * as schema from "./schema.js";
 import { createRepositories } from "./repositories/index.js";
-import { getGroupAllowedFeatureIds } from "../accessControl/evaluateAccess.js";
+import { getGroupFeatureLevels } from "../accessControl/evaluateAccess.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.join(__dirname, "../../../drizzle");
@@ -234,12 +234,12 @@ describe.skip("migration 0081 — owner-keyed to group-keyed backfill (real pre-
     // production evaluator (getGroupAllowedFeatureIds), not a hand-rolled
     // query --------------------------------------------------------------
     const repos = createRepositories(db);
-    expect(await getGroupAllowedFeatureIds(repos, "member-a@example.com", "General")).toEqual(["porting_assist"]);
-    expect(await getGroupAllowedFeatureIds(repos, "member-b@example.com", "General")).toEqual(["porting_assist"]);
+    expect(await getGroupFeatureLevels(repos, "member-a@example.com")).toEqual({ porting_assist: "Editor" });
+    expect(await getGroupFeatureLevels(repos, "member-b@example.com")).toEqual({ porting_assist: "Editor" });
     // member-c's only group (groupC) was never flagged for group access,
     // so they were unrestricted before 081 and remain unrestricted after —
     // proving the migration doesn't touch used_for_group_access semantics.
-    expect(await getGroupAllowedFeatureIds(repos, "member-c@example.com", "General")).toBeNull();
-    expect(await getGroupAllowedFeatureIds(repos, "other-member@example.com", "General")).toEqual(["coverage_projection"]);
+    expect(await getGroupFeatureLevels(repos, "member-c@example.com")).toBeNull();
+    expect(await getGroupFeatureLevels(repos, "other-member@example.com")).toEqual({ coverage_projection: "Editor" });
   });
 });

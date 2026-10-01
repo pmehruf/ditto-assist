@@ -7,10 +7,12 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { RefreshCw, AlertTriangle, Plus, Minus, X, Save, Search, Trash2, CheckCircle2, SkipForward, RotateCcw, Download, Wrench, Pencil, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { Department, OrgTeam, AppRole } from "../types/permissions";
 import { CustomSelect } from "../components/CustomSelect";
+import { DateInputDMY } from "../components/DateInputDMY";
 import { ADVISOR_TAG_OPTIONS } from "../components/AdvisorTagCheckboxes";
 import { SpecialInstructionFormModal } from "../components/SpecialInstructionFormModal";
 import type { KbCategoryLite, SpecialInstructionEntry, SpecialInstructionFormState } from "../components/specialInstructionTypes";
 import { downloadCSV } from "../utils/csvExport";
+import { useDialog } from "../hooks/useDialog";
 
 interface ProductAssistQuotaPageProps {
   theme: "light" | "dark";
@@ -1479,11 +1481,11 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
             </label>
             <label className="flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span>From</span>
-              <input type="date" value={unresolvedFrom} onChange={(e) => setUnresolvedFrom(e.target.value)} className={`${inputClass}`} />
+              <DateInputDMY theme={theme} value={unresolvedFrom} onChange={(v) => setUnresolvedFrom(v)} displayClassName={`${inputClass}`} />
             </label>
             <label className="flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span>To</span>
-              <input type="date" value={unresolvedTo} onChange={(e) => setUnresolvedTo(e.target.value)} className={`${inputClass}`} />
+              <DateInputDMY theme={theme} value={unresolvedTo} onChange={(v) => setUnresolvedTo(v)} displayClassName={`${inputClass}`} />
             </label>
             {(unresolvedFrom || unresolvedTo) && (
               <button
@@ -2146,7 +2148,7 @@ function UserQuotaDetailPanel({
                 </div>
                 <div className="col-span-2">
                   <label className={labelClass}>Expires (optional — leave blank for "Grant" to never expire)</label>
-                  <input type="date" className={`${inputClass} mt-1`} value={grantExpiresAt} onChange={(e) => setGrantExpiresAt(e.target.value)} />
+                  <DateInputDMY theme={theme} displayClassName={`${inputClass} mt-1`} value={grantExpiresAt} onChange={(v) => setGrantExpiresAt(v)} />
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-3">
@@ -2234,6 +2236,7 @@ function EligibilityGroupRow({
   onChanged: () => void;
 }) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const [editing, setEditing] = useState(defaultEditing);
   const [draft, setDraft] = useState(group);
   const [saving, setSaving] = useState(false);
@@ -2293,7 +2296,7 @@ function EligibilityGroupRow({
   };
 
   const remove = async () => {
-    if (!window.confirm(`Delete the "${group.name}" eligibility group? Anyone who only qualified through it will lose that allowance immediately.`)) return;
+    if (!(await confirm(`Delete the "${group.name}" eligibility group? Anyone who only qualified through it will lose that allowance immediately.`))) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/product-assist/quota/eligibility-groups/${group.id}`, { method: "DELETE" });

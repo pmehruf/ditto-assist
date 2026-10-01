@@ -529,7 +529,14 @@ export const planOverrides = pgTable(
     pedId: integer("ped_id").notNull(),
     // References categories.categoryKey — the category THIS plan uses for
     // this PED, which may differ from the PED's own default categoryKey.
-    categoryKey: text("category_key").notNull(),
+    // Nullable since 0084: an admin-authored override (Plan Management's
+    // "Plan-Specific PED Mappings") targets an exact question instead.
+    categoryKey: text("category_key"),
+    // The exact plan question this PED maps to on this plan (0084). Takes
+    // precedence over categoryKey and over the PED's own category mapping —
+    // see engine.ts's applyPlanPedOverride. Falls back to categoryKey if the
+    // question text no longer exists on the plan (e.g. it was reworded).
+    targetQuestion: text("target_question"),
     reason: text("reason"),
     addedBy: text("added_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1056,49 +1063,25 @@ export type NewRoleRow = typeof roles.$inferInsert;
 // Renamed from relationship_types (migration 0078, 2026-09) — purely a
 // naming change, same table/rows/FKs otherwise.
 // ─────────────────────────────────────────────────────────────────────────
-// Group Tier (2026-09, migration 0082) — deliberately its OWN, narrower enum
-// rather than reusing userTierEnum: a group's tier selects WHICH tier of
-// member the Group Access Restriction ceiling applies to (see groupTier
-// column below and resolveAccess()'s groupAllowedFeatureIds gate in
-// accessRuleEvaluator.ts), and "Developer" must never be a legal value there
-// — Developer stays permanently exempt from Group Access Restriction no
-// matter how a group is configured.
-export const groupTierEnum = pgEnum("group_tier", ["General", "Admin", "Platform Admin"]);
-
 export const relationshipGroups = pgTable("relationship_groups", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
   active: boolean("active").notNull().default(true),
   departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
-  // Group Access Restriction (2026-09) — see group_tool_access below.
-  // Whether THIS group's owner->subject rows count as group-owner ->
+  // Group Access (2026-09, redesigned 2026-09d) — see group_tool_access
+  // below. Whether THIS group's owner->subject rows count as group-owner ->
   // group-member mappings for that feature. Deliberately a flag an admin
   // opts each group into, not a match on the group's name: this table
   // already carries Mentor/Guide rows populated for nearly every advisor
   // via the Advisor Directory sync (for QA Dashboard/Team Tracker
   // attribution — see GroupsManagement.tsx), so if EVERY group
-  // activated the ceiling, shipping this would have silently blocked those
-  // tools for most of the advisor base the moment it deployed. An admin can
-  // name a group anything ("Trainer", "Coach", "New Hires") and flip this
-  // on for it from the Groups tab; nothing activates until they do,
-  // and Mentor/Guide stay inert unless someone deliberately opts them in
-  // too.
+  // activated it, shipping this would have silently granted overrides for
+  // most of the advisor base the moment it deployed. An admin can name a
+  // group anything ("Trainer", "Coach", "New Hires") and flip this on for
+  // it from the Groups tab; nothing activates until they do, and
+  // Mentor/Guide stay inert unless someone deliberately opts them in too.
   usedForGroupAccess: boolean("used_for_group_access").notNull().default(false),
-  // Group Tier (2026-09, migration 0082) — which tier of member THIS
-  // group's usedForGroupAccess ceiling restricts. Independent of the
-  // group's owner's own tier/permissions: an Admin can own and manage a
-  // "General"-tier group (restricting its General-tier members) exactly as
-  // before, or a group can instead be configured to restrict its
-  // Admin-tier or Platform-Admin-tier members. A member whose own tier
-  // doesn't match the group's groupTier is entirely unaffected by that
-  // group's restriction. Defaults to "General" so every pre-existing group
-  // (created before this column existed) keeps restricting General-tier
-  // members exactly as it always did — this default is what makes adding
-  // Group Tier fully backward-compatible with zero data migration. See
-  // getGroupAllowedFeatureIds()'s callerTier parameter in
-  // evaluateAccess.ts for where the match is applied.
-  groupTier: groupTierEnum("group_tier").notNull().default("General"),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
@@ -1143,53 +1126,60 @@ export type UserRelationshipRow = typeof userRelationships.$inferSelect;
 export type NewUserRelationshipRow = typeof userRelationships.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
-// group_tool_access — 2026-09, the Groups tab's tool restriction. A
-// "restricted member" is anyone who is the SUBJECT of an active
-// user_relationships row whose relationship group has
-// relationship_groups.usedForGroupAccess = true (an admin-controlled flag,
-// toggled from the Groups tab — see that column's own comment for why
-// this is a flag rather than a match on the group's name). Once someone is
-// a restricted member this way, their own tier (General, almost always) no
-// longer gets them the normal default set of workspace tools:
-// accessRuleEvaluator.ts's resolveAccess() caps every
-// GROUP_RESTRICTABLE_FEATURES id (featurePermissions.ts — the five original
-// Advisor Zone tools plus, since 2026-09, the Quality and Library pages) to
-// whatever rows exist here for THEIR relationship group, and a granted row
-// resolves to COMPLETE ("Editor") access to that feature, not just the
-// tier's own default level — every feature not in GROUP_RESTRICTABLE_FEATURES,
-// and every admin page, is completely unaffected by this table, and the
-// restriction never applies above General tier (see that constant's own
-// comment for the full reasoning).
+// group_tool_access — the Groups tab's per-feature access override list.
+// REDESIGNED 2026-09d (at the user's explicit request) from a fail-closed
+// hard ceiling into a plain additive grant, the same shape/semantics as
+// custom_access_grants and access_rules: a row here means "members of this
+// group get AT LEAST `level` on `featureId`", and it can only ever RAISE a
+// member's access above whatever their tier default (plus any Access Rule/
+// Custom Grant) already gives them — never lower it, and it never touches
+// any feature that has no row here at all. There is no more fail-closed
+// "block everything not explicitly granted" behavior; a member of an
+// access-configured group is otherwise completely ordinary. See
+// resolveAccess()'s own Group Access step in accessRuleEvaluator.ts.
 //
-// One row per (relationship group, tool) that group's members may use — a
-// group with zero rows here (correctly) sees none of the restrictable tools
-// yet, fail-closed by design until an admin configures something on the
-// Groups tab (Access Control Center).
+// FEATURE ELIGIBILITY RESPECTS THE MEMBER'S OWN TIER, AUTOMATICALLY — there
+// is no more separate `groupTier` column on relationship_groups (removed
+// this same migration). A group can now hold members of mixed tiers at
+// once, and a row here only ever applies to a given member if the feature
+// is one their OWN tier can reach at all: an "Admin Zone" featureId (e.g.
+// qa_announcement_log/Announcement Manager) only ever raises Admin,
+// Platform Admin, or Developer members — a General-tier member of the very
+// same group is completely unaffected by that row, as if it didn't exist
+// for them. "Advisor Zone" featureIds apply to every tier. See
+// ADVISOR_ZONE_FEATURES/ADMIN_ZONE_FEATURES and
+// isFeatureGroupGrantableForTier() in featurePermissions.ts for the exact
+// two lists and the tier check itself. "profile_access" (Access Control
+// Center) can never appear here at all — same self-escalation boundary
+// Custom Grants already respect for it (see that feature's own registry
+// comment).
 //
-// PERMISSIONS ARE GROUP-LEVEL, NOT OWNER-LEVEL (corrected 2026-09, migration
-// 0081): relationshipGroupId is the key, not who currently owns the group.
-// An owner is purely a user_relationships-level attribute — the person who
-// manages a group's roster (its Owner column on the Group Level Access
-// page) — and has zero bearing on what that group's members can access.
-// One owner can manage several distinct groups, each with its own,
-// independently configured tool set; before migration 0081 this table was
-// keyed by groupOwnerEmail instead, which meant every group a single owner
-// managed was forced to share one tool set — that was the bug this column
-// fixes. Every member under the same relationshipGroupId shares that one
-// group-wide tool set; there is deliberately no per-member override,
-// matching this feature's original framing (a whole group, not individual
-// members within it).
+// `level` — "Viewer" or "Editor" (reuses feature_access_level, though
+// "None" is never a legal value for a row that exists here — an admin who
+// doesn't want to grant a feature simply has no row for it, rather than a
+// row explicitly set to "None"). Defaults to "Editor" for rows that predate
+// this column (2026-09d migration) — preserving exactly what a checked box
+// meant before this redesign, for every group that already had one.
 //
-// Renamed from training_cohort_tool_access (migration 0080, 2026-09) —
-// trainer_email became group_owner_email; migration 0081 (2026-09) then
-// replaced group_owner_email with relationship_group_id, backfilling each
-// existing owner-level row onto every group that owner managed at the time
-// so existing members' access was unchanged the moment it deployed.
+// One row per (relationship group, feature) — a group with zero rows here
+// grants nothing extra; its members are entirely ordinary.
+//
+// PERMISSIONS ARE GROUP-LEVEL, NOT OWNER-LEVEL (migration 0081, 2026-09):
+// relationshipGroupId is the key, not who currently owns the group. An
+// owner is purely a user_relationships-level attribute — the person who
+// manages a group's roster (its Owner column on the Groups tab) — and has
+// zero bearing on what that group's members can access. One owner can
+// manage several distinct groups, each with its own, independently
+// configured grant set. Every member under the same relationshipGroupId
+// shares that one group-wide grant set; there is deliberately no
+// per-member override within a group, matching this feature's original
+// framing (a whole group, not individual members within it).
 // ─────────────────────────────────────────────────────────────────────────
 export const groupToolAccess = pgTable("group_tool_access", {
   id: serial("id").primaryKey(),
   relationshipGroupId: integer("relationship_group_id").notNull().references(() => relationshipGroups.id, { onDelete: "cascade" }),
   featureId: text("feature_id").notNull(),
+  level: featureAccessLevelEnum("level").notNull().default("Editor"),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

@@ -21,7 +21,7 @@ export interface CreateAccessRuleEntry {
 }
 
 export type UpdateAccessRuleEntry = Partial<
-  Pick<AccessRuleRow, "name" | "active" | "orgTeamId" | "departmentId" | "roleId" | "productTag" | "grantedLevel">
+  Pick<AccessRuleRow, "resourceKey" | "name" | "active" | "orgTeamId" | "departmentId" | "roleId" | "productTag" | "grantedLevel">
 >;
 
 /**

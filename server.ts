@@ -16,11 +16,11 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Import types & engine logic
-import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES } from "./src/types.js";
+import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, type PlanConfig } from "./src/types.js";
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
 import { MASTER_ILLNESSES } from "./src/specificIllnessEngine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
-import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup } from "./src/server/pedRuntimeCache.js";
+import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup, updateDbPlanOverrideCache, removeDbPlanOverrideCache } from "./src/server/pedRuntimeCache.js";
 import {
   createPedWithPrimaryAlias,
   updatePedRow,
@@ -30,7 +30,7 @@ import {
   deleteAliasRow,
 } from "./src/server/pedRepositoryLive.js";
 import type { Repositories } from "./src/server/db/repositories/index.js";
-import { dbRowToPlanConfig, toPlanRestrictions } from "./src/server/planConfigUtils.js";
+import { dbRowToPlanConfig, toPlanRestrictions, toPlanPedOverrides } from "./src/server/planConfigUtils.js";
 import {
   getGoogleAuthUrl,
   exchangeCodeForIdentity,
@@ -123,9 +123,9 @@ import {
   startOfDayIST,
   startOfMonthIST,
 } from "./src/server/knowledgeBase/productAssistQuota.js";
-import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES, GROUP_RESTRICTABLE_FEATURES } from "./src/constants/featurePermissions.js";
+import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES, GROUP_CONFIGURABLE_FEATURES, isFeatureGroupGrantableForTier } from "./src/constants/featurePermissions.js";
 import { ruleMatchesCaller, levelAllows, type ActionType as AccessActionType } from "./src/accessRuleEvaluator.js";
-import { evaluateAccess, getGroupAllowedFeatureIds } from "./src/server/accessControl/evaluateAccess.js";
+import { evaluateAccess, getGroupFeatureLevels } from "./src/server/accessControl/evaluateAccess.js";
 import { countCatalogDependencies, blocksDeletion, needsConfirmation, describeDependencies } from "./src/server/accessControl/catalogDependencies.js";
 import { describeUserAccessChanges } from "./src/server/accessControl/describeUserAccessChanges.js";
 
@@ -310,6 +310,34 @@ async function getDbSource(repos: Pick<Repositories, "pedAliases" | "pedReposito
   }
 }
 
+/**
+ * Admin plan-specific PED mappings (plan_overrides) — read fresh from the DB
+ * on every lookup and attached to `config.pedOverrides` (evaluated first by
+ * engine.ts's applyPlanPedOverride), so an edit in Plan Management reaches
+ * every user and every server instance on their very next lookup, with no
+ * restart and no stale in-process cache. Also returns a `dbSource` whose
+ * planOverrideLookup answers from these same fresh rows instead of the
+ * boot-time pedRuntimeCache map (which another instance's edit/delete would
+ * otherwise leave stale).
+ */
+async function attachPlanPedOverrides(
+  config: PlanConfig,
+  planName: string,
+  repos: Pick<Repositories, "planOverrides">,
+  dbSource: DbDictionarySource | null
+): Promise<DbDictionarySource | null> {
+  try {
+    const rows = await repos.planOverrides.listDetailed(planName);
+    config.pedOverrides = toPlanPedOverrides(rows);
+    if (!dbSource) return dbSource;
+    const byPedId = new Map(rows.map((r) => [r.pedId, { categoryKey: r.categoryKey ?? null, reason: r.reason ?? null }] as const));
+    return { ...dbSource, planOverrideLookup: (p: string, pedId: number) => (p === planName ? byPedId.get(pedId) ?? null : null) };
+  } catch (err) {
+    console.error("Failed to load plan-specific PED mappings (continuing with none):", err);
+    return dbSource;
+  }
+}
+
 // 1. API Route: Match PED to Policy questionnaire
 app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
@@ -327,7 +355,7 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       planRestrictions: planRestrictionsRepo,
     } = repos;
     await ensurePedOverridesLoaded(pedOverridesRepo);
-    const dbSource = await getDbSource(repos);
+    let dbSource = await getDbSource(repos);
 
     const PLAN_CONFIG = getPlanConfig();
     let config = PLAN_CONFIG[planName];
@@ -356,6 +384,7 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
       } catch (err) {
         console.error("Failed to load plan restrictions (continuing with none active):", err);
       }
+      dbSource = await attachPlanPedOverrides(config, planName, repos, dbSource);
     }
 
     // Server-side enforcement of the Declaration Assistant Control page's
@@ -2081,6 +2110,130 @@ app.post("/api/users", requireAuth, async (req, res) => {
   }
 });
 
+// Bulk pre-provision — at the user's explicit request: "pre-determine a
+// user's access and profile configuration before their first login...the
+// only individual input required should be User Email ID," with Product
+// Tag/Business Unit/Department/Role/Tier configured ONCE for the whole
+// batch. Unlike POST /api/users above, `name` and `tactId` are deliberately
+// left blank ("" — the `users` columns are NOT NULL, but an empty string is
+// a valid value, not a schema violation): the person themselves supplies
+// those two fields at first login. See POST /api/me/first-time-setup below
+// for the other half of this — completing one of these rows in place
+// instead of refusing "already set up".
+//
+// Every other row of the batch config (tier/tags/departmentId/orgTeamId/
+// roleId) is validated exactly like POST /api/users' own fields, since this
+// is really "POST /api/users, run once per email, with name/tactId
+// omitted" — same authorization (isAdminPower), same tier-grant ceiling, so
+// an Admin still can't mass-provision a batch of Developers.
+app.post("/api/users/bulk-provision", requireAuth, async (req, res) => {
+  try {
+    const { users: usersRepo, departments, orgTeams, roles, changeLogs } = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, usersRepo);
+    if (!isAdminPower(callerTier)) {
+      return res.status(403).json({ error: "Only Admin and Developer roles can add users to the directory." });
+    }
+
+    const { emails, tier, tags, departmentId, orgTeamId, roleId } = req.body;
+    if (!Array.isArray(emails) || emails.length === 0 || !emails.every((e: any) => typeof e === "string")) {
+      return res.status(400).json({ error: "emails must be a non-empty array of email addresses." });
+    }
+    const resolvedTags = tags === undefined ? [] : tags;
+    if (!isValidAdvisorTags(resolvedTags)) {
+      return res.status(400).json({ error: `tags, if present, must be an array containing only: ${ADVISOR_TAG_VALUES.join(", ")}.` });
+    }
+    if (tier !== "General" && tier !== "Admin" && tier !== "Platform Admin" && tier !== "Developer") {
+      return res.status(400).json({ error: "tier must be one of General, Admin, Platform Admin, or Developer." });
+    }
+    // Same tier-grant ceiling as POST /api/users above.
+    if (tier === "Developer" && callerTier !== "Developer") {
+      return res.status(403).json({ error: "Only the Developer role can grant Developer clearance." });
+    }
+    if (tier === "Platform Admin" && callerTier === "Admin") {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can grant Platform Admin clearance." });
+    }
+    // Business Unit is REQUIRED for a bulk batch (unlike POST /api/users,
+    // where it's optional for a single Admin-typed row) — this whole
+    // feature's stated purpose is pre-determining a batch's org placement.
+    // Department/Role are optional here (2026-09, at the user's explicit
+    // request — a "Not in the List" option lets a batch go out with those
+    // left unassigned, for when the right department/role doesn't exist yet;
+    // the person completing first-time setup can still be assigned one
+    // later from the Directory).
+    if (typeof orgTeamId !== "number" || !Number.isInteger(orgTeamId)) {
+      return res.status(400).json({ error: "orgTeamId is required." });
+    }
+    const hasDept = typeof departmentId === "number" && Number.isInteger(departmentId);
+    const hasRole = typeof roleId === "number" && Number.isInteger(roleId);
+    const [dept, team, role] = await Promise.all([
+      hasDept ? departments.get(departmentId) : Promise.resolve(null),
+      orgTeams.get(orgTeamId),
+      hasRole ? roles.get(roleId) : Promise.resolve(null),
+    ]);
+    if (hasDept && !dept) return res.status(400).json({ error: "That department doesn't exist." });
+    if (!team) return res.status(400).json({ error: "That business unit doesn't exist." });
+    if (hasRole && !role) return res.status(400).json({ error: "That role doesn't exist." });
+
+    // Normalize + dedupe the batch itself before touching the DB — a stray
+    // blank line or repeated paste in the email textarea shouldn't surface
+    // as a confusing per-row failure.
+    const seen = new Set<string>();
+    const normalizedEmails: string[] = [];
+    for (const raw of emails) {
+      const email = raw.trim().toLowerCase();
+      if (!email || !email.includes("@")) continue;
+      if (seen.has(email)) continue;
+      seen.add(email);
+      normalizedEmails.push(email);
+    }
+    if (normalizedEmails.length === 0) {
+      return res.status(400).json({ error: "No valid email addresses were provided." });
+    }
+
+    const created: Array<Awaited<ReturnType<typeof usersRepo.create>>> = [];
+    const skipped: { email: string; reason: string }[] = [];
+    for (const email of normalizedEmails) {
+      const existing = await usersRepo.findByEmail(email);
+      if (existing) {
+        skipped.push({ email, reason: "Already in the directory" });
+        continue;
+      }
+      const row = await usersRepo.create({
+        email,
+        name: "",
+        tactId: "",
+        tier,
+        status: "Active",
+        tags: resolvedTags,
+        departmentId: hasDept ? departmentId : null,
+        orgTeamId,
+        roleId: hasRole ? roleId : null,
+      });
+      created.push(row);
+    }
+
+    if (created.length > 0) {
+      try {
+        await changeLogs.create({
+          userName: req.user!.name,
+          role: callerTier,
+          actionType: "Users Bulk-Provisioned",
+          planName: null,
+          description: `Pre-provisioned ${created.length} ${created.length === 1 ? "user" : "users"} (${created.map((u) => u.email).join(", ")}) — tier ${tier}, business unit ${team.name}, department ${dept ? dept.name : "Not in the List"}, role ${role ? role.name : "Not in the List"}${resolvedTags.length ? `, tags ${resolvedTags.join("/")}` : ""}. Each completes their own name and TACT ID at first login.`,
+          snapshot: null,
+        });
+      } catch (logErr) {
+        console.error("Failed to write change log for bulk user provisioning:", logErr);
+      }
+    }
+
+    return res.json({ success: true, created, skipped });
+  } catch (err: any) {
+    console.error("Failed to bulk-provision users:", err);
+    return res.status(500).json({ error: `Failed to bulk-add users: ${err.message}` });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // AUDIT FEATURES — search history, change logs, announcements, flagged
 // issues. These four resources have had a complete Drizzle schema,
@@ -2145,12 +2298,12 @@ async function requireAdminOrDeveloper(req: any, res: any, action: string): Prom
 // requireFeatureAccess() (2026-09, Group Level Access) — but against the
 // narrower "group_management" featureId, never "profile_access". That's a
 // meaningfully different grant to hold: its only effect, end to end, is
-// restricting/unrestricting a General-tier member's own access to
-// GROUP_RESTRICTABLE_FEATURES (ordinary workspace tools) — there's no path
-// from holding it to granting oneself or anyone else the ability to grant
-// further access, so the self-escalation concern above doesn't apply to it.
-// See featurePermissions.ts's "group_management" entry for the full
-// reasoning.
+// raising a member's access to GROUP_CONFIGURABLE_FEATURES (ordinary
+// Advisor/Admin Zone workspace tools, excluding profile_access itself —
+// see that Set's own doc comment) — there's no path from holding it to
+// granting oneself or anyone else the ability to grant further access, so
+// the self-escalation concern above doesn't apply to it. See
+// featurePermissions.ts's "group_management" entry for the full reasoning.
 //
 // page-visibility's PUT route and the Product Assist quota admin routes
 // (requireQuotaAdmin) WERE also on this list, alongside "feature-access"
@@ -2194,6 +2347,49 @@ async function requireFeatureAccess(
     return false;
   }
   return true;
+}
+
+/**
+ * Ownership-aware authorization for the Groups tab's WRITE routes on a
+ * SPECIFIC group (2026-09h, at the user's explicit request: "A group owner
+ * must be able to view and modify their own group, including its members
+ * and access configuration, through the existing Group Management access"
+ * / "Group owners must not be able to modify other owners' groups unless
+ * they have separately authorized access" / "Preserve the existing
+ * Platform Admin/Developer privileges" / "Enforce ownership checks on both
+ * frontend and backend, including direct API requests").
+ *
+ * Passes when EITHER:
+ *   1. The caller already holds blanket group_management Editor —
+ *      unchanged from before: Platform Admin/Developer always (tier
+ *      default), or anyone else holding an explicit Custom Grant/Access
+ *      Rule for group_management Editor. This is the "separately
+ *      authorized access" the user's second bullet carves out — it can
+ *      still edit EVERY group, not just ones it owns.
+ *   2. The caller holds at least group_management Viewer (so they can
+ *      already see the Groups tab and its group list at all — unchanged
+ *      gate, see the GET routes above) AND is a mapped OWNER of THIS
+ *      specific groupId (userRelationships.isOwnerOfGroup) — the new
+ *      ownership carve-out. This deliberately does NOT extend to a caller
+ *      with no group_management access at all (e.g. an unconfigured
+ *      General-tier user who happens to have an owner row): they'd have no
+ *      way to even reach the Groups tab in the first place, and this
+ *      function doesn't widen that separately-gated visibility boundary —
+ *      only who can WRITE once they're already looking at it.
+ *
+ * A caller who is an owner of some OTHER group, but not `groupId`, falls
+ * through to the 403 below exactly like a non-owner would — ownership
+ * never generalizes across groups.
+ */
+async function requireGroupAccessEditor(req: any, res: any, groupId: number, action: string): Promise<boolean> {
+  const { level } = await evaluateAccess(getDb(), req.user?.email, "group_management");
+  if (levelAllows(level, "Editor")) return true;
+  if (levelAllows(level, "Viewer") && req.user?.email) {
+    const { userRelationships } = createRepositories(getDb());
+    if (await userRelationships.isOwnerOfGroup(groupId, req.user.email)) return true;
+  }
+  res.status(403).json({ error: `${action} requires access to this feature, or ownership of this group.` });
+  return false;
 }
 
 // --- Search History (powers the Audit tab's full list and My Activity's self-filtered view) ---
@@ -3602,9 +3798,10 @@ app.patch("/api/access-rules/:id", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Access rule not found." });
     }
 
-    const { name, active, orgTeamId, departmentId, roleId, productTag, grantedLevel } = req.body;
+    const { name, resourceKey, active, orgTeamId, departmentId, roleId, productTag, grantedLevel } = req.body;
     const patch: {
       name?: string;
+      resourceKey?: string;
       active?: boolean;
       orgTeamId?: number | null;
       departmentId?: number | null;
@@ -3617,6 +3814,20 @@ app.patch("/api/access-rules/:id", requireAuth, async (req, res) => {
         return res.status(400).json({ error: "name cannot be empty." });
       }
       patch.name = name.trim();
+    }
+    // Was silently dropped before this fix — the edit UI lets an admin
+    // change which feature a rule applies to (see AccessRulesManagement.tsx's
+    // edit-row Resource picker), but this route never read resourceKey out
+    // of req.body, so the save appeared to succeed while the rule quietly
+    // kept its original resource after reload.
+    if (resourceKey !== undefined) {
+      if (typeof resourceKey !== "string" || !resourceKey.trim()) {
+        return res.status(400).json({ error: "resourceKey cannot be empty." });
+      }
+      if (!DEFAULT_FEATURE_PERMISSIONS.some((p) => p.id === resourceKey)) {
+        return res.status(400).json({ error: "resourceKey must be a known feature id." });
+      }
+      patch.resourceKey = resourceKey.trim();
     }
     if (active !== undefined) {
       if (typeof active !== "boolean") {
@@ -3641,6 +3852,9 @@ app.patch("/api/access-rules/:id", requireAuth, async (req, res) => {
     try {
       const changeSummary = [
         patch.name !== undefined && patch.name !== existing.name ? `renamed to "${patch.name}"` : null,
+        patch.resourceKey !== undefined && patch.resourceKey !== existing.resourceKey
+          ? `resource changed to "${DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === patch.resourceKey)?.name || patch.resourceKey}"`
+          : null,
         patch.active !== undefined && patch.active !== existing.active ? (patch.active ? "reactivated" : "deactivated") : null,
         patch.grantedLevel !== undefined && patch.grantedLevel !== existing.grantedLevel ? `level changed to ${patch.grantedLevel}` : null,
         (patch.orgTeamId !== undefined || patch.departmentId !== undefined || patch.roleId !== undefined || patch.productTag !== undefined) ? "conditions updated" : null,
@@ -3685,31 +3899,18 @@ app.post("/api/relationship-groups", requireAuth, async (req, res) => {
     const { users: usersRepo, relationshipGroups, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
     if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Creating relationship groups"))) return;
-    const { name, description, departmentId, groupTier } = req.body;
+    const { name, description, departmentId } = req.body;
     if (typeof name !== "string" || !name.trim()) {
       return res.status(400).json({ error: "name is required." });
     }
     if (departmentId !== undefined && departmentId !== null && !Number.isInteger(departmentId)) {
       return res.status(400).json({ error: "departmentId must be an integer or null." });
     }
-    // Group Tier (2026-09, migration 0082) — which tier of MEMBER this
-    // group's usedForGroupAccess ceiling will restrict; see schema.ts's
-    // comment on relationshipGroups.groupTier. Independent of the CALLER's
-    // own tier/permissions — no additional privilege check beyond the
-    // group_management Editor gate already required above: this column
-    // only ever narrows/widens which tier a RESTRICTION applies to, it
-    // grants nothing beyond GROUP_RESTRICTABLE_FEATURES (see
-    // featurePermissions.ts's group_management comment), so the existing
-    // authorization boundary for managing Group Level Access is unchanged.
-    if (groupTier !== undefined && groupTier !== "General" && groupTier !== "Admin" && groupTier !== "Platform Admin") {
-      return res.status(400).json({ error: 'groupTier must be "General", "Admin", or "Platform Admin".' });
-    }
     const row = await relationshipGroups.create({
       name: name.trim(),
       description: typeof description === "string" ? description.trim() || null : null,
       departmentId: departmentId ?? null,
       createdBy: `${req.user!.name} (${callerTier})`,
-      ...(groupTier !== undefined ? { groupTier } : {}),
     });
 
     try {
@@ -3739,24 +3940,27 @@ app.patch("/api/relationship-groups/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, relationshipGroups, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Editing relationship groups"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "Invalid relationship group id." });
     }
+    // Ownership-aware (2026-09h) — a group's own owner can edit it (rename,
+    // toggle active, change its Group Access grants' department scope)
+    // without needing blanket group_management Editor. See
+    // requireGroupAccessEditor's own doc comment.
+    if (!(await requireGroupAccessEditor(req, res, id, "Editing relationship groups"))) return;
     const existing = await relationshipGroups.get(id);
     if (!existing) {
       return res.status(404).json({ error: "Relationship group not found." });
     }
 
-    const { name, description, active, departmentId, usedForGroupAccess, groupTier } = req.body;
+    const { name, description, active, departmentId, usedForGroupAccess } = req.body;
     const patch: {
       name?: string;
       description?: string | null;
       active?: boolean;
       departmentId?: number | null;
       usedForGroupAccess?: boolean;
-      groupTier?: "General" | "Admin" | "Platform Admin";
     } = {};
     if (name !== undefined) {
       if (typeof name !== "string" || !name.trim()) {
@@ -3789,16 +3993,6 @@ app.patch("/api/relationship-groups/:id", requireAuth, async (req, res) => {
       }
       patch.usedForGroupAccess = usedForGroupAccess;
     }
-    // Group Tier (2026-09, migration 0082) — see the matching validation/
-    // comment on the POST route above; same "no additional privilege check"
-    // reasoning applies here (this is an edit to an already-created group,
-    // still gated only by the group_management Editor check above).
-    if (groupTier !== undefined) {
-      if (groupTier !== "General" && groupTier !== "Admin" && groupTier !== "Platform Admin") {
-        return res.status(400).json({ error: 'groupTier must be "General", "Admin", or "Platform Admin".' });
-      }
-      patch.groupTier = groupTier;
-    }
 
     const row = await relationshipGroups.update(id, patch);
 
@@ -3809,9 +4003,8 @@ app.patch("/api/relationship-groups/:id", requireAuth, async (req, res) => {
         patch.description !== undefined ? "description updated" : null,
         patch.departmentId !== undefined && patch.departmentId !== existing.departmentId ? (patch.departmentId === null ? "unlinked from its department" : "department link updated") : null,
         patch.usedForGroupAccess !== undefined && patch.usedForGroupAccess !== existing.usedForGroupAccess
-          ? (patch.usedForGroupAccess ? "enabled for Group Access restriction" : "disabled for Group Access restriction")
+          ? (patch.usedForGroupAccess ? "enabled for Group Access" : "disabled for Group Access")
           : null,
-        patch.groupTier !== undefined && patch.groupTier !== existing.groupTier ? `Group Tier set to "${patch.groupTier}"` : null,
       ].filter(Boolean).join(", ");
       await changeLogs.create({
         userName: req.user!.name,
@@ -3847,7 +4040,14 @@ app.delete("/api/relationship-groups/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, relationshipGroups, userRelationships, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Deleting relationship groups"))) return;
+    // Hardcoded Developer/Platform Admin-only (at the user's explicit
+    // request) — deliberately NOT requireFeatureAccess("group_management",
+    // "Editor", ...) like the other group routes, so an Admin-tier Custom
+    // Grant on group_management can never unlock permanent deletion, only
+    // the real account tier can.
+    if (!isDeveloperPower(callerTier)) {
+      return res.status(403).json({ error: "Only the Developer or Platform Admin role can delete relationship groups." });
+    }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "Invalid relationship group id." });
@@ -3904,7 +4104,6 @@ app.post("/api/user-relationships", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, relationshipGroups, userRelationships, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Creating user relationships"))) return;
     const { ownerEmail, subjectEmail, relationshipGroupId } = req.body;
     if (typeof ownerEmail !== "string" || !ownerEmail.trim() || typeof subjectEmail !== "string" || !subjectEmail.trim()) {
       return res.status(400).json({ error: "ownerEmail and subjectEmail are required." });
@@ -3915,6 +4114,11 @@ app.post("/api/user-relationships", requireAuth, async (req, res) => {
     if (typeof relationshipGroupId !== "number" || !Number.isInteger(relationshipGroupId)) {
       return res.status(400).json({ error: "relationshipGroupId is required." });
     }
+    // Ownership-aware (2026-09h) — see requireGroupAccessEditor's doc
+    // comment. Checked against the GROUP being added to, not `ownerEmail`
+    // in the body (the roster's owner picker can name anyone in the pool,
+    // not just the caller).
+    if (!(await requireGroupAccessEditor(req, res, relationshipGroupId, "Creating user relationships"))) return;
     const [owner, subject, relGroup] = await Promise.all([
       usersRepo.findByEmail(ownerEmail.trim().toLowerCase()),
       usersRepo.findByEmail(subjectEmail.trim().toLowerCase()),
@@ -3958,11 +4162,21 @@ app.delete("/api/user-relationships/:id", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, userRelationships, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Removing user relationships"))) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) {
       return res.status(400).json({ error: "Invalid relationship id." });
     }
+    // Ownership-aware (2026-09h) — must look up the mapping's own group
+    // FIRST (its id alone doesn't say which group it's in), then check
+    // ownership of THAT group. A caller who isn't authorized (and the
+    // mapping doesn't even exist) still gets the ownership-based 403 below
+    // rather than a 404, same as every other route here that checks auth
+    // before existence.
+    const existingRelationship = await userRelationships.get(id);
+    if (!existingRelationship) {
+      return res.status(404).json({ error: "Relationship not found." });
+    }
+    if (!(await requireGroupAccessEditor(req, res, existingRelationship.relationshipGroupId, "Removing user relationships"))) return;
     await userRelationships.delete(id);
 
     try {
@@ -3995,9 +4209,11 @@ app.post("/api/relationship-groups/:groupId/reassign-owner", requireAuth, async 
   try {
     const { users: usersRepo, relationshipGroups, userRelationships, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Reassigning a group's roster owner"))) return;
     const groupId = Number(req.params.groupId);
     if (!Number.isInteger(groupId)) return res.status(400).json({ error: "A valid groupId is required." });
+    // Ownership-aware (2026-09h) — see requireGroupAccessEditor's doc
+    // comment.
+    if (!(await requireGroupAccessEditor(req, res, groupId, "Reassigning a group's roster owner"))) return;
     const group = await relationshipGroups.get(groupId);
     if (!group) return res.status(404).json({ error: "Group not found." });
 
@@ -4047,15 +4263,18 @@ app.post("/api/relationship-groups/:groupId/reassign-owner", requireAuth, async 
 // Access" before that — same mechanism throughout, generalized beyond the
 // Training Department's original trainer/trainee use case, now folded into
 // the same screen as group/roster management — see GroupsManagement.tsx).
-// A group is returned here once it's been admin-flagged
-// usedForGroupAccess=true (see schema.ts's comment on that column — toggled
-// per relationship group from the same tab, not matched by name); its
-// members are whoever that group's user_relationships rows' subjectEmail
-// point at, and may be empty (a group can have its tools pre-configured
-// before anyone's mapped to it). See schema.ts's group_tool_access comment
-// and evaluateAccess.ts's getGroupAllowedFeatureIds for the full enforcement
-// story — this section only manages the admin-facing grant list, it
-// doesn't itself gate anything.
+// REDESIGNED 2026-09d, at the user's explicit request, from a fail-closed
+// hard ceiling into a plain additive, raise-only (featureId, level) grant
+// list — see schema.ts's doc comment on `group_tool_access` and
+// accessRuleEvaluator.ts's resolveAccess() for the full model. A group is
+// returned here once it's been admin-flagged usedForGroupAccess=true (see
+// schema.ts's comment on that column — toggled per relationship group from
+// the same tab, not matched by name); its members are whoever that group's
+// user_relationships rows' subjectEmail point at, and may be empty (a group
+// can have its grants pre-configured before anyone's mapped to it). See
+// evaluateAccess.ts's getGroupFeatureLevels for the full enforcement story
+// — this section only manages the admin-facing grant list, it doesn't
+// itself gate anything.
 //
 // PERMISSIONS ARE GROUP-LEVEL, NOT OWNER-LEVEL (migration 0081, 2026-09):
 // keyed by relationshipGroupId throughout, never by ownerEmail. The "owner"
@@ -4075,6 +4294,7 @@ app.get("/api/group-access/groups", requireAuth, async (req, res) => {
       groupToolAccess.listForGroups(flaggedIds),
     ]);
     const nameByEmail = new Map(allUsers.map((u) => [u.email.toLowerCase(), u.name]));
+    const tierByEmail = new Map(allUsers.map((u) => [u.email.toLowerCase(), u.tier]));
     const relsByGroupId = new Map<number, typeof allRelationships>();
     for (const r of allRelationships) {
       if (!flagged.some((g) => g.id === r.relationshipGroupId)) continue;
@@ -4091,13 +4311,20 @@ app.get("/api/group-access/groups", requireAuth, async (req, res) => {
           groupId: g.id,
           groupName: g.name,
           owners: ownerEmails.map((email) => ({ email, name: nameByEmail.get(email) || email })),
-          members: memberEmails.map((email) => ({ email, name: nameByEmail.get(email) || email })),
-          allowedFeatureIds: allGrants.filter((grant) => grant.relationshipGroupId === g.id).map((grant) => grant.featureId),
+          // Each member's own tier is included so the UI can show, per
+          // member, which of the group's grants actually apply to them
+          // (isFeatureGroupGrantableForTier() — a group can hold mixed
+          // tiers, and an Admin Zone grant has zero effect on a
+          // General-tier member of the same group).
+          members: memberEmails.map((email) => ({ email, name: nameByEmail.get(email) || email, tier: tierByEmail.get(email) || "General" })),
+          grants: allGrants
+            .filter((grant) => grant.relationshipGroupId === g.id)
+            .map((grant) => ({ featureId: grant.featureId, level: grant.level })),
         };
       });
     // Every flagged group is returned, even with zero members — the Groups
-    // tab shows roster and tool access side by side for whichever group is
-    // selected, so an admin can pre-configure a group's tools before its
+    // tab shows roster and grant list side by side for whichever group is
+    // selected, so an admin can pre-configure a group's grants before its
     // first member is mapped, not just after.
     entries.sort((a, b) => a.groupName.localeCompare(b.groupName));
     // relationshipGroups returned too, so the tab can render its "which
@@ -4113,26 +4340,38 @@ app.put("/api/group-access/:groupId", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, relationshipGroups, groupToolAccess, changeLogs } = createRepositories(getDb());
     const callerTier = await getCallerTier(req, usersRepo);
-    if (!(await requireFeatureAccess(req, res, "group_management", "Editor", "Changing a group's tool access"))) return;
     const groupId = Number(req.params.groupId);
     if (!Number.isInteger(groupId)) return res.status(400).json({ error: "A valid groupId is required." });
+    // Ownership-aware (2026-09h) — a group's own owner can configure its
+    // Access Control (Group Access) grants without needing blanket
+    // group_management Editor. See requireGroupAccessEditor's doc comment.
+    if (!(await requireGroupAccessEditor(req, res, groupId, "Changing a group's tool access"))) return;
 
     const group = await relationshipGroups.get(groupId);
     if (!group) return res.status(404).json({ error: "Group not found." });
-    if (!group.usedForGroupAccess) {
-      return res.status(400).json({ error: "This group isn't enabled for group access yet — enable it at the top of this tab first." });
-    }
 
-    const { featureIds } = req.body;
-    if (!Array.isArray(featureIds) || !featureIds.every((f) => typeof f === "string")) {
-      return res.status(400).json({ error: "featureIds must be an array of strings." });
+    // Redesigned 2026-09d: a plain array of (featureId, level) grants,
+    // replacing the old flat `featureIds: string[]` ceiling — see
+    // schema.ts's group_tool_access comment for the full model.
+    const { grants: submittedGrants } = req.body;
+    if (
+      !Array.isArray(submittedGrants) ||
+      !submittedGrants.every(
+        (g) => g && typeof g.featureId === "string" && (g.level === "Viewer" || g.level === "Editor")
+      )
+    ) {
+      return res.status(400).json({ error: 'grants must be an array of { featureId: string, level: "Viewer" | "Editor" }.' });
     }
-    const invalid = featureIds.filter((f) => !GROUP_RESTRICTABLE_FEATURES.has(f));
+    const invalid = submittedGrants.filter((g) => !GROUP_CONFIGURABLE_FEATURES.has(g.featureId));
     if (invalid.length > 0) {
-      return res.status(400).json({ error: `Not a group-restrictable tool: ${invalid.join(", ")}.` });
+      return res.status(400).json({ error: `Not a group-configurable feature: ${invalid.map((g) => g.featureId).join(", ")}.` });
     }
 
-    await groupToolAccess.replaceForGroup(groupId, featureIds, `${req.user!.name} (${callerTier})`);
+    await groupToolAccess.replaceForGroup(
+      groupId,
+      submittedGrants.map((g) => ({ featureId: g.featureId, level: g.level as "Viewer" | "Editor" })),
+      `${req.user!.name} (${callerTier})`
+    );
 
     try {
       await changeLogs.create({
@@ -4140,35 +4379,63 @@ app.put("/api/group-access/:groupId", requireAuth, async (req, res) => {
         role: callerTier,
         actionType: "Group Tool Access Updated",
         planName: null,
-        description: `Set "${group.name}"'s tools to: ${featureIds.length ? featureIds.join(", ") : "(none)"}.`,
+        description: `Set "${group.name}"'s access grants to: ${submittedGrants.length ? submittedGrants.map((g) => `${g.featureId} (${g.level})`).join(", ") : "(none)"}.`,
         snapshot: null,
       });
     } catch (logErr) {
       console.error("Failed to write change log for group tool access update:", logErr);
     }
 
-    return res.json({ success: true, featureIds });
+    return res.json({ success: true, grants: submittedGrants });
   } catch (err: any) {
     console.error("Failed to update group tool access:", err);
     return res.status(500).json({ error: `Failed to save this group's tool access: ${err.message}` });
   }
 });
 
-// The signed-in caller's OWN Group Access Restriction — deliberately
+// The signed-in caller's OWN Group Access grants — deliberately
 // requireAuth-only (every signed-in user needs to resolve their own
 // effective access), same posture/reasoning as GET /api/my-access-grants
-// and GET /api/my-access-rules above. `allowedFeatureIds: null` means "not
-// a restricted group member, not restricted at all" — see
-// getGroupAllowedFeatureIds's own doc comment.
+// and GET /api/my-access-rules above. `featureLevels: null` means "belongs
+// to no active, access-configured group at all" — see
+// getGroupFeatureLevels's own doc comment. Note this map is NOT yet
+// filtered to features this caller's own tier can use (isFeatureGroup
+// GrantableForTier is applied by resolveAccess() itself when it reads a
+// single key back out) — the client's own hasAccess() re-applies that same
+// check, mirroring the server.
 app.get("/api/my-group-access", requireAuth, async (req, res) => {
   try {
     const repos = createRepositories(getDb());
-    const callerTier = await getCallerTier(req, repos.users);
-    const allowedFeatureIds = await getGroupAllowedFeatureIds(repos, req.user!.email, callerTier);
-    return res.json({ allowedFeatureIds });
+    const featureLevels = await getGroupFeatureLevels(repos, req.user!.email);
+    return res.json({ featureLevels });
   } catch (err: any) {
     console.error("Failed to load caller's group access:", err);
     return res.status(500).json({ error: `Failed to load your group access: ${err.message}` });
+  }
+});
+
+// Same lookup as GET /api/my-group-access above, but for an ARBITRARY
+// user — added for EffectiveAccessModal.tsx's admin diagnostic view (2026-
+// 09f), which previously omitted Group Access's contribution entirely since
+// no route existed to fetch anyone else's group grants. Admin+Developer-
+// only (same posture as GET /api/custom-access-grants and GET
+// /api/access-rules, which that same modal already fetches) — a General or
+// Admin-tier caller has no legitimate need to see another person's group
+// grants, only their own (the self-only route above covers that). Returns
+// the same raw union getGroupFeatureLevels() always returns; it's
+// resolveAccess() on the client side (called with this map as
+// groupFeatureLevels) that turns an absent key into a restriction for the
+// target user's own tier — this route doesn't know or care what tier the
+// target is.
+app.get("/api/group-access/effective/:email", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireAdminOrDeveloper(req, res, "Viewing another user's effective group access"))) return;
+    const repos = createRepositories(getDb());
+    const featureLevels = await getGroupFeatureLevels(repos, req.params.email);
+    return res.json({ featureLevels });
+  } catch (err: any) {
+    console.error("Failed to load target user's group access:", err);
+    return res.status(500).json({ error: `Failed to load this user's group access: ${err.message}` });
   }
 });
 
@@ -5172,9 +5439,10 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     } catch (err) {
       console.error("Failed to load plan restrictions for smoke test (continuing with none active):", err);
     }
+    const smokeDbSource = await attachPlanPedOverrides(config, planName, smokeTestRepos, dbSource);
 
     const results = peds.map((ped: string) => {
-      let output = classifyDeterministic(ped, planName, config, dbSource);
+      let output = classifyDeterministic(ped, planName, config, smokeDbSource);
       if (!output) {
         return { ped, resolved: false as const };
       }
@@ -5400,6 +5668,11 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
       } catch (err) {
         console.error("Failed to carry plan restrictions over to the renamed plan:", err);
       }
+      try {
+        await createRepositories(getDb()).planOverrides.renamePlan(planName, newPlanName);
+      } catch (err) {
+        console.error("Failed to carry plan-specific PED mappings over to the renamed plan:", err);
+      }
     }
     return res.json({ entry: row });
   } catch (err: any) {
@@ -5610,6 +5883,161 @@ app.delete("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to delete plan restriction:", err);
     return res.status(500).json({ error: `Failed to delete this restriction: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Plan-Specific PED Mappings — admin-authored `plan_overrides` rows that pin
+// one PED to an exact question on one plan (e.g. Obstructive Sleep Apnea →
+// Optima Secure's "Sleep disorder" question while every other plan keeps
+// routing it by its Respiratory category). Evaluated FIRST by engine.ts's
+// applyPlanPedOverride, ahead of every category mapping. Writes take effect
+// for every user on their next lookup: /api/match re-reads these rows per
+// request (attachPlanPedOverrides) and the client fast path re-fetches
+// GET /api/plan-ped-overrides before each lookup.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Every override across every plan, in the engine's shape — readable by
+// every signed-in user (same reasoning as GET /api/plan-restrictions: the
+// client-side deterministic path must classify identically to /api/match).
+app.get("/api/plan-ped-overrides", requireAuth, async (req, res) => {
+  try {
+    const { planOverrides } = createRepositories(getDb());
+    const rows = await planOverrides.listDetailed();
+    const overridesByPlan: Record<string, ReturnType<typeof toPlanPedOverrides>> = {};
+    for (const row of rows) {
+      overridesByPlan[row.planName] = overridesByPlan[row.planName] || [];
+      overridesByPlan[row.planName].push(...toPlanPedOverrides([row]));
+    }
+    return res.json({ overridesByPlan });
+  } catch (err: any) {
+    console.error("Failed to list plan-specific PED mappings:", err);
+    return res.status(500).json({ error: `Failed to load plan-specific PED mappings: ${err.message}` });
+  }
+});
+
+app.get("/api/plan-ped-overrides/:planName", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Viewer", "Viewing Plan-Specific PED Mappings"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+    const { planOverrides } = createRepositories(getDb());
+    const entries = await planOverrides.listDetailed(planName);
+    entries.sort((a, b) => a.pedName.localeCompare(b.pedName));
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list plan-specific PED mappings for plan:", err);
+    return res.status(500).json({ error: `Failed to load PED mappings for this plan: ${err.message}` });
+  }
+});
+
+// PED picker for the editor — matches aliases/abbreviations too ("osa").
+app.get("/api/plan-ped-overrides-ped-search", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Viewer", "Searching PEDs for a Plan-Specific PED Mapping"))) return;
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 2) return res.json({ entries: [] });
+    const { pedRepository: pedRepositoryRepo } = createRepositories(getDb());
+    const rows = await pedRepositoryRepo.searchByNameOrAlias(q);
+    return res.json({ entries: rows.map((r) => ({ id: r.id, pedCode: r.pedCode, canonicalName: r.canonicalName, categoryKey: r.categoryKey, status: r.status })) });
+  } catch (err: any) {
+    console.error("Failed to search PEDs for plan mapping:", err);
+    return res.status(500).json({ error: `Failed to search PEDs: ${err.message}` });
+  }
+});
+
+/** The plan's live question list (DB row first, hardcoded seed otherwise) —
+ * same resolution order as /api/match, used to reject a target question
+ * that doesn't exist on the plan. */
+async function resolvePlanQuestionsForOverride(planName: string): Promise<string[] | null> {
+  const { planConfigs } = createRepositories(getDb());
+  const dbPlan = await planConfigs.get(planName);
+  const config = dbPlan ? dbRowToPlanConfig(dbPlan) : getPlanConfig()[planName];
+  if (!config) return null;
+  return Array.from(new Set([...(config.questions || []), config.anyOther].filter(Boolean)));
+}
+
+app.put("/api/plan-ped-overrides/:planName/:pedId", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Saving a Plan-Specific PED Mapping"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+    const pedId = Number(req.params.pedId);
+    if (!Number.isInteger(pedId)) return res.status(400).json({ error: "Invalid PED id." });
+    const targetQuestion = typeof req.body?.targetQuestion === "string" ? req.body.targetQuestion.trim() : "";
+    const reason = typeof req.body?.reason === "string" && req.body.reason.trim() ? req.body.reason.trim() : null;
+    if (!targetQuestion) return res.status(400).json({ error: "targetQuestion is required." });
+
+    const planQuestions = await resolvePlanQuestionsForOverride(planName);
+    if (!planQuestions) return res.status(404).json({ error: `Plan '${planName}' not found.` });
+    const exactQuestion = planQuestions.find((q) => q.trim() === targetQuestion);
+    if (!exactQuestion) return res.status(400).json({ error: "That question doesn't exist on this plan." });
+
+    const repos = createRepositories(getDb());
+    const ped = await repos.pedRepository.get(pedId);
+    if (!ped) return res.status(404).json({ error: "PED not found." });
+
+    const callerTier = await getCallerTier(req, repos.users);
+    const existing = await repos.planOverrides.get(planName, pedId);
+    const row = await repos.planOverrides.upsert({
+      planName,
+      pedId,
+      categoryKey: null,
+      targetQuestion: exactQuestion,
+      reason,
+      addedBy: `${req.user!.name} (${callerTier})`,
+    });
+    updateDbPlanOverrideCache(planName, pedId, null, reason);
+
+    try {
+      await repos.changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: existing ? "Plan PED Mapping Edited" : "Plan PED Mapping Created",
+        planName,
+        description: `Mapped "${ped.canonicalName}" (${ped.pedCode}) to "${exactQuestion}" on ${planName}${existing ? " (replacing the previous plan-specific mapping)" : ""}.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for plan PED mapping:", logErr);
+    }
+
+    return res.json({ entry: row });
+  } catch (err: any) {
+    console.error("Failed to save plan-specific PED mapping:", err);
+    return res.status(500).json({ error: `Failed to save this mapping: ${err.message}` });
+  }
+});
+
+app.delete("/api/plan-ped-overrides/:planName/:pedId", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Deleting a Plan-Specific PED Mapping"))) return;
+    const planName = decodeURIComponent(req.params.planName);
+    const pedId = Number(req.params.pedId);
+    if (!Number.isInteger(pedId)) return res.status(400).json({ error: "Invalid PED id." });
+    const repos = createRepositories(getDb());
+    const existing = await repos.planOverrides.get(planName, pedId);
+    if (!existing) return res.status(404).json({ error: "Mapping not found." });
+    await repos.planOverrides.delete(planName, pedId);
+    removeDbPlanOverrideCache(planName, pedId);
+
+    try {
+      const callerTier = await getCallerTier(req, repos.users);
+      const ped = await repos.pedRepository.get(pedId);
+      await repos.changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Plan PED Mapping Deleted",
+        planName,
+        description: `Removed the plan-specific mapping for "${ped?.canonicalName ?? `PED #${pedId}`}" on ${planName} — it now follows its normal category mapping.`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for plan PED mapping deletion:", logErr);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Failed to delete plan-specific PED mapping:", err);
+    return res.status(500).json({ error: `Failed to delete this mapping: ${err.message}` });
   }
 });
 
@@ -6015,21 +6443,49 @@ app.post("/api/me/first-time-setup", requireAuth, async (req, res) => {
 
     const email = req.user!.email.toLowerCase();
     const existing = await usersRepo.findByEmail(email);
-    if (existing) {
+    // A row with a blank TACT ID is a pre-provisioned account (see POST
+    // /api/users/bulk-provision above) — its Business Unit/Department/Role/
+    // Tier/Product Tag were already decided by whoever bulk-added it, and
+    // this request is that same person completing it with just their own
+    // name + TACT ID, not creating a brand-new row. A row that already has
+    // a TACT ID is genuinely already set up, and still 409s exactly as
+    // before.
+    if (existing && existing.tactId) {
       return res.status(409).json({ error: "This account is already set up. Please refresh and sign in again." });
     }
 
-    const newUser = await usersRepo.create({
-      email,
-      name: name.trim(),
-      tactId: normalizedTactId,
-      tier: "General",
-      status: "Active",
-      tags: resolvedTags,
-      departmentId,
-      orgTeamId,
-      roleId,
-    });
+    const newUser = existing
+      ? await usersRepo.updateUser(email, {
+          name: name.trim(),
+          tactId: normalizedTactId,
+          tags: resolvedTags,
+          departmentId,
+          orgTeamId,
+          roleId,
+          // Deliberately NOT touching `tier` — a pre-provisioned row's tier
+          // was set by whoever bulk-added it (Admin/Developer); this
+          // self-service completion must never let someone grant/change
+          // their own tier, same boundary the brand-new-row path below
+          // enforces by always hardcoding "General".
+        })
+      : await usersRepo.create({
+          email,
+          name: name.trim(),
+          tactId: normalizedTactId,
+          tier: "General",
+          status: "Active",
+          tags: resolvedTags,
+          departmentId,
+          orgTeamId,
+          roleId,
+        });
+    // Only reachable if the pre-provisioned row was deleted between the
+    // findByEmail check above and this update — vanishingly unlikely, but
+    // updateUser()'s return type is UserRow | undefined, so this keeps the
+    // response honest instead of silently sending `user: undefined`.
+    if (!newUser) {
+      return res.status(404).json({ error: "Your pre-provisioned account could not be found. Please contact an admin." });
+    }
     return res.json({ user: newUser });
   } catch (err: any) {
     // Surface the underlying cause instead of a generic string. Every other

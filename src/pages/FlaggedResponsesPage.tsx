@@ -34,7 +34,7 @@ interface FlaggedResponsesPageProps {
  * "Flagged Responses" tab content — table view (Phase: Flag button revamp).
  * The `activeTab === "flagged_responses"` condition and wrapping
  * `<motion.div key="flagged_responses">` deliberately stay in App.tsx (see
- * ResourcesPage.tsx for why).
+ * the AnimatePresence block in App.tsx for why).
  */
 export function FlaggedResponsesPage({
   theme,

@@ -18,6 +18,9 @@ export interface MatchOutput {
   supporting_flags?: SupportingFlags;
   secondary_recommendation?: string[];
   confused_questions?: string[];
+  /** Set when an admin plan-specific PED mapping decided the question, so
+   * later post-guards never re-route it. */
+  plan_override?: boolean;
 }
 
 export interface PlanOverrides {
@@ -38,6 +41,23 @@ export interface PlanRestriction {
   isActive: boolean;
 }
 
+/** One admin-authored plan-specific PED mapping (`plan_overrides` row) in
+ * the shape the engine evaluates on both the server (/api/match) and the
+ * client fast path (App.tsx executeLookupAll). Takes precedence over every
+ * category mapping — see engine.ts's applyPlanPedOverride. */
+export interface PlanPedOverride {
+  pedId: number;
+  pedName: string;
+  /** normalizeDictionaryKey()'d aliases (canonical name included) that
+   * identify this PED in advisor input. */
+  aliases: string[];
+  /** Exact plan question to use. Wins over categoryKey when it still
+   * exists on the plan. */
+  targetQuestion: string | null;
+  categoryKey: string | null;
+  reason: string | null;
+}
+
 export interface PlanConfig {
   questions: string[];
   anyOther: string;
@@ -50,6 +70,7 @@ export interface PlanConfig {
    * longer reads it. See scripts/migratePlanRestrictions.ts. */
   overrides?: PlanOverrides;
   restrictions?: PlanRestriction[];
+  pedOverrides?: PlanPedOverride[];
 }
 
 export const TOP_PED_DICTIONARY: Record<string, string> = {

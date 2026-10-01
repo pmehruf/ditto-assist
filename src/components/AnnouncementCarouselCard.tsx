@@ -36,8 +36,8 @@ interface AnnouncementCarouselCardProps {
 /**
  * Horizontal QA/General Announcement carousel card — originally lived on the
  * Declarations page next to the PED mapping form. Not currently rendered
- * anywhere: the Declarations page now shows InstructionManualPanel in that
- * slot instead, and the Home dashboard has its own, smaller Home-native
+ * anywhere: the Declarations page now shows a Declaration Guide section in
+ * that area instead, and the Home dashboard has its own, smaller Home-native
  * carousel (HomeAnnouncementCard.tsx) rather than this component, which was
  * designed for a tall standalone sidebar column. Kept (not deleted) as a
  * reusable, still-functional component in case a future page wants this

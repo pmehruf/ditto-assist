@@ -135,12 +135,8 @@ export function SpecificIllnessCheckPage({ theme, dynamicSuggestions, dbPlanConf
   const suggestions = useMemo(() => {
     const query = pedInput.trim();
     if (!query || !dropdownOpen) return [];
-    return buildGroupedSuggestions(dynamicSuggestions, query, [])
-      .sort((a, b) => {
-        if (a.insertValue.length !== b.insertValue.length) return a.insertValue.length - b.insertValue.length;
-        return a.insertValue.localeCompare(b.insertValue);
-      })
-      .slice(0, 6);
+    // Already ranked best-first by buildGroupedSuggestions; just cap it.
+    return buildGroupedSuggestions(dynamicSuggestions, query, []).slice(0, 6);
   }, [pedInput, dropdownOpen, dynamicSuggestions]);
 
   const selectValue = (value: string) => {

@@ -83,7 +83,7 @@ interface AuditPageProps {
  * rather than reading a fully-loaded array passed down from App.tsx — see
  * the fetch effects near the top of the component body. The
  * `activeTab === "audit"` condition and wrapping `<motion.div key="audit">`
- * deliberately stay in App.tsx (see ResourcesPage.tsx for why).
+ * deliberately stay in App.tsx (see the AnimatePresence block in App.tsx for why).
  */
 export function AuditPage({
   theme,
@@ -542,7 +542,7 @@ export function AuditPage({
                   <Calendar className="w-3 h-3 text-cyan-500 dark:text-cyan-400" />
                   Start Date
                 </label>
-                <DateInputDMY
+                <DateInputDMY theme={theme}
                   value={auditStartDate}
                   onChange={setAuditStartDate}
                   displayClassName={`w-full text-xs px-2 py-2 rounded-xl border font-semibold flex items-center ${
@@ -557,7 +557,7 @@ export function AuditPage({
                   <Calendar className="w-3 h-3 text-cyan-500 dark:text-cyan-400" />
                   End Date
                 </label>
-                <DateInputDMY
+                <DateInputDMY theme={theme}
                   value={auditEndDate}
                   onChange={setAuditEndDate}
                   displayClassName={`w-full text-xs px-2 py-2 rounded-xl border font-semibold flex items-center ${

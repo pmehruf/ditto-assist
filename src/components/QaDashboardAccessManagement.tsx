@@ -11,6 +11,7 @@ import { CustomSelect } from "./CustomSelect";
 import { formatDisplayTimestamp } from "../utils/timestamps";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { downloadCSV } from "../utils/csvExport";
+import { useDialog } from "../hooks/useDialog";
 
 type QaRoleType = "admin" | "guide" | "mentor";
 
@@ -53,6 +54,7 @@ const ROLE_SECTIONS: { role: QaRoleType; title: string; blurb: string }[] = [
  */
 export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboardAccessManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const canManage = effectiveTier === "Admin" || effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const [roles, setRoles] = useState<QaRoleRow[]>([]);
@@ -162,7 +164,7 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
   };
 
   const revokeAccess = async (email: string, role: QaRoleType) => {
-    if (!window.confirm(`Revoke QA Dashboard ${ROLE_LABEL[role]} access for ${email}?`)) return;
+    if (!(await confirm(`Revoke QA Dashboard ${ROLE_LABEL[role]} access for ${email}?`))) return;
     setRemovingEmail(email);
     setActionError(null);
     try {
@@ -391,7 +393,7 @@ export function QaDashboardAccessManagement({ theme, effectiveTier }: QaDashboar
             const sectionRows = visibleRoles.filter((r) => r.role === section.role);
             const hasAnyForRole = roles.some((r) => r.role === section.role);
             return (
-              <div key={section.role} className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+              <div key={section.role} className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
                 <div className={`px-3 py-2 flex items-center justify-between gap-2 border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-stone-50 border-stone-200"}`}>
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border whitespace-nowrap ${roleBadgeClass(section.role)}`}>

@@ -115,6 +115,7 @@ export function CustomSelect({
   const [panelRect, setPanelRect] = useState<{ top: number; bottom: number; left: number; width: number; maxWidth: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const optionsListRef = useRef<HTMLDivElement>(null);
   const dark = theme === "dark";
 
   const handleToggle = () => {
@@ -167,6 +168,30 @@ export function CustomSelect({
     if (!open || !searchable) return;
     setSearchQuery("");
     const id = window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [open, searchable]);
+
+  // Scroll the selected option into view (centered in the panel) as soon
+  // as it opens -- rAF because the portal only paints once `open` flips
+  // true, so the list/selected option don't exist in the DOM yet during
+  // this same synchronous render. Uses getBoundingClientRect() rather than
+  // offsetTop, since offsetTop is relative to the option's nearest
+  // POSITIONED ancestor (which may not be this scroll container at all --
+  // e.g. the portaled, `fixed` panelRef further up the tree), not
+  // necessarily this list. Skipped for a searchable panel: the search box
+  // is what the user's about to type into, so jumping the list on open
+  // would just be a distracting, unrequested scroll.
+  useEffect(() => {
+    if (!open || searchable) return;
+    const id = window.requestAnimationFrame(() => {
+      const container = optionsListRef.current;
+      const selectedEl = container?.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!container || !selectedEl) return;
+      const containerRect = container.getBoundingClientRect();
+      const selectedRect = selectedEl.getBoundingClientRect();
+      const offsetWithinContainer = selectedRect.top - containerRect.top + container.scrollTop;
+      container.scrollTop = offsetWithinContainer - container.clientHeight / 2 + selectedRect.height / 2;
+    });
     return () => window.cancelAnimationFrame(id);
   }, [open, searchable]);
 
@@ -327,7 +352,7 @@ export function CustomSelect({
                 />
               </div>
             )}
-            <div className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>
+            <div ref={optionsListRef} className="overflow-y-auto" style={{ maxHeight: `${maxPanelHeightPx}px` }}>
               {filteredOptions.length === 0 ? (
                 <div className={`px-4 py-3 text-input-value italic text-left select-none ${dark ? "text-stone-500" : "text-stone-400"}`}>
                   {searchable && searchQuery.trim() ? "No matches." : "No options available."}

@@ -15,6 +15,8 @@ import {
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
+import { DateInputDMY } from "./DateInputDMY";
+import { useDialog } from "../hooks/useDialog";
 
 interface MasterAdvisorsManagementProps {
   theme: "light" | "dark";
@@ -59,6 +61,7 @@ interface MasterAdvisorsManagementProps {
  */
 export function MasterAdvisorsManagement({ theme, effectiveTier, usersList, departments, logAction, canManage }: MasterAdvisorsManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   // Corrected 2026-09 (permission architecture fix): this used to hardcode
   // canEdit to Developer/Platform Admin only, which silently ignored the
   // "master_advisors" featurePermissions entry's Editor level and any
@@ -224,7 +227,7 @@ export function MasterAdvisorsManagement({ theme, effectiveTier, usersList, depa
   };
 
   const deleteAdvisorMapping = async (m: GuideMentorAdvisorMapping) => {
-    if (!window.confirm(`Remove the mapping for ${m.name} (Tact ID ${m.tactId})?`)) return;
+    if (!(await confirm(`Remove the mapping for ${m.name} (Tact ID ${m.tactId})?`))) return;
     setSaving(true);
     setSyncError(null);
     try {
@@ -706,11 +709,11 @@ export function MasterAdvisorsManagement({ theme, effectiveTier, usersList, depa
                                   ]}
                                 />
                                 {draftMapping.mentorName.trim() !== (m.mentorName || "").trim() && (
-                                  <input
-                                    type="date"
-                                    className={inputClass}
+                                  <DateInputDMY
+                                    theme={theme}
                                     value={draftMapping.mentorEffectiveDate}
-                                    onChange={(e) => setDraftMapping((d) => ({ ...d, mentorEffectiveDate: e.target.value }))}
+                                    onChange={(v) => setDraftMapping((d) => ({ ...d, mentorEffectiveDate: v }))}
+                                    displayClassName={inputClass}
                                     title="Effective date for this Mentor change — the old Mentor relationship ends and the new one starts on this date"
                                   />
                                 )}
@@ -765,11 +768,11 @@ export function MasterAdvisorsManagement({ theme, effectiveTier, usersList, depa
                                   ]}
                                 />
                                 {draftMapping.guideName.trim() !== (m.guideName || "").trim() && (
-                                  <input
-                                    type="date"
-                                    className={inputClass}
+                                  <DateInputDMY
+                                    theme={theme}
                                     value={draftMapping.guideEffectiveDate}
-                                    onChange={(e) => setDraftMapping((d) => ({ ...d, guideEffectiveDate: e.target.value }))}
+                                    onChange={(v) => setDraftMapping((d) => ({ ...d, guideEffectiveDate: v }))}
+                                    displayClassName={inputClass}
                                     title="Effective date for this Guide change — the old Guide relationship ends and the new one starts on this date"
                                   />
                                 )}
@@ -780,11 +783,11 @@ export function MasterAdvisorsManagement({ theme, effectiveTier, usersList, depa
                           </td>
                           <td className="px-2 py-2 min-w-[110px]">
                             {isEditing ? (
-                              <input
-                                type="date"
-                                className={inputClass}
+                              <DateInputDMY
+                                theme={theme}
                                 value={draftMapping.activeTill}
-                                onChange={(e) => setDraftMapping((d) => ({ ...d, activeTill: e.target.value }))}
+                                onChange={(v) => setDraftMapping((d) => ({ ...d, activeTill: v }))}
+                                displayClassName={inputClass}
                                 title="Active Till — the point past which this advisor is no longer considered active"
                               />
                             ) : till ? (

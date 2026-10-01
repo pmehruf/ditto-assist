@@ -28,6 +28,32 @@ export class UserRelationshipsRepository {
     return this.db.select().from(userRelationships);
   }
 
+  /** Single row by id — added 2026-09h so server.ts's ownership-aware
+   * authorization (requireGroupAccessEditor) can look up which
+   * relationshipGroupId a given mapping belongs to BEFORE deciding whether
+   * DELETE /api/user-relationships/:id is allowed, without first requiring
+   * blanket group_management Editor. */
+  async get(id: number): Promise<UserRelationshipRow | undefined> {
+    const [row] = await this.db.select().from(userRelationships).where(eq(userRelationships.id, id));
+    return row;
+  }
+
+  /** Whether `email` is a mapped OWNER (not merely a subject) of at least
+   * one roster row in `relationshipGroupId` — the ownership check behind
+   * "a group owner must be able to view and modify their own group" (2026-09h,
+   * at the user's explicit request). Deliberately does not check `active`
+   * on either the relationship row or its group: an owner whose group was
+   * just deactivated should still be able to reactivate it or manage its
+   * roster, not get locked out the moment it's disabled. */
+  async isOwnerOfGroup(relationshipGroupId: number, email: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: userRelationships.id })
+      .from(userRelationships)
+      .where(and(eq(userRelationships.relationshipGroupId, relationshipGroupId), eq(userRelationships.ownerEmail, email.toLowerCase())))
+      .limit(1);
+    return rows.length > 0;
+  }
+
   /** Every relationship where `email` is either the owner or the subject —
    * used to show "who is this person mapped to/from" on their directory
    * row, and (in a future enforcement phase) to resolve an owner's scoped

@@ -9,6 +9,7 @@ import {
   CATEGORY_LABELS,
   PlanConfig,
   PlanRestriction,
+  PlanPedOverride,
   MatchOutput,
   SupportingFlags
 } from "./types.js";
@@ -236,6 +237,62 @@ export function questionForCategory(config: PlanConfig, category: string): strin
   return "";
 }
 
+/** Finds the admin plan-specific PED mapping that applies to this input:
+ * an exact alias match first, otherwise the longest contiguous word
+ * sequence of the input that is one of an override's aliases (so
+ * "OSA since 2019" still resolves to the Obstructive Sleep Apnea override,
+ * mirroring classifyDeterministic's stage 0.75). Capped at 15 words. */
+function findPlanPedOverride(pedText: string, overrides: PlanPedOverride[]): PlanPedOverride | null {
+  const byAlias = new Map<string, PlanPedOverride>();
+  for (const o of overrides) for (const a of o.aliases) if (a && !byAlias.has(a)) byAlias.set(a, o);
+  if (byAlias.size === 0) return null;
+  const key = normalizeDictionaryKey(pedText);
+  const exact = byAlias.get(key);
+  if (exact) return exact;
+  const words = key.split(" ").filter(Boolean);
+  if (words.length > 15) return null;
+  for (let span = words.length - 1; span > 0; span--) {
+    for (let start = 0; start + span <= words.length; start++) {
+      const hit = byAlias.get(words.slice(start, start + span).join(" "));
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** ADMIN PLAN-SPECIFIC PED MAPPING — highest-priority stage of
+ * classifyDeterministic. An admin (Plan Management → Plan-Specific PED
+ * Mappings) can pin one PED to an exact question on one plan, e.g.
+ * Obstructive Sleep Apnea → "Nervous, Psychiatric or Mental or Sleep
+ * disorder?" on Optima Secure while every other plan keeps routing it by
+ * its Respiratory category. This deliberately wins over the PED's category,
+ * the dictionary, plan restrictions and the hardcoded plan blocks: it is an
+ * explicit human decision for this exact plan+PED pair. Returns null when
+ * no override applies, or when the override's target no longer resolves to
+ * a question on this plan (stale wording) — normal routing then continues. */
+export function applyPlanPedOverride(pedText: string, config: PlanConfig): MatchOutput | null {
+  if (!config?.pedOverrides?.length) return null;
+  const override = findPlanPedOverride(pedText, config.pedOverrides);
+  if (!override) return null;
+
+  const planQuestions = [...(config.questions || []), ...(config.anyOther ? [config.anyOther] : [])];
+  const question =
+    (override.targetQuestion && resolvePlanQuestion(override.targetQuestion, planQuestions)) ||
+    (override.categoryKey && questionForCategory(config, override.categoryKey)) ||
+    "";
+  if (!question) return null;
+
+  const isCatchAll = normalizeText(question) === normalizeText(config.anyOther || "");
+  const output = makeOutput(
+    pedText,
+    isCatchAll ? "FALLBACK" : "P1",
+    question,
+    `👉 *${pedText}* (${override.pedName}) is mapped to this question specifically for this plan${override.reason ? ` — ${override.reason}` : ""} (plan-specific PED mapping).`
+  );
+  output.plan_override = true;
+  return output;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // PLAN DECISION ENGINE — approved architecture, 2026-07-29.
 //
@@ -453,6 +510,9 @@ export function checkNaturalLifeStages(pedText: string): MatchOutput | null {
 }
 
 export function applyPostGuards(output: MatchOutput, ped: string, planName: string, config: PlanConfig): MatchOutput {
+  // An admin plan-specific PED mapping is an explicit decision for this
+  // plan — never second-guess it here.
+  if (output.plan_override) return output;
   const pedLower = normalizeText(ped);
   const matchedQ = normalizeText(output.matched_question || "");
   const fallbackQ = config.anyOther;
@@ -743,7 +803,7 @@ export interface DbDictionarySource {
   /** (planName, pedId) -> this plan's category override for that PED, if
    * any — the generic DB-backed replacement for the 4 hardcoded
    * "0.4 PLAN-SPECIFIC OVERRIDES & INTERCEPTS" blocks below. */
-  planOverrideLookup: (planName: string, pedId: number) => { categoryKey: string; reason: string | null } | null;
+  planOverrideLookup: (planName: string, pedId: number) => { categoryKey: string | null; reason: string | null } | null;
 }
 
 /**
@@ -764,6 +824,10 @@ export function classifyDeterministic(
   const text = normalizeText(ped);
   const pedText = String(ped || "").trim();
   let q = "";
+
+  // -1. ADMIN PLAN-SPECIFIC PED MAPPING — wins over everything below.
+  const planPedOverride = applyPlanPedOverride(pedText, config);
+  if (planPedOverride) return planPedOverride;
 
   // 0. NATURAL LIFE STAGE FIREWALL
   const lifeStageCheck = checkNaturalLifeStages(pedText);
@@ -812,7 +876,7 @@ export function classifyDeterministic(
     const dbEntry = dbSource.aliasLookup.get(dictKeyForPed);
     if (dbEntry) {
       const dbOverride = dbSource.planOverrideLookup(planName, dbEntry.pedId);
-      if (dbOverride) {
+      if (dbOverride && dbOverride.categoryKey) {
         const qTarget = questionForCategory(config, dbOverride.categoryKey);
         if (qTarget) {
           return makeOutput(
@@ -1113,7 +1177,7 @@ export function classifyDeterministic(
       }
       if (bestPedId !== null) {
         const dbOverride = dbSource.planOverrideLookup(planName, bestPedId);
-        if (dbOverride) {
+        if (dbOverride && dbOverride.categoryKey) {
           const qTarget = questionForCategory(config, dbOverride.categoryKey);
           if (qTarget) {
             return makeOutput(

@@ -16,6 +16,7 @@ import { Pagination } from "./Pagination";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 import { formatDateDMY } from "../utils/dateFormat";
+import { useDialog } from "../hooks/useDialog";
 
 interface PedSuggestionEntry {
   id: number;
@@ -144,6 +145,7 @@ function renderAddedBy(addedBy: string, dark: boolean) {
  */
 export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: PedSuggestionsManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
 
   const logAction = (actionType: string, description: string) => {
     setChangeLogs(prev => [
@@ -359,7 +361,7 @@ export function PedSuggestionsManagement({ theme, effectiveTier, currentUser, se
   };
 
   const deleteEntry = async (entry: PedSuggestionEntry) => {
-    if (!window.confirm(`Remove "${entry.term}" from the PED directory? This cannot be undone.`)) return;
+    if (!(await confirm(`Remove "${entry.term}" from the PED directory? This cannot be undone.`))) return;
     setSaving(true);
     setSaveError(null);
     try {

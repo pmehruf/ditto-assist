@@ -62,11 +62,11 @@ export function SkillDomainPromptModal({
       <div className={`absolute inset-0 backdrop-blur-md ${dark ? "bg-black/60" : "bg-stone-900/40"}`} />
 
       <div
-        className={`relative w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden ${
+        className={`relative w-full max-w-md vp-modal flex flex-col rounded-2xl border shadow-2xl overflow-hidden ${
           dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"
         }`}
       >
-        <div className={`px-5 pt-4 pb-3 border-b ${dark ? "border-stone-800" : "border-stone-200"}`}>
+        <div className={`shrink-0 px-5 pt-4 pb-3 border-b ${dark ? "border-stone-800" : "border-stone-200"}`}>
           <div className="flex items-center gap-2">
             <Compass className="w-4 h-4 shrink-0" style={{ color: dark ? "#00D3F3" : "#4673a9" }} />
             <h2 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
@@ -78,14 +78,14 @@ export function SkillDomainPromptModal({
           </p>
         </div>
 
-        <div className="px-5 py-4 space-y-3">
+        <div className="vp-scroll flex-1 px-5 py-4 space-y-3">
           <AdvisorTagCheckboxes theme={theme} value={tags} onChange={setTags} size="md" />
           {error && (
             <p className="text-[11px] font-semibold text-red-500">{error}</p>
           )}
         </div>
 
-        <div className={`px-5 py-3 border-t flex items-center justify-between gap-3 ${
+        <div className={`shrink-0 px-5 py-3 border-t flex items-center justify-between gap-3 ${
           dark ? "border-stone-800" : "border-stone-200"
         }`}>
           <button

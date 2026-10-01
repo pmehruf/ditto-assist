@@ -19,6 +19,7 @@ import {
   type SpecialInstructionEntry,
   type SpecialInstructionFormState,
 } from "./specialInstructionTypes";
+import { useDialog } from "../hooks/useDialog";
 
 /** Override Rule gets the strongest visual treatment of the three — solid
  * fill + icon, not just a colored outline — since it's the only type with
@@ -101,6 +102,7 @@ interface SpecialInstructionsProps {
  */
 export function SpecialInstructions({ theme, effectiveTier, currentUser, setChangeLogs, domain }: SpecialInstructionsProps) {
   const dark = theme === "dark";
+  const { confirm, alertUser } = useDialog();
   const canManage = effectiveTier === "Platform Admin" || effectiveTier === "Developer";
 
   const logAction = (actionType: string, description: string) => {
@@ -221,14 +223,14 @@ export function SpecialInstructions({ theme, effectiveTier, currentUser, setChan
       logAction(e.isActive ? "Special Instruction Deactivated" : "Special Instruction Activated", `"${e.topic}" is now ${e.isActive ? "inactive" : "active"}.`);
       await load();
     } catch (err: any) {
-      window.alert(err.message || "Failed to update this Special Instruction.");
+      await alertUser({ tone: "danger", message: err.message || "Failed to update this Special Instruction." });
     } finally {
       setBusyId(null);
     }
   };
 
   const deleteEntry = async (e: SpecialInstructionEntry) => {
-    if (!window.confirm(`Delete the "${e.topic}" Special Instruction? This can't be undone.`)) return;
+    if (!(await confirm(`Delete the "${e.topic}" Special Instruction? This can't be undone.`))) return;
     setBusyId(e.id);
     try {
       const res = await fetch(`/api/kb/special-instructions/${e.id}`, { method: "DELETE" });
@@ -237,7 +239,7 @@ export function SpecialInstructions({ theme, effectiveTier, currentUser, setChan
       logAction("Special Instruction Deleted", `Deleted "${e.topic}".`);
       await load();
     } catch (err: any) {
-      window.alert(err.message || "Failed to delete this Special Instruction.");
+      await alertUser({ tone: "danger", message: err.message || "Failed to delete this Special Instruction." });
     } finally {
       setBusyId(null);
     }

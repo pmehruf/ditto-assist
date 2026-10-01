@@ -19,7 +19,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../db/testUtils.js";
 import { createRepositories } from "../db/repositories/index.js";
-import { evaluateAccess, getGroupAllowedFeatureIds } from "./evaluateAccess.js";
+import { evaluateAccess, getGroupFeatureLevels } from "./evaluateAccess.js";
 
 // Deliberately NOT "Bliss"/"Advisory"/"Advisor" — migration 0038 already
 // seeds org_teams with Bliss/Falcon/Central and roles with Advisor/Mentor/
@@ -187,12 +187,22 @@ describe("evaluateAccess — DB-backed wrapper", () => {
   });
 });
 
-describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
+describe("getGroupFeatureLevels / Group Access (2026-09d redesign: additive raise; 2026-09f layered restriction on top)", () => {
   // Which relationship group(s) count toward group access is an
   // admin-toggled flag (relationship_groups.usedForGroupAccess), not a
   // match on the group's name — see that column's comment in schema.ts.
   // Deliberately using a name that ISN'T "Trainer" throughout most of this
   // suite to prove the name is irrelevant; only the flag matters.
+  //
+  // getGroupFeatureLevels() ITSELF is unchanged by 2026-09f — it still
+  // returns null whenever the union of every qualifying group's grants is
+  // empty (no group has checked anything yet), and a plain featureId->level
+  // map otherwise. It has no notion of restriction; that's entirely
+  // resolveAccess()'s job once it reads a null-vs-present map back out (see
+  // accessRuleEvaluator.test.ts's "Group Access — restriction (2026-09f)"
+  // block for the exhaustive decision-matrix coverage). The tests below that
+  // exercise evaluateAccess() end-to-end are what changed for 2026-09f — see
+  // each one's own comment.
   async function createFlaggedGroup(repos: ReturnType<typeof createRepositories>, name = "Coach") {
     const group = await repos.relationshipGroups.create({ name, description: null, departmentId: null, createdBy: "test" });
     return repos.relationshipGroups.update(group.id, { usedForGroupAccess: true });
@@ -206,7 +216,7 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     // group existing at all.
     await repos.relationshipGroups.create({ name: "Coach", description: null, departmentId: null, createdBy: "test" });
 
-    const result = await getGroupAllowedFeatureIds(repos, "member@example.com", "General");
+    const result = await getGroupFeatureLevels(repos, "member@example.com");
     expect(result).toBeNull();
   });
 
@@ -216,11 +226,11 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     await createFlaggedGroup(repos);
     await repos.users.create({ email: "someone@example.com", name: "Someone", tactId: "T1", tier: "General" });
 
-    const result = await getGroupAllowedFeatureIds(repos, "someone@example.com", "General");
+    const result = await getGroupFeatureLevels(repos, "someone@example.com");
     expect(result).toBeNull();
   });
 
-  it("a mapped member whose group has enabled some tools gets exactly that group's list", async () => {
+  it("a mapped member whose group has granted some features gets exactly that group's grants, as a featureId -> level map", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     // ownerEmail/subjectEmail carry a real FK onto users.email, so both
@@ -230,14 +240,13 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["coverage_projection", "porting_assist"], "test");
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "coverage_projection", level: "Editor" }, { featureId: "porting_assist", level: "Viewer" }], "test");
 
-    const result = await getGroupAllowedFeatureIds(repos, "member@example.com", "General");
-    expect(result).not.toBeNull();
-    expect(new Set(result)).toEqual(new Set(["coverage_projection", "porting_assist"]));
+    const result = await getGroupFeatureLevels(repos, "member@example.com");
+    expect(result).toEqual({ coverage_projection: "Editor", porting_assist: "Viewer" });
   });
 
-  it("a mapped member whose group hasn't enabled anything gets an empty array (fail-closed), not null", async () => {
+  it("a mapped member whose group hasn't granted anything gets null — no more fail-closed blocking (2026-09d)", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
@@ -245,16 +254,16 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
 
-    const result = await getGroupAllowedFeatureIds(repos, "member@example.com", "General");
-    expect(result).toEqual([]);
+    const result = await getGroupFeatureLevels(repos, "member@example.com");
+    expect(result).toBeNull();
   });
 
   it("permissions are GROUP-level, not owner-level: one owner managing two different groups can give them different access (migration 0081)", async () => {
     // The exact scenario the owner-keyed schema got wrong before migration
     // 0081: a single owner manages two distinct groups (groupA, groupB),
-    // each with its own members and its own, independently configured tool
-    // set. Under the old groupOwnerEmail-keyed table, configuring one of
-    // this owner's groups would have silently applied to both.
+    // each with its own members and its own, independently configured
+    // grant set. Under the old groupOwnerEmail-keyed table, configuring one
+    // of this owner's groups would have silently applied to both.
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
@@ -264,17 +273,14 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     const groupB = await createFlaggedGroup(repos, "DH200");
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member-a@example.com", relationshipGroupId: groupA!.id, createdBy: "test" });
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member-b@example.com", relationshipGroupId: groupB!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(groupA!.id, ["porting_assist"], "test");
-    await repos.groupToolAccess.replaceForGroup(groupB!.id, ["coverage_projection"], "test");
+    await repos.groupToolAccess.replaceForGroup(groupA!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
+    await repos.groupToolAccess.replaceForGroup(groupB!.id, [{ featureId: "coverage_projection", level: "Editor" }], "test");
 
-    const memberAResult = await getGroupAllowedFeatureIds(repos, "member-a@example.com", "General");
-    expect(memberAResult).toEqual(["porting_assist"]);
-
-    const memberBResult = await getGroupAllowedFeatureIds(repos, "member-b@example.com", "General");
-    expect(memberBResult).toEqual(["coverage_projection"]);
+    expect(await getGroupFeatureLevels(repos, "member-a@example.com")).toEqual({ porting_assist: "Editor" });
+    expect(await getGroupFeatureLevels(repos, "member-b@example.com")).toEqual({ coverage_projection: "Editor" });
   });
 
-  it("two DIFFERENT flagged relationship groups both feed the same member's access (union across groups the member actually belongs to)", async () => {
+  it("two DIFFERENT flagged relationship groups both feed the same member's access — merged, taking the higher level on overlap", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner-a@example.com", name: "Owner A", tactId: "T-OA", tier: "General" });
@@ -284,11 +290,15 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     const groupB = await createFlaggedGroup(repos, "Training Lead");
     await repos.userRelationships.create({ ownerEmail: "owner-a@example.com", subjectEmail: "member@example.com", relationshipGroupId: groupA!.id, createdBy: "test" });
     await repos.userRelationships.create({ ownerEmail: "owner-b@example.com", subjectEmail: "member@example.com", relationshipGroupId: groupB!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(groupA!.id, ["porting_assist"], "test");
-    await repos.groupToolAccess.replaceForGroup(groupB!.id, ["lookup"], "test");
+    // groupA grants porting_assist at Viewer; groupB grants it at Editor
+    // (plus an unrelated "lookup" grant) — the member should end up with
+    // the HIGHER of the two on the overlapping feature, unioned with the
+    // non-overlapping one.
+    await repos.groupToolAccess.replaceForGroup(groupA!.id, [{ featureId: "porting_assist", level: "Viewer" }], "test");
+    await repos.groupToolAccess.replaceForGroup(groupB!.id, [{ featureId: "porting_assist", level: "Editor" }, { featureId: "lookup", level: "Viewer" }], "test");
 
-    const result = await getGroupAllowedFeatureIds(repos, "member@example.com", "General");
-    expect(new Set(result)).toEqual(new Set(["porting_assist", "lookup"]));
+    const result = await getGroupFeatureLevels(repos, "member@example.com");
+    expect(result).toEqual({ porting_assist: "Editor", lookup: "Viewer" });
   });
 
   it("being someone's group owner doesn't make you a restricted member of yourself", async () => {
@@ -299,11 +309,11 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
 
-    const result = await getGroupAllowedFeatureIds(repos, "owner@example.com", "General");
+    const result = await getGroupFeatureLevels(repos, "owner@example.com");
     expect(result).toBeNull();
   });
 
-  it("a relationship of an UNFLAGGED group (e.g. the seeded 'Guide' group) never activates the member ceiling", async () => {
+  it("a relationship of an UNFLAGGED group (e.g. the seeded 'Guide' group) never contributes any grants", async () => {
     // Migration 0038 already seeds relationship_groups with Mentor/Guide,
     // populated for nearly every advisor via the Advisor Directory sync —
     // this is exactly the case the flag (instead of matching any group)
@@ -317,28 +327,28 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     await repos.users.create({ email: "guidee@example.com", name: "Guidee One", tactId: "T1", tier: "General" });
     await repos.userRelationships.create({ ownerEmail: "guide@example.com", subjectEmail: "guidee@example.com", relationshipGroupId: guideGroup.id, createdBy: "test" });
 
-    const result = await getGroupAllowedFeatureIds(repos, "guidee@example.com", "General");
+    const result = await getGroupFeatureLevels(repos, "guidee@example.com");
     expect(result).toBeNull();
   });
 
-  it("unflagging a group after mappings exist immediately stops it from activating the ceiling", async () => {
+  it("unflagging a group after mappings exist immediately stops its grants from applying", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
     await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
 
-    expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(["porting_assist"]);
+    expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor" });
 
     await repos.relationshipGroups.update(group!.id, { usedForGroupAccess: false });
-    expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toBeNull();
+    expect(await getGroupFeatureLevels(repos, "member@example.com")).toBeNull();
   });
 
   it("disabling (unflagging) one group cannot affect another group owned by the same person (migration 0081 regression)", async () => {
     // Same owner manages groupA and groupB, each with its own member and
-    // its own tool grant. Unflagging groupA must leave groupB — and its
+    // its own grant. Unflagging groupA must leave groupB — and its
     // member's access — completely untouched.
     const db = await createTestDb();
     const repos = createRepositories(db);
@@ -349,52 +359,51 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     const groupB = await createFlaggedGroup(repos, "DH200");
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member-a@example.com", relationshipGroupId: groupA!.id, createdBy: "test" });
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member-b@example.com", relationshipGroupId: groupB!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(groupA!.id, ["porting_assist"], "test");
-    await repos.groupToolAccess.replaceForGroup(groupB!.id, ["coverage_projection"], "test");
+    await repos.groupToolAccess.replaceForGroup(groupA!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
+    await repos.groupToolAccess.replaceForGroup(groupB!.id, [{ featureId: "coverage_projection", level: "Editor" }], "test");
 
-    expect(await getGroupAllowedFeatureIds(repos, "member-a@example.com", "General")).toEqual(["porting_assist"]);
-    expect(await getGroupAllowedFeatureIds(repos, "member-b@example.com", "General")).toEqual(["coverage_projection"]);
+    expect(await getGroupFeatureLevels(repos, "member-a@example.com")).toEqual({ porting_assist: "Editor" });
+    expect(await getGroupFeatureLevels(repos, "member-b@example.com")).toEqual({ coverage_projection: "Editor" });
 
     // Disable groupA only.
     await repos.relationshipGroups.update(groupA!.id, { usedForGroupAccess: false });
 
-    expect(await getGroupAllowedFeatureIds(repos, "member-a@example.com", "General")).toBeNull();
+    expect(await getGroupFeatureLevels(repos, "member-a@example.com")).toBeNull();
     // groupB, same owner, is completely unaffected.
-    expect(await getGroupAllowedFeatureIds(repos, "member-b@example.com", "General")).toEqual(["coverage_projection"]);
+    expect(await getGroupFeatureLevels(repos, "member-b@example.com")).toEqual({ coverage_projection: "Editor" });
 
-    // groupB's own tool grant row is untouched at the data level too.
+    // groupB's own grant row is untouched at the data level too.
     const groupBGrants = await repos.groupToolAccess.listForGroup(groupB!.id);
     expect(groupBGrants.map((g) => g.featureId)).toEqual(["coverage_projection"]);
   });
 
-  describe("disabling a group (active=false) — 2026-09 fix", () => {
+  describe("disabling a group (active=false) — 2026-09 fix, still intact post-2026-09d", () => {
     // Distinct from the usedForGroupAccess flag above: "active" is the
-    // Groups tab's actual Disable/Enable (Power icon) toggle. Before this
-    // fix, getGroupAllowedFeatureIds never checked `active` at all, so a
-    // disabled-but-still-usedForGroupAccess group kept restricting its
-    // members exactly as if nothing had changed — this suite proves the
-    // fix and that disabling never touches the roster or the tool grants.
+    // Groups tab's actual Disable/Enable (Power icon) toggle. Before the
+    // 2026-09 fix, this never checked `active` at all, so a
+    // disabled-but-still-usedForGroupAccess group kept contributing grants
+    // exactly as if nothing had changed — this suite proves the fix and
+    // that disabling never touches the roster or the grant rows.
 
-    it("disabling a group immediately drops its members back to unrestricted, without touching its roster or tool grants", async () => {
+    it("disabling a group immediately drops its members' grants, without touching its roster or the grant rows", async () => {
       const db = await createTestDb();
       const repos = createRepositories(db);
       await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
       await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
       const group = await createFlaggedGroup(repos);
       await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-      await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist", "coverage_projection"], "test");
+      await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "porting_assist", level: "Editor" }, { featureId: "coverage_projection", level: "Editor" }], "test");
 
-      expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(expect.arrayContaining(["porting_assist", "coverage_projection"]));
+      expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor", coverage_projection: "Editor" });
 
       await repos.relationshipGroups.update(group!.id, { active: false });
 
-      // The restriction is fully suspended — same as an ordinary,
-      // never-mapped General-tier user.
-      expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toBeNull();
+      // The grants are fully suspended — same as an ordinary, never-mapped
+      // General-tier user.
+      expect(await getGroupFeatureLevels(repos, "member@example.com")).toBeNull();
 
-      // Nothing about the roster or the configured tool grants was
-      // touched by disabling — only the evaluator's treatment of them
-      // changed.
+      // Nothing about the roster or the configured grants was touched by
+      // disabling — only the evaluator's treatment of them changed.
       const rosterAfterDisable = await repos.userRelationships.listForEmail("member@example.com");
       expect(rosterAfterDisable).toHaveLength(1);
       expect(rosterAfterDisable[0].relationshipGroupId).toBe(group!.id);
@@ -402,20 +411,20 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
       expect(grantsAfterDisable.map((g) => g.featureId).sort()).toEqual(["coverage_projection", "porting_assist"]);
     });
 
-    it("re-enabling a disabled group restores its exact previous restriction with no reconfiguration", async () => {
+    it("re-enabling a disabled group restores its exact previous grants with no reconfiguration", async () => {
       const db = await createTestDb();
       const repos = createRepositories(db);
       await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
       await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
       const group = await createFlaggedGroup(repos);
       await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-      await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+      await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
 
       await repos.relationshipGroups.update(group!.id, { active: false });
-      expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toBeNull();
+      expect(await getGroupFeatureLevels(repos, "member@example.com")).toBeNull();
 
       await repos.relationshipGroups.update(group!.id, { active: true });
-      expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(["porting_assist"]);
+      expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor" });
     });
 
     it("disabling one group cannot affect another group owned by the same person", async () => {
@@ -428,68 +437,149 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
       const groupB = await createFlaggedGroup(repos, "DH200");
       await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member-a@example.com", relationshipGroupId: groupA!.id, createdBy: "test" });
       await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member-b@example.com", relationshipGroupId: groupB!.id, createdBy: "test" });
-      await repos.groupToolAccess.replaceForGroup(groupA!.id, ["porting_assist"], "test");
-      await repos.groupToolAccess.replaceForGroup(groupB!.id, ["coverage_projection"], "test");
+      await repos.groupToolAccess.replaceForGroup(groupA!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
+      await repos.groupToolAccess.replaceForGroup(groupB!.id, [{ featureId: "coverage_projection", level: "Editor" }], "test");
 
       await repos.relationshipGroups.update(groupA!.id, { active: false });
 
-      expect(await getGroupAllowedFeatureIds(repos, "member-a@example.com", "General")).toBeNull();
-      expect(await getGroupAllowedFeatureIds(repos, "member-b@example.com", "General")).toEqual(["coverage_projection"]);
+      expect(await getGroupFeatureLevels(repos, "member-a@example.com")).toBeNull();
+      expect(await getGroupFeatureLevels(repos, "member-b@example.com")).toEqual({ coverage_projection: "Editor" });
     });
 
-    it("end-to-end via evaluateAccess: disabling a group resolves the tier's normal default again, not 'None'", async () => {
+    it("end-to-end via evaluateAccess: disabling a group resolves the tier's normal default again, source no longer 'Group Access'", async () => {
       const db = await createTestDb();
       const repos = createRepositories(db);
       await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
       await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
       const group = await createFlaggedGroup(repos);
       await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-      await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+      await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
 
-      // While enabled, an un-granted restrictable tool resolves to None.
-      const restricted = await evaluateAccess(db, "member@example.com", "coverage_projection");
-      expect(restricted.level).toBe("None");
+      const withGrant = await evaluateAccess(db, "member@example.com", "porting_assist");
+      expect(withGrant).toEqual({ level: "Editor", source: "Group Access" });
 
       await repos.relationshipGroups.update(group!.id, { active: false });
 
       // Once disabled, the same feature falls back to whatever a
       // completely unrestricted General-tier caller would get — the
-      // Group Access Restriction source no longer applies at all.
-      const afterDisable = await evaluateAccess(db, "member@example.com", "coverage_projection");
-      expect(afterDisable.source).not.toBe("Group Access Restriction");
+      // Group Access source no longer applies at all.
+      const afterDisable = await evaluateAccess(db, "member@example.com", "porting_assist");
+      expect(afterDisable.source).not.toBe("Group Access");
     });
   });
 
-  it("end-to-end via evaluateAccess: a member with a restricted group resolves 'None' on an un-enabled restrictable tool", async () => {
+  it("end-to-end via evaluateAccess (2026-09f): once a group grants AT LEAST ONE feature, an UNCONFIGURED feature within this member's restriction scope is now BLOCKED, not left at the tier default; the GRANTED feature is still raised", async () => {
+    // Superseded by 2026-09f: through 2026-09d, an unconfigured feature
+    // always stayed at its ordinary tier default once Group Access became
+    // raise-only. The user's explicit follow-up request layered a
+    // restriction back on top for General/Admin members of a group that
+    // HAS configured at least one grant — see accessRuleEvaluator.ts's
+    // groupFeatureLevels doc comment and accessRuleEvaluator.test.ts's
+    // "Group Access — restriction (2026-09f)" describe block for the full
+    // decision-matrix coverage; this test only proves evaluateAccess() (the
+    // DB-fetching wrapper) actually wires a real group's grants into that
+    // restriction end-to-end, same as it always did for the raise side.
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
     await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
 
+    // "coverage_projection" has no grant in this group at all — blocked to
+    // None, since this group DID configure something (just not this
+    // feature) — the "trainee sees only the one tool selected" behavior.
     const blocked = await evaluateAccess(db, "member@example.com", "coverage_projection");
-    expect(blocked).toEqual({ level: "None", source: "Group Access Restriction" });
+    expect(blocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
 
-    const allowed = await evaluateAccess(db, "member@example.com", "porting_assist");
-    expect(allowed).toEqual({ level: "Editor", source: "Group Access Restriction" });
+    const granted = await evaluateAccess(db, "member@example.com", "porting_assist");
+    expect(granted).toEqual({ level: "Editor", source: "Group Access" });
   });
 
-  it("end-to-end via evaluateAccess: a granted 2026-09 expansion feature (e.g. qa_dashboard) resolves 'Editor', not its own Viewer default", async () => {
+  it("end-to-end via evaluateAccess (2026-09f): a granted feature resolves to the granted level even above its own Viewer default, while an ungranted one in the same restriction scope is blocked", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
     await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["qa_dashboard", "my_activity"], "test");
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "qa_dashboard", level: "Editor" }], "test");
 
     const granted = await evaluateAccess(db, "member@example.com", "qa_dashboard");
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
+    expect(granted).toEqual({ level: "Editor", source: "Group Access" });
 
-    const notGranted = await evaluateAccess(db, "member@example.com", "team_tracker");
-    expect(notGranted).toEqual({ level: "None", source: "Group Access Restriction" });
+    // "team_tracker" is ungranted by this group — now blocked to None
+    // (2026-09f), not left at its ordinary General-tier default (Viewer).
+    const blocked = await evaluateAccess(db, "member@example.com", "team_tracker");
+    expect(blocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
+  });
+
+  it("end-to-end via evaluateAccess (2026-09f): a group that has configured NOTHING at all (zero grants) restricts nobody — restriction only turns on once at least one feature is checked", async () => {
+    // Distinct from the two tests above: this group is flagged
+    // usedForGroupAccess AND the member is really mapped to it, but nobody
+    // has checked a single feature yet — getGroupFeatureLevels() returns
+    // null (not an empty object) for exactly this case, which resolveAccess()
+    // treats identically to "belongs to no qualifying group at all". This is
+    // deliberate bootstrapping behavior: a freshly created, not-yet-
+    // configured group must never silently lock out everyone added to it
+    // before its trainer has picked its first tool.
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
+    await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
+    const group = await createFlaggedGroup(repos);
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
+
+    const result = await evaluateAccess(db, "member@example.com", "coverage_projection");
+    expect(result).toEqual({ level: "Viewer", source: "Default" });
+  });
+
+  it("end-to-end via evaluateAccess (2026-09f/g): Admin-tier restriction spans both zones AND the Administrative Access zone — an unconfigured Admin Zone feature and an unconfigured RESTRICT_ONLY_FEATURES entry are both blocked, but neither is ever RAISED", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
+    await repos.users.create({ email: "admin-member@example.com", name: "Admin Member", tactId: "T-AM", tier: "Admin" });
+    const group = await createFlaggedGroup(repos);
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
+    // This trainer's group checked "porting_assist" and "group_management"
+    // — everything else in Admin's restriction scope (both zones, plus the
+    // Administrative Access / RESTRICT_ONLY_FEATURES zone — 2026-09g)
+    // should now be blocked, EXCEPT group_management itself, which was
+    // explicitly checked.
+    await repos.groupToolAccess.replaceForGroup(
+      group!.id,
+      [{ featureId: "porting_assist", level: "Editor" }, { featureId: "group_management", level: "Viewer" }],
+      "test"
+    );
+
+    // An ordinary Admin Zone feature this Admin-tier member's tier default
+    // would otherwise reach (Announcement Manager) is now blocked.
+    const adminZoneBlocked = await evaluateAccess(db, "admin-member@example.com", "qa_announcement_log");
+    expect(adminZoneBlocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
+
+    // An Advisor Zone feature is blocked too — Admin's restriction scope
+    // covers both zones, not just Admin Zone.
+    const advisorZoneBlocked = await evaluateAccess(db, "admin-member@example.com", "resources");
+    expect(advisorZoneBlocked).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
+
+    // group_management WAS checked, so this restricted trainer is exempted
+    // from restriction and keeps their ordinary tier default (Viewer) — but
+    // note the source is still "Default", NOT "Group Access": checking a
+    // RESTRICT_ONLY_FEATURES entry never RAISES the level, even though the
+    // group grant row itself says "Editor"-capable level "Viewer" here.
+    const groupManagement = await evaluateAccess(db, "admin-member@example.com", "group_management");
+    expect(groupManagement).toEqual({ level: "Viewer", source: "Default" });
+
+    // profile_access (Access Control Center itself) was NEVER checked by
+    // this group — 2026-09g at the user's explicit request ("No check box
+    // control for access control center. What if the group is not supposed
+    // to have it?"), it's now blocked exactly like any other unconfigured
+    // Admin Zone feature, even though it can still never be RAISED through
+    // Group Access (the self-escalation boundary for the raise direction is
+    // unchanged).
+    const profileAccess = await evaluateAccess(db, "admin-member@example.com", "profile_access");
+    expect(profileAccess).toEqual({ level: "None", source: "Group Access (restricted — not selected for this group)" });
   });
 
   it("end-to-end via evaluateAccess: a non-restricted General user is completely unaffected", async () => {
@@ -498,174 +588,142 @@ describe("getGroupAllowedFeatureIds / Group Access Restriction", () => {
     await repos.users.create({ email: "regular@example.com", name: "Regular Advisor", tactId: "T1", tier: "General" });
 
     const result = await evaluateAccess(db, "regular@example.com", "coverage_projection");
-    expect(result.source).not.toBe("Group Access Restriction");
+    expect(result.source).not.toBe("Group Access");
   });
 
-  it("end-to-end via evaluateAccess: an Admin member (mistakenly relationship-tagged) is never restricted", async () => {
+  it("end-to-end via evaluateAccess: an Admin member mapped to a group with zero grants stays completely ordinary", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
     await repos.users.create({ email: "admin-member@example.com", name: "Admin", tactId: "T-ADMIN", tier: "Admin" });
     const group = await createFlaggedGroup(repos);
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    // Owner hasn't enabled anything — would fail-closed at General tier.
-    // Also now doubles as a Group Tier regression: this group was never
-    // given an explicit groupTier, so it stays at the column default
-    // ("General") — an Admin member is unaffected by a General-targeted
-    // group for exactly that reason (tier mismatch), not because Admin is
-    // hardcoded-exempt anymore. See the "Group Tier" describe block below
-    // for the case where a group DOES target Admin and this Admin member
-    // WOULD be restricted.
+    // Owner hasn't granted anything — getGroupFeatureLevels returns null,
+    // so this Admin member is completely ordinary.
 
     const result = await evaluateAccess(db, "admin-member@example.com", "coverage_projection");
-    expect(result.source).not.toBe("Group Access Restriction");
+    expect(result.source).not.toBe("Group Access");
   });
 });
 
-describe("getGroupAllowedFeatureIds / Group Access Restriction — Group Tier (2026-09, migration 0082)", () => {
-  // Group Tier lets a relationship_groups row target which TIER of member
-  // its usedForGroupAccess ceiling restricts (General/Admin/Platform Admin,
-  // default General) — see schema.ts's comment on
-  // `relationshipGroups.groupTier` for the full semantics, and this file's
-  // "getGroupAllowedFeatureIds / Group Access Restriction" describe block
-  // above for the (still fully intact, untouched-by-this-feature) group
-  // isolation/disable/multi-group behavior at the default General tier.
-  // This block is specifically about the NEW tier-targeting dimension.
-  async function createFlaggedGroup(repos: ReturnType<typeof createRepositories>, name: string, groupTier: "General" | "Admin" | "Platform Admin" = "General") {
-    const group = await repos.relationshipGroups.create({ name, description: null, departmentId: null, createdBy: "test", groupTier });
+describe("getGroupFeatureLevels / Group Access — mixed-tier groups & per-member eligibility (2026-09d: no more Group Tier)", () => {
+  // Replaces the old "Group Tier" describe block entirely: a relationship
+  // group no longer has its own tier-targeting column at all — it can hold
+  // members of ANY tier at once, and each grant's effect on a given member
+  // is derived purely from that MEMBER's own tier via
+  // isFeatureGroupGrantableForTier() (resolveAccess()'s own per-call
+  // check — see featurePermissions.ts), never from anything stored on the
+  // group. getGroupFeatureLevels() itself returns the EXACT SAME grant map
+  // regardless of which member is asking — proving the per-tier filtering
+  // genuinely lives in resolveAccess(), not in this DB-backed lookup.
+  async function createFlaggedGroup(repos: ReturnType<typeof createRepositories>, name: string) {
+    const group = await repos.relationshipGroups.create({ name, description: null, departmentId: null, createdBy: "test" });
     return repos.relationshipGroups.update(group.id, { usedForGroupAccess: true });
   }
 
-  it("CASE 1/10 — an explicitly-\"General\" group behaves identically to the (legacy, un-set) default — General-tier member restricted as always", async () => {
-    const db = await createTestDb();
-    const repos = createRepositories(db);
-    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
-    await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
-    const group = await createFlaggedGroup(repos, "Coach", "General");
-    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
-
-    expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(["porting_assist"]);
-  });
-
-  it("CASE 2 — an \"Admin\"-tier group restricts an Admin-tier member exactly like a General-tier group restricts a General-tier member", async () => {
-    const db = await createTestDb();
-    const repos = createRepositories(db);
-    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
-    await repos.users.create({ email: "admin-member@example.com", name: "Admin Member", tactId: "T-AM", tier: "Admin" });
-    const group = await createFlaggedGroup(repos, "Admin Cohort", "Admin");
-    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["qa_dashboard"], "test");
-
-    expect(await getGroupAllowedFeatureIds(repos, "admin-member@example.com", "Admin")).toEqual(["qa_dashboard"]);
-
-    // End-to-end via evaluateAccess: a not-granted restrictable tool
-    // resolves None (real restriction, not just a raw allow-list check),
-    // and the granted one resolves Editor despite qa_dashboard defaulting
-    // to Viewer for ordinary Admin-tier users.
-    const blocked = await evaluateAccess(db, "admin-member@example.com", "team_tracker");
-    expect(blocked).toEqual({ level: "None", source: "Group Access Restriction" });
-    const granted = await evaluateAccess(db, "admin-member@example.com", "qa_dashboard");
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
-  });
-
-  it("CASE 3 — a \"Platform Admin\"-tier group restricts a Platform Admin-tier member", async () => {
-    const db = await createTestDb();
-    const repos = createRepositories(db);
-    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
-    await repos.users.create({ email: "pa-member@example.com", name: "PA Member", tactId: "T-PA", tier: "Platform Admin" });
-    const group = await createFlaggedGroup(repos, "PA Cohort", "Platform Admin");
-    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "pa-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["resources"], "test");
-
-    expect(await getGroupAllowedFeatureIds(repos, "pa-member@example.com", "Platform Admin")).toEqual(["resources"]);
-
-    const granted = await evaluateAccess(db, "pa-member@example.com", "resources");
-    expect(granted).toEqual({ level: "Editor", source: "Group Access Restriction" });
-  });
-
-  it("CASE 4 — a member's own tier not matching the group's groupTier leaves them completely unaffected by it, even though they're genuinely a mapped subject", async () => {
+  it("CASE 1 — a single group with BOTH a General-tier and an Admin-tier member: an Advisor Zone grant reaches both identically", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
     await repos.users.create({ email: "general-member@example.com", name: "General Member", tactId: "T-GM", tier: "General" });
-    // This group targets ADMIN-tier members only.
-    const group = await createFlaggedGroup(repos, "Admin Cohort", "Admin");
+    await repos.users.create({ email: "admin-member@example.com", name: "Admin Member", tactId: "T-AM", tier: "Admin" });
+    const group = await createFlaggedGroup(repos, "Mixed Cohort");
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "general-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "lookup", level: "Editor" }], "test");
 
-    // A real, mapped subject of a real, flagged, active group — but their
-    // OWN tier ("General") doesn't match this group's groupTier ("Admin"),
-    // so it's exactly as if they weren't mapped to any restricting group.
-    expect(await getGroupAllowedFeatureIds(repos, "general-member@example.com", "General")).toBeNull();
-    const result = await evaluateAccess(db, "general-member@example.com", "porting_assist");
-    expect(result.source).not.toBe("Group Access Restriction");
+    // The raw grant map is identical for both members — this lookup
+    // doesn't know or care about tier at all.
+    expect(await getGroupFeatureLevels(repos, "general-member@example.com")).toEqual({ lookup: "Editor" });
+    expect(await getGroupFeatureLevels(repos, "admin-member@example.com")).toEqual({ lookup: "Editor" });
+
+    const generalResult = await evaluateAccess(db, "general-member@example.com", "lookup");
+    expect(generalResult).toEqual({ level: "Editor", source: "Group Access" });
+    const adminResult = await evaluateAccess(db, "admin-member@example.com", "lookup");
+    expect(adminResult).toEqual({ level: "Editor", source: "Group Access" });
   });
 
-  it("CASE 5 — the group OWNER's own tier has zero bearing on which members it restricts; only groupTier vs. the MEMBER's tier matters", async () => {
+  it("CASE 2 — the SAME group's Admin Zone grant only takes effect for the Admin-tier member; the General-tier member of the very same group is unaffected", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
-    // Owner is Platform Admin, but the group they manage targets General-tier
-    // members — the owner's own tier never enters this computation at all.
-    await repos.users.create({ email: "pa-owner@example.com", name: "PA Owner", tactId: "T-PAO", tier: "Platform Admin" });
-    await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
-    const group = await createFlaggedGroup(repos, "Coach", "General");
-    await repos.userRelationships.create({ ownerEmail: "pa-owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
+    await repos.users.create({ email: "general-member@example.com", name: "General Member", tactId: "T-GM", tier: "General" });
+    await repos.users.create({ email: "admin-member@example.com", name: "Admin Member", tactId: "T-AM", tier: "Admin" });
+    const group = await createFlaggedGroup(repos, "Mixed Cohort");
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "general-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
+    // "product_assist_quota" (AI Usage & Limits) is an Admin Zone feature
+    // that defaults to None for Admin (Platform-Admin/Developer-only by
+    // default) — unlike "plan_scope", which already defaults to Editor for
+    // Admin, so a grant on it wouldn't visibly demonstrate anything being
+    // raised.
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "product_assist_quota", level: "Editor" }], "test");
 
-    expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(["porting_assist"]);
-    // The owner themselves, being Platform Admin, is never restricted by
-    // their own group either way (Platform Admin has no path to being a
-    // restricted "member" here, same guarantee as before Group Tier).
-    expect(await getGroupAllowedFeatureIds(repos, "pa-owner@example.com", "Platform Admin")).toBeNull();
+    // The map itself is identical for both members — the filtering happens
+    // entirely inside resolveAccess(), not here.
+    expect(await getGroupFeatureLevels(repos, "general-member@example.com")).toEqual({ product_assist_quota: "Editor" });
+    expect(await getGroupFeatureLevels(repos, "admin-member@example.com")).toEqual({ product_assist_quota: "Editor" });
+
+    const adminResult = await evaluateAccess(db, "admin-member@example.com", "product_assist_quota");
+    expect(adminResult).toEqual({ level: "Editor", source: "Group Access" });
+
+    // The General-tier member of this SAME group is completely unaffected —
+    // "product_assist_quota" defaults to None for General, and Group Access
+    // never reaches it for them.
+    const generalResult = await evaluateAccess(db, "general-member@example.com", "product_assist_quota");
+    expect(generalResult).toEqual({ level: "None", source: "Default" });
   });
 
-  it("CASE 6 — disabling an Admin-tier group suspends its restriction exactly like disabling a General-tier group always did", async () => {
+  it("CASE 3 — two groups grant the same feature at different levels; the member gets the higher of the two", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
+    await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
+    const groupA = await createFlaggedGroup(repos, "Cohort A");
+    const groupB = await createFlaggedGroup(repos, "Cohort B");
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: groupA!.id, createdBy: "test" });
+    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: groupB!.id, createdBy: "test" });
+    await repos.groupToolAccess.replaceForGroup(groupA!.id, [{ featureId: "porting_assist", level: "Viewer" }], "test");
+    await repos.groupToolAccess.replaceForGroup(groupB!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
+
+    expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor" });
+    const result = await evaluateAccess(db, "member@example.com", "porting_assist");
+    expect(result).toEqual({ level: "Editor", source: "Group Access" });
+  });
+
+  it("CASE 4 — disabling a group immediately drops its grants, restoring the tier's ordinary default", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
     await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
     await repos.users.create({ email: "admin-member@example.com", name: "Admin Member", tactId: "T-AM", tier: "Admin" });
-    const group = await createFlaggedGroup(repos, "Admin Cohort", "Admin");
+    const group = await createFlaggedGroup(repos, "Admin Cohort");
     await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group!.id, ["porting_assist"], "test");
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "plan_scope", level: "Viewer" }], "test");
 
-    expect(await getGroupAllowedFeatureIds(repos, "admin-member@example.com", "Admin")).toEqual(["porting_assist"]);
+    // plan_scope already defaults to Editor for Admin — a Viewer-level
+    // grant can't lower it (raise-only).
+    expect(await evaluateAccess(db, "admin-member@example.com", "plan_scope")).toEqual({ level: "Editor", source: "Default" });
 
     await repos.relationshipGroups.update(group!.id, { active: false });
-    expect(await getGroupAllowedFeatureIds(repos, "admin-member@example.com", "Admin")).toBeNull();
+    expect(await getGroupFeatureLevels(repos, "admin-member@example.com")).toBeNull();
 
     await repos.relationshipGroups.update(group!.id, { active: true });
-    expect(await getGroupAllowedFeatureIds(repos, "admin-member@example.com", "Admin")).toEqual(["porting_assist"]);
+    expect(await getGroupFeatureLevels(repos, "admin-member@example.com")).toEqual({ plan_scope: "Viewer" });
   });
 
-  it("CASE 7/9 — a member in TWO groups targeting DIFFERENT tiers: only the group matching their own tier counts, the other is simply irrelevant to them (not merely 'isolated', genuinely excluded)", async () => {
+  it("CASE 5 — the group owner's own tier has zero bearing on who's affected; only actual membership matters", async () => {
     const db = await createTestDb();
     const repos = createRepositories(db);
-    await repos.users.create({ email: "owner@example.com", name: "Owner One", tactId: "T-OWNER", tier: "General" });
-    await repos.users.create({ email: "admin-member@example.com", name: "Admin Member", tactId: "T-AM", tier: "Admin" });
-    const generalGroup = await createFlaggedGroup(repos, "General Cohort", "General");
-    const adminGroup = await createFlaggedGroup(repos, "Admin Cohort", "Admin");
-    // Same person mapped into BOTH groups (e.g. via two different roster
-    // entries) — realistic if an admin re-purposes an existing membership.
-    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: generalGroup!.id, createdBy: "test" });
-    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: adminGroup!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(generalGroup!.id, ["lookup"], "test");
-    await repos.groupToolAccess.replaceForGroup(adminGroup!.id, ["qa_dashboard"], "test");
+    // Owner is Platform Admin — irrelevant, since the owner isn't a subject
+    // of their own group.
+    await repos.users.create({ email: "pa-owner@example.com", name: "PA Owner", tactId: "T-PAO", tier: "Platform Admin" });
+    await repos.users.create({ email: "member@example.com", name: "Member One", tactId: "T1", tier: "General" });
+    const group = await createFlaggedGroup(repos, "Coach");
+    await repos.userRelationships.create({ ownerEmail: "pa-owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group!.id, createdBy: "test" });
+    await repos.groupToolAccess.replaceForGroup(group!.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
 
-    // As an Admin-tier caller, only adminGroup's grant list applies —
-    // generalGroup's "lookup" grant never bleeds in, because generalGroup
-    // doesn't target this caller's tier at all.
-    expect(await getGroupAllowedFeatureIds(repos, "admin-member@example.com", "Admin")).toEqual(["qa_dashboard"]);
-
-    // Two DIFFERENT Admin-tier groups, by contrast, still union together
-    // exactly like two General-tier groups always did (isolation between
-    // groups is about DIFFERENT groups, not about tiers — this is the
-    // pre-existing "two DIFFERENT flagged relationship groups both feed the
-    // same member's access" behavior, now re-proven at Admin tier too).
-    const secondAdminGroup = await createFlaggedGroup(repos, "Second Admin Cohort", "Admin");
-    await repos.userRelationships.create({ ownerEmail: "owner@example.com", subjectEmail: "admin-member@example.com", relationshipGroupId: secondAdminGroup!.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(secondAdminGroup!.id, ["resources"], "test");
-    const result = await getGroupAllowedFeatureIds(repos, "admin-member@example.com", "Admin");
-    expect(new Set(result)).toEqual(new Set(["qa_dashboard", "resources"]));
+    expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor" });
+    // The owner themselves, not being a subject of the group, is unaffected.
+    expect(await getGroupFeatureLevels(repos, "pa-owner@example.com")).toBeNull();
   });
 });

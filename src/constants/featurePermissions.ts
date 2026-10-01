@@ -47,7 +47,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Search and medical policy category mapping assistant",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // MY ACTIVITY LOG — Viewer, not Editor (same 2026-09 correction as
@@ -62,7 +63,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Personal lookup search tracker and history log",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // ADVISORY ZONE — read-only reference, visible to every tier including
@@ -74,7 +76,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Read-only reference of every plan's payment journey questions and specific illness list",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // ANNOUNCEMENTS ARCHIVE — read-only history of every posted announcement
@@ -86,7 +89,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Full searchable archive of every posted announcement, with a date filter",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     id: "resources",
@@ -104,7 +108,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // "Viewer" to match the real, unchanged behavior — General still reads
     // and clicks resource links exactly as before.
     generalAccess: "Viewer",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "advisor"
   },
   {
     // Read-only calculator — Viewer-only like coverage_projection below,
@@ -116,7 +121,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Calculate and visually explain waiting-period carry-forward for a health-insurance porting case",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // Read-only calculator — Viewer-only like advisory_zone, visible to
@@ -126,7 +132,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Illustrate Base Cover, Bonus, and Restoration Benefit projections across policy years for supported plans",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // Read-only checker — Viewer-only like coverage_projection/advisory_zone
@@ -138,7 +145,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Check whether a declared medical condition falls under a plan's 2-year specific illness waiting period",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // PRODUCT ASSIST — Viewer, not Editor (corrected 2026-09, permission
@@ -154,7 +162,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Ask questions about insurer plans and get verified answers grounded in the Knowledge Base's documents and announcements",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // QA DASHBOARD — read-only advisor QA scorecard, ported from the
@@ -171,7 +180,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Read-only advisor QA scorecard (Lead Score, Payments QA, feedback and dispute/escalation history) sourced live from the QA team's Google Sheet",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     // TEAM TRACKER — month-by-month QA performance view for a Guide's team
@@ -187,7 +197,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Month-by-month QA performance tracker for a Guide's team or a Mentor's mentees, reusing the QA Dashboard's own scoring",
     defaultTier: "General",
     generalAccess: "Viewer",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "advisor"
   },
   {
     id: "smoke_test",
@@ -195,7 +206,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Run the deterministic mapping engine against a curated list of common PEDs, per plan, to catch classification regressions",
     defaultTier: "Developer",
     generalAccess: "None",
-    adminAccess: "None"
+    adminAccess: "None",
+    zone: "developer"
   },
   {
     id: "audit",
@@ -203,7 +215,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Comprehensive audits of all searches, reported illness mapping discrepancies, and mismatches",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     // ACCESS CONTROL CENTER — renamed from "User Management" 2026-08-19 as
@@ -219,7 +232,79 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Manage the user directory, feature access permissions, departments, and QA Dashboard roles",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "administrative"
+  },
+  {
+    // DIRECTORY — 2026-09g, at the user's explicit request ("add rows to
+    // control tier based access for all main sections individually...
+    // Directory, Permissions, QA Access Groups, and Master Advisors"): the
+    // Access Control Center's own top-level tabs got their own individually
+    // governable featureId, mirroring the pattern group_management/
+    // master_advisors already established for their own sub-tabs.
+    // "profile_access" (above) still gates whether the Access Control
+    // Center is reachable at all (the sidebar entry); this one gates
+    // whether the "Directory" tab specifically is visible once inside it —
+    // see ProfileAccessPage.tsx's canViewDirectory. Deliberately Viewer-only
+    // in practice: WHO can edit a directory entry is governed by
+    // effectiveTier directly (Developer/Platform Admin edit, Admin
+    // read-only), unchanged by this featureId's own Editor level.
+    id: "profile_access_directory",
+    name: "Access Control Center — Directory",
+    description: "View the organization-wide user directory tab inside Access Control Center",
+    defaultTier: "Admin",
+    generalAccess: "None",
+    adminAccess: "Viewer",
+    zone: "administrative"
+  },
+  {
+    // PERMISSIONS — 2026-09g, same reasoning as profile_access_directory
+    // above, for the "Permissions" top-level tab (Feature Defaults,
+    // Organization, Access Rules, Groups, Custom Grants, Change History —
+    // each of those sub-sections still has its own finer-grained gate
+    // where one already exists, e.g. group_management for the Groups
+    // sub-tab; this featureId is the coarser "can this tab be opened at
+    // all" gate for the rest).
+    id: "profile_access_permissions",
+    name: "Access Control Center — Permissions",
+    description: "View the Permissions tab (Feature Defaults, Organization, Access Rules, Groups, Custom Grants) inside Access Control Center",
+    defaultTier: "Admin",
+    generalAccess: "None",
+    adminAccess: "Viewer",
+    zone: "administrative"
+  },
+  {
+    // CHANGE HISTORY — promoted out of the Permissions sub-nav to its own
+    // top-level tab, next to Master Advisors, at the user's explicit
+    // request, and given its own individually governable featureId, same
+    // pattern as profile_access_directory/profile_access_permissions/
+    // qa_access_groups above (rather than continuing to piggyback on
+    // profile_access_permissions once it's no longer nested under that
+    // tab). Deliberately Viewer-only in practice — Change History is a
+    // read-only audit log, there's nothing here for an Editor level to mean.
+    id: "profile_access_change_history",
+    name: "Access Control Center — Change History",
+    description: "View the audit log of every change made across Access Control Center, including the Directory",
+    defaultTier: "Admin",
+    generalAccess: "None",
+    adminAccess: "Viewer",
+    zone: "administrative"
+  },
+  {
+    // QA ACCESS GROUPS — 2026-09g, renamed from "QA Dashboard Access" and
+    // promoted to its own top-level tab (previously a Permissions
+    // sub-section) at the user's explicit request. Governs who holds
+    // Admin/Guide/Mentor access ON the QA Dashboard — a completely
+    // separate axis from this app's own General/Admin/Developer tiers, and
+    // separate from the "qa_dashboard" featureId above (which gates the
+    // read-only QA Dashboard page itself, not who administers its roles).
+    id: "qa_access_groups",
+    name: "QA Access Groups",
+    description: "Manage who holds Admin/Guide/Mentor access on the QA Dashboard, separate from the WebApp tiers",
+    defaultTier: "Admin",
+    generalAccess: "None",
+    adminAccess: "Viewer",
+    zone: "administrative"
   },
   {
     // GROUP MANAGEMENT — 2026-09, the Group Level Access redesign's
@@ -267,7 +352,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Create/edit relationship groups, map members to a group owner, and configure a group's workspace-tool access",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "administrative"
   },
   {
     // MASTER ADVISORS — 2026-09, split out of Access Control Center's
@@ -293,7 +379,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Every advisor's Guide/Mentor assignment and Tact ID/status/employment snapshot, synced from the Advisor Directory sheet",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Viewer"
+    adminAccess: "Viewer",
+    zone: "administrative"
   },
   {
     id: "plan_scope",
@@ -301,7 +388,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Add or edit insurance plans' declaration questionnaires and category-to-question mappings",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     id: "qa_announcement_log",
@@ -309,7 +397,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Publish and manage live QA payment and compliance notices with effective dates",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     id: "flagged_responses",
@@ -317,7 +406,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Dedicated page to review and resolve advisor-flagged mapping discrepancies and mismatch reports",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     id: "ped_suggestions",
@@ -325,7 +415,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Manage the application's PED repository and review AI-assisted mapping recommendations before they become part of the knowledge base",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     id: "knowledge_base",
@@ -333,7 +424,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Manage the documents and announcements that power \"Ask the Playbook\" — per-insurer PDF resources plus a dated announcement override channel",
     defaultTier: "Admin",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     // FEATURE VISIBILITY — page visibility kill switch. Shipped defaults
@@ -355,7 +447,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Show or hide individual pages from everyone except the Developer",
     defaultTier: "Developer",
     generalAccess: "None",
-    adminAccess: "None"
+    adminAccess: "None",
+    zone: "developer"
   },
   {
     // CONNECTIONS — Google Sheets integrations (QA Dashboard, Product
@@ -379,7 +472,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Connect and manage the Google Sheets integrations (QA Dashboard, Product Playbook, Health FAQ, Term FAQ) and the Advisor Directory Sync / Product Assist Log Export actions",
     defaultTier: "Developer",
     generalAccess: "None",
-    adminAccess: "Editor"
+    adminAccess: "Editor",
+    zone: "admin"
   },
   {
     id: "clear_activity",
@@ -387,7 +481,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Erase history of user lookups and resolve/purge active mismatch records",
     defaultTier: "Developer",
     generalAccess: "None",
-    adminAccess: "None"
+    adminAccess: "None",
+    zone: "developer"
   },
   {
     // AI USAGE & LIMITS — Product Assist credit/quota management. Shipped
@@ -402,126 +497,127 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     description: "Manage Product Assist credit allowances and usage limits",
     defaultTier: "Developer",
     generalAccess: "None",
-    adminAccess: "None"
+    adminAccess: "None",
+    zone: "admin"
   }
 ];
 
 /**
- * The features an admin can restrict a relationship group's members to,
- * via the Groups tab (Access Control Center) and the `group_tool_access`
- * table (schema.ts) — 2026-09, originally built for the Training
- * Department's trainer/trainee cohorts and later generalized to any
- * relationship group (see relationship_groups.usedForGroupAccess).
+ * DERIVED FROM THE REGISTRY (2026-09h, at the user's explicit request:
+ * "Automatically include all applicable sidebar pages and features from
+ * the existing registry, covering Advisor Zone, Admin Zone, and
+ * administrative sections. Avoid maintaining a separate hardcoded list
+ * that becomes outdated when new features are added"). These three Sets
+ * used to be independently hand-maintained string-literal arrays — easy to
+ * forget to update when a feature was added, renamed, or reclassified
+ * (exactly what happened to "flagged_responses" in 2026-09g, caught only
+ * because the user pointed it out). Every DEFAULT_FEATURE_PERMISSIONS
+ * entry now declares its own `zone` field (see FeaturePermission's own doc
+ * comment in types/permissions.ts) right alongside its id/name/tier — a
+ * NEW feature literally cannot be added to the registry without the
+ * TypeScript compiler forcing a zone choice, so these three Sets can never
+ * again silently drift out of sync with the registry the way three
+ * separate Set literals could. "Preserve existing Group Tier behavior and
+ * Developer protections" — isFeatureGroupGrantableForTier() and
+ * isFeatureGroupRestrictableForTier() below are UNCHANGED by this: they
+ * still consume these three Sets exactly as before, and "developer"-zone
+ * features (Feature Visibility, Smoke Test, Clear Activity) are still
+ * entirely absent from all three, so they remain completely out of Group
+ * Access's reach in either direction, exactly as before.
  *
- * DERIVED FROM THE REGISTRY, NOT A FIXED "ADVISOR ZONE" LIST (2026-09c, at
- * the user's explicit request): this used to be a hand-picked list of 11
- * "Advisor Zone" product/reference/QA tools (same grouping App.tsx's
- * navZonesRaw uses for its `advisorWorkspace`/`quality`/`reference`
- * groups), which made sense back when Group Tier could only ever target
- * General-tier members. Now that a group's `groupTier` can also target
- * Admin or Platform Admin members (migration 0082), a fixed Advisor-Zone-
- * only list no longer makes sense — Group Tier's actual purpose is
- * "which tier's feature access am I configuring?", not "only ever show
- * Advisor Zone features". This Set is now every feature id in
- * DEFAULT_FEATURE_PERMISSIONS above, with one deliberate exclusion below —
- * see featuresApplicableToTier() for the per-tier subset the Groups tab's
- * Access step (GroupEditorModal.tsx) actually offers, which is what changed
- * user-facing behavior; this Set itself stays the same kind of thing it
- * always was (the outer eligibility boundary the evaluator and the
- * `/api/group-access/:groupId` validation check against), just wider.
- *
- * Widening this Set doesn't change *how* or *when* the Group Access
- * Restriction gate applies for a General-tier caller — resolveAccess() and
- * evaluateAccess.ts's getGroupAllowedFeatureIds() only ever populate
- * `groupAllowedFeatureIds` from groups whose own `groupTier` already
- * matches the caller's tier (see that function's own doc comment), so the
- * tier-scoping was never this Set's job. Widening it only makes the exact
- * same existing gate reachable for Admin-tier and Platform-Admin-tier
- * callers too, which is exactly the gap being closed here.
- *
- * EXCLUDES "profile_access" (Access Control Center) — deliberately, the
- * same self-escalation boundary server.ts's requireFeatureAccess() comment
- * documents for Custom Grants: profile_access's own effective level is
- * never allowed to be raised by anything other than someone's Security
- * Tier itself, because a careless or malicious grant on it (Custom Grant,
- * Access Rule, or — as of this widening — Group Access) could hand a
- * lower-tier member the ability to grant further access to themselves.
- * Group Access Restriction is architecturally the same "raise to Editor"
- * class of mechanism as a Custom Grant, so that boundary applies here too.
- * Every other feature here is already Custom-Grant-raisable today, so
- * letting Group Access reach the same ones is not a new escalation
- * surface — see this file's own history for how each of those became
- * ordinary, reassignable features.
- *
- * A feature id in this Set that a group owner HAS granted (and whose
- * `groupTier` matches the member's own tier) resolves to complete
- * ("Editor") access for that member, not just whatever the feature's own
- * generalAccess/adminAccess default would otherwise give. See
- * resolveAccess()'s own comment on `groupAllowedFeatureIds` for how the
- * restriction itself is applied.
+ * ADVISOR_ZONE_FEATURES — reachable by every tier (General and up); a
+ * group's grant on one of these applies to every member regardless of
+ * their own tier.
  */
-export const GROUP_RESTRICTABLE_FEATURES = new Set<string>(
-  DEFAULT_FEATURE_PERMISSIONS.map((p) => p.id).filter((id) => id !== "profile_access")
-);
+export const ADVISOR_ZONE_FEATURES = new Set<string>(DEFAULT_FEATURE_PERMISSIONS.filter((p) => p.zone === "advisor").map((p) => p.id));
 
 /**
- * Which of GROUP_RESTRICTABLE_FEATURES a group whose Group Tier is `tier`
- * can actually offer on its Access checklist (GroupEditorModal.tsx, Step
- * 3) — "which tier's feature access am I configuring?" (2026-09c, see
- * GROUP_RESTRICTABLE_FEATURES's own doc comment above for the full
- * reasoning). "Applicable" means exactly what it means everywhere else in
- * this file: that tier gets at least Viewer by default.
- *
- * General and Admin read this straight off this registry's own
- * generalAccess/adminAccess columns — the same columns resolveAccess()
- * itself reads for that tier's ordinary (non-group) default — so the
- * Groups tab's notion of "applicable to this tier" never drifts from what
- * the Permissions tab's own defaults already say. Platform Admin has no
- * per-feature column of its own in this static registry (see
- * FeatureAccessOverride's doc comment in types/permissions.ts —
- * `platformAdminAccess` defaults to "Editor" for every feature absent an
- * explicit override, rather than having a shipped per-feature default
- * here), so its applicable set is simply every remaining
- * GROUP_RESTRICTABLE_FEATURES id.
+ * ADMIN_ZONE_FEATURES — reachable only by Admin, Platform Admin, and
+ * Developer; a group's grant on one of these has zero effect on any
+ * General-tier member, even one belonging to the very same group (see
+ * isFeatureGroupGrantableForTier() below). Deliberately EXCLUDES the
+ * self-escalation-sensitive "administrative" zone (profile_access chief
+ * among them) — see RESTRICT_ONLY_FEATURES's own doc comment for why:
+ * profile_access's own effective level must never be raisable by anything
+ * other than someone's Security Tier itself, because a careless or
+ * malicious grant on it could hand a lower-tier member the ability to
+ * grant further access to themselves. Group Access is architecturally the
+ * same "raise above the tier default" class of mechanism as a Custom
+ * Grant, so that boundary applies here too. Every other feature here is
+ * already Custom-Grant-raisable today, so letting Group Access reach the
+ * same ones is not a new escalation surface.
  */
-export function featuresApplicableToTier(tier: "General" | "Admin" | "Platform Admin"): FeaturePermission[] {
-  return DEFAULT_FEATURE_PERMISSIONS.filter((p) => isFeatureGroupRestrictableForTier(p.id, tier));
+export const ADMIN_ZONE_FEATURES = new Set<string>(DEFAULT_FEATURE_PERMISSIONS.filter((p) => p.zone === "admin").map((p) => p.id));
+
+/**
+ * RESTRICT_ONLY_FEATURES — 2026-09g, at the user's explicit request ("No
+ * check box control for access control center. What if the group is not
+ * supposed to have it?" / "if this was an admin tier feature, why was it
+ * not in the control options"). These are the self-escalation-sensitive
+ * "administrative" zone features that ADMIN_ZONE_FEATURES deliberately
+ * excludes — raising them through Group Access remains permanently
+ * blocked: a careless or malicious group grant must never be able to hand
+ * a lower-tier member the ability to grant further access to themselves.
+ *
+ * What's new here is the RESTRICT direction only: an Admin-tier member of
+ * an access-configured group can now have their (already-tier-granted)
+ * access to one of these blocked, same as any Admin Zone feature, by simply
+ * leaving it unchecked — this is what makes it possible to build a
+ * genuinely locked-down "trainee"/"limited admin" group that can't reach
+ * Access Control Center, Groups, or Master Advisors at all, not just the
+ * ordinary Admin Zone tools. Checking one of these in the Groups tab does
+ * NOT grant it (there is no raise), it only exempts that member from being
+ * restricted on it — see resolveAccess()'s Group Access block and
+ * isFeatureGroupRestrictableForTier() below for the exact mechanics.
+ * General tier is never affected either way (every one of these already
+ * defaults to "None" for General).
+ */
+export const RESTRICT_ONLY_FEATURES = new Set<string>(DEFAULT_FEATURE_PERMISSIONS.filter((p) => p.zone === "administrative").map((p) => p.id));
+
+/** Every feature id the Groups tab's Access Control list can show at all
+ * (any zone, including the restrict-only Administrative Access zone) — the
+ * outer eligibility boundary the `/api/group-access/:groupId` validation
+ * route checks a submitted featureId against, before per-member tier
+ * eligibility is even considered. */
+export const GROUP_CONFIGURABLE_FEATURES = new Set<string>([...ADVISOR_ZONE_FEATURES, ...ADMIN_ZONE_FEATURES, ...RESTRICT_ONLY_FEATURES]);
+
+/**
+ * Whether a grant on `featureId` can ever apply to a caller at `tier` —
+ * "the selected permissions must respect each member's access tier" (the
+ * user's own framing). This is what makes Group Access mixed-tier-safe:
+ * a group can hold General, Admin, and Platform Admin members all at
+ * once, and checking an Admin Zone item (e.g. Announcement Manager) only
+ * ever raises the Admin-tier-and-up members of that group — a General-tier
+ * member of the exact same group is completely unaffected by that row, as
+ * if it didn't exist for them. See resolveAccess()'s own Group Access step
+ * in accessRuleEvaluator.ts, which calls this before ever applying a
+ * group's grant.
+ */
+export function isFeatureGroupGrantableForTier(featureId: string, tier: "General" | "Admin" | "Platform Admin" | "Developer"): boolean {
+  if (ADVISOR_ZONE_FEATURES.has(featureId)) return true;
+  if (ADMIN_ZONE_FEATURES.has(featureId)) return tier !== "General";
+  // RESTRICT_ONLY_FEATURES deliberately excluded — never raisable through
+  // Group Access, at any tier. See isFeatureGroupRestrictableForTier() below
+  // for the separate (wider) question of whether it can be RESTRICTED.
+  return false;
 }
 
 /**
- * Whether `featureId` is one Group Access Restriction can actually gate
- * FOR A CALLER AT `tier` specifically — the tier-aware companion
- * `resolveAccess()` itself must use for its gate (accessRuleEvaluator.ts),
- * not just the flat `GROUP_RESTRICTABLE_FEATURES` membership check the
- * gate used before this widening.
- *
- * Why this exists as its own check rather than resolveAccess() calling
- * `GROUP_RESTRICTABLE_FEATURES.has(featureId)` directly (which is what it
- * did before 2026-09c): that Set is now the UNION across every tier — it
- * has to be, since a group's checklist must be able to offer
- * Admin/Platform-Admin-only features when `groupTier` is Admin/Platform
- * Admin. But the gate in resolveAccess() is evaluated once per (caller,
- * featureId) pair, for that caller's OWN tier — if it kept checking
- * against the flat union, a General-tier caller in a General-tier
- * restriction group would ALSO have their Admin/Platform-Admin-only
- * features (e.g. "plan_scope", "audit") swept under that same group's
- * ceiling, silently overriding any unrelated Access Rule or Custom Grant
- * they might separately hold on one of those — even though the group's own
- * checklist could never have offered them in the first place (General
- * tier's applicable list never includes them, see
- * featuresApplicableToTier()). That would be a real regression, not
- * cosmetic: a General-tier admin who's been individually granted, say,
- * Editor on "audit" via Custom Grant would lose it the moment they're
- * added to ANY active General-tier restriction group, regardless of what
- * that group's checklist actually contains. This function is what keeps
- * the gate scoped to exactly the features that tier's own checklist could
- * ever have offered — mirroring featuresApplicableToTier() exactly, so the
- * UI and the enforcement gate can never drift apart.
+ * Whether a caller at `tier` can have their access to `featureId` RESTRICTED
+ * by Group Access — a strictly wider question than
+ * isFeatureGroupGrantableForTier() above, since 2026-09g's
+ * RESTRICT_ONLY_FEATURES can be restricted (if left unchecked) without ever
+ * being raisable (if checked). Every raise-capable feature is also
+ * restrict-capable (unchanged from 2026-09f), so this always returns true
+ * wherever isFeatureGroupGrantableForTier() does; it additionally returns
+ * true for RESTRICT_ONLY_FEATURES at Admin/Platform Admin/Developer tier
+ * (resolveAccess() itself further narrows actual restriction to Admin only,
+ * exempting Platform Admin/Developer — see its own doc comment). General
+ * tier is never restrictable on a RESTRICT_ONLY_FEATURES entry since every
+ * one of them already defaults to "None" for General regardless.
  */
-export function isFeatureGroupRestrictableForTier(featureId: string, tier: "General" | "Admin" | "Platform Admin"): boolean {
-  if (!GROUP_RESTRICTABLE_FEATURES.has(featureId)) return false;
-  if (tier === "Platform Admin") return true;
-  const perm = DEFAULT_FEATURE_PERMISSIONS.find((p) => p.id === featureId);
-  if (!perm) return false;
-  return tier === "Admin" ? perm.adminAccess !== "None" : perm.generalAccess !== "None";
+export function isFeatureGroupRestrictableForTier(featureId: string, tier: "General" | "Admin" | "Platform Admin" | "Developer"): boolean {
+  if (isFeatureGroupGrantableForTier(featureId, tier)) return true;
+  if (RESTRICT_ONLY_FEATURES.has(featureId)) return tier !== "General";
+  return false;
 }

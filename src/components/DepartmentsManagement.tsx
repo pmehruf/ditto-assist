@@ -8,6 +8,7 @@ import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Building2, Power, Se
 import { Department } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
+import { useDialog } from "../hooks/useDialog";
 
 interface DepartmentsManagementProps {
   theme: "light" | "dark";
@@ -39,6 +40,7 @@ interface DepartmentsManagementProps {
  */
 export function DepartmentsManagement({ theme, effectiveTier, departments, usersList, onChanged, logAction }: DepartmentsManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const canEdit = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   const [creating, setCreating] = useState(false);
@@ -169,7 +171,7 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
       });
       let body = await res.json().catch(() => ({}));
       if (!res.ok && body.requiresConfirmation) {
-        if (!window.confirm(`${body.error} Delete "${dept.name}" anyway?`)) return;
+        if (!(await confirm(`${body.error} Delete "${dept.name}" anyway?`))) return;
         res = await fetch(`/api/departments/${dept.id}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -279,7 +281,7 @@ export function DepartmentsManagement({ theme, effectiveTier, departments, users
               No departments match the current search/filters.
             </p>
           ) : (
-          <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+          <div className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
                 {visibleDepartments.map((dept, idx) => {

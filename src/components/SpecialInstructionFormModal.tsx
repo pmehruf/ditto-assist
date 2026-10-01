@@ -23,7 +23,7 @@ function ModalShell({ theme, onClose, children }: { theme: "light" | "dark"; onC
     <div className="fixed inset-0 z-[190] flex items-center justify-center p-4" role="dialog" aria-modal="true">
       <div className={`absolute inset-0 backdrop-blur-md ${dark ? "bg-black/60" : "bg-stone-900/40"}`} onClick={onClose} />
       <div
-        className={`relative w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden max-h-[85vh] flex flex-col ${
+        className={`relative w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden vp-modal flex flex-col ${
           dark ? "bg-[#12151A] border-[#252A34]" : "bg-[#ffffff] border-stone-200"
         }`}
       >
@@ -126,7 +126,7 @@ export function SpecialInstructionFormModal({ theme, domain, categories, initial
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="px-5 py-4 space-y-3 overflow-y-auto">
+      <div className="vp-scroll flex-1 px-5 py-4 space-y-3">
         {saveError && <p className="text-[11px] font-semibold text-red-500">{saveError}</p>}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wide text-content-muted mb-1">Topic <span className="text-red-500">*</span></label>

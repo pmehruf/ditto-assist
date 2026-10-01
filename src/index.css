@@ -527,6 +527,64 @@ html {
    browser's default (permanently visible once its content overflowed). */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* --------------------------------------------------------------
+   Viewport-aware sizing — the one shared rule for keeping content-heavy
+   components inside the viewport/their parent (Viewport → App shell →
+   Component → Content) instead of growing with their content.
+
+   vh-based caps divide by --app-zoom for the same reason the app shell
+   does (see autoZoom.ts): CSS `zoom` renders a vh length `zoom`x larger
+   without reducing the vh count, so a plain max-h-[85vh] modal paints at
+   ~108% of the screen on a zoomed (large) monitor and its footer actions
+   fall off-screen.
+
+   - .vp-modal      overlay/dialog panel: capped to the viewport
+                    (default 85vh, override with --vp-max-h) with a 1rem
+                    margin each side. Pair with .vp-scroll on the body, or
+                    overflow-y-auto on the panel itself for simple dialogs.
+   - .vp-panel      in-page panel/card: capped to a share of the viewport
+                    (default 60vh, override with --vp-max-h), optionally
+                    minus --vp-offset (the fixed chrome above/below it, so
+                    it fills the rest of the screen without the page
+                    itself also scrolling), never below --vp-min-h.
+   - .vp-scroll     the component's ONE scroll container: shrinks inside a
+                    flex column (min-height:0), scrolls only when content
+                    overflows (no scrollbar otherwise), wraps long strings.
+   - .vp-table-wrap table container: wide tables scroll horizontally
+                    instead of being clipped or widening the page.
+   - .vp-wrap       long unbroken text wraps instead of forcing width.
+   Layered as components so a utility on the same element still wins.
+   -------------------------------------------------------------- */
+@layer components {
+  .vp-modal {
+    min-width: 0;
+    max-width: calc(100vw / var(--app-zoom, 1) - 2rem);
+    max-height: calc(var(--vp-max-h, 85vh) / var(--app-zoom, 1));
+  }
+  .vp-panel {
+    min-height: 0;
+    max-height: max(
+      var(--vp-min-h, 160px),
+      calc(var(--vp-max-h, 60vh) / var(--app-zoom, 1) - var(--vp-offset, 0px))
+    );
+  }
+  .vp-scroll {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+  }
+  .vp-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .vp-wrap {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
 .text-button { font-size: var(--text-button); line-height: var(--leading-button); font-weight: 700; }
 .text-table-header { font-size: var(--text-table-header); line-height: var(--leading-table-header); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .text-table-cell { font-size: var(--text-table-cell); line-height: var(--leading-table-cell); font-weight: 500; }
@@ -701,16 +759,10 @@ table button[aria-haspopup="listbox"] {
   min-width: 8rem;
 }
 
-/* Native date picker follows the active theme (was forced dark globally).
-   `color-scheme: dark` alone already makes the browser draw the calendar
-   glyph in a light colour to match — the `filter: invert(1)` that used to
-   sit alongside it inverted that already-light icon straight back to a
-   dark one, which is why it kept blending into dark-theme inputs instead
-   of showing white (Announcement form's date fields, Audit/My Activity
-   Start/End Date filters, etc). */
-.dark input[type="date"] { color-scheme: dark; }
-html:not(.dark) input[type="date"] { color-scheme: light; }
-input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+/* 2026-09 theme pass: every date field now uses CustomDatePicker (a themed
+   dropdown, see DateInputDMY.tsx) instead of a native <input type="date">,
+   so the color-scheme nudge and calendar-icon cursor rule above no longer
+   apply to anything in this app -- removed rather than left as dead CSS. */
 
 /* Native <select> dropdown arrow follows the active theme too — without
    this, the browser assumes a light UI for the arrow glyph even when the
@@ -979,7 +1031,18 @@ html:not(.dark) .text-emerald-700, html:not(.dark) .text-emerald-805 {
 .dark .bg-\[\#14161a\], .dark .bg-\[\#12151A\], .dark .bg-\[\#111622\],
 .dark .bg-\[\#091520\]\/80, .dark .bg-\[\#0b1427\], .dark .bg-slate-900\/60,
 .dark .bg-black\/25, .dark .bg-stone-900, .dark .bg-\[\#050b16\]\/95,
-.dark .bg-\[\#050b16\]\/90, .dark .bg-\[\#040914\], .dark .bg-slate-950\/90 {
+.dark .bg-\[\#050b16\]\/90, .dark .bg-\[\#040914\], .dark .bg-slate-950\/90,
+/* 2026-09 global theme pass: bg-[#14181f] is CustomSelect's floating
+   dropdown panel (and a few pages' copies of the same literal) -- a flat,
+   desaturated near-black that was never added to this consolidation list,
+   so it rendered as its own off-brand charcoal instead of the app's navy
+   --surface like every other opaque dark overlay here (#12151A etc, one
+   line up). Dark theme's --surface is a solid hex (#123454), not the
+   translucent rgba light theme uses, so it's already safe for a floating
+   panel that must stay fully opaque -- see CustomSelect.tsx's own comment
+   on why these panels can't use the (light-theme-translucent) --surface
+   utility class directly; this token reference doesn't have that problem. */
+.dark .bg-\[\#14181f\] {
   background-color: var(--surface);
 }
 

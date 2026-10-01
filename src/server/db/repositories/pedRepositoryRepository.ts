@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
-import { pedRepository, type PedRepositoryRow, type NewPedRepositoryRow } from "../schema.js";
+import { pedRepository, pedAliases, type PedRepositoryRow, type NewPedRepositoryRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
 
 export type CreatePedEntry = Omit<NewPedRepositoryRow, "id" | "pedCode" | "createdAt" | "updatedAt">;
@@ -100,6 +100,31 @@ export class PedRepositoryRepository {
     const sortColumn = SORTABLE_COLUMNS[options.sortBy as keyof typeof SORTABLE_COLUMNS] ?? pedRepository.canonicalName;
     const orderFn = options.sortDir === "desc" ? desc : asc;
     return this.db.select().from(pedRepository).where(where).orderBy(orderFn(sortColumn));
+  }
+
+  /** Case-insensitive substring search over canonical name, PED code AND
+   * every alias (incl. abbreviations like "OSA"), deduplicated to distinct
+   * PEDs — the picker for Plan Management's Plan-Specific PED Mappings. */
+  async searchByNameOrAlias(search: string, limit = 15): Promise<PedRepositoryRow[]> {
+    const pattern = containsPattern(search);
+    const aliasHits = await this.db
+      .selectDistinct({ pedId: pedAliases.pedId })
+      .from(pedAliases)
+      .where(ilike(pedAliases.aliasText, pattern))
+      .limit(200);
+    const aliasPedIds = aliasHits.map((a) => a.pedId);
+    return this.db
+      .select()
+      .from(pedRepository)
+      .where(
+        or(
+          ilike(pedRepository.canonicalName, pattern),
+          ilike(pedRepository.pedCode, pattern),
+          ...(aliasPedIds.length ? [inArray(pedRepository.id, aliasPedIds)] : [])
+        )
+      )
+      .orderBy(asc(pedRepository.canonicalName))
+      .limit(limit);
   }
 
   async get(id: number): Promise<PedRepositoryRow | undefined> {

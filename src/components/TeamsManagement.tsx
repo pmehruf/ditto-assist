@@ -8,6 +8,7 @@ import { Pencil, Save, X, Plus, ShieldCheck, AlertTriangle, Users, Power, Search
 import { OrgTeam } from "../types/permissions";
 import { UserProfile } from "../types/user";
 import { ClippedButton } from "./ClippedButton";
+import { useDialog } from "../hooks/useDialog";
 
 interface TeamsManagementProps {
   theme: "light" | "dark";
@@ -35,6 +36,7 @@ interface TeamsManagementProps {
  */
 export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onChanged, logAction }: TeamsManagementProps) {
   const dark = theme === "dark";
+  const { confirm } = useDialog();
   const canEdit = effectiveTier === "Developer" || effectiveTier === "Platform Admin";
 
   const [creating, setCreating] = useState(false);
@@ -164,7 +166,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
       });
       let body = await res.json().catch(() => ({}));
       if (!res.ok && body.requiresConfirmation) {
-        if (!window.confirm(`${body.error} Delete "${team.name}" anyway?`)) return;
+        if (!(await confirm(`${body.error} Delete "${team.name}" anyway?`))) return;
         res = await fetch(`/api/org-teams/${team.id}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -274,7 +276,7 @@ export function TeamsManagement({ theme, effectiveTier, orgTeams, usersList, onC
               No business units match the current search/filters.
             </p>
           ) : (
-          <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+          <div className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
                 {visibleTeams.map((team, idx) => {

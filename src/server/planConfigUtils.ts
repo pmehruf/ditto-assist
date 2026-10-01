@@ -4,7 +4,8 @@
  */
 
 import type { PlanRestrictionRow } from "./db/schema.js";
-import type { PlanRestriction } from "../types.js";
+import type { PlanRestriction, PlanPedOverride } from "../types.js";
+import type { PlanOverrideDetailedRow } from "./db/repositories/planOverridesRepository.js";
 
 /**
  * Converts a DB-stored plan_configs row (tagged questions array) into the
@@ -62,5 +63,22 @@ export function toPlanRestrictions(rows: PlanRestrictionRow[]): PlanRestriction[
     keywords: Array.isArray(row.keywords) ? (row.keywords as string[]) : [],
     explanation: row.explanation,
     isActive: row.isActive,
+  }));
+}
+
+/**
+ * Converts `plan_overrides` rows (joined via PlanOverridesRepository.
+ * listDetailed) into the PlanPedOverride[] shape engine.ts's
+ * applyPlanPedOverride evaluates. Attached onto `config.pedOverrides` at
+ * every call site, same as toPlanRestrictions above.
+ */
+export function toPlanPedOverrides(rows: PlanOverrideDetailedRow[]): PlanPedOverride[] {
+  return rows.map((row) => ({
+    pedId: row.pedId,
+    pedName: row.pedName,
+    aliases: row.aliases,
+    targetQuestion: row.targetQuestion ?? null,
+    categoryKey: row.categoryKey ?? null,
+    reason: row.reason ?? null,
   }));
 }

@@ -82,7 +82,7 @@ export function AnnouncementAckModal({
       <div className={`absolute inset-0 backdrop-blur-md ${theme === "dark" ? "bg-black/60" : "bg-stone-900/40"}`} />
 
       <div
-        className={`relative w-full max-w-xl max-h-[85vh] rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
+        className={`relative w-full max-w-xl vp-modal rounded-2xl border shadow-2xl flex flex-col overflow-hidden ${
           // Plain opaque hex, not bg-white — this is a modal shell floating
           // over the whole app (backdrop included), not a stationary card,
           // so it must stay fully opaque regardless of the card surface's
@@ -110,7 +110,7 @@ export function AnnouncementAckModal({
               reads as the same object advisors already know. */}
           <div className="shrink-0 flex items-center gap-1.5 flex-wrap mb-2.5">
             <span
-              className="text-[9px] font-mono font-bold bg-[#3B82F6]/10 px-1.5 py-[1px] rounded border border-[#3B82F6]/25"
+              className="vp-wrap text-[9px] font-mono font-bold bg-[#3B82F6]/10 px-1.5 py-[1px] rounded border border-[#3B82F6]/25"
               style={{ color: "var(--accent)" }}
             >
               {current.title || current.category}
@@ -179,7 +179,7 @@ export function AnnouncementAckModal({
             // (matching DEFAULT_INK.light, the same "default ink" constant
             // AnnouncementContent itself uses) is correct regardless of
             // ambient theme, since the box itself never changes.
-            className="min-h-0 flex-1 overflow-y-auto pr-2 rounded-lg border border-stone-200 bg-[#ffffff] text-[#111827] p-3 text-xs leading-relaxed"
+            className="vp-scroll flex-1 pr-2 rounded-lg border border-stone-200 bg-[#ffffff] text-[#111827] p-3 text-xs leading-relaxed"
           >
             <AnnouncementContent content={current.announcement} theme={theme} forceLightContrast />
           </div>

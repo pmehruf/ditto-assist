@@ -384,7 +384,7 @@ export function AccessRulesManagement({ theme, effectiveTier, departments, orgTe
               No rules match the current search/filters.
             </p>
           ) : (
-          <div className={`rounded-xl border overflow-hidden ${dark ? "border-stone-850" : "border-stone-200"}`}>
+          <div className={`rounded-xl border vp-table-wrap ${dark ? "border-stone-850" : "border-stone-200"}`}>
             <table className="w-full border-collapse">
               <tbody>
                 {visibleActiveRules.map((rule, idx) => {

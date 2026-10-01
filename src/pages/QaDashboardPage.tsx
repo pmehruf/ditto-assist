@@ -1465,7 +1465,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           <span className="flex items-center gap-1">
             <Calendar className="w-3 h-3" /> {field === "checkedFrom" ? "Start Date" : field === "checkedTo" ? "End Date" : "Till Date"}
           </span>
-          <DateInputDMY
+          <DateInputDMY theme={theme}
             value={dates[field]}
             onChange={(v) => handleDateFieldChange(field, v)}
             displayClassName={`w-full ${qaDateInputClass}`}
@@ -1575,7 +1575,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
               <span className="flex items-center gap-1">
                 <Calendar className="w-3 h-3" /> {field === "checkedFrom" ? "Start Date" : field === "checkedTo" ? "End Date" : "Till Date"}
               </span>
-              <DateInputDMY
+              <DateInputDMY theme={theme}
                 value={dates[field]}
                 onChange={(v) => handleDateFieldChange(field, v)}
                 displayClassName={`w-full ${qaDateInputClass}`}
@@ -1817,7 +1817,7 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" /> {field === "checkedFrom" ? "Start Date" : field === "checkedTo" ? "End Date" : "Till Date"}
                 </span>
-                <DateInputDMY
+                <DateInputDMY theme={theme}
                   value={dates[field]}
                   onChange={(v) => handleDateFieldChange(field, v)}
                   displayClassName={`w-full ${qaDateInputClass}`}
@@ -1917,11 +1917,11 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           <div className={`flex flex-wrap items-end gap-3 rounded-2xl border p-4 ${dark ? "bg-white/[0.05] border-white/[0.10]" : "bg-surface-elevated border-[var(--border-strong)]"}`}>
             <label className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> From</span>
-              <DateInputDMY value={feedbackDateFrom} onChange={setFeedbackDateFrom} max={feedbackDateTo || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
+              <DateInputDMY theme={theme} value={feedbackDateFrom} onChange={setFeedbackDateFrom} max={feedbackDateTo || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
             </label>
             <label className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> To</span>
-              <DateInputDMY value={feedbackDateTo} onChange={setFeedbackDateTo} min={feedbackDateFrom || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
+              <DateInputDMY theme={theme} value={feedbackDateTo} onChange={setFeedbackDateTo} min={feedbackDateFrom || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
             </label>
             <label className="flex-1 min-w-[150px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> Domain</span>
@@ -1973,11 +1973,11 @@ export function QaDashboardPage({ theme }: QaDashboardPageProps) {
           <div className={`flex flex-wrap items-end gap-3 rounded-2xl border p-4 ${dark ? "bg-white/[0.05] border-white/[0.10]" : "bg-surface-elevated border-[var(--border-strong)]"}`}>
             <label className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> From</span>
-              <DateInputDMY value={reviewDateFrom} onChange={setReviewDateFrom} max={reviewDateTo || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
+              <DateInputDMY theme={theme} value={reviewDateFrom} onChange={setReviewDateFrom} max={reviewDateTo || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
             </label>
             <label className="flex-1 min-w-[130px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> To</span>
-              <DateInputDMY value={reviewDateTo} onChange={setReviewDateTo} min={reviewDateFrom || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
+              <DateInputDMY theme={theme} value={reviewDateTo} onChange={setReviewDateTo} min={reviewDateFrom || undefined} displayClassName={`w-full ${qaDateInputClass}`} />
             </label>
             <label className="flex-1 min-w-[140px] flex flex-col gap-1 text-[11px] font-bold text-content-muted">
               <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> Domain</span>

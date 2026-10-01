@@ -51,7 +51,7 @@ interface MyActivityPageProps {
  * (Phase 1.3) — same filtering/parsing logic, same markup. The
  * `activeTab === "my_activity"` condition and wrapping
  * `<motion.div key="my_activity">` deliberately stay in App.tsx (see
- * ResourcesPage.tsx for why).
+ * the AnimatePresence block in App.tsx for why).
  */
 export function MyActivityPage({
   currentUser,
@@ -262,7 +262,7 @@ export function MyActivityPage({
             <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
               From Date
             </label>
-            <DateInputDMY
+            <DateInputDMY theme={theme}
               value={myActivityStartDate || ""}
               onChange={setMyActivityStartDate}
               displayClassName={`text-xs font-mono font-semibold py-1.5 px-2.5 rounded-lg border flex items-center gap-1.5 select-none min-w-[115px] justify-between ${
@@ -279,7 +279,7 @@ export function MyActivityPage({
             <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}>
               To Date
             </label>
-            <DateInputDMY
+            <DateInputDMY theme={theme}
               value={myActivityEndDate || ""}
               onChange={setMyActivityEndDate}
               displayClassName={`text-xs font-mono font-semibold py-1.5 px-2.5 rounded-lg border flex items-center gap-1.5 select-none min-w-[115px] justify-between ${

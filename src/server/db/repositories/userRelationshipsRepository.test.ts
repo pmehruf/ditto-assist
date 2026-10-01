@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "../testUtils.js";
 import { createRepositories } from "./index.js";
-import { getGroupAllowedFeatureIds } from "../../accessControl/evaluateAccess.js";
+import { getGroupFeatureLevels } from "../../accessControl/evaluateAccess.js";
 
 async function seedUser(repos: ReturnType<typeof createRepositories>, email: string, name: string, tactId: string) {
   await repos.users.create({ email, name, tactId, tier: "General" });
@@ -107,14 +107,96 @@ describe("UserRelationshipsRepository.reassignOwner — Reassign Owner action", 
     const group = await seedGroup(repos, "Coach");
     await repos.relationshipGroups.update(group.id, { usedForGroupAccess: true });
     await repos.userRelationships.create({ ownerEmail: "old-owner@example.com", subjectEmail: "member@example.com", relationshipGroupId: group.id, createdBy: "test" });
-    await repos.groupToolAccess.replaceForGroup(group.id, ["porting_assist"], "test");
+    await repos.groupToolAccess.replaceForGroup(group.id, [{ featureId: "porting_assist", level: "Editor" }], "test");
 
-    expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(["porting_assist"]);
+    expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor" });
 
     await repos.userRelationships.reassignOwner(group.id, "old-owner@example.com", "new-owner@example.com");
 
     // Same group, same tool grants, same member — reassigning who "owns"
     // the roster has no bearing on what the member can access.
-    expect(await getGroupAllowedFeatureIds(repos, "member@example.com", "General")).toEqual(["porting_assist"]);
+    expect(await getGroupFeatureLevels(repos, "member@example.com")).toEqual({ porting_assist: "Editor" });
+  });
+});
+
+describe("UserRelationshipsRepository.isOwnerOfGroup / .get — 2026-09h ownership authorization", () => {
+  // These two methods are what server.ts's requireGroupAccessEditor() calls
+  // to decide whether a caller who only has Viewer-level group_management
+  // access may still edit ONE specific group they own — see that function's
+  // own doc comment in server.ts for the two-path logic. requireGroupAccessEditor()
+  // itself can't be imported and unit-tested directly (it's an unexported
+  // helper inside server.ts's Express app, not a standalone module — same
+  // reason accessRuleEvaluator.test.ts's header comment gives for not
+  // testing requireFeatureAccess() directly), so these tests cover its two
+  // DB-backed building blocks in isolation instead.
+
+  it("isOwnerOfGroup is true for a mapped owner of that group", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await seedUser(repos, "owner-a@example.com", "Owner A", "T-A");
+    await seedUser(repos, "member@example.com", "Member", "T-M");
+    const group = await seedGroup(repos, "Coach");
+    await repos.userRelationships.create({ ownerEmail: "owner-a@example.com", subjectEmail: "member@example.com", relationshipGroupId: group.id, createdBy: "test" });
+
+    expect(await repos.userRelationships.isOwnerOfGroup(group.id, "owner-a@example.com")).toBe(true);
+  });
+
+  it("isOwnerOfGroup is false for a user who owns a DIFFERENT group — no cross-group leakage", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await seedUser(repos, "owner-a@example.com", "Owner A", "T-A");
+    await seedUser(repos, "member@example.com", "Member", "T-M");
+    const groupA = await seedGroup(repos, "Coach");
+    const groupB = await seedGroup(repos, "Coach-B");
+    await repos.userRelationships.create({ ownerEmail: "owner-a@example.com", subjectEmail: "member@example.com", relationshipGroupId: groupA.id, createdBy: "test" });
+
+    // Owner A owns groupA but has no roster at all in groupB — the exact
+    // "must not be able to modify other owners' groups" scenario the user
+    // called out.
+    expect(await repos.userRelationships.isOwnerOfGroup(groupB.id, "owner-a@example.com")).toBe(false);
+  });
+
+  it("isOwnerOfGroup is false for a plain member (subject) of the group who is not themselves an owner row", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await seedUser(repos, "owner-a@example.com", "Owner A", "T-A");
+    await seedUser(repos, "member@example.com", "Member", "T-M");
+    const group = await seedGroup(repos, "Coach");
+    await repos.userRelationships.create({ ownerEmail: "owner-a@example.com", subjectEmail: "member@example.com", relationshipGroupId: group.id, createdBy: "test" });
+
+    expect(await repos.userRelationships.isOwnerOfGroup(group.id, "member@example.com")).toBe(false);
+  });
+
+  it("isOwnerOfGroup is case-insensitive on email, matching how emails are stored/compared elsewhere", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await seedUser(repos, "owner-a@example.com", "Owner A", "T-A");
+    await seedUser(repos, "member@example.com", "Member", "T-M");
+    const group = await seedGroup(repos, "Coach");
+    await repos.userRelationships.create({ ownerEmail: "owner-a@example.com", subjectEmail: "member@example.com", relationshipGroupId: group.id, createdBy: "test" });
+
+    expect(await repos.userRelationships.isOwnerOfGroup(group.id, "Owner-A@Example.com")).toBe(true);
+  });
+
+  it("isOwnerOfGroup is false for a nonexistent group id", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await seedUser(repos, "owner-a@example.com", "Owner A", "T-A");
+    expect(await repos.userRelationships.isOwnerOfGroup(999999, "owner-a@example.com")).toBe(false);
+  });
+
+  it("get() returns the relationship row by id, or undefined when it doesn't exist — used by DELETE /api/user-relationships/:id to look up the owning group before authorizing", async () => {
+    const db = await createTestDb();
+    const repos = createRepositories(db);
+    await seedUser(repos, "owner-a@example.com", "Owner A", "T-A");
+    await seedUser(repos, "member@example.com", "Member", "T-M");
+    const group = await seedGroup(repos, "Coach");
+    const created = await repos.userRelationships.create({ ownerEmail: "owner-a@example.com", subjectEmail: "member@example.com", relationshipGroupId: group.id, createdBy: "test" });
+
+    const found = await repos.userRelationships.get(created.id);
+    expect(found?.relationshipGroupId).toBe(group.id);
+    expect(found?.ownerEmail).toBe("owner-a@example.com");
+
+    expect(await repos.userRelationships.get(999999)).toBeUndefined();
   });
 });
