@@ -629,6 +629,21 @@ export default function App() {
   // so an admin's change reaches every advisor without a page reload.
   const [pedOverridesByPlan, setPedOverridesByPlan] = useState<Record<string, PlanPedOverride[]>>({});
 
+  // Which engine the server uses for lookups. "db" = the server's data-driven
+  // engine decides everything, so this browser must not classify locally with
+  // its compiled-in rules (see server.ts /api/mapping-engine). Defaults to
+  // "legacy" until the server says otherwise, so nothing changes if the call fails.
+  const [mappingEngineMode, setMappingEngineMode] = useState<"legacy" | "db">("legacy");
+  const fetchMappingEngineMode = async () => {
+    try {
+      const res = await fetch("/api/mapping-engine");
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.mode === "db") setMappingEngineMode("db");
+    } catch (err: unknown) {
+      console.error("Failed to read the mapping engine mode (continuing with local rules):", err);
+    }
+  };
+
   const fetchPlanPedOverrides = async (): Promise<Record<string, PlanPedOverride[]> | null> => {
     try {
       const res = await fetch("/api/plan-ped-overrides");
@@ -1066,6 +1081,7 @@ export default function App() {
       fetchPlanConfigs();
       fetchPlanRestrictions();
       fetchPlanPedOverrides();
+      fetchMappingEngineMode();
       fetchPedSuggestions();
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
@@ -2445,7 +2461,7 @@ export default function App() {
       if (!trimmedPed) continue;
 
       // Deterministic classification locally
-      const clientMatch = classifyDeterministic(trimmedPed, plan, config);
+      const clientMatch = mappingEngineMode === "db" ? null : classifyDeterministic(trimmedPed, plan, config);
       if (clientMatch) {
         const sanitized = sanitizeOutput(clientMatch, trimmedPed, config);
         const guarded = applyPostGuards(sanitized, trimmedPed, plan, config);

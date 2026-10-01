@@ -33,9 +33,9 @@ When AI is used to review or integrate mappings:
 
 ## Version Information
 
-- **Version:** 1.1
+- **Version:** 1.2
 - **Status:** Authoritative — approved baseline. This is the single highest-authority governance document for the mapping engine.
-- **Last Updated:** 2026-07-29
+- **Last Updated:** 2026-10-01
 - **Authority:** This document supersedes and consolidates all prior governance material — the Mapping Policy Charter, the Production Governance Manual, and any Validation Framework, Integration Playbook, Change Control, Mapping Governance, or Integration Rules notes. Those documents become optional historical reference. Where any of them conflicts with this Constitution, **this Constitution governs.**
 - **Purpose:** To let any future contributor or AI assistant safely maintain and extend the engine using this one document alone — preserving current production behavior, keeping governance and process distinct from behavior, and never silently resolving decisions that belong to the business.
 
@@ -111,10 +111,25 @@ Only principles provable from the implementation. Aspirational rules are exclude
 
 **PED Repository DB migration (`PED_SOURCE` flag)** — [CURRENT], added 2026-07-28/29, not yet reflected anywhere else in this Constitution prior to this note:
 - `classifyDeterministic` (`src/engine.ts`) takes an optional 4th parameter, `dbSource`. When absent or null (`PED_SOURCE=legacy`, the default), behavior is byte-for-byte identical to everything described elsewhere in this document: `TOP_PED_DICTIONARY` and the 4 hardcoded plan-specific blocks are the only dictionary/override sources.
-- When `PED_SOURCE=db` (`server.ts`), `dbSource` is populated from `src/server/pedRuntimeCache.ts`'s in-memory cache of the `ped_repository` / `ped_aliases` / `plan_overrides` / `categories` tables, and stages 2 and 5 above read from it instead, per-term, wherever it has an entry — falling through to the legacy path term-by-term where it doesn't.
+- When `PED_SOURCE=db` (`server.ts`), `dbSource` is populated from `src/server/pedRuntimeCache.ts`'s in-memory cache of the `ped_repository` / `ped_aliases` / `plan_overrides` / `categories` tables, and stages 2 and 5 above read from it instead. Stage 2's DB lookup falls through to the hard-coded blocks where no `plan_overrides` row exists. Stage 5 reads ONLY the DB-backed alias map when `dbSource` is present — `TOP_PED_DICTIONARY` is not consulted there — so a term with no alias-map entry has no dictionary category and continues to the regex sections (corrected 2026-10-01; this sentence previously described a term-by-term fall-through to the legacy dictionary that the code never performed).
 - As of 2026-07-29, the admin UI page labeled "PED Repository" (PED Library sub-tab) writes directly to these tables (`src/server/pedRepositoryLive.ts`) and is the intended live source of truth going forward — this is a change from the page's original behavior (writing only to the legacy `ped_suggestions`/`ped_mapping_overrides` tables, which fed `TOP_PED_DICTIONARY`). Every write also mirrors into the legacy `ped_mapping_overrides` table as rollback insurance, so setting `PED_SOURCE=legacy` and restarting still gives a working (if less current) result.
 - The 4 hardcoded plan-specific blocks (stage 2) are **not yet removed or fully superseded** — they remain the fallback for any term that has no matching `plan_overrides` row under `PED_SOURCE=db`, and are the *only* path under `PED_SOURCE=legacy`. Retiring them is out of scope for this note; see Part IX item 7 (global vs plan-specific placement) for the closest existing unresolved question, though it does not name this migration specifically.
 - This does not change anything in Parts I–III, V–IX (the routing precedence, evidence hierarchy, and unresolved Business Decisions are unaffected — only *where* the dictionary/override data physically lives and how an admin edits it).
+
+**Stage before stage 1 — admin plan-specific PED mapping** — [CURRENT] (in the engine since 2026-08; documented here 2026-10-01). Before the life-stage firewall, `applyPlanPedOverride` checks the plan's `plan_overrides` rows (attached to the plan config on every lookup, so they are always read fresh): an exact alias match first, otherwise the longest contiguous word-span of the input (up to 15 words) that is one of the PED's aliases. A hit returns that PED's exact question (or its category's question) on that plan, flagged `plan_override`, and the post-guards are skipped for it. It outranks every stage below.
+
+**Plan restrictions and flags** — [CURRENT] (documented 2026-10-01). A plan can narrow what its diabetes and benign-growth questions accept through `plan_restrictions` rows (modes `require_keywords`, `exclude_keywords`, `block_category`) or the legacy `plan_configs.overrides` flags (`requiresInsulinForDiabetes`, `excludePrediabetes`, `bypassBenignTumors`); where both exist the row takes over. Only the `diabetes` and `benign_growth` categories are read by the engine today — a restriction on any other category has no routing effect.
+
+**Where classification runs (browser and server)** — [CURRENT], confirmed 2026-10-01 against the production service configuration:
+- With `MAPPING_ENGINE` unset or `legacy` — the production setting on 2026-10-01; `PED_SOURCE` is also unset there, i.e. `legacy` — the advisor's **browser classifies first**, using the rules compiled into the application bundle (`TOP_PED_DICTIONARY`, the hard-coded plan blocks, the regex sections) plus fresh plan-specific PED overrides. Only when the browser's engine returns nothing does the server run the same engine, additionally merging `ped_mapping_overrides` into the dictionary. Consequently a PED Repository edit reaches the engine only through the legacy mirror, only in memory of the server instance that handled the save, and never in the browser; plan configs and restrictions are fetched by the browser once at login.
+- With `MAPPING_ENGINE=db` the browser does not classify; every lookup goes to the server's data-driven engine (below).
+
+**Mapping-control layer (`MAPPING_ENGINE=db`)** — [CURRENT] (added 2026-10-01). `src/mapping/routingEngine.ts` interprets the `routing_rules`, `ped_aliases`, `ped_repository` and `categories` tables and reproduces the legacy pipeline exactly. Equality with production's day-one behaviour was proven on 113,130 (term, plan) pairs, including explanation text, umbrella recommendations and supporting flags (`src/__tests__/mappingControl.equality.test.ts`; frozen baseline `src/__tests__/fixtures/mapping/production-day-one.*`). The legacy engine in `src/engine.ts` is untouched and remains the migration oracle and the default (`MAPPING_ENGINE` unset) until its removal is approved.
+- *Order (first stage that returns wins; each row is a `routing_rules` row or a named primitive):* admin plan-specific PED mapping (primitive) → life-stage firewall → plan-scoped rules (AFP sleep apnea, AFP vascular, Care Supreme IBD, Optima autoimmune-joint; **fixed categories** — they no longer follow a changed dictionary category, approved 2026-10-01) → shields A–I → exact plan wording / P0 (primitive) → dictionary stage: alias lookup (primitive), benign-CNS reassignment, category short-circuits (vascular_fallback, autoimmune on Optima, acute_infection, allergy, gynecomastia, ambiguous_symptom, eosinophilia_finding, lifestyle, natural_life_stage, acute_trauma, neuro_mild, investigation_procedure, benign_growth), then the Plan Decision (primitive) → disease-family rules in the legacy order → generic shields → unresolved (AI step). Post-processing: sanitize → post-guards (rules; skipped for plan overrides) → finalize.
+- *Alias compatibility controls* — per alias, applied only at the dictionary stage; they never override exact wording, plan overrides, shields or plan rules: `routing_enabled = false` → the alias has no dictionary entry; else `category_key_override`, when set, replaces the PED's category; else the PED's own category is used. The category then passes through the same short-circuits and Plan Decision as before. They exist so the data-driven engine can reproduce production without deleting or changing any PED data; each is visible and editable in the PED Library ("Matching options") and shown in the lookup trace.
+- *Named engine primitives (code, no editable mapping data):* admin plan-override matching, exact-wording match, dictionary lookup, Plan Decision, confirmed-diabetes handling, hypertension complication handling, and the diabetes-restriction post-guard; plus sanitize/finalize post-processing and umbrella-question detection. Their patterns, tables and message templates are held as rule parameters.
+- *Live propagation:* every lookup reads the single-row `mapping_state.version`; each instance reloads its snapshot when the number changed. Writes that can change a routing result bump it, so a change is live on every instance on its next lookup. The decision trace (`decision_trace`: deciding rule, post-guard, dictionary source) is returned with each result.
+- *Rollback:* set `MAPPING_ENGINE=legacy` (environment change, no redeploy). The migration is additive; nothing is removed.
 
 **Post-processing (always after a route is chosen)** — [CURRENT]: `sanitizeOutput` → `applyPostGuards` (plan-aware corrections, e.g. Care Supreme diabetes Type-1 restriction; SLE/lupus organ-reroute) → `finalizeOutput` (resolves the question against the plan's real text, attaches umbrella recommendations, applies terminology and advisory-footer rules).
 
@@ -383,6 +398,10 @@ What the engine intentionally does not attempt. Each is consistent with the impl
 - **P0 / P1 / FALLBACK / NON_AILMENT** — [CURRENT] Match types: exact-wording; category; Others/umbrella; explicitly-not-an-ailment.
 - **ESCALATE** — [CURRENT] A `match_type` indicating the condition could not be resolved to a single declaration question and is flagged with competing/confused candidate questions for resolution in post-processing (`resolveConfusionAndEscalation` in `finalizeOutput`).
 - **INVALID** — [CURRENT] A `match_type` marking an output that failed validation and is not a usable declaration route; preserved by `finalizeOutput` without further resolution.
+- **Routing rule** — [CURRENT] One ordered step of the data-driven pipeline (`routing_rules` row): a condition tree plus actions, or a named primitive's parameters.
+- **Alias control** — [CURRENT] A per-alias compatibility setting (`routing_enabled`, `category_key_override`) that changes how the dictionary stage treats that alias without changing the PED.
+- **Mapping version** — [CURRENT] The `mapping_state.version` counter that every routing-affecting write bumps and every lookup checks, so changes reach all server instances immediately.
+- **Decision trace** — [CURRENT] The `decision_trace` returned with a result: which rule decided, which post-guard (if any) rewrote it, and how the dictionary stage resolved the alias.
 
 ---
 
@@ -419,6 +438,8 @@ Input (condition, plan)
 
 Post-processing (after any route): sanitizeOutput → applyPostGuards → finalizeOutput
 ```
+
+**Note (2026-10-01):** with `MAPPING_ENGINE=db` every box above is a `routing_rules` row or a named primitive evaluated in the same order by `src/mapping/routingEngine.ts` (see Part IV, "Mapping-control layer"); the diagram's shape is unchanged. The admin plan-specific PED mapping runs before box 1.
 
 **Note (2026-07-29):** stages 2 and 5 above each have a `PED_SOURCE=db` variant that reads `ped_repository`/`ped_aliases`/`plan_overrides` (via `src/server/pedRuntimeCache.ts`) instead of `TOP_PED_DICTIONARY`/the hardcoded blocks — see "PED Repository DB migration" under Part IV. Not redrawn as a separate branch here since the *shape* of the flow (same 8 stages, same precedence) is unchanged; only the data source for two of the boxes differs by flag.
 
@@ -532,11 +553,33 @@ v1.1  (2026-07-29)
   (Parts I-III, V-IX) was altered. No owner sign-off required per the Change
   Impact Template (Documentation only).
 
-v1.2  (unreleased)
-- ...
-
-v1.2  (unreleased)
-- ...
+v1.2  (2026-10-01)  — mapping-control Phase 2 (equality migration)
+- Change Impact:
+  [x] Documentation only        — corrections A6 (documentation regressions fixed)
+  [x] Governance only           — A2: routing rules move into data; alias controls
+  [ ] Business decision
+  [ ] Runtime behavior change   — none: equality proven; engine off by default
+  [ ] Regression expected       — none: zero differences on the full baseline
+  Owner sign-off: approved in chat 2026-10-01 (A2, A6, fixed plan-rule categories).
+  Regression diff reviewed: zero primary and zero strict differences, 113,130 pairs.
+- Documentation corrections (approved A6): added the admin plan-specific PED
+  mapping stage, plan restrictions/flags, where classification runs (browser
+  first, then server) and the production configuration; corrected the Part IV
+  description of the PED_SOURCE=db dictionary stage (no term-by-term fall-through
+  to the legacy dictionary); added Appendix A note and glossary terms; removed
+  the empty duplicate v1.2 stubs.
+- Added the mapping-control layer to Part IV (approved A2): routing rules as
+  data in the same order; alias compatibility controls with their precedence;
+  fixed categories for the four plan-specific rules (approved 2026-10-01);
+  named primitives; live propagation; decision trace; rollback switch.
+- Regression sign-off: full-corpus equality (113,130 pairs, zero primary and
+  zero strict differences), plus the named audit checks, in
+  src/__tests__/mappingControl.{equality,propagation,audit}.test.ts.
+- Not yet recorded here (not yet implemented or not yet approved): the ordered
+  category chain (approved A4, Phase 4), UI-managed exceptions and audit/undo
+  (approved A5/A1, Phase 3), category management (approved A3, Phase 3), and one
+  open item awaiting owner approval — a third alias control (a last-resort
+  category) needed to reproduce a production quirk (see the Phase 2 report).
 ```
 
 Each future entry must summarize what changed and cite its Change Impact classification. A version that changes runtime behavior must reference the regression sign-off.

@@ -21,6 +21,18 @@ export interface MatchOutput {
   /** Set when an admin plan-specific PED mapping decided the question, so
    * later post-guards never re-route it. */
   plan_override?: boolean;
+  /** Which rule/stage decided this result (data-driven engine only; additive, never part of routing). */
+  decision_trace?: {
+    decidedBy: string;
+    postGuard?: string;
+    dictionary?: {
+      alias: string;
+      source: "ped_category" | "alias_override" | "fallback_category" | "not_routed" | "none";
+      pedCategory: string | null;
+      categoryOverride: string | null;
+      effectiveCategory: string | null;
+    };
+  };
 }
 
 export interface PlanOverrides {

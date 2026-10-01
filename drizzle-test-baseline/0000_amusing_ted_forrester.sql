@@ -404,6 +404,12 @@ CREATE TABLE "mapping_history" (
 	"performed_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "mapping_state" (
+	"id" integer PRIMARY KEY DEFAULT 1 NOT NULL,
+	"version" bigint DEFAULT 1 NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "org_teams" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
@@ -427,6 +433,9 @@ CREATE TABLE "ped_aliases" (
 	"normalized_alias" text NOT NULL,
 	"is_primary" boolean DEFAULT false NOT NULL,
 	"is_visible" boolean DEFAULT true NOT NULL,
+	"routing_enabled" boolean DEFAULT true NOT NULL,
+	"category_key_override" text,
+	"fallback_category_key" text,
 	"added_by" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ped_aliases_normalized_alias_unique" UNIQUE("normalized_alias")
@@ -676,6 +685,22 @@ CREATE TABLE "roles" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "routing_rules" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"rule_key" text NOT NULL,
+	"kind" text NOT NULL,
+	"stage" text NOT NULL,
+	"primitive" text,
+	"position" integer NOT NULL,
+	"plan_scope" text,
+	"enabled" boolean DEFAULT true NOT NULL,
+	"description" text DEFAULT '' NOT NULL,
+	"definition" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "routing_rules_rule_key_unique" UNIQUE("rule_key")
+);
+--> statement-breakpoint
 CREATE TABLE "search_history" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"timestamp" timestamp with time zone DEFAULT now() NOT NULL,
@@ -843,6 +868,7 @@ CREATE UNIQUE INDEX "qa_feedback_discussed_marks_tact_row_idx" ON "qa_feedback_d
 CREATE INDEX "qa_feedback_discussed_marks_tact_id_idx" ON "qa_feedback_discussed_marks" USING btree ("tact_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "relationship_groups_name_unique" ON "relationship_groups" USING btree ("name");--> statement-breakpoint
 CREATE UNIQUE INDEX "roles_name_unique" ON "roles" USING btree ("name");--> statement-breakpoint
+CREATE INDEX "routing_rules_position_idx" ON "routing_rules" USING btree ("position");--> statement-breakpoint
 CREATE INDEX "special_instructions_insurer_category_id_idx" ON "special_instructions" USING btree ("insurer_category_id");--> statement-breakpoint
 CREATE INDEX "special_instructions_is_active_idx" ON "special_instructions" USING btree ("is_active");--> statement-breakpoint
 CREATE INDEX "term_faq_records_resource_id_idx" ON "term_faq_records" USING btree ("resource_id");--> statement-breakpoint

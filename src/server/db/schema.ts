@@ -30,6 +30,7 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   boolean,
   jsonb,
   varchar,
@@ -504,6 +505,18 @@ export const pedAliases = pgTable("ped_aliases", {
   // should filter this out. Defaults true so every existing/new alias is
   // visible unless explicitly hidden.
   isVisible: boolean("is_visible").notNull().default(true),
+  // Compatibility controls (mapping-control Phase 2): let the DB-backed
+  // engine reproduce production's day-one behaviour without deleting or
+  // altering any existing PED/category data. Precedence (see
+  // src/mapping/routingEngine.ts primDictionaryLookup): routing_enabled=false
+  // → the alias has no dictionary entry; else category_key_override (when
+  // set) replaces the PED's category; else the PED's category. They only
+  // affect the dictionary stage — never exact wording, plan overrides,
+  // shields or plan rules. fallback_category_key is a last-resort category
+  // used only when the whole pipeline resolves nothing with the primary one.
+  routingEnabled: boolean("routing_enabled").notNull().default(true),
+  categoryKeyOverride: text("category_key_override"),
+  fallbackCategoryKey: text("fallback_category_key"),
   addedBy: text("added_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -546,6 +559,53 @@ export const planOverrides = pgTable(
 
 export type PlanOverrideRow = typeof planOverrides.$inferSelect;
 export type NewPlanOverrideRow = typeof planOverrides.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// routing_rules — the ordered routing pipeline as data (mapping-control
+// Phase 2). Every hard-coded rule the legacy engine (src/engine.ts) applied
+// — life-stage firewall, plan-specific rules, shields, disease-family
+// sections, generic shields, post-guards — plus the named primitives'
+// editable parameters. `position` is the evaluation order (ascending);
+// `definition` is the JSON rule body described in src/mapping/ruleTypes.ts.
+// Interpreted by src/mapping/routingEngine.ts. Seeded by
+// scripts/seedMappingControl.ts from src/mapping/legacyRuleSeed.ts.
+// ─────────────────────────────────────────────────────────────────────────
+export const routingRules = pgTable(
+  "routing_rules",
+  {
+    id: serial("id").primaryKey(),
+    ruleKey: text("rule_key").notNull().unique(),
+    kind: text("kind").notNull(),
+    stage: text("stage").notNull(),
+    primitive: text("primitive"),
+    position: integer("position").notNull(),
+    planScope: text("plan_scope"),
+    enabled: boolean("enabled").notNull().default(true),
+    description: text("description").notNull().default(""),
+    definition: jsonb("definition").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("routing_rules_position_idx").on(table.position)]
+);
+
+export type RoutingRuleDbRow = typeof routingRules.$inferSelect;
+export type NewRoutingRuleDbRow = typeof routingRules.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// mapping_state — single-row version counter. Every write that can change a
+// routing result bumps `version` in the same transaction; each lookup reads
+// this one row and reloads its in-memory snapshot only when the number
+// changed, so an edit reaches every server instance on the very next lookup
+// (no restart, no publish step, no cross-instance messaging).
+// ─────────────────────────────────────────────────────────────────────────
+export const mappingState = pgTable("mapping_state", {
+  id: integer("id").primaryKey().default(1),
+  version: bigint("version", { mode: "number" }).notNull().default(1),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type MappingStateRow = typeof mappingState.$inferSelect;
 
 // ─────────────────────────────────────────────────────────────────────────
 // plan_restrictions — admin-authored, deterministic Plan-Specific

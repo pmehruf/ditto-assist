@@ -214,6 +214,10 @@ export interface UpdateAliasInput {
   aliasText?: string;
   isVisible?: boolean;
   isPrimary?: boolean;
+  /** Mapping-control alias controls (see schema.ts ped_aliases). Governance-layer only: not mirrored to the legacy table. */
+  routingEnabled?: boolean;
+  categoryKeyOverride?: string | null;
+  fallbackCategoryKey?: string | null;
 }
 
 /**
@@ -258,6 +262,15 @@ export async function updateAliasRow(
 
   if (patch.isPrimary === true) {
     const updated = await repos.pedAliases.setPrimaryExclusive(before.pedId, aliasId);
+    if (updated) after = updated;
+  }
+
+  if (patch.routingEnabled !== undefined || patch.categoryKeyOverride !== undefined || patch.fallbackCategoryKey !== undefined) {
+    const updated = await repos.pedAliases.setRoutingControls(aliasId, {
+      routingEnabled: patch.routingEnabled,
+      categoryKeyOverride: patch.categoryKeyOverride,
+      fallbackCategoryKey: patch.fallbackCategoryKey,
+    });
     if (updated) after = updated;
   }
 

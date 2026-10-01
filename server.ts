@@ -20,6 +20,8 @@ import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, t
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
 import { MASTER_ILLNESSES } from "./src/specificIllnessEngine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
+import { getMappingSnapshot } from "./src/server/mappingSnapshot.js";
+import { runDeterministicPipeline } from "./src/mapping/routingEngine.js";
 import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup, updateDbPlanOverrideCache, removeDbPlanOverrideCache } from "./src/server/pedRuntimeCache.js";
 import {
   createPedWithPrimaryAlias,
@@ -292,6 +294,30 @@ const PROMPT_VERSION = "match-v1";
 // signed off.
 const PED_SOURCE: "legacy" | "db" = process.env.PED_SOURCE === "db" ? "db" : "legacy";
 
+// ─────────────────────────────────────────────────────────────────────────
+// Mapping-control (Phase 2) — data-driven routing engine switch. "legacy"
+// (the default) is today's behaviour: the hard-coded engine in src/engine.ts.
+// "db" routes every deterministic lookup through src/mapping/routingEngine.ts,
+// which reads the routing_rules / alias / category tables via a per-instance
+// snapshot that reloads whenever mapping_state.version changes (so an admin
+// edit is live on every instance on its next lookup). The Phase 2 equality
+// tests prove "db" reproduces the production day-one behaviour exactly.
+// Flipping this env var back to "legacy" (no redeploy needed) is the rollback.
+// ─────────────────────────────────────────────────────────────────────────
+const MAPPING_ENGINE: "legacy" | "db" = process.env.MAPPING_ENGINE === "db" ? "db" : "legacy";
+
+/** Bumps the mapping version after a write that can change a routing result,
+ * so every server instance reloads its snapshot on its next lookup. Never
+ * fails the caller's request: if the mapping tables are not migrated yet
+ * (legacy mode before 0085 is applied) this just logs. */
+async function bumpMappingVersion(): Promise<void> {
+  try {
+    await createRepositories(getDb()).mappingState.bump();
+  } catch (err) {
+    console.error("Failed to bump mapping version (instances running MAPPING_ENGINE=db will not see this change until it is bumped):", err);
+  }
+}
+
 /**
  * Builds the optional 4th argument for classifyDeterministic. Returns null
  * on the default "legacy" flag setting (classifyDeterministic behaves
@@ -339,7 +365,25 @@ async function attachPlanPedOverrides(
 }
 
 // 1. API Route: Match PED to Policy questionnaire
-app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => {
+// Tells the browser which engine decides lookups. In "db" mode the browser must
+// NOT classify locally (its compiled-in copy of the legacy rules is the reason
+// admin edits used to not take effect) and sends every lookup to /api/match.
+app.get("/api/mapping-engine", requireAuth, (_req, res) => {
+  res.json({ mode: MAPPING_ENGINE });
+});
+
+// In db mode the deterministic engine answers most lookups with no AI cost, so
+// the tight AI/cost limiter is applied only when a lookup actually has to go to
+// AI Memory / the model (see below); legacy mode keeps the limiter on every call.
+const matchLimiter: express.RequestHandler = (req, res, next) => (MAPPING_ENGINE === "db" ? next() : expensiveActionLimiter(req, res, next));
+function runLimiter(limiter: express.RequestHandler, req: express.Request, res: express.Response): Promise<boolean> {
+  return new Promise((resolve) => {
+    res.once("finish", () => resolve(false));
+    limiter(req, res, () => resolve(true));
+  });
+}
+
+app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
   try {
     const { planName, ped } = req.body;
 
@@ -419,7 +463,17 @@ app.post("/api/match", requireAuth, expensiveActionLimiter, async (req, res) => 
     // ── LEVEL 1 ── Deterministic Engine. Highest priority, unchanged.
     // If this resolves, we return immediately: no AI Memory read, no Gemini.
     // `dbSource` is null unless PED_SOURCE=db — see getDbSource above.
-    let output = classifyDeterministic(ped, planName, config, dbSource);
+    if (MAPPING_ENGINE === "db") {
+      const snapshot = await getMappingSnapshot(repos);
+      const { result, trace } = runDeterministicPipeline(ped, planName, config, snapshot);
+      if (result) {
+        return res.json({ ...result, decision_trace: trace, source: "Deterministic Engine" });
+      }
+      // No deterministic rule matched: this lookup may now use AI Memory / the model.
+      if (!(await runLimiter(expensiveActionLimiter, req, res))) return;
+    }
+
+    let output = MAPPING_ENGINE === "db" ? null : classifyDeterministic(ped, planName, config, dbSource);
 
     if (output) {
       // Deterministic processing path
@@ -5084,6 +5138,7 @@ app.post("/api/ped-repository", requireAuth, async (req, res) => {
       { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
       { canonicalName: canonicalName.trim(), categoryKey: categoryCheck.value, status: statusValue, notes: notes ?? null, addedBy }
     );
+    await bumpMappingVersion();
 
     try {
       await mappingHistory.record({ pedId: ped.id, entityType: "ped", action: "created", previousValue: null, newValue: ped, reason: null, performedBy: addedBy });
@@ -5144,6 +5199,7 @@ app.patch("/api/ped-repository/:id", requireAuth, async (req, res) => {
       performedBy
     );
     if (!after) return res.status(404).json({ error: "PED not found." });
+    await bumpMappingVersion();
 
     try {
       await mappingHistory.record({ pedId: id, entityType: "ped", action: "updated", previousValue: before, newValue: after, reason: null, performedBy });
@@ -5180,6 +5236,7 @@ app.delete("/api/ped-repository/:id", requireAuth, async (req, res) => {
 
     const deleted = await deletePedRow({ pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides }, id, performedBy);
     if (!deleted) return res.status(404).json({ error: "PED not found." });
+    await bumpMappingVersion();
 
     try {
       await mappingHistory.record({ pedId: id, entityType: "ped", action: "deleted", previousValue: deleted, newValue: null, reason: null, performedBy });
@@ -5220,6 +5277,7 @@ app.post("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
       { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
       { pedId, aliasText: aliasText.trim(), isVisible, addedBy }
     );
+    await bumpMappingVersion();
 
     try {
       await mappingHistory.record({ pedId, entityType: "alias", action: "alias_added", previousValue: null, newValue: alias, reason: null, performedBy: addedBy });
@@ -5263,7 +5321,15 @@ app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) 
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing a PED alias"))) return;
     const aliasId = Number(req.params.aliasId);
     if (!Number.isInteger(aliasId)) return res.status(400).json({ error: "Invalid alias id." });
-    const { aliasText, isVisible, isPrimary } = req.body;
+    const { aliasText, isVisible, isPrimary, routingEnabled, categoryKeyOverride, fallbackCategoryKey } = req.body;
+    if (routingEnabled !== undefined && typeof routingEnabled !== "boolean") {
+      return res.status(400).json({ error: "routingEnabled must be a boolean." });
+    }
+    for (const [fieldName, value] of [["categoryKeyOverride", categoryKeyOverride], ["fallbackCategoryKey", fallbackCategoryKey]] as const) {
+      if (value !== undefined && value !== null && (typeof value !== "string" || !value.trim())) {
+        return res.status(400).json({ error: `${fieldName} must be a category key or null.` });
+      }
+    }
     if (aliasText !== undefined && (typeof aliasText !== "string" || !aliasText.trim())) {
       return res.status(400).json({ error: "aliasText must be a non-empty string." });
     }
@@ -5274,9 +5340,17 @@ app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) 
       return res.status(400).json({ error: "isPrimary can only be set to true here — set a different alias primary to demote this one." });
     }
 
-    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory } = createRepositories(getDb());
+    const { users: usersRepo, pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides, changeLogs, mappingHistory, categories: categoriesRepo } = createRepositories(getDb());
     const before = await pedAliases.get(aliasId);
     if (!before) return res.status(404).json({ error: "Alias not found." });
+
+    // A category an alias control points at must exist — otherwise the lookup would silently skip it.
+    const requestedCategories = [categoryKeyOverride, fallbackCategoryKey].filter((v): v is string => typeof v === "string");
+    if (requestedCategories.length > 0) {
+      const known = new Set((await categoriesRepo.list()).map((c) => c.categoryKey));
+      const unknown = requestedCategories.filter((k) => !known.has(k));
+      if (unknown.length > 0) return res.status(400).json({ error: `Unknown category: ${unknown.join(", ")}.` });
+    }
 
     const callerTier = await getCallerTier(req, usersRepo);
     const performedBy = `${req.user!.name} (${callerTier})`;
@@ -5284,10 +5358,11 @@ app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) 
     const after = await updateAliasRow(
       { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
       aliasId,
-      { ...(aliasText !== undefined ? { aliasText: aliasText.trim() } : {}), isVisible, isPrimary },
+      { ...(aliasText !== undefined ? { aliasText: aliasText.trim() } : {}), isVisible, isPrimary, routingEnabled, categoryKeyOverride, fallbackCategoryKey },
       performedBy
     );
     if (!after) return res.status(404).json({ error: "Alias not found." });
+    await bumpMappingVersion();
 
     try {
       await mappingHistory.record({ pedId: before.pedId, entityType: "alias", action: "updated", previousValue: before, newValue: after, reason: null, performedBy });
@@ -5326,6 +5401,7 @@ app.delete("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res)
 
     const deleted = await deleteAliasRow({ pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides }, aliasId, performedBy);
     if (!deleted) return res.status(404).json({ error: "Alias not found." });
+    await bumpMappingVersion();
 
     try {
       await mappingHistory.record({ pedId: deleted.pedId, entityType: "alias", action: "alias_removed", previousValue: deleted, newValue: null, reason: null, performedBy });
@@ -5441,7 +5517,20 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     }
     const smokeDbSource = await attachPlanPedOverrides(config, planName, smokeTestRepos, dbSource);
 
+    const smokeSnapshot = MAPPING_ENGINE === "db" ? await getMappingSnapshot(smokeTestRepos) : null;
     const results = peds.map((ped: string) => {
+      if (smokeSnapshot) {
+        const { result } = runDeterministicPipeline(ped, planName, config, smokeSnapshot);
+        if (!result) return { ped, resolved: false as const };
+        return {
+          ped,
+          resolved: true as const,
+          match_type: result.match_type,
+          matched_question: result.matched_question,
+          question_number: result.question_number,
+          explanation: result.explanation,
+        };
+      }
       let output = classifyDeterministic(ped, planName, config, smokeDbSource);
       if (!output) {
         return { ped, resolved: false as const };
@@ -9931,6 +10020,20 @@ async function startServer() {
         : "legacy (TOP_PED_DICTIONARY + hardcoded regex blocks in engine.ts)"
     }`
   );
+  console.log(
+    `[Mapping engine] ${MAPPING_ENGINE === "db" ? "db — data-driven routing (routing_rules / aliases / categories; live across instances via mapping_state)" : "legacy — hard-coded engine in src/engine.ts"}`
+  );
+  if (MAPPING_ENGINE === "db") {
+    try {
+      const snapshot = await getMappingSnapshot(createRepositories(getDb()));
+      console.log(`[Mapping engine] Snapshot v${snapshot.version} loaded: ${snapshot.steps.length} pipeline steps, ${snapshot.aliases.size} aliases.`);
+      if (snapshot.steps.length === 0) {
+        console.warn("[Mapping engine] WARNING: no routing rules found — every lookup would fall through to AI. Run the mapping seed (npm run mapping:seed -- --apply) against this database, or set MAPPING_ENGINE=legacy.");
+      }
+    } catch (err) {
+      console.error("[Mapping engine] Failed to load the mapping snapshot at startup (lookups will retry per request):", err);
+    }
+  }
   if (PED_SOURCE === "db") {
     try {
       const repos = createRepositories(getDb());

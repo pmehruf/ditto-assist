@@ -76,6 +76,24 @@ export class PedAliasesRepository {
     return row;
   }
 
+  /**
+   * Sets an alias's mapping-control compatibility controls (see schema.ts's
+   * ped_aliases doc comment for their precedence). Only the fields present in
+   * `controls` are changed; `null` clears an override.
+   */
+  async setRoutingControls(
+    id: number,
+    controls: { routingEnabled?: boolean; categoryKeyOverride?: string | null; fallbackCategoryKey?: string | null }
+  ): Promise<PedAliasRow | undefined> {
+    const set: Partial<NewPedAliasRow> = {};
+    if (controls.routingEnabled !== undefined) set.routingEnabled = controls.routingEnabled;
+    if (controls.categoryKeyOverride !== undefined) set.categoryKeyOverride = controls.categoryKeyOverride;
+    if (controls.fallbackCategoryKey !== undefined) set.fallbackCategoryKey = controls.fallbackCategoryKey;
+    if (Object.keys(set).length === 0) return this.get(id);
+    const [row] = await this.db.update(pedAliases).set(set).where(eq(pedAliases.id, id)).returning();
+    return row;
+  }
+
   /** Flips which alias row is flagged primary for its PED (informational —
    * mirrors `canonicalName` by convention at seed time; not read by
    * `classifyDeterministic`, which only ever keys off `normalizedAlias`). */

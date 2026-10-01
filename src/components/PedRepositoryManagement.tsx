@@ -7,8 +7,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   Pencil, Save, X, Trash2, Plus, RefreshCw, ShieldCheck, AlertTriangle, Search, Download,
-  ChevronDown, ChevronRight, Eye, EyeOff, Star,
-} from "lucide-react";
+  ChevronDown, ChevronRight, Eye, EyeOff, Star, SlidersHorizontal } from "lucide-react";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
 import { ClippedButton } from "./ClippedButton";
@@ -43,6 +42,10 @@ interface AliasEntry {
   normalizedAlias: string;
   isPrimary: boolean;
   isVisible: boolean;
+  /** Matching options (set per alias; defaults: on / none / none). */
+  routingEnabled: boolean;
+  categoryKeyOverride: string | null;
+  fallbackCategoryKey: string | null;
   addedBy: string;
   createdAt: string;
 }
@@ -428,6 +431,73 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     }
   };
 
+  // Matching options for one alias (category used for matching, category override, last-resort category).
+  const [routingEditId, setRoutingEditId] = useState<number | null>(null);
+  const [draftRouting, setDraftRouting] = useState<{ enabled: boolean; override: string; fallback: string }>({ enabled: true, override: "", fallback: "" });
+  const startRouting = (alias: AliasEntry) => {
+    setRoutingEditId(alias.id);
+    setDraftRouting({ enabled: alias.routingEnabled !== false, override: alias.categoryKeyOverride || "", fallback: alias.fallbackCategoryKey || "" });
+  };
+  const saveRouting = async (ped: PedEntry, alias: AliasEntry) => {
+    setSaving(true);
+    setAliasError(null);
+    try {
+      const res = await fetch(`/api/ped-repository/aliases/${alias.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          routingEnabled: draftRouting.enabled,
+          categoryKeyOverride: draftRouting.override || null,
+          fallbackCategoryKey: draftRouting.fallback || null,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to update matching options (HTTP ${res.status}).`);
+      logAction("PED Alias Edited", `Changed matching options for "${alias.aliasText}" on "${ped.canonicalName}".`);
+      setRoutingEditId(null);
+      await loadAliases(ped.id);
+    } catch (err: any) {
+      setAliasError(err.message || "Failed to update matching options. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const aliasRoutingBadges = (alias: AliasEntry) => {
+    const chip = `px-1.5 py-0.5 rounded text-[9.5px] font-bold border ${dark ? "border-amber-500/30 text-amber-300 bg-amber-500/10" : "border-amber-500/40 text-amber-700 bg-amber-50"}`;
+    return (
+      <>
+        {alias.routingEnabled === false && <span className={chip}>Not matched by category</span>}
+        {alias.categoryKeyOverride && <span className={chip}>Category: {categoryLabel(alias.categoryKeyOverride)}</span>}
+        {alias.fallbackCategoryKey && <span className={chip}>If nothing else matches: {categoryLabel(alias.fallbackCategoryKey)}</span>}
+      </>
+    );
+  };
+  const routingPanel = (ped: PedEntry, alias: AliasEntry) => {
+    if (routingEditId !== alias.id) return null;
+    return (
+      <div className={`ml-4 px-3 py-2.5 rounded-lg border space-y-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50"}`}>
+        <label className={`flex items-center gap-2 text-[11px] font-bold ${dark ? "text-stone-200" : "text-stone-700"}`}>
+          <input type="checkbox" checked={draftRouting.enabled} onChange={e => setDraftRouting(d => ({ ...d, enabled: e.target.checked }))} />
+          Match by category
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div>
+            <p className={`text-[9.5px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>Category for this term</p>
+            <CustomSelect theme={theme} value={draftRouting.override} onChange={v => setDraftRouting(d => ({ ...d, override: v }))} placeholder="— Same as the PED —" triggerClassName={selectTriggerClass} options={CATEGORY_OPTIONS} />
+          </div>
+          <div>
+            <p className={`text-[9.5px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>If nothing else matches</p>
+            <CustomSelect theme={theme} value={draftRouting.fallback} onChange={v => setDraftRouting(d => ({ ...d, fallback: v }))} placeholder="— None —" triggerClassName={selectTriggerClass} options={CATEGORY_OPTIONS} />
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <ClippedButton onClick={() => saveRouting(ped, alias)} disabled={saving} cornerBg={dark ? "#0e2236" : "#ffffff"} className="px-2.5 py-1 text-[10.5px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white">Save</ClippedButton>
+          <ClippedButton onClick={() => setRoutingEditId(null)} cornerBg={dark ? "#0e2236" : "#ffffff"} className="px-2.5 py-1 text-[10.5px] font-bold bg-stone-700 hover:bg-stone-600 text-stone-50">Cancel</ClippedButton>
+        </div>
+      </div>
+    );
+  };
+
   const startEditAlias = (alias: AliasEntry) => { setEditingAliasId(alias.id); setDraftAliasText(alias.aliasText); };
   const cancelEditAlias = () => { setEditingAliasId(null); setDraftAliasText(""); };
 
@@ -729,7 +799,8 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                             ) : (
                               <div className="space-y-1.5">
                                 {visibleAliases.map(alias => (
-                                  <div key={alias.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${dark ? "border-stone-850 bg-white/[0.02]" : "border-stone-200 bg-white"}`}>
+                                  <Fragment key={alias.id}>
+                                  <div className={`flex flex-wrap items-center gap-2 px-2.5 py-1.5 rounded-lg border ${dark ? "border-stone-850 bg-white/[0.02]" : "border-stone-200 bg-white"}`}>
                                     {editingAliasId === alias.id ? (
                                       <input className={`${inputClass} flex-1`} value={draftAliasText} onChange={e => setDraftAliasText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveEditAlias(entry, alias); }} autoFocus />
                                     ) : (
@@ -738,6 +809,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                     {alias.isPrimary && (
                                       <span title="Primary alias"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" /></span>
                                     )}
+                                    {aliasRoutingBadges(alias)}
                                     {canManage && (
                                       <div className="flex items-center gap-1 shrink-0">
                                         {editingAliasId === alias.id ? (
@@ -750,6 +822,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                             {!alias.isPrimary && (
                                               <ClippedButton onClick={() => setPrimaryAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-amber-500/15 text-stone-400 hover:text-amber-400" : "hover:bg-amber-500/10 text-stone-500 hover:text-amber-600"}`} title="Make primary"><Star className="w-3 h-3" /></ClippedButton>
                                             )}
+                                            <ClippedButton onClick={() => startRouting(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Matching options"><SlidersHorizontal className="w-3 h-3" /></ClippedButton>
                                             <ClippedButton onClick={() => toggleAliasVisibility(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Hide (normalization-only)"><EyeOff className="w-3 h-3" /></ClippedButton>
                                             <ClippedButton onClick={() => startEditAlias(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Rename"><Pencil className="w-3 h-3" /></ClippedButton>
                                             <ClippedButton onClick={() => deleteAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Delete"><Trash2 className="w-3 h-3" /></ClippedButton>
@@ -758,6 +831,8 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                       </div>
                                     )}
                                   </div>
+                                  {routingPanel(entry, alias)}
+                                  </Fragment>
                                 ))}
 
                                 {hiddenAliases.length > 0 && (
@@ -766,12 +841,14 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                       <EyeOff className="w-3 h-3" /> Hidden — normalization only, never shown as real terminology
                                     </p>
                                     {hiddenAliases.map(alias => (
-                                      <div key={alias.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-dashed opacity-70 ${dark ? "border-stone-800 bg-white/[0.01]" : "border-stone-300 bg-stone-50"}`}>
+                                      <Fragment key={alias.id}>
+                                      <div className={`flex flex-wrap items-center gap-2 px-2.5 py-1.5 rounded-lg border border-dashed opacity-70 ${dark ? "border-stone-800 bg-white/[0.01]" : "border-stone-300 bg-stone-50"}`}>
                                         {editingAliasId === alias.id ? (
                                           <input className={`${inputClass} flex-1`} value={draftAliasText} onChange={e => setDraftAliasText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveEditAlias(entry, alias); }} autoFocus />
                                         ) : (
                                           <span className={`flex-1 text-xs font-semibold italic ${dark ? "text-stone-400" : "text-stone-500"}`}>{alias.aliasText}</span>
                                         )}
+                                        {aliasRoutingBadges(alias)}
                                         {canManage && (
                                           <div className="flex items-center gap-1 shrink-0">
                                             {editingAliasId === alias.id ? (
@@ -781,6 +858,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                               </>
                                             ) : (
                                               <>
+                                                <ClippedButton onClick={() => startRouting(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Matching options"><SlidersHorizontal className="w-3 h-3" /></ClippedButton>
                                                 <ClippedButton onClick={() => toggleAliasVisibility(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-emerald-500/15 text-stone-400 hover:text-emerald-400" : "hover:bg-emerald-500/10 text-stone-500 hover:text-emerald-600"}`} title="Unhide"><Eye className="w-3 h-3" /></ClippedButton>
                                                 <ClippedButton onClick={() => startEditAlias(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Rename"><Pencil className="w-3 h-3" /></ClippedButton>
                                                 <ClippedButton onClick={() => deleteAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Delete"><Trash2 className="w-3 h-3" /></ClippedButton>
@@ -789,6 +867,8 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                           </div>
                                         )}
                                       </div>
+                                      {routingPanel(entry, alias)}
+                                      </Fragment>
                                     ))}
                                   </div>
                                 )}
