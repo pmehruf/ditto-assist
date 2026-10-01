@@ -36,6 +36,7 @@
 import dotenv from "dotenv";
 import { getDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
+import { bumpMappingVersionAfterApply } from "./_mappingVersion.js";
 
 dotenv.config();
 
@@ -57,7 +58,8 @@ const FIXES: { term: string; expectedCurrent: (string | null)[]; newCategory: st
 
 async function main() {
   const db = getDb();
-  const { pedRepository } = createRepositories(db);
+  const repos = createRepositories(db);
+  const { pedRepository } = repos;
 
   const allPeds = await pedRepository.list();
   const byNameLower = new Map(allPeds.map((p) => [p.canonicalName.trim().toLowerCase(), p]));
@@ -102,6 +104,7 @@ async function main() {
   for (const u of toUpdate) {
     await pedRepository.update(u.id, { categoryKey: u.to });
   }
+  await bumpMappingVersionAfterApply(repos);
   console.log("Done.");
 }
 

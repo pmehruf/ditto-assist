@@ -21,6 +21,8 @@ import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput,
 import { MASTER_ILLNESSES } from "./src/specificIllnessEngine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
 import { getMappingSnapshot } from "./src/server/mappingSnapshot.js";
+import { applyAiApproval, revertAiApproval, undoChangeSet, type PromotionDeps } from "./src/server/aiMappingPromotion.js";
+import { legacyOnlyWriteBlocked, RETIRED_ACTION_MESSAGE } from "./src/server/legacyWriteGuard.js";
 import { runDeterministicPipeline } from "./src/mapping/routingEngine.js";
 import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup, updateDbPlanOverrideCache, removeDbPlanOverrideCache } from "./src/server/pedRuntimeCache.js";
 import {
@@ -373,6 +375,50 @@ async function attachPlanPedOverrides(
 app.get("/api/mapping-engine", requireAuth, (_req, res) => {
   res.json({ mode: MAPPING_ENGINE, instance: MAPPING_INSTANCE_ID });
 });
+
+/**
+ * The plan config a lookup runs against, built exactly the way /api/match builds
+ * it (DB plan row or bootstrap seed, active restrictions, fresh plan-specific
+ * overrides). Used to verify an admin mapping change against the LIVE engine.
+ */
+async function loadLookupConfig(repos: ReturnType<typeof createRepositories>, planName: string): Promise<PlanConfig | undefined> {
+  let config: PlanConfig | undefined = getPlanConfig()[planName];
+  try {
+    const dbPlan = await repos.planConfigs.get(planName);
+    if (dbPlan) config = dbRowToPlanConfig(dbPlan);
+  } catch (err) {
+    console.error("Failed to load DB plan config for live verification:", err);
+  }
+  if (!config) return undefined;
+  try {
+    config.restrictions = toPlanRestrictions(await repos.planRestrictions.listActiveForPlan(planName));
+  } catch (err) {
+    console.error("Failed to load plan restrictions for live verification:", err);
+  }
+  await attachPlanPedOverrides(config, planName, repos, null);
+  return config;
+}
+
+/** Dependencies for admin mapping actions: the authoritative repositories plus a FRESH lookup through the live engine. */
+function buildMappingActionDeps(repos: ReturnType<typeof createRepositories>): PromotionDeps {
+  return {
+    repos,
+    verify: async (term, planName) => {
+      const config = await loadLookupConfig(repos, planName);
+      if (!config) throw new Error(`Plan '${planName}' not found for live verification.`);
+      const snapshot = await getMappingSnapshot(repos);
+      const { result, trace } = runDeterministicPipeline(term, planName, config, snapshot);
+      return {
+        question: result?.matched_question ?? null,
+        matchType: result?.match_type ?? null,
+        decidedBy: trace.decidedBy,
+        effectiveCategory: trace.dictionary?.effectiveCategory ?? null,
+        dictionarySource: trace.dictionary?.source ?? null,
+        snapshotVersion: snapshot.version,
+      };
+    },
+  };
+}
 
 // In db mode the deterministic engine answers most lookups with no AI cost, so
 // the tight AI/cost limiter is applied only when a lookup actually has to go to
@@ -964,6 +1010,7 @@ const PED_INPUT_MAX_LENGTH = 200;
 
 app.post("/api/add-ped-mapping", requireAuth, expensiveActionLimiter, async (req, res) => {
   try {
+    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
     const { ped, category } = req.body;
 
     if (typeof ped !== "string" || typeof category !== "string" || !ped.trim() || !category.trim()) {
@@ -4725,8 +4772,57 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
 
     const row = await aiMemory.setStatus(id, status as any, reviewer);
 
-    let promotion: { promoted: boolean; categoryKey?: string; reason?: string } = { promoted: false };
-    if (status === "approved") {
+    let promotion: {
+      promoted: boolean;
+      categoryKey?: string;
+      reason?: string;
+      verified?: boolean;
+      reverted?: boolean;
+      noMappingApplied?: boolean;
+      alreadyLive?: boolean;
+      changeSetId?: number;
+      engine?: "db";
+    } = { promoted: false };
+    if (MAPPING_ENGINE === "db") {
+      // Authoritative path (Phase 3A): change ped_repository / ped_aliases, confirm with a
+      // fresh live lookup, record an undoable change set. Never writes ped_mapping_overrides.
+      try {
+        const actionRepos = createRepositories(getDb());
+        const deps = buildMappingActionDeps(actionRepos);
+        if (status === "approved") {
+          const storedResult = (existing.aiResponse as { result?: MatchOutput } | null)?.result;
+          const config = await loadLookupConfig(actionRepos, existing.planName);
+          if (!storedResult || !config) {
+            promotion = { promoted: false, reason: "Plan configuration or cached answer unavailable.", engine: "db" };
+          } else if (storedResult.match_type !== "P1" && storedResult.match_type !== "P2") {
+            promotion = { promoted: false, reason: `Answer type "${storedResult.match_type}" has no specific question to generalize.`, engine: "db" };
+          } else if (storedResult.matched_question === config.anyOther) {
+            promotion = { promoted: false, reason: "Answer routes to this plan's general fallback, not a specific category.", engine: "db" };
+          } else {
+            const categoryKey = inferCategoryKeyForQuestion(config, storedResult.matched_question);
+            if (!categoryKey) {
+              promotion = { promoted: false, reason: "Could not confidently infer a single category from this plan's answer — assign one manually via the PED Library.", engine: "db" };
+            } else {
+              const r = await applyAiApproval(deps, {
+                condition: existing.condition,
+                planName: existing.planName,
+                categoryKey,
+                expectedQuestion: storedResult.matched_question,
+                aiMemoryId: id,
+                performedBy: reviewer,
+              });
+              promotion = { promoted: r.applied, verified: r.verified, categoryKey: r.categoryKey, reason: r.reason, changeSetId: r.changeSetId, alreadyLive: r.alreadyLive, engine: "db" };
+            }
+          }
+        } else if (status === "rejected" && existing.status === "approved") {
+          const r = await revertAiApproval(deps, id, reviewer);
+          promotion = { promoted: false, reverted: r.reverted, verified: r.verified, noMappingApplied: r.noMappingApplied, reason: r.reason, changeSetId: r.changeSetId, engine: "db" };
+        }
+      } catch (err) {
+        console.error("AI Mapping Review (db engine) could not complete the mapping change:", err);
+        promotion = { promoted: false, reason: "The mapping change could not be completed — see server logs. Nothing was changed.", engine: "db" };
+      }
+    } else if (status === "approved") {
       try {
         const storedResult = (existing.aiResponse as { result?: MatchOutput } | null)?.result;
         const PLAN_CONFIG = getPlanConfig();
@@ -4775,9 +4871,11 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
         planName: existing.planName,
         description: `Set "${existing.condition}" (${existing.planName}) to ${status} in AI Mapping Review${
           promotion.promoted
-            ? ` — promoted to live category "${promotion.categoryKey}" for every plan.`
-            : status === "approved" && promotion.reason
-            ? ` (not promoted: ${promotion.reason})`
+            ? ` — promoted to live category "${promotion.categoryKey}" for every plan${promotion.verified ? " (confirmed on a live lookup)" : ""}.`
+            : promotion.reverted
+            ? ` — the mapping this approval created was removed${promotion.verified ? " (confirmed on a live lookup)" : ""}.`
+            : (status === "approved" || status === "rejected") && promotion.reason
+            ? ` (no mapping changed: ${promotion.reason})`
             : "."
         }`,
         snapshot: null,
@@ -4790,6 +4888,53 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to update AI memory status:", err);
     return res.status(500).json({ error: `Failed to update this entry: ${err.message}` });
+  }
+});
+
+// Audit + undo for admin mapping actions (Phase 3A). Undo reverses exactly what
+// the change set recorded, refuses when the rows were edited since, and only
+// reports success after a fresh live lookup confirms the mapping is gone.
+app.get("/api/mapping-changes", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Viewer", "Viewing mapping change history"))) return;
+    const { mappingChangeSets } = createRepositories(getDb());
+    const aiMemoryId = Number(req.query.aiMemoryId);
+    const entries = Number.isInteger(aiMemoryId) ? await mappingChangeSets.listByAiMemory(aiMemoryId) : await mappingChangeSets.listRecent(50);
+    return res.json({ entries });
+  } catch (err: any) {
+    console.error("Failed to list mapping changes:", err);
+    return res.status(500).json({ error: `Failed to load mapping changes: ${err.message}` });
+  }
+});
+
+app.post("/api/mapping-changes/:id/undo", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Undoing a mapping change"))) return;
+    if (MAPPING_ENGINE !== "db") {
+      return res.status(409).json({ error: "Mapping changes can only be undone while the database-backed mapping engine is active." });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid change id." });
+    const repos = createRepositories(getDb());
+    const callerTier = await getCallerTier(req, repos.users);
+    const performedBy = `${req.user!.name} (${callerTier})`;
+    const result = await undoChangeSet(buildMappingActionDeps(repos), id, performedBy, typeof req.body?.note === "string" ? req.body.note : undefined);
+    try {
+      await repos.changeLogs.create({
+        userName: req.user!.name,
+        role: callerTier,
+        actionType: "Mapping Change Undone",
+        planName: "PED Repository",
+        description: result.reverted ? `Undid mapping change #${id}${result.verified ? " (confirmed on a live lookup)" : ""}.` : `Could not undo mapping change #${id}: ${result.reason}`,
+        snapshot: null,
+      });
+    } catch (logErr) {
+      console.error("Failed to write change log for mapping undo:", logErr);
+    }
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Failed to undo mapping change:", err);
+    return res.status(500).json({ error: `Failed to undo this change: ${err.message}` });
   }
 });
 
@@ -4853,6 +4998,7 @@ async function logPedRepositoryChange(
 app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding PED suggestions"))) return;
+    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
     const { term, category } = req.body;
     if (typeof term !== "string" || !term.trim()) {
       return res.status(400).json({ error: "term is required." });
@@ -4913,6 +5059,7 @@ app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
 app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing PED suggestions"))) return;
+    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
     const { term, category } = req.body;
@@ -4982,6 +5129,7 @@ app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
 app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting PED suggestions"))) return;
+    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
     const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());

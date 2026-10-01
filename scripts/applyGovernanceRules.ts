@@ -62,6 +62,7 @@ import fs from "fs";
 import path from "path";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
+import { bumpMappingVersionAfterApply } from "./_mappingVersion.js";
 import { normalizeDictionaryKey } from "../src/engine.js";
 
 dotenv.config();
@@ -384,6 +385,7 @@ async function main() {
   console.log(`Cystoscopy: ${cystoscopyPed ? `found (PED ${cystoscopyPed.pedCode})` : "NOT FOUND"}`);
   console.log(`Report written to ${reportPath}`);
 
+  if (APPLY) await bumpMappingVersionAfterApply(repos);
   await closeDb();
 }
 

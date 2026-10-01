@@ -23,6 +23,7 @@ import { PedAliasesRepository } from "./pedAliasesRepository.js";
 import { PlanOverridesRepository } from "./planOverridesRepository.js";
 import { RoutingRulesRepository } from "./routingRulesRepository.js";
 import { MappingStateRepository } from "./mappingStateRepository.js";
+import { MappingChangeSetsRepository } from "./mappingChangeSetsRepository.js";
 import { MappingHistoryRepository } from "./mappingHistoryRepository.js";
 import { CollisionsRepository } from "./collisionsRepository.js";
 import { QaDashboardConnectionRepository } from "./qaDashboardConnectionRepository.js";
@@ -286,6 +287,7 @@ export interface Repositories {
   planOverrides: PlanOverridesRepository;
   routingRules: RoutingRulesRepository;
   mappingState: MappingStateRepository;
+  mappingChangeSets: MappingChangeSetsRepository;
   mappingHistory: MappingHistoryRepository;
   collisions: CollisionsRepository;
   qaDashboardConnection: QaDashboardConnectionRepository;
@@ -354,6 +356,7 @@ export function createRepositories(db: AnyDb): Repositories {
     planOverrides: new PlanOverridesRepository(db),
     routingRules: new RoutingRulesRepository(db),
     mappingState: new MappingStateRepository(db),
+    mappingChangeSets: new MappingChangeSetsRepository(db),
     mappingHistory: new MappingHistoryRepository(db),
     collisions: new CollisionsRepository(db),
     qaDashboardConnection: new QaDashboardConnectionRepository(db),

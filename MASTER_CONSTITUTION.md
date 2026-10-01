@@ -33,9 +33,9 @@ When AI is used to review or integrate mappings:
 
 ## Version Information
 
-- **Version:** 1.2
+- **Version:** 1.3
 - **Status:** Authoritative — approved baseline. This is the single highest-authority governance document for the mapping engine.
-- **Last Updated:** 2026-10-01
+- **Last Updated:** 2026-10-02
 - **Authority:** This document supersedes and consolidates all prior governance material — the Mapping Policy Charter, the Production Governance Manual, and any Validation Framework, Integration Playbook, Change Control, Mapping Governance, or Integration Rules notes. Those documents become optional historical reference. Where any of them conflicts with this Constitution, **this Constitution governs.**
 - **Purpose:** To let any future contributor or AI assistant safely maintain and extend the engine using this one document alone — preserving current production behavior, keeping governance and process distinct from behavior, and never silently resolving decisions that belong to the business.
 
@@ -130,6 +130,7 @@ Only principles provable from the implementation. Aspirational rules are exclude
 - *Named engine primitives (code, no editable mapping data):* admin plan-override matching, exact-wording match, dictionary lookup, Plan Decision, confirmed-diabetes handling, hypertension complication handling, and the diabetes-restriction post-guard; plus sanitize/finalize post-processing and umbrella-question detection. Their patterns, tables and message templates are held as rule parameters.
 - *Live propagation:* every lookup reads the single-row `mapping_state.version`; each instance reloads its snapshot when the number changed. Writes that can change a routing result bump it, so a change is live on every instance on its next lookup. The decision trace (`decision_trace`: deciding rule, post-guard, dictionary source) is returned with each result.
 - *Rollback:* set `MAPPING_ENGINE=legacy` (environment change, no redeploy). The migration is additive; nothing is removed.
+- *Admin mapping actions (added 2026-10-02, Phase 3A)* — [CURRENT] when `MAPPING_ENGINE=db`. An admin action may only report a mapping change as made if the live engine uses the result. AI Mapping Review **Approve** sets the term's category on `ped_repository`/`ped_aliases` (creating the PED and alias if the term is unknown) — it never overwrites a category the term already has, and it is refused when the alias carries matching options; it then bumps the mapping version, runs a fresh lookup through the live engine and reports success only if that lookup returns the approved question via the new category, otherwise the change is reverted and the reason shown. **Reject** reverses exactly what the approval did (refused, never forced, if the rows were edited since) and verifies the next lookup no longer uses it. Each change is recorded as an undoable change set (`mapping_change_sets`, who/what/the confirming lookup) plus `mapping_history`, and can be undone from AI Mapping Review. These actions do not write `ped_mapping_overrides`. The other actions that wrote only that table (the "teach it" route `/api/add-ped-mapping` and the old PED Directory create/edit/delete) answer 410 in `db` mode and change nothing; with `MAPPING_ENGINE=legacy` (the rollback path) all of them behave as before. Operational scripts that write the mapping tables bump the mapping version.
 
 **Post-processing (always after a route is chosen)** — [CURRENT]: `sanitizeOutput` → `applyPostGuards` (plan-aware corrections, e.g. Care Supreme diabetes Type-1 restriction; SLE/lupus organ-reroute) → `finalizeOutput` (resolves the question against the plan's real text, attaches umbrella recommendations, applies terminology and advisory-footer rules).
 
@@ -583,6 +584,22 @@ v1.2  (2026-10-01)  — mapping-control Phase 2 (equality migration)
   (approved A4, Phase 4), UI-managed exceptions and audit/undo (approved A5/A1,
   Phase 3), category management (approved A3, Phase 3), and PED Category
   Governance (a later named phase, see docs/MAPPING_CONTROL_PLAN.md).
+
+v1.3  (2026-10-02)  — mapping-control Phase 3A: admin mapping control
+- Change Impact:
+  [ ] Documentation only
+  [x] Governance only           — admin write-path integrity rule: no action may report
+                                  success for a change the live engine ignores
+  [ ] Business decision
+  [ ] Runtime behavior change   — none from the deployment itself: no (condition, plan)
+                                  output changes. An admin approving an AI answer now
+                                  actually changes that term's mapping (previously a no-op in
+                                  db mode); that is an admin-initiated mapping change.
+  [ ] Regression expected       — none
+  Owner sign-off: instructed by the owner 2026-10-02 (Phase 3A scope).
+  Regression diff reviewed: the Phase 2 equality baseline and Zero Regression Audit are
+  unchanged and pass; new admin-writer / no-silent-no-op tests added.
+- Documented in Part IV ("Admin mapping actions"). Migration 0086 adds mapping_change_sets.
 ```
 
 Each future entry must summarize what changed and cite its Change Impact classification. A version that changes runtime behavior must reference the regression sign-off.

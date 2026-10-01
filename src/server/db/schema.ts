@@ -608,6 +608,43 @@ export const mappingState = pgTable("mapping_state", {
 export type MappingStateRow = typeof mappingState.$inferSelect;
 
 // ─────────────────────────────────────────────────────────────────────────
+// mapping_change_sets — audit + undo for admin mapping actions that change
+// several rows as one unit (Phase 3A: AI Mapping Review approve/reject). Each
+// row records WHAT was applied (`ops`, with before/after values so it can be
+// reversed), who did it, the live-lookup verification that confirmed it took
+// effect, and — if undone — who undid it. Undo is refused when the affected
+// rows have changed since (conflict), never forced. See
+// src/server/aiMappingPromotion.ts.
+// ─────────────────────────────────────────────────────────────────────────
+export const mappingChangeSets = pgTable(
+  "mapping_change_sets",
+  {
+    id: serial("id").primaryKey(),
+    // "ai_approval" today; later admin mapping controls reuse this table.
+    kind: text("kind").notNull(),
+    summary: text("summary").notNull(),
+    // "applied" | "undone" | "failed_verification" (applied then auto-reverted
+    // because the live lookup did not reflect it).
+    status: text("status").notNull().default("applied"),
+    relatedAiMemoryId: integer("related_ai_memory_id"),
+    // Forward operations with before/after values, e.g.
+    // [{type:"create_ped",pedId,aliasId,category}, {type:"set_ped_category",pedId,before,after}]
+    ops: jsonb("ops").notNull(),
+    // { term, planName, expectedQuestion, expectedCategory, observed: {...trace}, snapshotVersion }
+    verification: jsonb("verification"),
+    performedBy: text("performed_by").notNull(),
+    performedAt: timestamp("performed_at", { withTimezone: true }).notNull().defaultNow(),
+    undoneBy: text("undone_by"),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    undoNote: text("undo_note"),
+  },
+  (table) => [index("mapping_change_sets_ai_memory_idx").on(table.relatedAiMemoryId)]
+);
+
+export type MappingChangeSetRow = typeof mappingChangeSets.$inferSelect;
+export type NewMappingChangeSetRow = typeof mappingChangeSets.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
 // plan_restrictions — admin-authored, deterministic Plan-Specific
 // Restrictions (2026-08), replacing the 3 hardcoded booleans on
 // plan_configs.overrides (requiresInsulinForDiabetes / excludePrediabetes /

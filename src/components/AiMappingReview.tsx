@@ -108,6 +108,10 @@ export function AiMappingReview({
   // (see setStatus below) — separate from `error` since this isn't a
   // failure, just information about whether the mapping went live.
   const [promotionNotice, setPromotionNotice] = useState<string | null>(null);
+  // The change set the last Approve created — lets the admin undo it straight from the notice.
+  const [undoChangeId, setUndoChangeId] = useState<number | null>(null);
+  // Applied mapping changes for the entry whose details are open (audit + undo).
+  const [entryChanges, setEntryChanges] = useState<Array<{ id: number; status: string; summary: string; performedBy: string; performedAt: string; undoneBy: string | null }>>([]);
 
   // Inline edit state for the cached answer (details panel).
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -155,9 +159,49 @@ export function AiMappingReview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, search, page, entriesSort?.key, entriesSort?.direction]);
 
+  const loadEntryChanges = async (id: number) => {
+    try {
+      const res = await fetch(`/api/mapping-changes?aiMemoryId=${id}`);
+      const body = await res.json().catch(() => ({}));
+      setEntryChanges(res.ok && Array.isArray(body.entries) ? body.entries : []);
+    } catch {
+      setEntryChanges([]);
+    }
+  };
+
+  useEffect(() => {
+    if (expandedId === null) {
+      setEntryChanges([]);
+      return;
+    }
+    loadEntryChanges(expandedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedId]);
+
+  const undoChange = async (changeId: number) => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/mapping-changes/${changeId}/undo`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Failed to undo (HTTP ${res.status}).`);
+      setUndoChangeId(null);
+      setPromotionNotice(
+        body.reverted && body.verified
+          ? "Mapping change undone — confirmed on a live lookup."
+          : body.reverted
+          ? `Mapping change undone, but ${body.reason || "a live lookup still uses that category."}`
+          : `Nothing was undone: ${body.reason || "the change could not be reversed."}`
+      );
+      if (expandedId !== null) await loadEntryChanges(expandedId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to undo this change.");
+    }
+  };
+
   const setStatus = async (id: number, status: AiMemoryStatus) => {
     setBusyId(id);
     setPromotionNotice(null);
+    setUndoChangeId(null);
     try {
       const res = await fetch(`/api/ai-memory/${id}/status`, {
         method: "PATCH",
@@ -166,12 +210,33 @@ export function AiMappingReview({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to update (HTTP ${res.status}).`);
+      const promotion = body.promotion as
+        | { promoted?: boolean; verified?: boolean; reverted?: boolean; noMappingApplied?: boolean; alreadyLive?: boolean; changeSetId?: number; engine?: string; categoryKey?: string; reason?: string }
+        | undefined;
       if (status === "approved") {
-        const promotion = body.promotion as { promoted?: boolean; categoryKey?: string; reason?: string } | undefined;
-        if (promotion?.promoted) {
+        if (promotion?.promoted && promotion.engine === "db") {
+          setPromotionNotice(
+            promotion.alreadyLive
+              ? `Approved. This term already maps to the "${promotion.categoryKey}" category — nothing needed changing (confirmed on a live lookup).`
+              : `Approved and applied: this term now maps to the "${promotion.categoryKey}" category for every plan — confirmed on a live lookup.`
+          );
+          if (promotion.changeSetId) setUndoChangeId(promotion.changeSetId);
+        } else if (promotion?.promoted) {
           setPromotionNotice(`Promoted to the live "${promotion.categoryKey}" category — this now applies for every plan.`);
         } else if (promotion?.reason) {
-          setPromotionNotice(`Approved, but not promoted to a live mapping: ${promotion.reason}`);
+          setPromotionNotice(`Approved, but no mapping was changed: ${promotion.reason}`);
+        }
+      } else if (status === "rejected" && promotion) {
+        if (promotion.reverted) {
+          setPromotionNotice(
+            promotion.verified
+              ? "Rejected. The mapping this approval created has been removed — confirmed on a live lookup."
+              : `Rejected. The mapping was removed, but ${promotion.reason || "a live lookup still uses that category."}`
+          );
+        } else if (promotion.noMappingApplied) {
+          setPromotionNotice("Rejected. This approval had not changed any live mapping.");
+        } else if (promotion.reason) {
+          setPromotionNotice(`Rejected, but the mapping was not removed: ${promotion.reason}`);
         }
       }
       await fetchEntries();
@@ -366,7 +431,18 @@ export function AiMappingReview({
           dark ? "bg-sky-500/10 border-sky-500/30 text-sky-300" : "bg-sky-50 border-sky-200 text-sky-700"
         }`}>
           <Bot className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{promotionNotice}</span>
+          <span className="flex-1">{promotionNotice}</span>
+          {undoChangeId !== null && (
+            <button
+              type="button"
+              onClick={() => undoChange(undoChangeId)}
+              className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border cursor-pointer ${
+                dark ? "border-sky-400/40 hover:bg-sky-500/20" : "border-sky-300 hover:bg-sky-100"
+              }`}
+            >
+              Undo
+            </button>
+          )}
         </div>
       )}
 
@@ -435,6 +511,25 @@ export function AiMappingReview({
                               Close
                             </button>
                           </div>
+
+                          {entryChanges.length > 0 && (
+                            <div className={`rounded-lg border p-2.5 space-y-1.5 text-[11px] ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-white"}`}>
+                              <p className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Mapping changes made by this review</p>
+                              {entryChanges.map((c) => (
+                                <div key={c.id} className="flex items-center gap-2">
+                                  <span className="flex-1">
+                                    {c.summary} — {c.performedBy}, {fmtDate(c.performedAt)}
+                                    {c.status === "undone" ? ` · undone${c.undoneBy ? ` by ${c.undoneBy}` : ""}` : c.status === "failed_verification" ? " · not applied (did not take effect)" : ""}
+                                  </span>
+                                  {c.status === "applied" && (
+                                    <button type="button" onClick={() => undoChange(c.id)} className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded border cursor-pointer ${dark ? "border-white/[0.1] hover:bg-white/[0.05]" : "border-stone-200 hover:bg-stone-100"}`}>
+                                      Undo
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
                             <Detail label="Plan" value={entry.planName} dark={dark} />

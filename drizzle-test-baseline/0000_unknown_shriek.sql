@@ -392,6 +392,21 @@ CREATE TABLE "kb_resources" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "mapping_change_sets" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"kind" text NOT NULL,
+	"summary" text NOT NULL,
+	"status" text DEFAULT 'applied' NOT NULL,
+	"related_ai_memory_id" integer,
+	"ops" jsonb NOT NULL,
+	"verification" jsonb,
+	"performed_by" text NOT NULL,
+	"performed_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"undone_by" text,
+	"undone_at" timestamp with time zone,
+	"undo_note" text
+);
+--> statement-breakpoint
 CREATE TABLE "mapping_history" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"ped_id" integer,
@@ -850,6 +865,7 @@ CREATE INDEX "kb_chunks_resource_id_idx" ON "kb_chunks" USING btree ("resource_i
 CREATE INDEX "kb_playbook_plan_facts_resource_id_idx" ON "kb_playbook_plan_facts" USING btree ("resource_id");--> statement-breakpoint
 CREATE INDEX "kb_playbook_plan_facts_insurer_plan_idx" ON "kb_playbook_plan_facts" USING btree ("insurer_name","plan_name");--> statement-breakpoint
 CREATE INDEX "kb_resources_category_id_idx" ON "kb_resources" USING btree ("category_id");--> statement-breakpoint
+CREATE INDEX "mapping_change_sets_ai_memory_idx" ON "mapping_change_sets" USING btree ("related_ai_memory_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "org_teams_name_unique" ON "org_teams" USING btree ("name");--> statement-breakpoint
 CREATE UNIQUE INDEX "plan_overrides_plan_ped_idx" ON "plan_overrides" USING btree ("plan_name","ped_id");--> statement-breakpoint
 CREATE INDEX "plan_restrictions_plan_name_idx" ON "plan_restrictions" USING btree ("plan_name");--> statement-breakpoint
