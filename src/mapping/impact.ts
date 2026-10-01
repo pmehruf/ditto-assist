@@ -111,7 +111,7 @@ export interface ImpactMetrics {
   /** Was answered deterministically, would now go to AI Memory / the model. */
   resolvedToUnresolved: number;
   unresolvedToResolved: number;
-  /** Had a specific question, would now land on Others / the catch-all / nothing. */
+  /** Had a specific question, would now land on Others / the catch-all (still answered by the rules; unresolved is counted separately below). */
   specificityLoss: number;
   /** Was Others / unresolved, would now get a specific question. */
   specificityGain: number;
@@ -169,7 +169,7 @@ export function computeMetrics(changed: ChangedPair[], pairsCompared: number, us
     if (c.before.tier === "P0" || c.after.tier === "P0") m.p0Changed++;
     if (c.before.resolved && !c.after.resolved) m.resolvedToUnresolved++;
     if (!c.before.resolved && c.after.resolved) m.unresolvedToResolved++;
-    if (c.before.specific && !c.after.specific) m.specificityLoss++;
+    if (c.before.specific && !c.after.specific && c.after.resolved) m.specificityLoss++;
     else if (!c.before.specific && c.after.specific) m.specificityGain++;
     else if (c.before.specific && c.after.specific) m.questionSwap++;
     const t = `${c.before.tier}→${c.after.tier}`;
