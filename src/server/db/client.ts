@@ -31,7 +31,18 @@ let _db: Db | null = null;
  * gate's transaction, so the route's own logic can be previewed and rolled back
  * (or applied atomically) without being rewritten. Other requests are unaffected.
  */
-export const dbScope = new AsyncLocalStorage<{ db: AnyDb }>();
+export const dbScope = new AsyncLocalStorage<{ db: AnyDb; afterCommit: Array<() => void> }>();
+
+/**
+ * Runs `fn` now, or — inside a mapping-change transaction — only after that transaction COMMITS.
+ * In-process side effects (caches) must go through this so a preview or a refused/rolled-back change
+ * leaves nothing behind outside the database.
+ */
+export function runAfterCommit(fn: () => void): void {
+  const scope = dbScope.getStore();
+  if (scope) scope.afterCommit.push(fn);
+  else fn();
+}
 
 /**
  * Lazily-initialized singleton Postgres connection + Drizzle client, used by

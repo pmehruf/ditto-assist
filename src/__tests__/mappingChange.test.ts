@@ -12,7 +12,10 @@ import { createMappingTestEnv, fixtureDump, type MappingTestEnv } from "./helper
 import { createMappingGate, captureTables, undoAdminChange, resetUsageCache, CHANGE_CATEGORIES } from "../server/mappingChange";
 import { getDb } from "../server/db/client";
 import { createRepositories } from "../server/db/repositories";
-import { pedRepository, planConfigs, planOverrides, planRestrictions, pedAliases } from "../server/db/schema";
+import { pedRepository, planConfigs, planOverrides, planRestrictions, pedAliases, pedMappingOverrides, mappingHistory, changeLogs } from "../server/db/schema";
+import { createPedWithPrimaryAlias } from "../server/pedRepositoryLive";
+import { getDbAliasLookup, updateDbPlanOverrideCache } from "../server/pedRuntimeCache";
+import { normalizeDictionaryKey } from "../engine";
 
 /**
  * Phase 3B-i — impact preview, confirmation, change sets and generic undo for admin
@@ -61,6 +64,16 @@ beforeAll(async () => {
     await getDb().delete(pedAliases).where(eq(pedAliases.id, Number(req.params.id)));
     await createRepositories(getDb()).mappingState.bump();
     return res.json({ ok: true });
+  });
+  // The REAL create helper (cache + legacy mirror), plus history/change-log writes like the real route.
+  app.post("/real/ped", gate("Added a PED"), async (req, res) => {
+    const repos = createRepositories(getDb());
+    const { ped } = await createPedWithPrimaryAlias(repos, { canonicalName: req.body.name, categoryKey: req.body.categoryKey, addedBy: "Tester" });
+    await repos.mappingState.bump();
+    await repos.mappingHistory.record({ pedId: ped.id, entityType: "ped", action: "created", previousValue: null, newValue: ped, reason: null, performedBy: "Tester" });
+    await repos.changeLogs.create({ userName: "Tester", role: "Admin", actionType: "PED Repository Entry Added", planName: "PED Repository", description: "x", snapshot: null });
+    updateDbPlanOverrideCache("Optima Secure", ped.id, req.body.categoryKey, "test");
+    return res.json({ ped });
   });
   app.patch("/plain/:id", async (req, res) => {
     // an ungated route to prove the gate is the only thing that adds the behaviour
@@ -230,4 +243,44 @@ describe("mapping change gate", () => {
     const ids = new Set(ok.map((x) => x.r.body.mappingChange.id));
     expect(ids.size).toBe(ok.length);
   }, 240_000);
+});
+
+describe("preview leaves nothing behind outside the transaction", () => {
+  it("no cache, mirror, history, change log, version or change set survives a preview; all appear only after an apply", async () => {
+    const name = "zz preview probe condition";
+    const key = normalizeDictionaryKey(name);
+    const count = async (t: any) => (await env.db.select().from(t)).length;
+    const snap = async () => ({
+      version: await env.repos.mappingState.getVersion(),
+      peds: await count(pedRepository),
+      aliases: await count(pedAliases),
+      mirror: await count(pedMappingOverrides),
+      history: await count(mappingHistory),
+      logs: await count(changeLogs),
+      sets: (await env.repos.mappingChangeSets.listRecent(1000)).length,
+      cached: getDbAliasLookup().has(key),
+    });
+    const before = await snap();
+    const pv = await call("POST", "/real/ped", { body: { name, categoryKey: "heart" }, preview: true, change: null });
+    expect(pv.status).toBe(200);
+    expect(pv.body.preview).toBe(true);
+    expect(await snap()).toEqual(before);
+
+    // a refused apply (high impact / missing control) must leave nothing either
+    const refused = await call("POST", "/real/ped", { body: { name, categoryKey: "heart" }, change: null });
+    expect(refused.status).toBe(pv.body.tier === "none" ? 200 : 400);
+    if (refused.status === 400) expect(await snap()).toEqual(before);
+    else await undoAdminChange(env.db as never, refused.body.mappingChange.id, "Tester");
+
+    const ok = await call("POST", "/real/ped", { body: { name, categoryKey: "heart" }, change: control({ confirmHash: pv.body.impactHash }) });
+    expect(ok.status).toBe(200);
+    const after = await snap();
+    expect(after.cached).toBe(true);
+    expect(after.peds).toBe(before.peds + 1);
+    expect(after.mirror).toBe(before.mirror + 1);
+    expect(after.history).toBe(before.history + 1);
+    expect(after.logs).toBe(before.logs + 1);
+    expect(after.version).toBeGreaterThan(before.version);
+    expect(after.sets).toBe(before.sets + 1);
+  }, 180_000);
 });

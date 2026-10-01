@@ -4,6 +4,7 @@
  */
 
 import type { Repositories } from "./db/repositories/index.js";
+import { runAfterCommit } from "./db/client.js";
 
 /**
  * DB-backed runtime cache for the PED Repository migration, Phase 3
@@ -162,12 +163,12 @@ export function planOverrideLookup(planName: string, pedId: number): DbPlanOverr
 /** Call after a `ped_aliases` row is created (or a PED's category changes,
  * for its primary alias) to keep the cache in sync without a full reload. */
 export function updateDbAliasCache(normalizedAlias: string, pedId: number, categoryKey: string | null): void {
-  aliasMap.set(normalizedAlias, { pedId, categoryKey });
+  runAfterCommit(() => aliasMap.set(normalizedAlias, { pedId, categoryKey }));
 }
 
 /** Call after a `ped_aliases` row is deleted. */
 export function removeDbAliasCache(normalizedAlias: string): void {
-  aliasMap.delete(normalizedAlias);
+  runAfterCommit(() => aliasMap.delete(normalizedAlias));
 }
 
 /** Call after a `ped_repository` row's `categoryKey` changes — every alias
@@ -177,22 +178,24 @@ export function removeDbAliasCache(normalizedAlias: string): void {
  * cache is cheap for an infrequent admin edit; not worth a secondary
  * pedId->normalizedAlias[] index for this volume. */
 export function updateDbPedCategoryCache(pedId: number, categoryKey: string | null): void {
-  for (const [key, entry] of aliasMap) {
-    if (entry.pedId === pedId) aliasMap.set(key, { ...entry, categoryKey });
-  }
+  runAfterCommit(() => {
+    for (const [key, entry] of aliasMap) {
+      if (entry.pedId === pedId) aliasMap.set(key, { ...entry, categoryKey });
+    }
+  });
 }
 
 /** Call after a `categories` row is upserted. */
 export function updateDbCategoryLabelCache(categoryKey: string, label: string): void {
-  categoryLabelMap.set(categoryKey, label);
+  runAfterCommit(() => categoryLabelMap.set(categoryKey, label));
 }
 
 /** Call after a `plan_overrides` row is upserted. */
 export function updateDbPlanOverrideCache(planName: string, pedId: number, categoryKey: string | null, reason: string | null): void {
-  planOverrideMap.set(planOverrideKey(planName, pedId), { categoryKey, reason });
+  runAfterCommit(() => planOverrideMap.set(planOverrideKey(planName, pedId), { categoryKey, reason }));
 }
 
 /** Call after a `plan_overrides` row is deleted. */
 export function removeDbPlanOverrideCache(planName: string, pedId: number): void {
-  planOverrideMap.delete(planOverrideKey(planName, pedId));
+  runAfterCommit(() => planOverrideMap.delete(planOverrideKey(planName, pedId)));
 }

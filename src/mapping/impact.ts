@@ -86,6 +86,19 @@ export function diffOutcomes(before: Map<string, PairOutcome>, after: Map<string
 }
 
 // ── metrics ───────────────────────────────────────────────────────────────
+//
+// DEFINITIONS (identical for preview, tier classification, confirmation and the audit record):
+//  - The CORPUS is every alias in the mapping (before or after the change) plus every distinct
+//    spelling advisors searched in the last 90 days (top 5,000 by volume). Each spelling is run
+//    through the engine, because rules can treat spellings differently.
+//  - A "changed lookup" is a distinct (plan, normalized term) whose answer — resolved or not, match
+//    type, question — differs after the change. Spellings that normalize to the same dictionary key
+//    count ONCE (the most serious variant represents them). So 2 spellings x 6 plans = 6 lookups, not 12.
+//  - "Advisor lookups affected" is the number of actual search_history rows (last 90 days, repeats
+//    included) for those distinct changed (plan, normalized term) pairs. A distinct pair is never counted twice.
+//  - pairsCompared = plans compared x distinct normalized corpus terms.
+//  - The confirmation hash covers the exact set of changed (plan, spelling) answers (before/after
+//    question and match type), so it is stricter than the counts, never looser.
 
 export interface ImpactMetrics {
   /** Corpus size actually compared. */
@@ -120,11 +133,26 @@ export interface Usage {
   byPair: Record<string, number>;
 }
 
+const severity = (c: ChangedPair): number =>
+  (c.before.tier === "P0" || c.after.tier === "P0" ? 1000 : 0) + (c.before.specific && !c.after.specific ? 500 : 0) + (c.before.resolved && !c.after.resolved ? 400 : 0) + (c.after.specific ? 10 : 0);
+
+/** One representative (the most serious) per distinct (plan, normalized term). */
+export function dedupeByNormalizedTerm(changed: ChangedPair[]): ChangedPair[] {
+  const best = new Map<string, ChangedPair>();
+  for (const c of changed) {
+    const key = `${c.plan}||${normalizeDictionaryKey(c.term)}`;
+    const cur = best.get(key);
+    if (!cur || severity(c) > severity(cur)) best.set(key, c);
+  }
+  return [...best.values()];
+}
+
+/** `changed` must already be deduplicated (see dedupeByNormalizedTerm). */
 export function computeMetrics(changed: ChangedPair[], pairsCompared: number, usage?: Usage): ImpactMetrics {
   const m: ImpactMetrics = {
     pairsCompared,
     pairsChanged: changed.length,
-    termsChanged: new Set(changed.map((c) => c.term)).size,
+    termsChanged: new Set(changed.map((c) => normalizeDictionaryKey(c.term))).size,
     plansAffected: new Set(changed.map((c) => c.plan)).size,
     p0Changed: 0,
     resolvedToUnresolved: 0,
@@ -222,10 +250,10 @@ export interface ImpactReport {
   sample: ChangedPair[];
   plansAdded: string[];
   plansRemoved: string[];
+  /** Stable text over every changed (plan, spelling) answer; its hash is what an admin confirms. */
+  fingerprint: string;
 }
 
-const SEVERITY = (c: ChangedPair): number =>
-  (c.before.tier === "P0" || c.after.tier === "P0" ? 1000 : 0) + (c.before.specific && !c.after.specific ? 500 : 0) + (c.before.resolved && !c.after.resolved ? 400 : 0) + (c.after.specific ? 10 : 0);
 
 /** Full comparison of two worlds over a corpus. */
 export function compareWorlds(before: World, after: World, terms: string[], usage?: Usage, sampleLimit = 25, thresholds: ImpactThresholds = IMPACT_THRESHOLDS): ImpactReport {
@@ -234,11 +262,13 @@ export function compareWorlds(before: World, after: World, terms: string[], usag
   const shared = bPlans.filter((p) => after.plans.has(p));
   const b = evaluateWorld(before, terms, shared);
   const a = evaluateWorld(after, terms, shared);
-  const changed = diffOutcomes(b, a);
-  const metrics = computeMetrics(changed, shared.length * terms.length, usage);
+  const changedAll = diffOutcomes(b, a);
+  const changed = dedupeByNormalizedTerm(changedAll);
+  const distinctTerms = new Set(terms.map((t) => normalizeDictionaryKey(t))).size;
+  const metrics = computeMetrics(changed, shared.length * distinctTerms, usage);
   const cls = classifyImpact(metrics, thresholds);
-  const sample = [...changed].sort((x, y) => SEVERITY(y) - SEVERITY(x)).slice(0, sampleLimit);
-  return { tier: cls.tier, reasons: cls.reasons, metrics, sample, plansAdded: aPlans.filter((p) => !before.plans.has(p)), plansRemoved: bPlans.filter((p) => !after.plans.has(p)) };
+  const sample = [...changed].sort((x, y) => severity(y) - severity(x)).slice(0, sampleLimit);
+  return { tier: cls.tier, reasons: cls.reasons, metrics, sample, plansAdded: aPlans.filter((p) => !before.plans.has(p)), plansRemoved: bPlans.filter((p) => !after.plans.has(p)), fingerprint: changeFingerprint(changedAll) };
 }
 
 /** Stable fingerprint of a set of changed pairs (used to bind a confirmation to exactly what was previewed). */

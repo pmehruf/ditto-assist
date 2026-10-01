@@ -14,7 +14,7 @@ import { mappingChangeSets, mappingState, pedAliases, pedRepository, planConfigs
 import { loadMappingSnapshot } from "./mappingSnapshot.js";
 import { dbRowToPlanConfig, toPlanPedOverrides, toPlanRestrictions } from "./planConfigUtils.js";
 import { normalizeDictionaryKey } from "../engine.js";
-import { changeFingerprint, compareWorlds, evaluateWorld, diffOutcomes, type ImpactReport, type Usage, type World } from "../mapping/impact.js";
+import { compareWorlds, type ImpactReport, type Usage, type World } from "../mapping/impact.js";
 import type { PlanConfig } from "../types.js";
 
 /**
@@ -281,9 +281,7 @@ export interface ImpactResult {
 export async function measureImpact(before: World, after: World, usageSource: { usage: Usage; terms: string[] }): Promise<ImpactResult> {
   const corpus = [...new Set<string>([...before.snapshot.aliases.keys(), ...after.snapshot.aliases.keys(), ...usageSource.terms])];
   const report = compareWorlds(before, after, corpus, usageSource.usage);
-  const plans = [...before.plans.keys()].filter((p) => after.plans.has(p));
-  const changed = diffOutcomes(evaluateWorld(before, corpus, plans), evaluateWorld(after, corpus, plans));
-  return { report, hash: createHash("sha256").update(changeFingerprint(changed)).digest("hex").slice(0, 24) };
+  return { report, hash: createHash("sha256").update(report.fingerprint).digest("hex").slice(0, 24) };
 }
 
 // ── the gate ───────────────────────────────────────────────────────────────
@@ -367,6 +365,7 @@ export function createMappingGate(deps: GateDeps) {
       const usageSource = await loadUsage(root);
       let sent: { status: number; body: unknown } | undefined;
       try {
+        const afterCommit: Array<() => void> = [];
         await root.transaction(async (txRaw) => {
           const tx = txRaw as unknown as AnyDb;
           await tx.execute(sql`set local lock_timeout = '10s'`);
@@ -375,7 +374,7 @@ export function createMappingGate(deps: GateDeps) {
           const versionBefore = await repos.mappingState.getVersion();
           const [tablesBefore, worldBefore] = await Promise.all([captureTables(tx), loadWorld(tx)]);
 
-          const captured = await dbScope.run({ db: tx }, () => captureResponse(res, () => next()));
+          const captured = await dbScope.run({ db: tx, afterCommit }, () => captureResponse(res, () => next()));
           if (captured.status >= 400) throw new Rollback({ status: captured.status, body: preview ? { preview: true, ...asObject(captured.body) } : captured.body });
 
           const tablesAfter = await captureTables(tx);
@@ -416,6 +415,7 @@ export function createMappingGate(deps: GateDeps) {
           const body = captured.body && typeof captured.body === "object" && !Array.isArray(captured.body) ? { ...(captured.body as object), mappingChange: { id: cs.id, tier: report.tier, pairsChanged: report.metrics.pairsChanged } } : captured.body;
           sent = { status: captured.status, body };
         });
+        for (const fn of afterCommit) fn();
       } catch (err) {
         if (err instanceof Rollback) sent = err.outcome;
         else throw err;
