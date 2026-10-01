@@ -305,6 +305,8 @@ const PED_SOURCE: "legacy" | "db" = process.env.PED_SOURCE === "db" ? "db" : "le
 // Flipping this env var back to "legacy" (no redeploy needed) is the rollback.
 // ─────────────────────────────────────────────────────────────────────────
 const MAPPING_ENGINE: "legacy" | "db" = process.env.MAPPING_ENGINE === "db" ? "db" : "legacy";
+// Identifies this server process in lookup traces, so live propagation across Cloud Run instances can be observed.
+const MAPPING_INSTANCE_ID = crypto.randomUUID().slice(0, 8);
 
 /** Bumps the mapping version after a write that can change a routing result,
  * so every server instance reloads its snapshot on its next lookup. Never
@@ -369,7 +371,7 @@ async function attachPlanPedOverrides(
 // NOT classify locally (its compiled-in copy of the legacy rules is the reason
 // admin edits used to not take effect) and sends every lookup to /api/match.
 app.get("/api/mapping-engine", requireAuth, (_req, res) => {
-  res.json({ mode: MAPPING_ENGINE });
+  res.json({ mode: MAPPING_ENGINE, instance: MAPPING_INSTANCE_ID });
 });
 
 // In db mode the deterministic engine answers most lookups with no AI cost, so
@@ -467,7 +469,7 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
       const snapshot = await getMappingSnapshot(repos);
       const { result, trace } = runDeterministicPipeline(ped, planName, config, snapshot);
       if (result) {
-        return res.json({ ...result, decision_trace: trace, source: "Deterministic Engine" });
+        return res.json({ ...result, decision_trace: { ...trace, instance: MAPPING_INSTANCE_ID, snapshotVersion: snapshot.version }, source: "Deterministic Engine" });
       }
       // No deterministic rule matched: this lookup may now use AI Memory / the model.
       if (!(await runLimiter(expensiveActionLimiter, req, res))) return;

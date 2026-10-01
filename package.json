@@ -19,6 +19,8 @@
     "mapping:baseline": "tsx scripts/generateMappingBaseline.ts",
     "mapping:seed": "tsx scripts/seedMappingControl.ts",
     "mapping:verify": "tsx scripts/verifyMappingEquality.ts",
+    "mapping:backup": "tsx scripts/backupMappingTables.ts",
+    "mapping:rollback": "tsx scripts/rollbackMappingControl.ts",
     "db:seed:users": "tsx src/server/db/seedUsers.ts",
     "db:studio": "drizzle-kit studio",
     "db:backfill:ai-memory": "tsx scripts/backfillAiMemory.ts",

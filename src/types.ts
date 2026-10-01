@@ -25,6 +25,9 @@ export interface MatchOutput {
   decision_trace?: {
     decidedBy: string;
     postGuard?: string;
+    /** Server process and mapping version that produced this result (diagnostics for live propagation). */
+    instance?: string;
+    snapshotVersion?: number;
     dictionary?: {
       alias: string;
       source: "ped_category" | "alias_override" | "fallback_category" | "not_routed" | "none";
