@@ -252,6 +252,8 @@ export interface ImpactReport {
   plansRemoved: string[];
   /** Stable text over every changed (plan, spelling) answer; its hash is what an admin confirms. */
   fingerprint: string;
+  /** Lookups the rules answered today that would become unresolved (capped), so the caller can say what happens next. */
+  unresolvedAfter: ChangedPair[];
 }
 
 
@@ -268,7 +270,7 @@ export function compareWorlds(before: World, after: World, terms: string[], usag
   const metrics = computeMetrics(changed, shared.length * distinctTerms, usage);
   const cls = classifyImpact(metrics, thresholds);
   const sample = [...changed].sort((x, y) => severity(y) - severity(x)).slice(0, sampleLimit);
-  return { tier: cls.tier, reasons: cls.reasons, metrics, sample, plansAdded: aPlans.filter((p) => !before.plans.has(p)), plansRemoved: bPlans.filter((p) => !after.plans.has(p)), fingerprint: changeFingerprint(changedAll) };
+  return { tier: cls.tier, reasons: cls.reasons, metrics, sample, plansAdded: aPlans.filter((p) => !before.plans.has(p)), plansRemoved: bPlans.filter((p) => !after.plans.has(p)), fingerprint: changeFingerprint(changedAll), unresolvedAfter: changed.filter((c) => c.before.resolved && !c.after.resolved).slice(0, 200) };
 }
 
 /** Stable fingerprint of a set of changed pairs (used to bind a confirmation to exactly what was previewed). */

@@ -9,7 +9,7 @@ import { getTableColumns, type Table } from "drizzle-orm";
 import type { NextFunction, Request, Response } from "express";
 import type { AnyDb } from "./db/client.js";
 import { dbScope } from "./db/client.js";
-import { createRepositories } from "./db/repositories/index.js";
+import { createRepositories, normalizeCondition } from "./db/repositories/index.js";
 import { mappingChangeSets, mappingState, pedAliases, pedRepository, planConfigs, planOverrides, planRestrictions, searchHistory } from "./db/schema.js";
 import { loadMappingSnapshot } from "./mappingSnapshot.js";
 import { dbRowToPlanConfig, toPlanPedOverrides, toPlanRestrictions } from "./planConfigUtils.js";
@@ -272,6 +272,29 @@ export async function loadUsage(db: AnyDb): Promise<{ usage: Usage; terms: strin
   return usageCache;
 }
 
+/** What the live lookup would do next for terms the rules would stop answering (read-only; AI Memory behaviour is unchanged). */
+export interface AiMemoryOutlook {
+  checked: number;
+  withEntry: number;
+  byStatus: Record<string, number>;
+  examples: Array<{ plan: string; term: string; status: string; servedQuestion: string | null }>;
+}
+
+export async function aiMemoryOutlook(db: AnyDb, pairs: Array<{ plan: string; term: string }>, engineVersion: string): Promise<AiMemoryOutlook> {
+  const repos = createRepositories(db);
+  const out: AiMemoryOutlook = { checked: pairs.length, withEntry: 0, byStatus: {}, examples: [] };
+  for (const p of pairs) {
+    const row = await repos.aiMemory.findCached(normalizeCondition(p.term), p.plan, engineVersion);
+    if (!row || row.status === "archived") continue;
+    out.withEntry++;
+    out.byStatus[row.status] = (out.byStatus[row.status] ?? 0) + 1;
+    // "rejected" entries are answered with the plan's Others question plus a manual-review note (see /api/match).
+    const stored = (row.aiResponse as { result?: { matched_question?: string } } | null)?.result?.matched_question ?? null;
+    if (out.examples.length < 10) out.examples.push({ plan: p.plan, term: p.term, status: row.status, servedQuestion: row.status === "rejected" ? null : stored });
+  }
+  return out;
+}
+
 export interface ImpactResult {
   report: ImpactReport;
   /** Identifies exactly which lookups change and how; an admin confirms this value. */
@@ -291,6 +314,8 @@ export interface GateDeps {
   enabled(): boolean;
   /** The root (non-transaction) database. */
   rootDb(): AnyDb;
+  /** ENGINE_VERSION used by the AI Memory cache key. */
+  engineVersion: string;
   /** "Name (tier)" of the caller, for the audit trail. */
   performer(req: Request): Promise<string>;
 }
@@ -382,7 +407,9 @@ export function createMappingGate(deps: GateDeps) {
           if (ops.length === 0) throw new Rollback({ status: captured.status, body: preview ? { preview: true, impact: null, tier: "none", changes: 0, response: captured.body } : captured.body });
 
           const worldAfter = await loadWorld(tx);
-          const { report, hash } = await measureImpact(worldBefore, worldAfter, usageSource);
+          const { report: baseReport, hash } = await measureImpact(worldBefore, worldAfter, usageSource);
+          const aiMemory = baseReport.unresolvedAfter.length ? await aiMemoryOutlook(tx, baseReport.unresolvedAfter, deps.engineVersion) : null;
+          const report = { ...baseReport, aiMemory };
           // A save that changes no lookup result (e.g. disabling a plan, editing its illness list) is still audited and
           // undoable but needs no reason/confirmation; anything that changes a result must carry the change-control fields.
           if (!preview && report.tier !== "none" && !control) throw new Rollback({ status: 400, body: { error: controlError, code: "change_control_required" } });

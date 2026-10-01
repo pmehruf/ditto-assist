@@ -44,6 +44,7 @@ export interface ImpactReport {
     transitions: Record<string, number>;
   };
   sample: Array<{ plan: string; term: string; before: PairOutcome; after: PairOutcome }>;
+  aiMemory?: { checked: number; withEntry: number; byStatus: Record<string, number>; examples: Array<{ plan: string; term: string; status: string; servedQuestion: string | null }> } | null;
 }
 
 export interface MappingChangeRequest {

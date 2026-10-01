@@ -47,7 +47,7 @@ beforeAll(async () => {
   if (fixtureDump.planRestrictions.length) await env.db.insert(planRestrictions).values(fixtureDump.planRestrictions.map((r: any) => ({ planName: r.planName, categoryKey: r.categoryKey, mode: r.mode, keywords: r.keywords, explanation: r.explanation, isActive: r.isActive, createdBy: "fixture", updatedBy: "fixture" })) as any);
   if (fixtureDump.planOverrides.length) await env.db.insert(planOverrides).values(fixtureDump.planOverrides.map((o: any) => ({ planName: o.planName, pedId: o.pedId, categoryKey: o.categoryKey, targetQuestion: o.targetQuestion, reason: o.reason, addedBy: "fixture" })) as any);
 
-  const gate = createMappingGate({ enabled: () => gateOn, rootDb: () => env.db as never, performer: async () => "Tester (Admin)" });
+  const gate = createMappingGate({ enabled: () => gateOn, rootDb: () => env.db as never, engineVersion: "test-ev", performer: async () => "Tester (Admin)" });
   const app = express();
   app.use(express.json());
   // Mimics PATCH /api/ped-repository/:id, DELETE, and POST alias.
@@ -283,4 +283,37 @@ describe("preview leaves nothing behind outside the transaction", () => {
     expect(after.version).toBeGreaterThan(before.version);
     expect(after.sets).toBe(before.sets + 1);
   }, 180_000);
+});
+
+describe("AI Memory outlook for lookups the rules would stop answering", () => {
+  it("the preview reports the cached AI answer that would be served; AI Memory itself is untouched", async () => {
+    // find a change that makes a rule-answered lookup unresolved
+    let found: { ped: any; pair: any } | null = null;
+    for (const p of (await env.repos.pedRepository.list()).filter((x) => x.categoryKey).slice(0, 120)) {
+      const r = await call("PATCH", `/ped/${p.id}`, { body: { categoryKey: null }, preview: true, change: null });
+      const pair = r.body.impact?.sample?.find((x: any) => x.before.resolved && !x.after.resolved);
+      if (pair) {
+        found = { ped: p, pair };
+        break;
+      }
+    }
+    expect(found, "a change that leaves a lookup unresolved").toBeTruthy();
+    const { ped, pair } = found!;
+    const none = await call("PATCH", `/ped/${ped.id}`, { body: { categoryKey: null }, preview: true, change: null });
+    expect(none.body.impact.aiMemory.withEntry).toBe(0);
+    expect(none.body.impact.aiMemory.checked).toBeGreaterThan(0);
+
+    await env.repos.aiMemory.recordPending({
+      condition: pair.term, normalizedCondition: pair.term.trim().toLowerCase().replace(/\s+/g, " "), planName: pair.plan, engineVersion: "test-ev", promptVersion: "p", geminiModel: "m",
+      aiResponse: { result: { matched_question: "Cached AI question", match_type: "P2" } }, status: "approved",
+    } as any);
+    const withEntry = await call("PATCH", `/ped/${ped.id}`, { body: { categoryKey: null }, preview: true, change: null });
+    expect(withEntry.body.impact.aiMemory.withEntry).toBe(1);
+    expect(withEntry.body.impact.aiMemory.byStatus).toEqual({ approved: 1 });
+    expect(withEntry.body.impact.aiMemory.examples[0]).toMatchObject({ plan: pair.plan, status: "approved", servedQuestion: "Cached AI question" });
+    // the tier / hash are unchanged by the outlook (it is information only)
+    expect(withEntry.body.impactHash).toBe(none.body.impactHash);
+    const row = await env.repos.aiMemory.findCached(pair.term.trim().toLowerCase(), pair.plan, "test-ev");
+    expect(row?.status).toBe("approved");
+  }, 240_000);
 });

@@ -339,6 +339,7 @@ const mappingGateRateLimit = (req: any, res: any, next: any) => (MAPPING_IMPACT_
 const mappingGate = createMappingGate({
   enabled: MAPPING_IMPACT_GATE_ON,
   rootDb: () => getDb(),
+  engineVersion: ENGINE_VERSION,
   performer: async (req) => `${(req as any).user?.name ?? "Unknown"} (${await getCallerTier(req, createRepositories(getDb()).users)})`,
 });
 

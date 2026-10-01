@@ -97,6 +97,13 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
                 ))}
               </ul>
             )}
+            {req.impact?.aiMemory && req.impact.aiMemory.checked > 0 && (
+              <p className={`rounded-lg p-3 text-xs ${dark ? "bg-slate-700 text-slate-200" : "bg-slate-50 text-slate-700"}`}>
+                {m.resolvedToUnresolved} lookup{m.resolvedToUnresolved === 1 ? "" : "s"} would stop being answered by the rules. Of the {req.impact.aiMemory.checked} checked, <strong>{req.impact.aiMemory.withEntry}</strong> already have an AI Memory entry
+                {Object.keys(req.impact.aiMemory.byStatus).length > 0 && <> ({Object.entries(req.impact.aiMemory.byStatus).map(([k, v]) => `${v} ${k}`).join(", ")})</>}: advisors would be served that saved answer
+                {req.impact.aiMemory.withEntry < req.impact.aiMemory.checked ? "; the rest would be sent to the AI step" : ""}. A rejected entry shows the Others question with a manual-review note.
+              </p>
+            )}
             {req.impact && req.impact.sample.length > 0 && (
               <div className={`rounded-lg border overflow-hidden ${dark ? "border-slate-600" : "border-slate-200"}`}>
                 <div className={`px-3 py-1.5 text-xs font-semibold ${dark ? "bg-slate-700" : "bg-slate-50"}`}>
