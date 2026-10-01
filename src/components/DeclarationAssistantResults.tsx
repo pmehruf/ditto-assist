@@ -17,6 +17,7 @@ import { MatchOutput, PlanConfig } from "../types.js";
 import { ReportingItem } from "../types/lookup";
 import { getMatchTierInfo as getSharedMatchTierInfo } from "../utils/matchTier";
 import { PED_BORDER_COLOR, PLAN_INSURER_BORDER_COLOR } from "../utils/planInsurerColors";
+import { DecisionTracePanel } from "./DecisionTracePanel";
 
 // ─────────────────────────────────────────────
 // Types
@@ -502,6 +503,7 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                         >
                           {renderExplanationText(result.explanation)}
                         </p>
+                        <DecisionTracePanel result={result} dark={dark} />
                       </div>
 
                       {/* ── Action row: toggles sit directly above the panels they open ── */}

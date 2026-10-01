@@ -404,7 +404,12 @@ CREATE TABLE "mapping_change_sets" (
 	"performed_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"undone_by" text,
 	"undone_at" timestamp with time zone,
-	"undo_note" text
+	"undo_note" text,
+	"reason" text,
+	"change_category" text,
+	"business_decision" text,
+	"impact_tier" text,
+	"impact" jsonb
 );
 --> statement-breakpoint
 CREATE TABLE "mapping_history" (

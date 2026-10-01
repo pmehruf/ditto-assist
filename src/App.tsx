@@ -105,6 +105,7 @@ import { useDialog } from "./hooks/useDialog";
 import { downloadCSV } from "./utils/csvExport";
 import { formatCompactTimestamp } from "./utils/timestamps";
 import { ErrorBoundary, TabLoadingFallback } from "./components/ErrorBoundary";
+import { MappingChangeDialogHost } from "./components/MappingChangeDialog";
 
 // ─────────────────────────────────────────────
 // Lazy-loaded tab pages (Phase 2: Performance)
@@ -3956,6 +3957,8 @@ export default function App() {
         ? "bg-[#001322] text-slate-100" 
         : "bg-[#F1F6FB] text-stone-900"
     } w-full overflow-hidden`}>
+
+      <MappingChangeDialogHost theme={isDark ? "dark" : "light"} />
 
       {/* Mobile menu-open trigger — on a mobile-width viewport the
           collapsed sidebar is fully hidden (width 0, see the aside below),

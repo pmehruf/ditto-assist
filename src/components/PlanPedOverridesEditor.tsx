@@ -9,6 +9,7 @@ import { CATEGORY_LABELS } from "../types.js";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { useDialog } from "../hooks/useDialog";
+import { mappingFetch } from "../utils/mappingFetch";
 
 /** Row shape returned by GET /api/plan-ped-overrides/:planName
  * (PlanOverridesRepository.listDetailed). */
@@ -166,7 +167,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
     setSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/plan-ped-overrides/${encodeURIComponent(planName)}/${draft.ped.id}`, {
+      const res = await mappingFetch(`/api/plan-ped-overrides/${encodeURIComponent(planName)}/${draft.ped.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ targetQuestion: draft.targetQuestion, reason: draft.reason.trim() || null }),
@@ -187,7 +188,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
     if (!(await confirm(`Remove the ${planName} mapping for ${e.pedName}? It will go back to its normal ${categoryLabel(e.pedCategoryKey)} category mapping on this plan.`))) return;
     setSaveError(null);
     try {
-      const res = await fetch(`/api/plan-ped-overrides/${encodeURIComponent(planName)}/${e.pedId}`, { method: "DELETE" });
+      const res = await mappingFetch(`/api/plan-ped-overrides/${encodeURIComponent(planName)}/${e.pedId}`, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to delete (HTTP ${res.status}).`);
       await load();

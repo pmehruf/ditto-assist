@@ -637,6 +637,14 @@ export const mappingChangeSets = pgTable(
     undoneBy: text("undone_by"),
     undoneAt: timestamp("undone_at", { withTimezone: true }),
     undoNote: text("undo_note"),
+    // Phase 3B-i change-control fields (null on Phase 3A rows): the admin's reason, the
+    // Constitution Part XIV change category, the Part XI step 4 Business-Decision check, and
+    // the measured impact (src/mapping/impact.ts) the admin confirmed.
+    reason: text("reason"),
+    changeCategory: text("change_category"),
+    businessDecision: text("business_decision"),
+    impactTier: text("impact_tier"),
+    impact: jsonb("impact"),
   },
   (table) => [index("mapping_change_sets_ai_memory_idx").on(table.relatedAiMemoryId)]
 );

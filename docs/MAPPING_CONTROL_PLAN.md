@@ -6,7 +6,9 @@ Governing documents: `MASTER_CONSTITUTION.md` (incl. Change Impact Template, Par
 |---|---|---|
 | 1 | Investigation, baseline, R10 findings, design | Done |
 | 2 | One DB-backed control layer reproducing production exactly (equality migration), cutover | Built; cutover per `docs/MAPPING_CONTROL_PHASE2.md` |
-| 3A | Authoritative admin mapping control: AI Mapping Review approve/reject on the live tables with live verification, audit + undo; retire legacy-only writers; script version bumps. See `docs/MAPPING_CONTROL_PHASE3A.md` | Built + validated on staging; production rollout awaiting go-ahead |
+| 3A | Authoritative admin mapping control: AI Mapping Review approve/reject on the live tables with live verification, audit + undo; retire legacy-only writers; script version bumps. See `docs/MAPPING_CONTROL_PHASE3A.md` | Built + validated on staging; live in production, approved and closed |
+| 3B-i | Safety backbone: impact preview, confirmation scaled to measured impact, change-control fields, generic change sets + undo, "Why this result" trace, inert-control labelling, Constitution v1.4 (P0-P3 as implemented). See `docs/MAPPING_CONTROL_PHASE3B.md` | Built + tested on branch; staging/production rollout pending |
+| 3B-ii | Routing-rule administration (API + UI, validation, protected bands, revision column) | Not started |
 | 3 (remaining) | One admin section (R3/R9): rule/alias/plan/PED controls, audit + undo (A1), impact preview, category CRUD with safeguards (A3), UI-managed exceptions (A5), **admin write-path integrity: no action may report success for a change the live engine ignores (see below)** | Not started |
 | 4 | Ordered category chain per PED (R11, A4) | Not started |
 | 5 | Approved R10 corrections as a separate listed batch | Not started |

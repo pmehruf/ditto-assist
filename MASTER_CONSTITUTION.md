@@ -33,7 +33,7 @@ When AI is used to review or integrate mappings:
 
 ## Version Information
 
-- **Version:** 1.3
+- **Version:** 1.4
 - **Status:** Authoritative — approved baseline. This is the single highest-authority governance document for the mapping engine.
 - **Last Updated:** 2026-10-02
 - **Authority:** This document supersedes and consolidates all prior governance material — the Mapping Policy Charter, the Production Governance Manual, and any Validation Framework, Integration Playbook, Change Control, Mapping Governance, or Integration Rules notes. Those documents become optional historical reference. Where any of them conflicts with this Constitution, **this Constitution governs.**
@@ -130,6 +130,7 @@ Only principles provable from the implementation. Aspirational rules are exclude
 - *Named engine primitives (code, no editable mapping data):* admin plan-override matching, exact-wording match, dictionary lookup, Plan Decision, confirmed-diabetes handling, hypertension complication handling, and the diabetes-restriction post-guard; plus sanitize/finalize post-processing and umbrella-question detection. Their patterns, tables and message templates are held as rule parameters.
 - *Live propagation:* every lookup reads the single-row `mapping_state.version`; each instance reloads its snapshot when the number changed. Writes that can change a routing result bump it, so a change is live on every instance on its next lookup. The decision trace (`decision_trace`: deciding rule, post-guard, dictionary source) is returned with each result.
 - *Rollback:* set `MAPPING_ENGINE=legacy` (environment change, no redeploy). The migration is additive; nothing is removed.
+- *Impact gate for admin mapping writes (added 2026-10-02, Phase 3B-i)* — [CURRENT] when `MAPPING_ENGINE=db` and `MAPPING_IMPACT_GATE=on`; with the flag off, Phase 3A behavior applies unchanged. Every admin route that can change a routing result (PED Library PED/alias writes, plan configs, plan restrictions, plan-specific PED mappings) runs inside one database transaction. A preview request executes the route's real logic and rolls it back, returning the measured impact; an apply recomputes the impact, requires the change-control fields and (above low impact) the admin's confirmation of that exact impact, records a row-level change set (`mapping_change_sets`) and bumps the mapping version. Impact is measured by running the live deterministic engine over every alias plus every term advisors searched in the last 90 days, across all active plans, before and after the change. A change set can be undone from the audit list; undo restores the exact rows and is refused, never forced, if any have changed since. Impact tiers (thresholds in `IMPACT_THRESHOLDS`, derived from production behavior; see docs/MAPPING_CONTROL_PHASE3B.md): **low** (<= 12 changed lookups, < 15 advisor lookups affected, none of the safety signals), **elevated** (more than that), **high** (>= 60 changed lookups, >= 120 advisor lookups, or any direct-match change, specific question lost to Others, or lookup that would stop being answered by the rules). Staff tiers can open "Why this result" on a lookup (decision trace: deciding stage, match level, dictionary source and category, mapping version, server).
 - *Admin mapping actions (added 2026-10-02, Phase 3A)* — [CURRENT] when `MAPPING_ENGINE=db`. An admin action may only report a mapping change as made if the live engine uses the result. AI Mapping Review **Approve** sets the term's category on `ped_repository`/`ped_aliases` (creating the PED and alias if the term is unknown) — it never overwrites a category the term already has, and it is refused when the alias carries matching options; it then bumps the mapping version, runs a fresh lookup through the live engine and reports success only if that lookup returns the approved question via the new category, otherwise the change is reverted and the reason shown. **Reject** reverses exactly what the approval did (refused, never forced, if the rows were edited since) and verifies the next lookup no longer uses it. Each change is recorded as an undoable change set (`mapping_change_sets`, who/what/the confirming lookup) plus `mapping_history`, and can be undone from AI Mapping Review. These actions do not write `ped_mapping_overrides`. The other actions that wrote only that table (the "teach it" route `/api/add-ped-mapping` and the old PED Directory create/edit/delete) answer 410 in `db` mode and change nothing; with `MAPPING_ENGINE=legacy` (the rollback path) all of them behave as before. Operational scripts that write the mapping tables bump the mapping version.
 
 **Post-processing (always after a route is chosen)** — [CURRENT]: `sanitizeOutput` → `applyPostGuards` (plan-aware corrections, e.g. Care Supreme diabetes Type-1 restriction; SLE/lupus organ-reroute) → `finalizeOutput` (resolves the question against the plan's real text, attaches umbrella recommendations, applies terminology and advisory-footer rules).
@@ -159,6 +160,14 @@ Only principles provable from the implementation. Aspirational rules are exclude
 - Precedence when a plan's `categoryMap` could resolve one condition to two different questions (Part IX, item 9).
 
 (Decision tree: Appendix C.)
+
+**Match priority ladder P0 → P1 → P2 → P3 (documented 2026-10-02, Phase 3B; documentation of existing behavior, no runtime change)** — [CURRENT]
+- **P0 — Direct Match.** The condition is exactly (or names) wording of a plan question: the exact plan-wording stage (`match_type` `P0`) and admin plan-specific PED mappings (`plan_overrides`). Shown as "Level 1: Direct Match" (`src/utils/matchTier.ts`).
+- **P1 — Category Match (deterministic).** The dictionary resolves the condition to a category and the plan's `categoryMap` gives the plan's question for that category (`match_type` `P1`). "Level 2: Category Match".
+- **P2 — Category Match (AI-found).** The same outcome reached by the AI step when no deterministic rule resolved the condition (`match_type` `P2` in the AI response schema). It is displayed identically to P1. **The deterministic engine never produces P2.**
+- **P3 — Fallback.** No specific question covers the condition: the plan's umbrella / Others / Any-other question (`match_type` `FALLBACK`; "P3" is the documentation label only and is not a stored value). "Level 3: Fallback".
+- Outside the ladder: `NON_AILMENT`, `ESCALATE`, `INVALID`.
+- **Question-wording precedence:** a specific question that names the condition outranks a broader or catch-all question; a specific mapping (exact wording, plan override, or a more specific rule) overrides a broader one; where no safe mapping exists the result is the fallback (P3), never a guessed specific question.
 
 ---
 
@@ -316,6 +325,8 @@ The required lifecycle. — [PROCESS]
 
 **Required validations** — [PROCESS]: baseline snapshot run; per-plan targeted tests; full diff review.
 **Required approvals** — [PROCESS]: the owning role for the change category (Part XIV) plus regression sign-off.
+
+**Change-control fields for admin mapping changes (added 2026-10-02, Phase 3B)** — [PROCESS]: any admin change that alters a lookup result is recorded with (1) a reason, (2) its Part XIV change category, (3) the Part XI step 4 Business-Decision check — either "none involved" or who approved it — and (4) for elevated/high impact, the admin's confirmation of the previewed impact. A change that alters no lookup result is still audited and undoable but needs no reason. The admin UI does not decide a Business Decision (Part IX); it records that one was taken. [GOVERNANCE]: approved A1 (instant live changes with pre-save impact preview, confirmation scaled to impact, audit, undo) and A5 (audited, reversible exceptions) are implemented by this gate for the PED Library, plan and plan-override writers; routing-rule administration is a later milestone (3B-ii).
 
 (Checklist: Appendix D.)
 
@@ -600,6 +611,21 @@ v1.3  (2026-10-02)  — mapping-control Phase 3A: admin mapping control
   Regression diff reviewed: the Phase 2 equality baseline and Zero Regression Audit are
   unchanged and pass; new admin-writer / no-silent-no-op tests added.
 - Documented in Part IV ("Admin mapping actions"). Migration 0086 adds mapping_change_sets.
+
+v1.4  (2026-10-02)  — mapping-control Phase 3B-i: safety backbone
+- Change Impact:
+  [x] Documentation only        — P0 -> P1 -> P2 -> P3 ladder as implemented (Part V); no engine change
+  [x] Governance only           — impact gate, change-control fields (reason / Part XIV category /
+                                  Business-Decision check), confirmation scaled to measured impact,
+                                  generic change sets and undo (Parts IV, XIII)
+  [ ] Business decision
+  [ ] Runtime behavior change   — none: no (condition, plan) output changes from deploying this; the
+                                  gate is off by default (MAPPING_IMPACT_GATE) and wraps existing
+                                  admin routes without changing their logic.
+  [ ] Regression expected       — none
+  Owner sign-off: instructed by the owner 2026-10-02 (Phase 3B approvals 1-7).
+  Regression diff reviewed: Phase 2 equality baseline and Zero Regression Audit unchanged and pass.
+- Migration 0087 adds change-control and impact columns to mapping_change_sets (additive, nullable).
 ```
 
 Each future entry must summarize what changed and cite its Change Impact classification. A version that changes runtime behavior must reference the regression sign-off.

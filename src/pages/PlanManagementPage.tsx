@@ -16,6 +16,7 @@ import { CustomSelect } from "../components/CustomSelect";
 import { PlanRestrictionsEditor } from "../components/PlanRestrictionsEditor";
 import { PlanPedOverridesEditor } from "../components/PlanPedOverridesEditor";
 import { useDialog } from "../hooks/useDialog";
+import { mappingFetch } from "../utils/mappingFetch";
 
 interface PlanManagementPageProps {
   theme: "light" | "dark";
@@ -601,7 +602,7 @@ export function PlanManagementPage({
       const shouldCreate = isNewPlan || !hasExistingDbRow;
       const url = shouldCreate ? "/api/plan-configs" : `/api/plan-configs/${encodeURIComponent(originalPlanName!)}`;
       const method = shouldCreate ? "POST" : "PUT";
-      const res = await fetch(url, {
+      const res = await mappingFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -689,7 +690,7 @@ export function PlanManagementPage({
           };
         }
 
-        const res = await fetch(url, {
+        const res = await mappingFetch(url, {
           method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -746,7 +747,7 @@ export function PlanManagementPage({
         };
       }
 
-      const res = await fetch(url, {
+      const res = await mappingFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -838,7 +839,7 @@ export function PlanManagementPage({
       };
     }
 
-    const res = await fetch(url, {
+    const res = await mappingFetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -906,7 +907,7 @@ export function PlanManagementPage({
       };
     }
 
-    const res = await fetch(url, {
+    const res = await mappingFetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

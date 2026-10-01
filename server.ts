@@ -55,6 +55,7 @@ import { createSessionToken, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from "./s
 import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
 import { getDb } from "./src/server/db/client.js";
 import { createRepositories, normalizeCondition } from "./src/server/db/repositories/index.js";
+import { createMappingGate, undoAdminChange } from "./src/server/mappingChange.js";
 import type { UsersRepository } from "./src/server/db/repositories/index.js";
 import { parseListQuery, pickEnumValue } from "./src/server/pagination.js";
 import { normalizeTactId } from "./src/utils/tactId.js";
@@ -322,6 +323,25 @@ async function bumpMappingVersion(): Promise<void> {
   }
 }
 
+// Mapping-control Phase 3B-i — impact preview, change-control fields, confirmation, change sets and
+// undo for every admin route that can change a routing result (src/server/mappingChange.ts).
+// MAPPING_IMPACT_GATE=on enables it (and only with MAPPING_ENGINE=db); off = Phase 3A behaviour exactly.
+// With the gate off, a preview request is refused rather than executed.
+const MAPPING_IMPACT_GATE_ON = () => MAPPING_ENGINE === "db" && process.env.MAPPING_IMPACT_GATE === "on";
+const mappingGateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many mapping changes or previews. Please wait a few minutes and try again." },
+});
+const mappingGateRateLimit = (req: any, res: any, next: any) => (MAPPING_IMPACT_GATE_ON() ? mappingGateLimiter(req, res, next) : next());
+const mappingGate = createMappingGate({
+  enabled: MAPPING_IMPACT_GATE_ON,
+  rootDb: () => getDb(),
+  performer: async (req) => `${(req as any).user?.name ?? "Unknown"} (${await getCallerTier(req, createRepositories(getDb()).users)})`,
+});
+
 /**
  * Builds the optional 4th argument for classifyDeterministic. Returns null
  * on the default "legacy" flag setting (classifyDeterministic behaves
@@ -372,8 +392,15 @@ async function attachPlanPedOverrides(
 // Tells the browser which engine decides lookups. In "db" mode the browser must
 // NOT classify locally (its compiled-in copy of the legacy rules is the reason
 // admin edits used to not take effect) and sends every lookup to /api/match.
-app.get("/api/mapping-engine", requireAuth, (_req, res) => {
-  res.json({ mode: MAPPING_ENGINE, instance: MAPPING_INSTANCE_ID });
+app.get("/api/mapping-engine", requireAuth, async (req, res) => {
+  // canViewTrace: staff tiers (not General) may open "Why this result" on a lookup result.
+  let canViewTrace = false;
+  try {
+    canViewTrace = (await getCallerTier(req, createRepositories(getDb()).users)) !== "General";
+  } catch {
+    canViewTrace = false;
+  }
+  res.json({ mode: MAPPING_ENGINE, instance: MAPPING_INSTANCE_ID, impactGate: MAPPING_IMPACT_GATE_ON(), canViewTrace });
 });
 
 /**
@@ -4918,14 +4945,19 @@ app.post("/api/mapping-changes/:id/undo", requireAuth, async (req, res) => {
     const repos = createRepositories(getDb());
     const callerTier = await getCallerTier(req, repos.users);
     const performedBy = `${req.user!.name} (${callerTier})`;
-    const result = await undoChangeSet(buildMappingActionDeps(repos), id, performedBy, typeof req.body?.note === "string" ? req.body.note : undefined);
+    const note = typeof req.body?.note === "string" ? req.body.note : undefined;
+    const existing = await repos.mappingChangeSets.get(id);
+    const result =
+      existing?.kind === "admin_change"
+        ? await undoAdminChange(getDb(), id, performedBy, note)
+        : await undoChangeSet(buildMappingActionDeps(repos), id, performedBy, note);
     try {
       await repos.changeLogs.create({
         userName: req.user!.name,
         role: callerTier,
         actionType: "Mapping Change Undone",
         planName: "PED Repository",
-        description: result.reverted ? `Undid mapping change #${id}${result.verified ? " (confirmed on a live lookup)" : ""}.` : `Could not undo mapping change #${id}: ${result.reason}`,
+        description: result.reverted ? `Undid mapping change #${id}${"verified" in result && result.verified ? " (confirmed on a live lookup)" : ""}.` : `Could not undo mapping change #${id}: ${"reason" in result ? result.reason : ""}`,
         snapshot: null,
       });
     } catch (logErr) {
@@ -5266,7 +5298,7 @@ app.get("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/ped-repository", requireAuth, async (req, res) => {
+app.post("/api/ped-repository", requireAuth, mappingGateRateLimit, mappingGate("Added a PED to the PED Library"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding a PED"))) return;
     const { canonicalName, categoryKey, status, notes } = req.body;
@@ -5308,7 +5340,7 @@ app.post("/api/ped-repository", requireAuth, async (req, res) => {
   }
 });
 
-app.patch("/api/ped-repository/:id", requireAuth, async (req, res) => {
+app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingGate("Edited a PED in the PED Library"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing a PED"))) return;
     const id = Number(req.params.id);
@@ -5374,7 +5406,7 @@ app.patch("/api/ped-repository/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/ped-repository/:id", requireAuth, async (req, res) => {
+app.delete("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingGate("Deleted a PED from the PED Library"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting a PED"))) return;
     const id = Number(req.params.id);
@@ -5403,7 +5435,7 @@ app.delete("/api/ped-repository/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
+app.post("/api/ped-repository/:id/aliases", requireAuth, mappingGateRateLimit, mappingGate("Added a PED alias"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding a PED alias"))) return;
     const pedId = Number(req.params.id);
@@ -5466,7 +5498,7 @@ app.post("/api/ped-repository/:id/aliases", requireAuth, async (req, res) => {
   }
 });
 
-app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) => {
+app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, mappingGateRateLimit, mappingGate("Edited a PED alias"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing a PED alias"))) return;
     const aliasId = Number(req.params.aliasId);
@@ -5531,7 +5563,7 @@ app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) 
   }
 });
 
-app.delete("/api/ped-repository/aliases/:aliasId", requireAuth, async (req, res) => {
+app.delete("/api/ped-repository/aliases/:aliasId", requireAuth, mappingGateRateLimit, mappingGate("Deleted a PED alias"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting a PED alias"))) return;
     const aliasId = Number(req.params.aliasId);
@@ -5770,7 +5802,7 @@ app.get("/api/plan-configs", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, res) => {
+app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, mappingGateRateLimit, mappingGate("Added a plan"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Adding a plan"))) return;
 
@@ -5827,7 +5859,7 @@ app.post("/api/plan-configs", requireAuth, expensiveActionLimiter, async (req, r
   }
 });
 
-app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, async (req, res) => {
+app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, mappingGateRateLimit, mappingGate("Edited a plan"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Editing a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
@@ -5923,7 +5955,7 @@ app.put("/api/plan-configs/:planName", requireAuth, expensiveActionLimiter, asyn
   }
 });
 
-app.delete("/api/plan-configs/:planName", requireAuth, async (req, res) => {
+app.delete("/api/plan-configs/:planName", requireAuth, mappingGateRateLimit, mappingGate("Removed a plan"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Deleting a plan"))) return;
     const planName = decodeURIComponent(req.params.planName);
@@ -6002,7 +6034,7 @@ function validatePlanRestrictionBody(body: any): { categoryKey: string; mode: "r
   return { categoryKey: body.categoryKey.trim(), mode: body.mode, keywords, explanation: body.explanation.trim() };
 }
 
-app.post("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
+app.post("/api/plan-restrictions/:planName", requireAuth, mappingGateRateLimit, mappingGate("Added a plan restriction"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Adding a Plan-Specific Restriction"))) return;
     const planName = decodeURIComponent(req.params.planName);
@@ -6043,7 +6075,7 @@ app.post("/api/plan-restrictions/:planName", requireAuth, async (req, res) => {
   }
 });
 
-app.patch("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
+app.patch("/api/plan-restrictions/:id", requireAuth, mappingGateRateLimit, mappingGate("Edited a plan restriction"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Editing a Plan-Specific Restriction"))) return;
     const id = Number(req.params.id);
@@ -6094,7 +6126,7 @@ app.patch("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/plan-restrictions/:id", requireAuth, async (req, res) => {
+app.delete("/api/plan-restrictions/:id", requireAuth, mappingGateRateLimit, mappingGate("Deleted a plan restriction"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Deleting a Plan-Specific Restriction"))) return;
     const id = Number(req.params.id);
@@ -6195,7 +6227,7 @@ async function resolvePlanQuestionsForOverride(planName: string): Promise<string
   return Array.from(new Set([...(config.questions || []), config.anyOther].filter(Boolean)));
 }
 
-app.put("/api/plan-ped-overrides/:planName/:pedId", requireAuth, async (req, res) => {
+app.put("/api/plan-ped-overrides/:planName/:pedId", requireAuth, mappingGateRateLimit, mappingGate("Set a plan-specific PED mapping"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Saving a Plan-Specific PED Mapping"))) return;
     const planName = decodeURIComponent(req.params.planName);
@@ -6246,7 +6278,7 @@ app.put("/api/plan-ped-overrides/:planName/:pedId", requireAuth, async (req, res
   }
 });
 
-app.delete("/api/plan-ped-overrides/:planName/:pedId", requireAuth, async (req, res) => {
+app.delete("/api/plan-ped-overrides/:planName/:pedId", requireAuth, mappingGateRateLimit, mappingGate("Removed a plan-specific PED mapping"), async (req, res) => {
   try {
     if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Deleting a Plan-Specific PED Mapping"))) return;
     const planName = decodeURIComponent(req.params.planName);

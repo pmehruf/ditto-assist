@@ -1,5 +1,5 @@
 {
-  "id": "859569a2-e698-4015-b356-29ecb5052089",
+  "id": "805fa284-d9d1-4b94-8a89-c24a5c63a6a5",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -2915,6 +2915,36 @@
         "undo_note": {
           "name": "undo_note",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "change_category": {
+          "name": "change_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "business_decision": {
+          "name": "business_decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "impact_tier": {
+          "name": "impact_tier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "impact": {
+          "name": "impact",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         }

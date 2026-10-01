@@ -6,6 +6,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import postgres from "postgres";
+import { AsyncLocalStorage } from "node:async_hooks";
 import * as schema from "./schema.js";
 
 export type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -25,6 +26,14 @@ let _sql: ReturnType<typeof postgres> | null = null;
 let _db: Db | null = null;
 
 /**
+ * Mapping-change scope (Phase 3B-i): while an admin mapping write runs inside
+ * `createMappingGate`, every `getDb()` call made by that request resolves to the
+ * gate's transaction, so the route's own logic can be previewed and rolled back
+ * (or applied atomically) without being rewritten. Other requests are unaffected.
+ */
+export const dbScope = new AsyncLocalStorage<{ db: AnyDb }>();
+
+/**
  * Lazily-initialized singleton Postgres connection + Drizzle client, used by
  * server.ts / API routes in production. Requires DATABASE_URL to be set
  * (a standard Postgres connection string, e.g. from Neon/Supabase/RDS).
@@ -34,6 +43,8 @@ let _db: Db | null = null;
  * real network connection.
  */
 export function getDb(): Db {
+  const scoped = dbScope.getStore();
+  if (scoped) return scoped.db as unknown as Db;
   if (!_db) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {

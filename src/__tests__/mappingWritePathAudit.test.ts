@@ -117,3 +117,47 @@ describe("operational scripts that write authoritative mapping tables bump the m
     }
   });
 });
+
+describe("Phase 3B-i: every admin route that can change a routing result goes through the impact gate", () => {
+  const WRITES_ROUTING_TABLES =
+    /(planConfigs|planRestrictions|planOverrides|pedRepositoryRepo|pedAliases|pedRepository)\.(upsert|update|delete|rename|renamePlan|create|add|set\w*)\(|bumpMappingVersion\(|Ped(Row|AliasRow)\(|aliases\.(create|update|delete)/;
+  const writers = routeBlocks(server).filter((b) => !b.route.startsWith("GET ") && WRITES_ROUTING_TABLES.test(b.body));
+
+  it("the complete set of gated routes is exactly the known inventory", () => {
+    expect(writers.map((w) => w.route).sort()).toEqual(
+      [
+        "POST /api/ped-repository",
+        "PATCH /api/ped-repository/:id",
+        "DELETE /api/ped-repository/:id",
+        "POST /api/ped-repository/:id/aliases",
+        "PATCH /api/ped-repository/aliases/:aliasId",
+        "DELETE /api/ped-repository/aliases/:aliasId",
+        "POST /api/plan-configs",
+        "PUT /api/plan-configs/:planName",
+        "DELETE /api/plan-configs/:planName",
+        "POST /api/plan-restrictions/:planName",
+        "PATCH /api/plan-restrictions/:id",
+        "DELETE /api/plan-restrictions/:id",
+        "PUT /api/plan-ped-overrides/:planName/:pedId",
+        "DELETE /api/plan-ped-overrides/:planName/:pedId",
+      ].sort()
+    );
+  });
+
+  it("each one is registered behind mappingGate, after authentication and the rate limit", () => {
+    for (const w of writers) {
+      const registration = w.body.split("\n")[0];
+      expect(registration, w.route).toContain("requireAuth");
+      expect(registration, w.route).toContain("mappingGateRateLimit");
+      expect(registration, w.route).toContain("mappingGate(");
+      expect(registration.indexOf("requireAuth"), w.route).toBeLessThan(registration.indexOf("mappingGate("));
+    }
+  });
+
+  it("the gate refuses a preview request instead of running it when switched off", () => {
+    const gate = read("src/server/mappingChange.ts");
+    const off = gate.slice(gate.indexOf("if (!deps.enabled())"), gate.indexOf("let control"));
+    expect(off).toContain("preview_unavailable");
+    expect(off.indexOf("preview_unavailable")).toBeLessThan(off.indexOf("return next()"));
+  });
+});

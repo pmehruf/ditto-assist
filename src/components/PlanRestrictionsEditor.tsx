@@ -9,6 +9,7 @@ import { CATEGORY_LABELS, type PlanRestriction } from "../types.js";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { useDialog } from "../hooks/useDialog";
+import { mappingFetch } from "../utils/mappingFetch";
 
 /** Live DB row shape, as returned by GET /api/plan-restrictions/:planName —
  * PlanRestriction (types.ts) plus the id/audit fields the CRUD UI needs. */
@@ -150,7 +151,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
     try {
       const isCreate = draft.id === null;
       const url = isCreate ? `/api/plan-restrictions/${encodeURIComponent(planName)}` : `/api/plan-restrictions/${draft.id}`;
-      const res = await fetch(url, {
+      const res = await mappingFetch(url, {
         method: isCreate ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ categoryKey, mode: draft.mode, keywords, explanation }),
@@ -169,7 +170,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
   const toggleActive = async (entry: PlanRestrictionRowEntry) => {
     setSaveError(null);
     try {
-      const res = await fetch(`/api/plan-restrictions/${entry.id}`, {
+      const res = await mappingFetch(`/api/plan-restrictions/${entry.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !entry.isActive }),
@@ -186,7 +187,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
     if (!(await confirm(`Delete the "${entry.categoryKey}" restriction on ${entry.planName}? This can't be undone.`))) return;
     setSaveError(null);
     try {
-      const res = await fetch(`/api/plan-restrictions/${entry.id}`, { method: "DELETE" });
+      const res = await mappingFetch(`/api/plan-restrictions/${entry.id}`, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to delete (HTTP ${res.status}).`);
       await load();

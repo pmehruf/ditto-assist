@@ -18,6 +18,7 @@ import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { useServerSort } from "../hooks/useServerSort";
 import { formatDateDMY } from "../utils/dateFormat";
 import { useDialog } from "../hooks/useDialog";
+import { mappingFetch } from "../utils/mappingFetch";
 
 interface CategoryEntry {
   categoryKey: string;
@@ -264,7 +265,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/ped-repository/${editingId}`, {
+      const res = await mappingFetch(`/api/ped-repository/${editingId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ canonicalName: draftName.trim(), categoryKey: draftCategory || null, status: draftStatus }),
@@ -289,7 +290,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/ped-repository/${entry.id}`, { method: "DELETE" });
+      const res = await mappingFetch(`/api/ped-repository/${entry.id}`, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to delete this PED (HTTP ${res.status}).`);
       logAction("PED Repository Entry Deleted", `Deleted "${entry.canonicalName}" and all of its aliases.`);
@@ -308,7 +309,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch("/api/ped-repository", {
+      const res = await mappingFetch("/api/ped-repository", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ canonicalName: name, categoryKey: newCategory || null, status: newStatus }),
@@ -373,7 +374,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setAliasError(null);
     try {
-      const res = await fetch(`/api/ped-repository/${ped.id}/aliases`, {
+      const res = await mappingFetch(`/api/ped-repository/${ped.id}/aliases`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aliasText: text, isVisible: newAliasVisible }),
@@ -395,7 +396,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setAliasError(null);
     try {
-      const res = await fetch(`/api/ped-repository/aliases/${alias.id}`, {
+      const res = await mappingFetch(`/api/ped-repository/aliases/${alias.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isVisible: !alias.isVisible }),
@@ -415,7 +416,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setAliasError(null);
     try {
-      const res = await fetch(`/api/ped-repository/aliases/${alias.id}`, {
+      const res = await mappingFetch(`/api/ped-repository/aliases/${alias.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isPrimary: true }),
@@ -442,7 +443,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setAliasError(null);
     try {
-      const res = await fetch(`/api/ped-repository/aliases/${alias.id}`, {
+      const res = await mappingFetch(`/api/ped-repository/aliases/${alias.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -506,7 +507,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setAliasError(null);
     try {
-      const res = await fetch(`/api/ped-repository/aliases/${alias.id}`, {
+      const res = await mappingFetch(`/api/ped-repository/aliases/${alias.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aliasText: draftAliasText.trim() }),
@@ -528,7 +529,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     setSaving(true);
     setAliasError(null);
     try {
-      const res = await fetch(`/api/ped-repository/aliases/${alias.id}`, { method: "DELETE" });
+      const res = await mappingFetch(`/api/ped-repository/aliases/${alias.id}`, { method: "DELETE" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to delete this alias (HTTP ${res.status}).`);
       logAction("PED Alias Deleted", `Removed alias "${alias.aliasText}" from "${ped.canonicalName}".`);
@@ -687,6 +688,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                   </td>
                   <td className={tdClass}>
                     <CustomSelect theme={theme} value={newStatus} onChange={(v) => setNewStatus(v as PedEntry["status"])} triggerClassName={selectTriggerClass} options={STATUS_OPTIONS} />
+                    <p className={`mt-1 text-[10px] leading-tight ${dark ? "text-stone-400" : "text-stone-500"}`} title="Matching uses the category and aliases only. Status is a record-keeping label: changing it does not change any lookup.">Label only — does not affect matching</p>
                   </td>
                   <td className={`${tdClass} text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>Set on save</td>
                   <td className={`${tdClass} text-right`}>
@@ -752,7 +754,10 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                       </td>
                       <td className={tdClass} onClick={e => isEditing && e.stopPropagation()}>
                         {isEditing ? (
+                          <>
                           <CustomSelect theme={theme} value={draftStatus} onChange={(v) => setDraftStatus(v as PedEntry["status"])} triggerClassName={selectTriggerClass} options={STATUS_OPTIONS} />
+                            <p className={`mt-1 text-[10px] leading-tight ${dark ? "text-stone-400" : "text-stone-500"}`}>Label only — does not affect matching</p>
+                          </>
                         ) : (
                           statusBadge(entry.status, dark)
                         )}
