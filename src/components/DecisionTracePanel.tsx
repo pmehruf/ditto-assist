@@ -37,7 +37,7 @@ function useCanViewTrace(): boolean {
 
 const SOURCE_TEXT: Record<string, string> = {
   ped_category: "the PED's own category",
-  category_chain: "the PED's fallback category list (an earlier category had no question on this plan)",
+  category_chain: "a Fallback category (the Primary has no declaration question on this plan)",
   alias_override: "a category set on this alias (overrides the PED's)",
   fallback_category: "the alias's last-resort category (nothing else resolved)",
   not_routed: "not used for routing (alias has routing turned off)",
@@ -85,7 +85,7 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
               {row("PED category", t.dictionary.pedCategory ?? "none")}
               {t.dictionary.categoryOverride && row("Alias override", t.dictionary.categoryOverride)}
               {row("Category used", t.dictionary.effectiveCategory ?? "none")}
-              {t.dictionary.chain && row("Category order", <>{describeCategoryChain(t.dictionary.chain).map((l) => <div key={l}>{l}</div>)}</>)}
+              {t.dictionary.chain && row("Primary and Fallbacks", <>{describeCategoryChain(t.dictionary.chain).map((l) => <div key={l}>{l}</div>)}</>)}
             </>
           )}
           {row("Mapping version", `${t.snapshotVersion ?? "—"}${t.instance ? ` · server ${t.instance}` : ""}`)}

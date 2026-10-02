@@ -170,8 +170,9 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
 
   const hasActiveFilter = Boolean(searchQuery) || categoryFilter !== "all" || statusFilter !== "all";
 
-  const loadEntries = async () => {
-    setLoading(true);
+  // `silent` re-reads the list without blanking the table, so an open panel (and its feedback) is never torn down.
+  const loadEntries = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const params = new URLSearchParams({ paginated: "1", page: String(page), pageSize: String(PAGE_SIZE) });
       if (searchQuery) params.set("search", searchQuery);
@@ -754,6 +755,11 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                         ) : (
                           <span className={`text-[10.5px] italic ${dark ? "text-stone-500" : "text-stone-400"}`}>Uncategorized</span>
                         )}
+                        {!isEditing && entry.categoryKey && entry.categoryChain && entry.categoryChain.length > 0 && (
+                          <span className={`ml-1.5 text-[10px] font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`} title={`Fallback: ${entry.categoryChain.map(k => categoryLabel(k) || k).join(" → ")}`}>
+                            +{entry.categoryChain.length} fallback{entry.categoryChain.length > 1 ? "s" : ""}
+                          </span>
+                        )}
                       </td>
                       <td className={tdClass} onClick={e => isEditing && e.stopPropagation()}>
                         {isEditing ? (
@@ -804,7 +810,11 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                               categories={categories}
                               canManage={canManage}
                               dark={dark}
-                              onSaved={loadEntries}
+                              onChanged={async (saved) => {
+                                // Show the saved result in the table at once, then quietly re-read the list.
+                                if (saved) setEntries(prev => prev.map(e => (e.id === saved.id ? { ...e, categoryKey: saved.categoryKey, categoryChain: saved.categoryChain ?? null } : e)));
+                                await loadEntries({ silent: true });
+                              }}
                             />
                             <p className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>
                               Aliases — every searchable variant of this PED

@@ -218,3 +218,27 @@ describe("Constitution v1.6 matches the R11 implementation", () => {
     expect(constitution).toMatch(/v1\.6 {2}\(2026-10-02\)/);
   });
 });
+
+describe("R11 admin screen is written for admins, not engineers", () => {
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const FORBIDDEN = /category chain|catch-all|catch all|dictionary stage|category key|categoryKey\b(?=[^"'`]*["'`]\s*[,}])|engine stage|decided by|primitive|snapshot|impact hash/i;
+  const visibleText = (file: string) => {
+    const src = strip(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
+    // user-visible strings: JSX text and quoted/template strings that contain a space and a letter
+    return [...src.matchAll(/>([^<>{}]*[A-Za-z][^<>{}]*)</g)].map((m) => m[1]).concat([...src.matchAll(/(["'`])((?:(?!\1)[^\\n])*\s(?:(?!\1)[^\\n])*)\1/g)].map((m) => m[2]));
+  };
+  it("the PED category editor and the trace wording contain no internal terms", () => {
+    for (const file of ["src/components/PedCategoryChainEditor.tsx", "src/utils/categoryChainText.ts"]) {
+      const bad = visibleText(file).filter((t) => FORBIDDEN.test(t) && !/className|\/api\//.test(t));
+      expect(bad, file).toEqual([]);
+    }
+  });
+  it("the editor says what the screen does in plain words and shows Primary / Fallback labels", () => {
+    const src = readFileSync(new URL("../../src/components/PedCategoryChainEditor.tsx", import.meta.url), "utf8");
+    expect(src).toContain("The Primary category is used first. If the selected plan has no declaration question for it, the system tries the next fallback.");
+    expect(src).toContain("Currently saved:");
+    expect(src).toContain("Fallback ${i + 1}");
+    expect(src).toContain("Not saved yet");
+  });
+});

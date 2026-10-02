@@ -87,8 +87,14 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 
 export const CHANGE_CANCELLED = "Cancelled — nothing was saved.";
 
-export async function mappingFetch(url: string, init: RequestInit = {}, description = "Mapping change", opts: { testTerms?: string[] } = {}): Promise<Response> {
-  if (!(await gateEnabled()) || !opener) return fetch(url, init);
+/** Where a governed save currently is — lets a screen show a real loading state instead of a dimmed button. */
+export type MappingSavePhase = "checking" | "confirming" | "saving";
+
+export async function mappingFetch(url: string, init: RequestInit = {}, description = "Mapping change", opts: { testTerms?: string[]; onPhase?: (phase: MappingSavePhase) => void } = {}): Promise<Response> {
+  if (!(await gateEnabled()) || !opener) {
+    opts.onPhase?.("saving");
+    return fetch(url, init);
+  }
 
   const terms = (opts.testTerms ?? []).map((t) => t.trim()).filter(Boolean);
   const termsHeader: Record<string, string> = terms.length ? { "X-Mapping-Test-Terms": encodeURIComponent(JSON.stringify(terms)) } : {};
@@ -96,6 +102,7 @@ export async function mappingFetch(url: string, init: RequestInit = {}, descript
 
   let stale = false;
   for (let attempt = 0; attempt < 3; attempt++) {
+    opts.onPhase?.("checking");
     const previewRes = await fetch(url, withHeaders({ "X-Mapping-Preview": "1" }));
     const preview = await previewRes.json().catch(() => ({}));
     // The route itself rejected the input (validation, not found, permissions): show that, change nothing.
@@ -105,11 +112,16 @@ export async function mappingFetch(url: string, init: RequestInit = {}, descript
     }
     // Nothing would change: no confirmation needed.
     // Nothing would change, or no lookup result would (still audited and undoable on the server): no confirmation needed.
-    if (preview.tier === "none" || (!preview.impact && preview.changes === 0)) return fetch(url, init);
+    if (preview.tier === "none" || (!preview.impact && preview.changes === 0)) {
+      opts.onPhase?.("saving");
+      return fetch(url, init);
+    }
+    opts.onPhase?.("confirming");
 
     const decision = await opener({ description, tier: preview.tier ?? "low", reasons: preview.reasons ?? [], impact: preview.impact ?? null, stale });
     if (!decision) return json(409, { error: CHANGE_CANCELLED, cancelled: true });
 
+    opts.onPhase?.("saving");
     const applyRes = await fetch(
       url,
       withHeaders({ "X-Mapping-Change": encodeURIComponent(JSON.stringify({ ...decision, confirmHash: preview.impactHash })) })
