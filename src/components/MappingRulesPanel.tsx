@@ -92,7 +92,8 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
     fetch("/api/plan-configs")
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
-        const names = (Array.isArray(list) ? list : list.plans ?? []).filter((p: any) => !p.removed).map((p: any) => p.planName as string);
+        const entries: any[] = Array.isArray(list) ? list : list.entries ?? list.plans ?? [];
+        const names = entries.filter((p: any) => !p.removed).map((p: any) => p.planName as string);
         setPlans(names);
         setTrace((t) => ({ ...t, plan: t.plan || names[0] || "" }));
       })
