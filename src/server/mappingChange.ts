@@ -10,7 +10,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { AnyDb } from "./db/client.js";
 import { dbScope } from "./db/client.js";
 import { createRepositories, normalizeCondition } from "./db/repositories/index.js";
-import { mappingChangeSets, mappingState, pedAliases, pedRepository, planConfigs, planOverrides, planRestrictions, searchHistory } from "./db/schema.js";
+import { categories, mappingChangeSets, mappingState, pedAliases, pedRepository, planConfigs, planOverrides, planRestrictions, routingRules, searchHistory } from "./db/schema.js";
 import { loadMappingSnapshot } from "./mappingSnapshot.js";
 import { dbRowToPlanConfig, toPlanPedOverrides, toPlanRestrictions } from "./planConfigUtils.js";
 import { normalizeDictionaryKey } from "../engine.js";
@@ -88,6 +88,8 @@ interface TableSpec {
 
 /** Order matters for undo: parents before children. */
 export const MAPPING_TABLES: TableSpec[] = [
+  { name: "categories", table: categories, pk: ["categoryKey"] },
+  { name: "routing_rules", table: routingRules, pk: ["id"] },
   { name: "ped_repository", table: pedRepository, pk: ["id"] },
   { name: "ped_aliases", table: pedAliases, pk: ["id"] },
   { name: "plan_configs", table: planConfigs, pk: ["planName"] },
@@ -301,8 +303,8 @@ export interface ImpactResult {
   hash: string;
 }
 
-export async function measureImpact(before: World, after: World, usageSource: { usage: Usage; terms: string[] }): Promise<ImpactResult> {
-  const corpus = [...new Set<string>([...before.snapshot.aliases.keys(), ...after.snapshot.aliases.keys(), ...usageSource.terms])];
+export async function measureImpact(before: World, after: World, usageSource: { usage: Usage; terms: string[] }, extraTerms: string[] = []): Promise<ImpactResult> {
+  const corpus = [...new Set<string>([...before.snapshot.aliases.keys(), ...after.snapshot.aliases.keys(), ...usageSource.terms, ...extraTerms])];
   const report = compareWorlds(before, after, corpus, usageSource.usage);
   return { report, hash: createHash("sha256").update(report.fingerprint).digest("hex").slice(0, 24) };
 }
@@ -384,6 +386,18 @@ export function createMappingGate(deps: GateDeps) {
       if (parsed.ok === false) controlError = parsed.error;
       else control = parsed.value;
     }
+    // Optional extra terms the admin wants the impact measured on (e.g. wording a new rule is meant to catch). Must be sent
+    // identically on the preview and the apply so the confirmation hash matches.
+    let extraTerms: string[] = [];
+    try {
+      const raw = req.get("x-mapping-test-terms");
+      if (raw) {
+        const parsed = JSON.parse(decodeURIComponent(raw));
+        if (Array.isArray(parsed)) extraTerms = parsed.filter((t) => typeof t === "string" && t.trim() && t.length <= 200).slice(0, 50);
+      }
+    } catch {
+      extraTerms = [];
+    }
     const root = deps.rootDb();
     try {
       const performedBy = await deps.performer(req);
@@ -407,7 +421,7 @@ export function createMappingGate(deps: GateDeps) {
           if (ops.length === 0) throw new Rollback({ status: captured.status, body: preview ? { preview: true, impact: null, tier: "none", changes: 0, response: captured.body } : captured.body });
 
           const worldAfter = await loadWorld(tx);
-          const { report: baseReport, hash } = await measureImpact(worldBefore, worldAfter, usageSource);
+          const { report: baseReport, hash } = await measureImpact(worldBefore, worldAfter, usageSource, extraTerms);
           const aiMemory = baseReport.unresolvedAfter.length ? await aiMemoryOutlook(tx, baseReport.unresolvedAfter, deps.engineVersion) : null;
           const report = { ...baseReport, aiMemory };
           // A save that changes no lookup result (e.g. disabling a plan, editing its illness list) is still audited and

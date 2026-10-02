@@ -56,6 +56,8 @@ import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
 import { getDb } from "./src/server/db/client.js";
 import { createRepositories, normalizeCondition } from "./src/server/db/repositories/index.js";
 import { createMappingGate, undoAdminChange } from "./src/server/mappingChange.js";
+import { bandFor, STAGE_BANDS, isCustom } from "./src/server/mappingAdmin.js";
+import { createCategory, createRule, deleteCategory, deleteRule, listCategories, moveRule, patchCategory, patchRule, ruleToJson, traceLookup, validateRuleCandidate } from "./src/server/mappingAdminOps.js";
 import type { UsersRepository } from "./src/server/db/repositories/index.js";
 import { parseListQuery, pickEnumValue } from "./src/server/pagination.js";
 import { normalizeTactId } from "./src/utils/tactId.js";
@@ -342,6 +344,26 @@ const mappingGate = createMappingGate({
   engineVersion: ENGINE_VERSION,
   performer: async (req) => `${(req as any).user?.name ?? "Unknown"} (${await getCallerTier(req, createRepositories(getDb()).users)})`,
 });
+
+// Phase 3B-ii: shared helpers for the routing-rule / category admin routes (defined here, ahead of every route).
+const DB_ONLY = "Routing rules can only be managed while the database-backed engine is active.";
+const sendOp = (res: any, op: { status: number; body: Record<string, unknown> }) => res.status(op.status).json(op.body);
+
+/** Shared shape of every gated admin write: access check, db-engine check, the op, then the version bump on success. */
+const adminWrite = (feature: string, action: string, run: (repos: ReturnType<typeof createRepositories>, req: any) => Promise<{ status: number; body: Record<string, unknown> }>, dbOnly = true) =>
+  async (req: any, res: any) => {
+    try {
+      if (!(await requireFeatureAccess(req, res, feature, "Editor", action))) return;
+      if (dbOnly && MAPPING_ENGINE !== "db") return res.status(409).json({ error: DB_ONLY });
+      const op = await run(createRepositories(getDb()), req);
+      if (op.status < 400) await bumpMappingVersion();
+      return sendOp(res, op);
+    } catch (err: any) {
+      console.error(`${action} failed:`, err);
+      return res.status(500).json({ error: `${action} failed: ${err.cause?.message || err.message}` });
+    }
+  };
+
 
 /**
  * Builds the optional 4th argument for classifyDeterministic. Returns null
@@ -4924,7 +4946,7 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
 // reports success after a fresh live lookup confirms the mapping is gone.
 app.get("/api/mapping-changes", requireAuth, async (req, res) => {
   try {
-    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Viewer", "Viewing mapping change history"))) return;
+    if (!(await canViewMappingControl(req))) return res.status(403).json({ error: "Viewing mapping change history requires access to this feature." });
     const { mappingChangeSets } = createRepositories(getDb());
     const aiMemoryId = Number(req.query.aiMemoryId);
     const entries = Number.isInteger(aiMemoryId) ? await mappingChangeSets.listByAiMemory(aiMemoryId) : await mappingChangeSets.listRecent(50);
@@ -4937,7 +4959,7 @@ app.get("/api/mapping-changes", requireAuth, async (req, res) => {
 
 app.post("/api/mapping-changes/:id/undo", requireAuth, async (req, res) => {
   try {
-    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Undoing a mapping change"))) return;
+    if (!(await canEditMappingControl(req))) return res.status(403).json({ error: "Undoing a mapping change requires edit access to the PED Repository or Plan Management." });
     if (MAPPING_ENGINE !== "db") {
       return res.status(409).json({ error: "Mapping changes can only be undone while the database-backed mapping engine is active." });
     }
@@ -4968,6 +4990,91 @@ app.post("/api/mapping-changes/:id/undo", requireAuth, async (req, res) => {
   } catch (err: any) {
     console.error("Failed to undo mapping change:", err);
     return res.status(500).json({ error: `Failed to undo this change: ${err.message}` });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Mapping-control Phase 3B-ii — administration of the routing pipeline (routing_rules), the category list,
+// and "which rule decided this lookup". Every write goes through mappingGate (impact preview, change-control
+// fields, confirmation, change set + undo); validation lives in src/server/mappingAdmin.ts. Only meaningful
+// with MAPPING_ENGINE=db (the legacy engine reads none of this).
+// ─────────────────────────────────────────────────────────────────────────
+async function canEditMappingControl(req: any): Promise<boolean> {
+  for (const feature of ["plan_scope", "ped_suggestions"]) {
+    const { level } = await evaluateAccess(getDb(), req.user?.email, feature);
+    if (levelAllows(level, "Editor" as AccessActionType)) return true;
+  }
+  return false;
+}
+
+async function canViewMappingControl(req: any): Promise<boolean> {
+  for (const feature of ["plan_scope", "ped_suggestions"]) {
+    const { level } = await evaluateAccess(getDb(), req.user?.email, feature);
+    if (levelAllows(level, "Viewer" as AccessActionType)) return true;
+  }
+  return false;
+}
+
+app.get("/api/routing-rules", requireAuth, async (req, res) => {
+  try {
+    if (!(await canViewMappingControl(req))) return res.status(403).json({ error: "Viewing mapping rules requires access to this feature." });
+    const rules = await createRepositories(getDb()).routingRules.listAll();
+    return res.json({ rules: rules.map(ruleToJson), bands: STAGE_BANDS, engine: MAPPING_ENGINE });
+  } catch (err: any) {
+    console.error("Failed to list routing rules:", err);
+    return res.status(500).json({ error: `Failed to load rules: ${err.message}` });
+  }
+});
+
+app.post("/api/routing-rules/validate", requireAuth, mappingGateRateLimit, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "plan_scope", "Editor", "Validating a mapping rule"))) return;
+    const { stage, definition, planScope, ruleKey } = req.body ?? {};
+    if (!bandFor(stage)) return res.status(400).json({ error: "Unknown stage." });
+    const repos = createRepositories(getDb());
+    const previous = typeof ruleKey === "string" ? await repos.routingRules.getByKey(ruleKey) : undefined;
+    const errors = await validateRuleCandidate(repos, { ruleKey: typeof ruleKey === "string" ? ruleKey : "custom.__new__", stage, definition, planScope: planScope || null }, previous);
+    return res.json({ ok: errors.length === 0, errors });
+  } catch (err: any) {
+    console.error("Rule validation failed:", err);
+    return res.status(500).json({ error: `Validation failed: ${err.message}` });
+  }
+});
+
+app.post("/api/routing-rules", requireAuth, mappingGateRateLimit, mappingGate("Added a routing rule"), adminWrite("plan_scope", "Adding a routing rule", (repos, req) => createRule(repos, req.body)));
+app.patch("/api/routing-rules/:ruleKey", requireAuth, mappingGateRateLimit, mappingGate("Edited a routing rule"), adminWrite("plan_scope", "Editing a routing rule", (repos, req) => patchRule(repos, req.params.ruleKey, req.body)));
+app.post("/api/routing-rules/:ruleKey/move", requireAuth, mappingGateRateLimit, mappingGate("Reordered a routing rule"), adminWrite("plan_scope", "Reordering a routing rule", (repos, req) => moveRule(repos, req.params.ruleKey, req.body?.direction)));
+app.delete("/api/routing-rules/:ruleKey", requireAuth, mappingGateRateLimit, mappingGate("Deleted a routing rule"), adminWrite("plan_scope", "Deleting a routing rule", (repos, req) => deleteRule(repos, req.params.ruleKey)));
+
+// ── categories ──
+app.get("/api/mapping-categories", requireAuth, async (req, res) => {
+  try {
+    if (!(await canViewMappingControl(req))) return res.status(403).json({ error: "Viewing categories requires access to this feature." });
+    return sendOp(res, await listCategories(getDb(), createRepositories(getDb())));
+  } catch (err: any) {
+    console.error("Failed to list categories:", err);
+    return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
+  }
+});
+app.post("/api/mapping-categories", requireAuth, mappingGateRateLimit, mappingGate("Added a category"), adminWrite("plan_scope", "Adding a category", (repos, req) => createCategory(repos, req.body), false));
+app.patch("/api/mapping-categories/:categoryKey", requireAuth, mappingGateRateLimit, mappingGate("Edited a category"), adminWrite("plan_scope", "Editing a category", (repos, req) => patchCategory(repos, req.params.categoryKey, req.body), false));
+app.delete("/api/mapping-categories/:categoryKey", requireAuth, mappingGateRateLimit, mappingGate("Deleted a category"), adminWrite("plan_scope", "Deleting a category", (repos, req) => deleteCategory(getDb(), repos, req.params.categoryKey), false));
+
+// ── "which rule decides this lookup?" — read-only: no AI call, no search history, no AI Memory write ──
+app.post("/api/mapping-trace", requireAuth, matchLimiter, async (req, res) => {
+  try {
+    if (!(await canViewMappingControl(req))) return res.status(403).json({ error: "Tracing a lookup requires access to this feature." });
+    if (MAPPING_ENGINE !== "db") return res.status(409).json({ error: "Lookup tracing is only available with the database-backed engine." });
+    const { term, planName } = req.body ?? {};
+    if (typeof term !== "string" || !term.trim() || term.length > 200 || typeof planName !== "string") return res.status(400).json({ error: "Give a condition (up to 200 characters) and a plan." });
+    const repos = createRepositories(getDb());
+    const config = await loadLookupConfig(repos, planName);
+    if (!config) return res.status(404).json({ error: `Unknown plan "${planName}".` });
+    const snapshot = await getMappingSnapshot(repos);
+    return sendOp(res, await traceLookup(repos, { term: term.trim(), planName, config, snapshot, engineVersion: ENGINE_VERSION }));
+  } catch (err: any) {
+    console.error("Lookup trace failed:", err);
+    return res.status(500).json({ error: `Trace failed: ${err.message}` });
   }
 });
 

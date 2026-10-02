@@ -164,11 +164,8 @@ const AnnouncementLogPage = lazy(() =>
 const FlaggedResponsesPage = lazy(() =>
   import("./pages/FlaggedResponsesPage").then((m) => ({ default: m.FlaggedResponsesPage }))
 );
-const PlanManagementPage = lazy(() =>
-  import("./pages/PlanManagementPage").then((m) => ({ default: m.PlanManagementPage }))
-);
-const PedSuggestionsPage = lazy(() =>
-  import("./pages/PedSuggestionsPage").then((m) => ({ default: m.PedSuggestionsPage }))
+const MappingControlPage = lazy(() =>
+  import("./pages/MappingControlPage").then((m) => ({ default: m.MappingControlPage }))
 );
 const SmokeTestPage = lazy(() =>
   import("./pages/SmokeTestPage").then((m) => ({ default: m.SmokeTestPage }))
@@ -3399,9 +3396,14 @@ export default function App() {
           GroupIcon: Settings2,
           pages: [
             navPage("qa_announcement_log", "Announcement Manager", Megaphone, "Viewer"),
-            navPage("ped_suggestions", "PED Repository", Stethoscope, "Viewer"),
+            // One unified admin section (R3/R9): PED Library + AI review + plans/questions + categories + rules + history.
+            // Opens under whichever of the two existing feature ids the person has, so nobody loses access.
+            {
+              ...navPage(hasAccess("plan_scope", "Viewer") ? "plan_scope" : "ped_suggestions", "Mapping Control", Waypoints, "Viewer"),
+              visible: hasAccess("plan_scope", "Viewer") || hasAccess("ped_suggestions", "Viewer"),
+              isActive: activeTab === "plan_scope" || activeTab === "ped_suggestions",
+            },
             navPage("knowledge_base", "Knowledge Base", Database, "Viewer"),
-            navPage("plan_scope", "DA Mapping Config", Waypoints, "Viewer"),
             // Moved here from Developer Zone > Developer Controls (2026-09g,
             // at the user's explicit request — "Flagged responses is a
             // developer zone item... if this was an admin tier feature, why
@@ -5176,56 +5178,38 @@ export default function App() {
               and planConfigs above, making them selectable in the live
               Lookup picker with no real underlying insurer plan behind
               them.) */}
-          {activeTab === "plan_scope" && (
+          {/* MAPPING CONTROL — the one admin section for the declaration engine (replaces the separate DA Mapping Config
+              and PED Repository pages; both screens live on inside it as sub-views, see MappingControlPage.tsx). */}
+          {(activeTab === "plan_scope" || activeTab === "ped_suggestions") && (
             <motion.div
-              key="plan_scope"
+              key="mapping_control"
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.2 }}
               className="space-y-6 text-left"
             >
-              <ErrorBoundary theme={theme} label="DA Mapping Config">
+              <ErrorBoundary theme={theme} label="Mapping Control">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <PlanManagementPage
+              <MappingControlPage
                 theme={theme}
-                effectiveTier={effectiveTier}
-                dbPlanConfigs={dbPlanConfigs}
-                setDbPlanConfigs={setDbPlanConfigs}
-                dbPlanConfigsLoadError={dbPlanConfigsLoadError}
-                fetchPlanConfigs={fetchPlanConfigs}
-                confirmDestructiveAction={confirmDestructiveAction}
-                setChangeLogs={setChangeLogs}
-                currentUser={currentUser}
-                canManage={hasAccess("plan_scope", "Editor")}
-              />
-              </Suspense>
-              </ErrorBoundary>
-            </motion.div>
-          )}
-
-          {/* TAB 9: PED SUGGESTIONS — admin management UI for the
-              ped_suggestions table (Lookup page autocomplete dropdown
-              source list). Deliberately separate from the PED matching
-              engine (TOP_PED_DICTIONARY in types.ts); see
-              PedSuggestionsManagement.tsx for the full explanation. */}
-          {activeTab === "ped_suggestions" && (
-            <motion.div
-              key="ped_suggestions"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.2 }}
-              className="space-y-6 text-left"
-            >
-              <ErrorBoundary theme={theme} label="PED Repository">
-              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
-              <PedSuggestionsPage
-                theme={theme}
-                effectiveTier={effectiveTier}
-                currentUser={currentUser}
-                setChangeLogs={setChangeLogs}
-                canManage={hasAccess("ped_suggestions", "Editor")}
+                access={{
+                  planView: hasAccess("plan_scope", "Viewer"),
+                  planEdit: hasAccess("plan_scope", "Editor"),
+                  pedView: hasAccess("ped_suggestions", "Viewer"),
+                  pedEdit: hasAccess("ped_suggestions", "Editor"),
+                }}
+                planPage={{
+                  effectiveTier,
+                  dbPlanConfigs,
+                  setDbPlanConfigs,
+                  dbPlanConfigsLoadError,
+                  fetchPlanConfigs,
+                  confirmDestructiveAction,
+                  setChangeLogs,
+                  currentUser,
+                }}
+                pedPage={{ effectiveTier, currentUser, setChangeLogs }}
               />
               </Suspense>
               </ErrorBoundary>

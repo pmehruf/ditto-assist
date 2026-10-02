@@ -71,3 +71,34 @@ Routing-rule administration: API + UI with validation, protected rule bands, rul
 - **Preview cost at production scale:** about 2.4 s (2,387 terms x 6 plans x 2 worlds), serialised on the `mapping_state` row; per-user limit 150 requests / 15 min.
 - Inert controls: PED `status` is labelled "Label only — does not affect matching" in the PED Library. Plan restrictions that the live engine ignores (e.g. a restriction on a category with no question in that plan) are NOT yet flagged in the UI — recorded as an open item for 3B-ii / 3C, no behaviour change.
 - Tests: `mappingChange.test.ts` (preview changes nothing; gate off never writes; change-control required; stale/forged confirmation refused; predicted == live lookup; undo restores exact rows and is refused after later edits; deleted alias restored; concurrent changes serialise), `mappingWritePathAudit.test.ts` (inventory of gated routes), `constitutionP0P3.test.ts` (Constitution matches the code).
+
+---
+
+# 3B-ii — unified admin section, rule and category administration (R3 / R9)
+
+Built on the proven 3B-i baseline (`8676358`); no engine, seed or legacy-engine code changed; no migration (`routing_rules` and `categories` already exist and are now part of the change-set row diff).
+
+## What exists now (reused) vs. added
+
+| R3 / R9 item | Where | Status |
+|---|---|---|
+| Assign a PED to a specific question of a specific plan | Plans & Questions → plan-specific PED mappings (`plan_overrides.target_question`) | Existing (3A/earlier), now gated by the impact preview |
+| Assign a category to a specific plan question | Plans & Questions → category map | Existing, gated |
+| Change a PED's category / leave it empty on purpose | PED Library | Existing, gated |
+| Add / edit / rename / remove PEDs and aliases | PED Library | Existing, gated |
+| Add / rename / remove **categories** | **Categories** | **New** (delete refused while anything uses the category) |
+| Edit plan questions, plan-specific overrides / restrictions; add a plan or question | Plans & Questions | Existing, gated |
+| **Order / priority of rules; enable / disable; add / edit supported rules without code** | **Rules** | **New** (stage bands, protected steps, full validation) |
+| **See which rule decided a result** | Rules → "Test a lookup", and "Why this result" on a lookup | **New** / 3B-i |
+| **One admin section, no duplicate pages** | **Mapping Control** (replaces "PED Repository" + "DA Mapping Config") | **New** |
+| Audit + undo for all of it | History, plus Undo | 3B-i, extended to rules and categories |
+
+## Not UI-controlled, with reasons (R3: "listed in the report")
+
+- **The built-in algorithm steps** (`primitive.*`: plan override, exact wording, dictionary lookup, plan decision, diabetes-confirmed, hypertension, diabetes guard) are the pipeline skeleton; their parameters (e.g. the plan-decision explanation templates) are not exposed. Editing them rewrites the wording of every explanation — that is a Business Decision, not a routing control. Protected by design.
+- **The compiled `TOP_PED_DICTIONARY` / legacy engine** remain only as the rollback oracle (Phase 6 cleanup, needs owner approval). They are not read at runtime in `db` mode.
+- **Per-plan flags in `plan_configs.overrides`** (the three legacy booleans) are superseded by Plan Restrictions; unchanged.
+
+## Safety properties (all tested — `src/__tests__/mappingAdmin.test.ts`, `mappingAdminAudit.test.ts`)
+
+Invalid shapes / unknown categories, plans, result types, placeholders refused; match-everything and catastrophic patterns refused (nested-repeat check + timed worker probe); `ref` loops refused; positions confined to the stage band and unique; primitives, stage changes and built-in deletion refused; every write previewed (impact, with admin-supplied test terms), confirmed, audited, undoable; the next lookup — on a fresh instance, no restart — uses the change; categories in use cannot be deleted; only one writer of `routing_rules` / `categories` exists outside scripts; writes need Editor access to `plan_scope`, reads need Viewer access to either mapping feature.

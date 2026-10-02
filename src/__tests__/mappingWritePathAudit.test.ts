@@ -120,7 +120,7 @@ describe("operational scripts that write authoritative mapping tables bump the m
 
 describe("Phase 3B-i: every admin route that can change a routing result goes through the impact gate", () => {
   const WRITES_ROUTING_TABLES =
-    /(planConfigs|planRestrictions|planOverrides|pedRepositoryRepo|pedAliases|pedRepository)\.(upsert|update|delete|rename|renamePlan|create|add|set\w*)\(|bumpMappingVersion\(|Ped(Row|AliasRow)\(|aliases\.(create|update|delete)/;
+    /(planConfigs|planRestrictions|planOverrides|pedRepositoryRepo|pedAliases|pedRepository)\.(upsert|update|delete|rename|renamePlan|create|add|set\w*)\(|bumpMappingVersion\(|Ped(Row|AliasRow)\(|aliases\.(create|update|delete)|\b(createRule|patchRule|moveRule|deleteRule|createCategory|patchCategory|deleteCategory)\(/;
   const writers = routeBlocks(server).filter((b) => !b.route.startsWith("GET ") && WRITES_ROUTING_TABLES.test(b.body));
 
   it("the complete set of gated routes is exactly the known inventory", () => {
@@ -140,6 +140,13 @@ describe("Phase 3B-i: every admin route that can change a routing result goes th
         "DELETE /api/plan-restrictions/:id",
         "PUT /api/plan-ped-overrides/:planName/:pedId",
         "DELETE /api/plan-ped-overrides/:planName/:pedId",
+        "POST /api/routing-rules",
+        "PATCH /api/routing-rules/:ruleKey",
+        "POST /api/routing-rules/:ruleKey/move",
+        "DELETE /api/routing-rules/:ruleKey",
+        "POST /api/mapping-categories",
+        "PATCH /api/mapping-categories/:categoryKey",
+        "DELETE /api/mapping-categories/:categoryKey",
       ].sort()
     );
   });

@@ -45,6 +45,10 @@ export class RoutingRulesRepository {
     return row ? toRuleRow(row) : undefined;
   }
 
+  async delete(ruleKey: string): Promise<void> {
+    await this.db.delete(routingRules).where(eq(routingRules.ruleKey, ruleKey));
+  }
+
   /** Inserts the rule, or replaces the existing rule with the same key. Idempotent. */
   async upsert(rule: RoutingRuleRow): Promise<void> {
     const values = {

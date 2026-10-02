@@ -87,10 +87,12 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 
 export const CHANGE_CANCELLED = "Cancelled — nothing was saved.";
 
-export async function mappingFetch(url: string, init: RequestInit = {}, description = "Mapping change"): Promise<Response> {
+export async function mappingFetch(url: string, init: RequestInit = {}, description = "Mapping change", opts: { testTerms?: string[] } = {}): Promise<Response> {
   if (!(await gateEnabled()) || !opener) return fetch(url, init);
 
-  const withHeaders = (extra: Record<string, string>): RequestInit => ({ ...init, headers: { ...(init.headers as Record<string, string> | undefined), ...extra } });
+  const terms = (opts.testTerms ?? []).map((t) => t.trim()).filter(Boolean);
+  const termsHeader: Record<string, string> = terms.length ? { "X-Mapping-Test-Terms": encodeURIComponent(JSON.stringify(terms)) } : {};
+  const withHeaders = (extra: Record<string, string>): RequestInit => ({ ...init, headers: { ...(init.headers as Record<string, string> | undefined), ...termsHeader, ...extra } });
 
   let stale = false;
   for (let attempt = 0; attempt < 3; attempt++) {
