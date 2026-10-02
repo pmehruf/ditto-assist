@@ -308,7 +308,10 @@ export interface RegexProbe {
 }
 
 const ADVERSARIAL = ["a".repeat(40) + "!", "ab".repeat(25) + "!", " ".repeat(40) + "x", "0".repeat(40) + "z", "word ".repeat(12) + "!"];
-export const REGEX_BUDGET_MS = 400;
+/** Wall-clock cap that only exists to kill a genuinely hung pattern (worker start-up is not counted against the pattern). */
+export const REGEX_BUDGET_MS = 3000;
+/** Execution time one pattern may take inside the worker over all probe strings before it is called too slow. */
+export const REGEX_MAX_RUN_MS = 250;
 
 /** Runs every regex against sample terms and adversarial strings in a worker; terminated if it exceeds the budget. */
 export async function probeRegexes(specs: Array<{ re: string; flags: string }>, samples: string[]): Promise<{ timedOut: boolean; results: RegexProbe[] }> {
@@ -346,6 +349,7 @@ export async function checkRegexSafety(regexes: RegexRef[], aliasKeys: string[],
   const samples = aliasKeys.length > 600 ? aliasKeys.filter((_, i) => i % Math.ceil(aliasKeys.length / 600) === 0) : aliasKeys;
   const { timedOut, results } = await probeRegexes(toCheck, samples);
   if (timedOut) return ["A pattern is too slow or too complex (it exceeded the safety time limit) — simplify it."];
+  if (results.some((r) => r.slowMs > REGEX_MAX_RUN_MS)) return ["A pattern is too slow or too complex (it took too long on the safety probe) — simplify it."];
   const errors: string[] = [];
   results.forEach((r, i) => {
     const where = toCheck[i].where;
