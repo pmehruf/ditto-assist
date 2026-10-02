@@ -30,10 +30,16 @@ export interface MatchOutput {
     snapshotVersion?: number;
     dictionary?: {
       alias: string;
-      source: "ped_category" | "alias_override" | "fallback_category" | "not_routed" | "none";
+      source: "ped_category" | "category_chain" | "alias_override" | "fallback_category" | "not_routed" | "none";
       pedCategory: string | null;
       categoryOverride: string | null;
       effectiveCategory: string | null;
+      /** Ordered category fallback (R11) — only for PEDs that have a chain. */
+      chain?: {
+        configured: string[];
+        selected: string | null;
+        skipped: Array<{ category: string; reason: "no_question" | "catch_all" }>;
+      };
     };
   };
 }

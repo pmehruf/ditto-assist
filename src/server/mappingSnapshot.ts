@@ -36,14 +36,23 @@ export async function loadMappingSnapshot(repos: SnapshotRepos, version: number)
   ]);
   const categoryByPedId = new Map(pedRows.map((p) => [p.id, p.categoryKey] as const));
   const aliases = new Map<string, AliasEntry>();
+  const chainByPedId = new Map<number, string[]>();
+  for (const p of pedRows) {
+    const chain = (p as { categoryChain?: unknown }).categoryChain;
+    if (Array.isArray(chain) && chain.length > 0) chainByPedId.set(p.id, chain.filter((c): c is string => typeof c === "string"));
+  }
   for (const a of aliasRows) {
-    aliases.set(a.normalizedAlias, {
+    const entry: AliasEntry = {
       pedId: a.pedId,
       pedCategory: categoryByPedId.get(a.pedId) ?? null,
       routingEnabled: a.routingEnabled,
       categoryOverride: a.categoryKeyOverride ?? null,
       fallbackCategory: a.fallbackCategoryKey ?? null,
-    });
+    };
+    // Only PEDs that actually have a chain carry the field, so every other entry is exactly what it was before R11.
+    const chain = chainByPedId.get(a.pedId);
+    if (chain) entry.categoryChain = chain;
+    aliases.set(a.normalizedAlias, entry);
   }
   return {
     version,

@@ -19,6 +19,7 @@ import { useServerSort } from "../hooks/useServerSort";
 import { formatDateDMY } from "../utils/dateFormat";
 import { useDialog } from "../hooks/useDialog";
 import { mappingFetch } from "../utils/mappingFetch";
+import { PedCategoryChainEditor } from "./PedCategoryChainEditor";
 
 interface CategoryEntry {
   categoryKey: string;
@@ -30,6 +31,8 @@ interface PedEntry {
   pedCode: string;
   canonicalName: string;
   categoryKey: string | null;
+  /** Ordered fallback categories after the primary (R11); null/absent = single-category. */
+  categoryChain?: string[] | null;
   status: "draft" | "approved" | "deprecated";
   notes: string | null;
   addedBy: string;
@@ -793,6 +796,16 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                         <td></td>
                         <td colSpan={columnCount - 1} className="px-3 py-3">
                           <div className="space-y-2.5">
+                            <PedCategoryChainEditor
+                              pedId={entry.id}
+                              pedName={entry.canonicalName}
+                              primary={entry.categoryKey}
+                              chain={entry.categoryChain}
+                              categories={categories}
+                              canManage={canManage}
+                              dark={dark}
+                              onSaved={loadEntries}
+                            />
                             <p className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>
                               Aliases — every searchable variant of this PED
                             </p>

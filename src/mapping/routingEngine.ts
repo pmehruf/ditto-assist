@@ -17,6 +17,7 @@ import {
 } from "../engine.js";
 import type {
   Action,
+  CategoryChainTrace,
   ChainItem,
   Clause,
   Cond,
@@ -245,8 +246,37 @@ function primDictionaryLookup(ctx: Ctx): Step {
     categoryOverride: entry?.categoryOverride ?? null,
     effectiveCategory: effective,
   };
+  // Phase 4 / R11 — ordered category fallback. Applies only to a PED whose category comes from the PED itself and
+  // which has a configured chain; every other lookup (single-category PEDs, alias overrides, the last-resort second
+  // pass) skips this block and routes exactly as before.
+  if (source === "ped_category" && ctx.forcedCategory === undefined && entry?.categoryChain && entry.categoryChain.length > 0 && effective) {
+    const chain = chooseFromChain(effective, entry.categoryChain, ctx);
+    ctx.dictionary.chain = chain;
+    if (chain.selected) {
+      effective = chain.selected;
+      if (chain.selected !== ctx.dictionary.pedCategory) ctx.dictionary.source = "category_chain";
+      ctx.dictionary.effectiveCategory = effective;
+    }
+  }
   ctx.categoryKey = effective ?? undefined;
   return null;
+}
+
+/**
+ * R11: walk the configured categories in order and take the FIRST that has a real question on this plan — a question
+ * that exists and is not the plan's Others / catch-all question. Exactly one category is chosen, so there is only ever
+ * one declaration. When none qualifies, `selected` is null and the caller keeps the PED's primary category, i.e. the
+ * existing fallback behaviour runs unchanged (nothing new is invented).
+ */
+function chooseFromChain(primary: string, fallbacks: string[], ctx: Ctx): CategoryChainTrace {
+  const configured = [primary, ...fallbacks];
+  const skipped: CategoryChainTrace["skipped"] = [];
+  for (const category of configured) {
+    const q = questionForCategory(ctx.config, category);
+    if (q && q !== ctx.config.anyOther) return { configured, selected: category, skipped };
+    skipped.push({ category, reason: q ? "catch_all" : "no_question" });
+  }
+  return { configured, selected: null, skipped };
 }
 
 function primPlanDecision(step: RoutingRuleRow, ctx: Ctx): Step {

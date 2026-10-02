@@ -10,7 +10,7 @@ Governing documents: `MASTER_CONSTITUTION.md` (incl. Change Impact Template, Par
 | 3B-i | Safety backbone: impact preview, confirmation scaled to measured impact, change-control fields, generic change sets + undo, "Why this result" trace, inert-control labelling, Constitution v1.4 (P0-P3 as implemented). See `docs/MAPPING_CONTROL_PHASE3B.md` | Live in production (commit 8676358), approved and closed |
 | 3B-ii | Unified admin section (R3/R9): Mapping Control with PED Library & AI Review, Plans & Questions, Categories (CRUD with safeguards), Rules (order, enable/disable, custom rules, validation, protected steps, "which rule decided"), History + undo. See `docs/MAPPING_CONTROL_PHASE3B.md` | Built + tested on branch; staging/production rollout pending |
 | 3 (remaining) | One admin section (R3/R9): rule/alias/plan/PED controls, audit + undo (A1), impact preview, category CRUD with safeguards (A3), UI-managed exceptions (A5), **admin write-path integrity: no action may report success for a change the live engine ignores (see below)** | Not started |
-| 4 | Ordered category chain per PED (R11, A4) | Not started |
+| 4 | Ordered category chain per PED (R11, A4): primary + ordered fallbacks, first category with a real question on the selected plan is used. See `docs/MAPPING_CONTROL_PHASE4.md` | Built + validated on branch (baseline identical); staging/production rollout pending approval |
 | 5 | Approved R10 corrections as a separate listed batch | Not started |
 | **PED Category Governance** | **Named phase, after Phase 2 is signed off. Not built yet.** See below. | Planned |
 | 6 | Cleanup: remove legacy paths, final Constitution check | Not started |

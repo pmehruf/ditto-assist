@@ -141,6 +141,12 @@ export interface AliasEntry {
    * production's browser-then-server two-pass behaviour.
    */
   fallbackCategory: string | null;
+  /**
+   * Phase 4 / R11: the PED's ordered fallback categories AFTER its primary (`pedCategory`). Absent (the default) = a
+   * single-category PED, routed exactly as before. Only applied when the category comes from the PED itself (never from
+   * an alias-level override or the last-resort category).
+   */
+  categoryChain?: string[];
 }
 
 export interface MappingSnapshot {
@@ -159,10 +165,21 @@ export interface TraceEntry {
 }
 
 /** Why the dictionary stage produced the category it did. */
+export interface CategoryChainTrace {
+  /** The configured order: primary first, then the fallbacks. */
+  configured: string[];
+  /** The category actually used; null when none had a real question (the existing fallback behaviour then applies). */
+  selected: string | null;
+  /** Earlier categories passed over, and why: no question on this plan, or the plan maps it to its Others question. */
+  skipped: Array<{ category: string; reason: "no_question" | "catch_all" }>;
+}
+
 export interface DictionaryTrace {
   alias: string;
-  source: "ped_category" | "alias_override" | "fallback_category" | "not_routed" | "none";
+  source: "ped_category" | "category_chain" | "alias_override" | "fallback_category" | "not_routed" | "none";
   pedCategory: string | null;
   categoryOverride: string | null;
   effectiveCategory: string | null;
+  /** Present only for PEDs that have an ordered category chain (R11). */
+  chain?: CategoryChainTrace;
 }

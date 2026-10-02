@@ -19,6 +19,7 @@
     "mapping:baseline": "tsx scripts/generateMappingBaseline.ts",
     "mapping:seed": "tsx scripts/seedMappingControl.ts",
     "mapping:verify": "tsx scripts/verifyMappingEquality.ts",
+    "mapping:freeze": "tsx scripts/mappingBaselineCompare.ts",
     "mapping:backup": "tsx scripts/backupMappingTables.ts",
     "mapping:rollback": "tsx scripts/rollbackMappingControl.ts",
     "db:seed:users": "tsx src/server/db/seedUsers.ts",

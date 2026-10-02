@@ -466,6 +466,11 @@ export const pedRepository = pgTable("ped_repository", {
   canonicalName: text("canonical_name").notNull(),
   // References categories.categoryKey. Nullable until reviewed/categorized.
   categoryKey: text("category_key"),
+  // Phase 4 / R11 — ordered category fallback. The PED's PRIMARY category stays in `category_key`; this holds the
+  // ordered list of further categories (secondary, tertiary, ...) tried only when the categories before them have no
+  // real question on the selected plan. NULL (the default, and every existing row) = single-category PED, behaving
+  // exactly as before. Read only by the database-backed engine (src/mapping/routingEngine.ts, dictionary stage).
+  categoryChain: jsonb("category_chain"),
   status: pedStatusEnum("status").notNull().default("draft"),
   // Self-reference for future dedup/merge tooling (two rows later found to
   // be the same disease) — not used by any code path yet; included now so

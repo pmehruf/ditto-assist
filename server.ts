@@ -56,6 +56,7 @@ import { attachUser, requireAuth } from "./src/server/auth/middleware.js";
 import { getDb } from "./src/server/db/client.js";
 import { createRepositories, normalizeCondition } from "./src/server/db/repositories/index.js";
 import { createMappingGate, undoAdminChange } from "./src/server/mappingChange.js";
+import { validateCategoryChain } from "./src/server/categoryChain.js";
 import { bandFor, STAGE_BANDS, isCustom } from "./src/server/mappingAdmin.js";
 import { createCategory, createRule, deleteCategory, deleteRule, listCategories, moveRule, patchCategory, patchRule, ruleToJson, traceLookup, validateRuleCandidate } from "./src/server/mappingAdminOps.js";
 import type { UsersRepository } from "./src/server/db/repositories/index.js";
@@ -5454,7 +5455,7 @@ app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingG
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED id." });
 
-    const { canonicalName, categoryKey, status, notes } = req.body;
+    const { canonicalName, categoryKey, categoryChain, status, notes } = req.body;
     if (canonicalName !== undefined && (typeof canonicalName !== "string" || !canonicalName.trim())) {
       return res.status(400).json({ error: "canonicalName must be a non-empty string." });
     }
@@ -5474,6 +5475,28 @@ app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingG
     const before = await pedRepositoryRepo.get(id);
     if (!before) return res.status(404).json({ error: "PED not found." });
 
+    // Phase 4 / R11 — ordered category fallback. The primary category stays in categoryKey; categoryChain holds the
+    // ordered fallbacks after it. A chain only has an effect with the database-backed engine, so saving one elsewhere
+    // is refused rather than silently ignored.
+    let chainValue: string[] | null | undefined;
+    {
+      const nextPrimary = categoryKey !== undefined ? categoryValue ?? null : before.categoryKey;
+      const existingChain = Array.isArray(before.categoryChain) ? (before.categoryChain as string[]) : null;
+      if (categoryChain !== undefined || (categoryKey !== undefined && existingChain && existingChain.length > 0)) {
+        const known = new Set((await createRepositories(getDb()).categories.list()).map((c) => c.categoryKey));
+        const check = validateCategoryChain(nextPrimary, categoryChain !== undefined ? categoryChain : existingChain, known);
+        if (check.ok === false) {
+          return res.status(400).json({ error: categoryChain !== undefined ? check.error : `${check.error} Remove or fix the fallback categories first.` });
+        }
+        if (categoryChain !== undefined) {
+          chainValue = check.value;
+          if (chainValue && MAPPING_ENGINE !== "db") {
+            return res.status(409).json({ error: "Fallback categories only take effect with the database-backed engine, so they cannot be saved here." });
+          }
+        }
+      }
+    }
+
     const callerTier = await getCallerTier(req, usersRepo);
     const performedBy = `${req.user!.name} (${callerTier})`;
 
@@ -5483,6 +5506,7 @@ app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingG
       {
         ...(canonicalName !== undefined ? { canonicalName: canonicalName.trim() } : {}),
         ...(categoryKey !== undefined ? { categoryKey: categoryValue } : {}),
+        ...(chainValue !== undefined ? { categoryChain: chainValue } : {}),
         ...(statusValue !== undefined ? { status: statusValue } : {}),
         ...(notes !== undefined ? { notes } : {}),
       },
@@ -5500,6 +5524,10 @@ app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingG
     const changes: string[] = [];
     if (before.canonicalName !== after.canonicalName) changes.push(`name "${before.canonicalName}" → "${after.canonicalName}"`);
     if (before.categoryKey !== after.categoryKey) changes.push(`category "${before.categoryKey || "none"}" → "${after.categoryKey || "none"}"`);
+    {
+      const chainText = (v: unknown) => (Array.isArray(v) && v.length ? v.join(" > ") : "none");
+      if (chainText(before.categoryChain) !== chainText(after.categoryChain)) changes.push(`fallback categories "${chainText(before.categoryChain)}" → "${chainText(after.categoryChain)}"`);
+    }
     if (before.status !== after.status) changes.push(`status "${before.status}" → "${after.status}"`);
     await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Edited",
       changes.length > 0 ? `Edited PED "${after.canonicalName}": ${changes.join("; ")}.` : `Saved PED "${after.canonicalName}" with no field changes.`);

@@ -475,6 +475,7 @@ CREATE TABLE "ped_repository" (
 	"ped_code" text NOT NULL,
 	"canonical_name" text NOT NULL,
 	"category_key" text,
+	"category_chain" jsonb,
 	"status" "ped_status" DEFAULT 'draft' NOT NULL,
 	"merged_into_id" integer,
 	"notes" text,

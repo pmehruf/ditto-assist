@@ -5,6 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { mappingFetch } from "../utils/mappingFetch";
+import { describeCategoryChain, type ChainTraceLike } from "../utils/categoryChainText";
 
 /**
  * Mapping Control > Rules (Phase 3B-ii): the routing pipeline as the engine runs it, with the controls an admin
@@ -39,7 +40,7 @@ interface Trace {
   question: string | null;
   decidedBy: string;
   postGuard: string | null;
-  dictionary: { alias: string; source: string; pedCategory: string | null; effectiveCategory: string | null } | null;
+  dictionary: { alias: string; source: string; pedCategory: string | null; effectiveCategory: string | null; chain?: ChainTraceLike } | null;
   rule: { ruleKey: string; kind: string; stage: string; position: number; description: string; builtIn: boolean } | null;
   aiMemory: { status: string; question: string | null } | null;
   snapshotVersion: number;
@@ -244,6 +245,13 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
               <p className={muted}>
                 Dictionary: "{trace.result.dictionary.alias}" → category {trace.result.dictionary.effectiveCategory ?? "none"} (from {trace.result.dictionary.source.replace(/_/g, " ")}).
               </p>
+            )}
+            {trace.result.dictionary?.chain && (
+              <div className={muted}>
+                {describeCategoryChain(trace.result.dictionary.chain).map((l) => (
+                  <p key={l}>{l}</p>
+                ))}
+              </div>
             )}
             {trace.result.aiMemory && (
               <p className={muted}>

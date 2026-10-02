@@ -83,6 +83,8 @@ export async function createPedWithPrimaryAlias(
 export interface UpdatePedInput {
   canonicalName?: string;
   categoryKey?: string | null;
+  /** Phase 4 / R11: ordered fallback categories after the primary (null / empty = none). */
+  categoryChain?: string[] | null;
   status?: "draft" | "approved" | "deprecated";
   notes?: string | null;
 }
