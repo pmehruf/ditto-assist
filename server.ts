@@ -376,7 +376,8 @@ const adminWrite = (feature: string, action: string, run: (repos: ReturnType<typ
  * degrades to the legacy path rather than throwing.
  */
 async function getDbSource(repos: Pick<Repositories, "pedAliases" | "pedRepository" | "categories" | "planOverrides">): Promise<DbDictionarySource | null> {
-  if (PED_SOURCE !== "db") return null;
+  // With MAPPING_ENGINE=db the engine reads the database snapshot only; the legacy dictionary cache is never consulted.
+  if (MAPPING_ENGINE === "db" || PED_SOURCE !== "db") return null;
   try {
     await ensurePedRuntimeCacheLoaded(repos);
     return { aliasLookup: getDbAliasLookup(), planOverrideLookup: dbPlanOverrideLookup };
@@ -499,7 +500,9 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
       aiMemory: aiMemoryRepo,
       planRestrictions: planRestrictionsRepo,
     } = repos;
-    await ensurePedOverridesLoaded(pedOverridesRepo);
+    // The legacy per-PED override table is only read by the legacy engine; with MAPPING_ENGINE=db the engine reads the
+    // database snapshot alone, so a lookup never touches it.
+    if (MAPPING_ENGINE !== "db") await ensurePedOverridesLoaded(pedOverridesRepo);
     let dbSource = await getDbSource(repos);
 
     const PLAN_CONFIG = getPlanConfig();
@@ -5812,7 +5815,7 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
 
     const smokeTestRepos = createRepositories(getDb());
     const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo, planRestrictions: planRestrictionsRepo } = smokeTestRepos;
-    await ensurePedOverridesLoaded(pedOverridesRepo);
+    if (MAPPING_ENGINE !== "db") await ensurePedOverridesLoaded(pedOverridesRepo);
     const dbSource = await getDbSource(smokeTestRepos);
 
     const PLAN_CONFIG = getPlanConfig();

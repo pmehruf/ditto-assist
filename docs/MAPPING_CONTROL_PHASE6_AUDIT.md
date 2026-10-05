@@ -67,3 +67,8 @@ The Constitution still describes the legacy path as part of the engine (Part IV 
 2. A7: remove the compiled suggestion fallback (dropdown shows a short loading state instead), and add the few hard-coded terms as DB aliases, or leave A7 alone for now?
 3. G: approve a later, separate migration that drops the two legacy tables, or keep them indefinitely?
 4. R8: approve the Constitution wording change described above, including that the live legacy oracle is replaced by a committed frozen baseline.
+
+## Batch log
+
+- **Batch A** (6424836): editors use the live category list.
+- **Batch B**: with `MAPPING_ENGINE=db`, a lookup (and the smoke-test endpoint) no longer reads the legacy `ped_mapping_overrides` table, and `getDbSource` no longer builds the legacy dictionary cache (staging sets `PED_SOURCE=db`, so it was loading it on staging). Correction to the audit: A6 (smoke test) already ran the db engine in db mode, and A5/A8 (retired routes, browser classifier) exist only for `MAPPING_ENGINE=legacy`, so they are removed in Batch E together with the flag. Tests: `phase6RuntimeSources.test.ts`; full suite and Zero Regression Audit pass.
