@@ -25,3 +25,9 @@ describe("db-mode lookups do not touch the legacy sources", () => {
     expect(server).toMatch(/if \(MAPPING_ENGINE === "db" \|\| PED_SOURCE !== "db"\) return null;/);
   });
 });
+
+describe("AI answers use the database post-guard rules (batch C)", () => {
+  it("the Gemini path runs the snapshot's post_guard rows in db mode", () => {
+    expect(server).toContain("applyPostGuardsFromSnapshot(parsedOutput, ped, planName, config, await getMappingSnapshot(repos)).output");
+  });
+});

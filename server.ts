@@ -23,7 +23,7 @@ import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOve
 import { getMappingSnapshot } from "./src/server/mappingSnapshot.js";
 import { applyAiApproval, revertAiApproval, undoChangeSet, type PromotionDeps } from "./src/server/aiMappingPromotion.js";
 import { legacyOnlyWriteBlocked, RETIRED_ACTION_MESSAGE } from "./src/server/legacyWriteGuard.js";
-import { runDeterministicPipeline } from "./src/mapping/routingEngine.js";
+import { runDeterministicPipeline, applyPostGuardsFromSnapshot } from "./src/mapping/routingEngine.js";
 import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup, updateDbPlanOverrideCache, removeDbPlanOverrideCache } from "./src/server/pedRuntimeCache.js";
 import {
   createPedWithPrimaryAlias,
@@ -964,7 +964,12 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
 
     // Apply global post-processing sanitization and post-guards
     parsedOutput = sanitizeOutput(parsedOutput, ped, config);
-    parsedOutput = applyPostGuards(parsedOutput, ped, planName, config);
+    // The guards are database rules (routing_rules, stage post_guard), the same ones the deterministic path uses; the
+    // hard-coded copy only runs for the legacy engine.
+    parsedOutput =
+      MAPPING_ENGINE === "db"
+        ? applyPostGuardsFromSnapshot(parsedOutput, ped, planName, config, await getMappingSnapshot(repos)).output
+        : applyPostGuards(parsedOutput, ped, planName, config);
     const finalResult = finalizeOutput(parsedOutput, ped, config, config.questions);
 
     // Cross-feature usage tracking (2026-09, visibility only — see
