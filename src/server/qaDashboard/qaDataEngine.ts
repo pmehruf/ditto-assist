@@ -107,17 +107,28 @@ interface SheetCacheEntry {
 }
 
 const sheetCache = new Map<string, SheetCacheEntry>();
+// In-flight loads, so concurrent misses on the same key share ONE fetch
+// instead of each pulling (and holding) its own copy — see the Cloud Run
+// 512 MiB OOM (503 "HTTP 503" on Team Tracker) this prevents.
+const sheetLoadsInFlight = new Map<string, Promise<SheetCacheEntry>>();
 
 async function getSheetDataCached(sheetName: string): Promise<{ headers: string[]; rows: unknown[][] }> {
   const hit = sheetCache.get(sheetName);
   if (hit && hit.expiresAt > Date.now()) return hit;
 
-  const values = await fetchSheetValues(sheetName);
-  const headers = (values[0] || []).map((h) => String(h));
-  const rows = values.slice(1);
-  const entry: SheetCacheEntry = { headers, rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS };
-  sheetCache.set(sheetName, entry);
-  return entry;
+  const pending = sheetLoadsInFlight.get(sheetName);
+  if (pending) return pending;
+
+  const load = (async () => {
+    const values = await fetchSheetValues(sheetName);
+    const headers = (values[0] || []).map((h) => String(h));
+    const rows = values.slice(1);
+    const entry: SheetCacheEntry = { headers, rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS };
+    sheetCache.set(sheetName, entry);
+    return entry;
+  })().finally(() => sheetLoadsInFlight.delete(sheetName));
+  sheetLoadsInFlight.set(sheetName, load);
+  return load;
 }
 
 /** Exposed so an admin action ("Refresh") can force a re-read instead of
@@ -165,6 +176,7 @@ interface HistoryCacheEntry {
 // "current month", so most concurrent traffic within the 5-minute TTL still
 // shares one entry, same as the old single-entry cache did.
 const historyCacheByRange = new Map<string, HistoryCacheEntry>();
+const historyLoadsInFlight = new Map<string, Promise<QaEvaluationHistoryColumns[]>>();
 
 function historyCacheKey(checkedFrom?: string, checkedTo?: string): string {
   return checkedFrom && checkedTo ? `${checkedFrom}|${checkedTo}` : "all";
@@ -183,13 +195,20 @@ async function getHistoryRowsCached(checkedFrom?: string, checkedTo?: string): P
   const key = historyCacheKey(checkedFrom, checkedTo);
   const hit = historyCacheByRange.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.rows;
-  const { qaEvaluationHistory } = createRepositories(getDb());
-  const rows =
-    checkedFrom && checkedTo
-      ? await qaEvaluationHistory.listInRange(checkedFrom, checkedTo)
-      : await qaEvaluationHistory.listAll();
-  historyCacheByRange.set(key, { rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS });
-  return rows;
+  const pending = historyLoadsInFlight.get(key);
+  if (pending) return pending;
+
+  const load = (async () => {
+    const { qaEvaluationHistory } = createRepositories(getDb());
+    const rows =
+      checkedFrom && checkedTo
+        ? await qaEvaluationHistory.listInRange(checkedFrom, checkedTo)
+        : await qaEvaluationHistory.listAll();
+    historyCacheByRange.set(key, { rows, expiresAt: Date.now() + SHEET_CACHE_TTL_MS });
+    return rows;
+  })().finally(() => historyLoadsInFlight.delete(key));
+  historyLoadsInFlight.set(key, load);
+  return load;
 }
 
 /** checkedFrom/checkedTo (optional, "yyyy-MM-dd") are forwarded straight to
@@ -213,6 +232,8 @@ export function rowDedupeKey(checkedSerial: unknown, tactId: unknown, chatId: un
   return `${checkedSerial}|${String(tactId ?? "").trim()}|${String(chatId ?? "").trim()}|${String(domain ?? "").trim()}|${score ?? ""}`;
 }
 
+const liveKeysBySnapshot = new WeakMap<object, Set<string>>();
+
 async function getMergedFeedbackDumpRows(checkedFrom?: string, checkedTo?: string): Promise<{ headers: string[]; rows: unknown[][] }> {
   const live = await getSheetDataCached(SHEETS.FEEDBACK_DUMP);
   const history = await getHistoryRowsCached(checkedFrom, checkedTo);
@@ -231,11 +252,16 @@ async function getMergedFeedbackDumpRows(checkedFrom?: string, checkedTo?: strin
   const width = Math.max(iChecked, iMistake, iTact, iChatId, iDomain, iScore, iAdvisorName) + 1;
 
   // Every evaluation the live Sheet already has, keyed for the overlap check
-  // below — built once per call, off however many rows the Sheet currently
-  // holds (cheap; the Sheet is thousands, not millions, of rows).
-  const liveKeys = new Set<string>();
-  for (const r of live.rows) {
-    liveKeys.add(rowDedupeKey(r[iChecked], r[iTact], r[iChatId], r[iDomain], r[iScore]));
+  // below — built once per cached Sheet snapshot (WeakMap on the cache entry,
+  // which is replaced on TTL expiry) instead of once per call, so concurrent
+  // per-month calls (Team Tracker /table) don't each hold their own copy.
+  let liveKeys = liveKeysBySnapshot.get(live);
+  if (!liveKeys) {
+    liveKeys = new Set<string>();
+    for (const r of live.rows) {
+      liveKeys.add(rowDedupeKey(r[iChecked], r[iTact], r[iChatId], r[iDomain], r[iScore]));
+    }
+    liveKeysBySnapshot.set(live, liveKeys);
   }
 
   const historyRows: unknown[][] = [];
@@ -455,6 +481,7 @@ function stripEligibility(rows: AdvisorSnapshotRow[]): Advisor[] {
 }
 
 const advisorSnapshotCache = new Map<string, { rows: AdvisorSnapshotRow[]; expiresAt: number }>();
+const advisorSnapshotLoadsInFlight = new Map<string, Promise<AdvisorSnapshotRow[]>>();
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -489,7 +516,14 @@ function resolvePersonAsOf(rows: { personName: string; startDate: string; endDat
 async function buildAdvisorSnapshotAsOf(asOfDate: string): Promise<AdvisorSnapshotRow[]> {
   const cached = advisorSnapshotCache.get(asOfDate);
   if (cached && cached.expiresAt > Date.now()) return cached.rows;
+  const pending = advisorSnapshotLoadsInFlight.get(asOfDate);
+  if (pending) return pending;
+  const load = loadAdvisorSnapshotAsOf(asOfDate).finally(() => advisorSnapshotLoadsInFlight.delete(asOfDate));
+  advisorSnapshotLoadsInFlight.set(asOfDate, load);
+  return load;
+}
 
+async function loadAdvisorSnapshotAsOf(asOfDate: string): Promise<AdvisorSnapshotRow[]> {
   const { guideMentorAdvisorMappings, guideMentorRelationshipHistory } = createRepositories(getDb());
   const [mappings, history] = await Promise.all([guideMentorAdvisorMappings.list(), guideMentorRelationshipHistory.listAll()]);
 

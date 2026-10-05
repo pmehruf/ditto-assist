@@ -437,25 +437,29 @@ export async function getTeamTrackerTable(
     // advisor's row to their new Mentor/Guide starting the month it
     // actually took effect, while earlier months stay with the old one.
     // See qaDataEngine.ts's "Advisor Relationship Mapping" section comment.
-    const perMonthPools = await Promise.all(
-      months.map(async (m) => {
-        let pool = await resolvePoolAsOf(poolKind, poolName, m.filters.checkedFrom);
-        if (tactFilter) pool = pool.filter((a) => String(a.tactId).trim() === tactFilter);
-        return pool;
-      })
-    );
+    //
+    // Months run one at a time, not via Promise.all: a 12-month range used to
+    // fan out ~12 concurrent getAdvisorsBatchMetrics calls, each building its
+    // own merged copy of the whole feedback dump, which pushed the Cloud Run
+    // instance past its 512 MiB limit (container killed -> bare "HTTP 503").
+    // The underlying sheet/archive reads are cached, so after the first month
+    // the rest are cheap and sequential costs almost no extra time.
+    const perMonthPools: Awaited<ReturnType<typeof resolvePoolAsOf>>[] = [];
+    for (const m of months) {
+      let pool = await resolvePoolAsOf(poolKind, poolName, m.filters.checkedFrom);
+      if (tactFilter) pool = pool.filter((a) => String(a.tactId).trim() === tactFilter);
+      perMonthPools.push(pool);
+    }
 
     // One batch-metrics call per month (same function, same math the QA
-    // Dashboard's own roster view uses for a single range) — run
-    // concurrently since each is an independent read of the same
-    // already-cached sheet/archive data.
-    const perMonthMetrics = await Promise.all(
-      months.map((m, mi) => {
-        const tactIds = perMonthPools[mi].map((a) => String(a.tactId).trim());
-        const parsed = parseDateFilters(m.filters);
-        return getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate, m.filters);
-      })
-    );
+    // Dashboard's own roster view uses for a single range), sequential for
+    // the memory reason above.
+    const perMonthMetrics: Awaited<ReturnType<typeof getAdvisorsBatchMetrics>>[] = [];
+    for (let mi = 0; mi < months.length; mi++) {
+      const tactIds = perMonthPools[mi].map((a) => String(a.tactId).trim());
+      const parsed = parseDateFilters(months[mi].filters);
+      perMonthMetrics.push(await getAdvisorsBatchMetrics(tactIds, parsed.checkedFrom, parsed.checkedTo, parsed.tillDate, months[mi].filters));
+    }
 
     const rows: MonthlyAdvisorRow[] = [];
     months.forEach((m, mi) => {
@@ -632,19 +636,20 @@ export async function getCurrentMonthPeriodChange(
       return { delta: null, dayOfMonth, comparedMonths: 0 };
     }
 
-    const [currentMetrics, ...priorMetrics] = await Promise.all([
-      getAdvisorsBatchMetrics(
-        currentPool.map((a) => String(a.tactId).trim()),
-        currentParsed.checkedFrom,
-        currentParsed.checkedTo,
-        currentParsed.tillDate,
-        currentFilters
-      ),
-      ...priorMonthFilters.map((f, i) => {
-        const parsed = parseDateFilters(f);
-        return getAdvisorsBatchMetrics(priorPools[i].map((a) => String(a.tactId).trim()), parsed.checkedFrom, parsed.checkedTo, parsed.tillDate, f);
-      }),
-    ]);
+    // Sequential (not Promise.all) to bound peak memory — see getTeamTrackerTable.
+    const currentMetrics = await getAdvisorsBatchMetrics(
+      currentPool.map((a) => String(a.tactId).trim()),
+      currentParsed.checkedFrom,
+      currentParsed.checkedTo,
+      currentParsed.tillDate,
+      currentFilters
+    );
+    const priorMetrics: Awaited<ReturnType<typeof getAdvisorsBatchMetrics>>[] = [];
+    for (let i = 0; i < priorMonthFilters.length; i++) {
+      const f = priorMonthFilters[i];
+      const parsed = parseDateFilters(f);
+      priorMetrics.push(await getAdvisorsBatchMetrics(priorPools[i].map((a) => String(a.tactId).trim()), parsed.checkedFrom, parsed.checkedTo, parsed.tillDate, f));
+    }
 
     const currentScore = teamScoreFromMetrics(currentMetrics, currentPool.map((a) => String(a.tactId).trim()));
     const priorScores = priorMetrics
