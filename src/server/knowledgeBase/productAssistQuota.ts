@@ -95,6 +95,27 @@ function startOfMonthIST(now: Date): Date {
   return new Date(istMonthStart - IST_OFFSET_MS);
 }
 
+/** "YYYY-MM" key of the IST calendar month `now` falls in. */
+function istMonthKey(now: Date): string {
+  const istNow = new Date(now.getTime() + IST_OFFSET_MS);
+  return `${istNow.getUTCFullYear()}-${String(istNow.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Start (inclusive) and end (exclusive) instants of an IST calendar month
+ * given its "YYYY-MM" key, or null when the key is malformed. Built exactly
+ * like startOfMonthIST above, so a past month is bounded by the same IST
+ * month edges the current-month figures use. */
+function istMonthRange(monthKey: string): { start: Date; end: Date } | null {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(monthKey);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const monthIndex = Number(m[2]) - 1;
+  return {
+    start: new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0) - IST_OFFSET_MS),
+    end: new Date(Date.UTC(year, monthIndex + 1, 1, 0, 0, 0, 0) - IST_OFFSET_MS),
+  };
+}
+
 /** One eligibility group's matching conditions + limits — the minimal
  * structural shape this module actually reads (a superset of
  * ProductAssistEligibilityGroupRow, so a real DB row can be passed straight
@@ -475,4 +496,4 @@ export function estimateCost(
   return (inputTokens / 1_000_000) * pricing.inputPricePerMillionTokens + (outputTokens / 1_000_000) * pricing.outputPricePerMillionTokens;
 }
 
-export { startOfDayIST, startOfMonthIST };
+export { startOfDayIST, startOfMonthIST, istMonthKey, istMonthRange };

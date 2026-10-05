@@ -22,12 +22,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../db/testUtils.js";
 import { createRepositories, type Repositories } from "../db/repositories/index.js";
+import { productAssistUsageLedger, aiUsageLog } from "../db/schema.js";
 import {
   groupMatchesUser,
   resolveMatchedGroups,
   getQuotaStatus,
   checkQuota,
   recordUsage,
+  startOfMonthIST,
+  istMonthKey,
+  istMonthRange,
   type EligibilityGroupLike,
 } from "./productAssistQuota.js";
 
@@ -477,5 +481,94 @@ describe("productAssistQuota engine (real test DB)", () => {
     expect(status.dailyRemaining).toBeLessThanOrEqual(0);
     expect(status.monthlyRemaining).toBeGreaterThan(0);
     expect(status.state).toBe("daily_exceeded");
+  });
+});
+
+describe("IST month helpers (pure)", () => {
+  it("istMonthKey follows the IST calendar month, not UTC", () => {
+    // 2026-09-30 19:00 UTC is already 2026-10-01 00:30 in IST.
+    expect(istMonthKey(new Date("2026-09-30T19:00:00Z"))).toBe("2026-10");
+    expect(istMonthKey(new Date("2026-09-30T18:29:59Z"))).toBe("2026-09");
+    expect(istMonthKey(new Date("2026-01-15T00:00:00Z"))).toBe("2026-01");
+  });
+
+  it("istMonthRange is [IST month start, next IST month start) and matches startOfMonthIST", () => {
+    const r = istMonthRange("2026-08")!;
+    expect(r.start.toISOString()).toBe("2026-07-31T18:30:00.000Z");
+    expect(r.end.toISOString()).toBe("2026-08-31T18:30:00.000Z");
+    expect(r.start.getTime()).toBe(startOfMonthIST(new Date("2026-08-17T10:00:00Z")).getTime());
+  });
+
+  it("istMonthRange rolls over a year and rejects malformed keys", () => {
+    const dec = istMonthRange("2026-12")!;
+    expect(dec.end.toISOString()).toBe("2026-12-31T18:30:00.000Z");
+    expect(istMonthRange("2026-13")).toBeNull();
+    expect(istMonthRange("2026-00")).toBeNull();
+    expect(istMonthRange("2026-9")).toBeNull();
+    expect(istMonthRange("September 2026")).toBeNull();
+    expect(istMonthRange("")).toBeNull();
+  });
+});
+
+describe("Overview month data (real test DB)", () => {
+  let db: TestDb;
+  let repos: Repositories;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    repos = createRepositories(db);
+  });
+
+  afterEach(async () => {
+    await db.$client.close();
+  });
+
+  const ledgerRow = (createdAt: string, credits: string, tokens: number) => ({
+    userEmail: "a@example.com",
+    inputTokens: tokens,
+    outputTokens: tokens,
+    totalTokens: tokens * 2,
+    credits,
+    createdAt: new Date(createdAt),
+  });
+
+  it("companyTotals with an exclusive upper bound isolates one IST month", async () => {
+    await db.insert(productAssistUsageLedger).values([
+      ledgerRow("2026-07-31T18:00:00Z", "1.000", 100), // 31 Jul 23:30 IST -> July
+      ledgerRow("2026-07-31T18:30:00Z", "2.000", 200), // 1 Aug 00:00 IST -> August
+      ledgerRow("2026-08-31T18:29:59Z", "4.000", 300), // 31 Aug 23:59 IST -> August
+      ledgerRow("2026-08-31T18:30:00Z", "8.000", 400), // 1 Sep 00:00 IST -> September
+    ]);
+    const range = istMonthRange("2026-08")!;
+    const aug = await repos.productAssistUsageLedger.companyTotals(range.start, range.end);
+    expect(aug.requestCount).toBe(2);
+    expect(aug.totalCredits).toBe(6);
+    expect(aug.totalInputTokens).toBe(500);
+  });
+
+  it("an empty month returns zeros, not an error", async () => {
+    const range = istMonthRange("2026-03")!;
+    const totals = await repos.productAssistUsageLedger.companyTotals(range.start, range.end);
+    expect(totals).toEqual({ totalCredits: 0, totalInputTokens: 0, totalOutputTokens: 0, totalTokens: 0, requestCount: 0 });
+    expect(await repos.aiUsageLog.companyTotalsByModel(range.start, range.end)).toEqual([]);
+  });
+
+  it("distinctMonthsIST lists only months that have rows, bucketed by IST", async () => {
+    await db.insert(productAssistUsageLedger).values([
+      ledgerRow("2026-08-31T18:30:00Z", "1.000", 10), // 1 Sep IST
+      ledgerRow("2026-09-10T05:00:00Z", "1.000", 10), // Sep
+      ledgerRow("2026-07-05T05:00:00Z", "1.000", 10), // Jul
+    ]);
+    await db.insert(aiUsageLog).values({
+      source: "declaration_assist_match",
+      userEmail: "a@example.com",
+      model: "m",
+      inputTokens: 1,
+      outputTokens: 1,
+      totalTokens: 2,
+      createdAt: new Date("2026-05-20T05:00:00Z"), // May — usage log only
+    });
+    expect((await repos.productAssistUsageLedger.distinctMonthsIST()).sort()).toEqual(["2026-07", "2026-09"]);
+    expect(await repos.aiUsageLog.distinctMonthsIST()).toEqual(["2026-05"]);
   });
 });

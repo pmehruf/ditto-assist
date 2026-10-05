@@ -111,6 +111,17 @@ export class ProductAssistUsageLedgerRepository {
     };
   }
 
+  /** Every IST calendar month ("YYYY-MM") that has at least one ledger row
+   * — feeds the Overview tab's month selector. */
+  async distinctMonthsIST(): Promise<string[]> {
+    const rows: { month: string }[] = await this.db
+      .selectDistinct({
+        month: sql<string>`to_char(${productAssistUsageLedger.createdAt} AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM')`,
+      })
+      .from(productAssistUsageLedger);
+    return rows.map((r) => r.month);
+  }
+
   /** Paginated raw rows for the admin Usage History tab (Today / 7-day /
    * month / custom range), optionally scoped to one user. */
   async list(filter: UsageLedgerListFilter): Promise<ProductAssistUsageLedgerRow[]> {

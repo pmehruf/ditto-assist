@@ -2742,14 +2742,20 @@ export default function App() {
                 <span
                   className="bg-clip-text text-transparent bg-gradient-to-r"
                   style={{
-                    width: "clamp(480px, 46vw, 1200px)",
-                    maxWidth: "100%",
+                    // max-content: the headline sizes to its own text so it
+                    // stays on one line wherever there is room (a fixed 46vw
+                    // box wrapped it, leaving "GUIDE." alone). The +40px lets
+                    // it use the column's spare right padding on a 1536px
+                    // laptop, where it is only ~4px wider than the column;
+                    // it still wraps on narrower screens.
+                    width: "max-content",
+                    maxWidth: "calc(100% + 40px)",
                     fontSize: "38px",
                     display: "block",
                     backgroundImage: "var(--gradient-accent)"
                   }}
                 >
-                  THE INTELLIGENT ADVISOR HUB.
+                  YOUR INTELLIGENT ADVISOR GUIDE.
                 </span>
               </h1>
               <p
@@ -2759,7 +2765,7 @@ export default function App() {
                   maxWidth: "100%"
                 }}
               >
-                An intelligent advisor hub that brings together AI assistance, operational tools, policy references, coverage projections, QA insights, announcements, and team resources—helping every advisor work faster and with greater confidence.
+                An intelligent advisor companion that combines artificial intelligence with insurance product expertise, bringing operational tools, QA insights, resources, and live updates together to help advisors work faster, make better-informed decisions, and navigate their work with greater confidence.
               </p>
             </div>
 

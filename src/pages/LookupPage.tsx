@@ -12,7 +12,8 @@ import {
   X,
   Info,
   RefreshCw,
-  ChevronDown
+  ChevronDown,
+  FileText
 } from "lucide-react";
 import { GridTexture } from "../components/GridTexture";
 import { PrimaryCtaButton } from "../components/PrimaryCtaButton";
@@ -186,21 +187,27 @@ export function LookupPage({
             {/* WORKING ROW: input column (left, wider) + Declaration Queue
                 card (right, narrower), both starting at the same top edge
                 directly below the title separator. */}
-            <div className="w-full lg:flex-1 grid grid-cols-1 lg:grid-cols-[3fr_2fr] items-stretch gap-5 lg:gap-6">
-            {/* SECTION 1: PED MAPPING ENGINE INPUTS */}
-            {/* No local background/texture/glow here on purpose — a bounded
-                overlay box (even a borderless one) reads as a "card" the
-                moment it's clipped by overflow-hidden. This section sits
-                directly on the shared app-shell background (grid + ambient
-                glow blobs already rendered behind every tab in App.tsx), so
-                it blends into the page instead of looking like its own panel.
-                z-10 keeps the PED suggestion dropdown above the guide cards
-                below it. */}
+            <div className="w-full lg:flex-1 grid grid-cols-1 lg:grid-cols-[4fr_3fr] items-stretch gap-5 lg:gap-6">
+            {/* SECTION 1: PED MAPPING ENGINE INPUTS — input card (same card
+                surface as the Declaration Queue beside it): the input
+                controls on the left, the mascot vertically centred at the
+                right end, in its own column so it can never overlap the
+                controls or the queue card. Deliberately NOT overflow-hidden,
+                and z-10, so the PED suggestion dropdown can float above the
+                guide cards below. */}
             <div
-              className="min-w-0 min-h-0 flex flex-col justify-start lg:justify-center gap-2.5 relative z-10"
+              className={`min-w-0 min-h-0 relative z-10 rounded-2xl border p-5 [@media(max-height:799px)]:p-4 flex items-center gap-5 ${
+                theme === "dark"
+                  ? "bg-white/[0.02] border-white/[0.08]"
+                  : "bg-surface-solid border-stone-300"
+              }`}
             >
-              {/* Two input sections, side by side */}
-              <div className="shrink-0 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {/* Plan, then Search & Map, stacked. On short screens (under
+                  800px tall, e.g. a laptop with browser chrome) the two sit
+                  side by side instead, so the page still fits without
+                  scrolling — text sizes are never reduced. */}
+              <div className="shrink-0 flex flex-col gap-3 [@media(max-height:799px)_and_(min-width:1280px)]:grid [@media(max-height:799px)_and_(min-width:1280px)]:grid-cols-[2fr_3fr] [@media(max-height:799px)_and_(min-width:1280px)]:gap-4">
                 {/* BOX A: Health Insurance Plan */}
                 <div className="px-1 flex flex-col gap-2">
                   <label
@@ -329,7 +336,7 @@ export function LookupPage({
                                 setActiveSuggestionIndex(-1);
                               }
                             }}
-                            placeholder="Enter PED"
+                            placeholder="Enter PED (e.g. diabetes, thyroid, asthma)"
                             autoComplete="off"
                             style={{
                               borderRadius: "12px",
@@ -406,7 +413,7 @@ export function LookupPage({
                       }`}
                     >
                       <Info className="w-3 h-3 shrink-0" />
-                      Can't find it in the dropdown? Type and add it anyway 🚀
+                      Can't find it in the dropdown? Type and add it anyway. 🚀
                     </p>
 
                     {/* Floating Dropdown for Suggestions */}
@@ -565,10 +572,10 @@ export function LookupPage({
                   at z-0 (behind the button) so it doesn't cut across its
                   clipped-corner notch. Deliberately NOT rounded — a rounded
                   mask here leaks onto the button's sharp outer corners.
-                  sm:self-center: hugs the button and centers it under the
-                  combined Plan + PED input area; sm:mt-1 adds to the
-                  column's 10px gap for ~14px below the PED helper text. */}
-              <div className="shrink-0 self-stretch sm:self-center sm:mt-1 relative overflow-hidden">
+                  Full width of the input column (same width as PED input +
+                  ADD), left-aligned under the inputs; mt-1.5 adds to the
+                  column's 10px gap for ~16px below the PED helper text. */}
+              <div className="shrink-0 self-stretch mt-1.5 relative overflow-hidden">
                 <GridTexture theme={theme} zIndexClassName="z-0" />
                 <div
                   className="relative z-10 flex items-center w-full"
@@ -592,10 +599,10 @@ export function LookupPage({
                       !selectedPlan ||
                       isSelectedPlanDisabled
                     }
-                    // Primary action (~432x42; full width only on narrow
-                    // screens) — sizing overridden here rather than in the
-                    // shared PrimaryCtaButton.
-                    className="w-full sm:w-[432px] sm:max-w-full h-[42px] !px-5 !flex items-center justify-center gap-2"
+                    // Primary action, full width of the input column —
+                    // sizing overridden here rather than in the shared
+                    // PrimaryCtaButton.
+                    className="w-full h-[42px] !px-5 !flex items-center justify-center gap-2"
                     style={{
                       border: "none",
                       paddingTop: 0,
@@ -624,25 +631,37 @@ export function LookupPage({
                   </PrimaryCtaButton>
                 </div>
               </div>
+              </div>
+
+              {/* Mascot — right end of the input card, vertically centred.
+                  Hidden below 1280px wide so the inputs keep their full width;
+                  never squeezed or overlapped. */}
+              <div className="hidden xl:flex w-[28%] max-w-[240px] min-w-[96px] shrink-0 items-center justify-center self-stretch pointer-events-none select-none">
+                <MascotWithFallback
+                  src="/assets/.aistudio/doctor-mascot.png"
+                  alt="Doctor Mascot"
+                  className="object-contain"
+                  style={{ height: "clamp(110px, 17vh, 170px)", width: "auto", maxWidth: "100%", transform: "scaleX(-1)" }}
+                  type="doctor"
+                />
+              </div>
             </div>
 
-            {/* SECTION 2: PED LOOKUP QUEUE — its own card to the right of the
-                input column (2026-09, restructured at the user's explicit
-                request: previously this same queue content sat inline at the
-                bottom of the input column; the tag list / counter / mascot /
-                disabled-plan takeover logic below is unchanged, only its
-                container moved). */}
+            {/* SECTION 2: PED LOOKUP QUEUE — card to the right of the input
+                card. Left column: PED LOOKUP / DECLARATION QUEUE header,
+                then the queued chips and the helper state; right column:
+                the TOTAL QUEUE counter. Tag list / counter / disabled-plan
+                takeover logic is unchanged. */}
             <div
-              className={`min-w-0 rounded-2xl border flex flex-col overflow-hidden ${
+              className={`min-w-0 rounded-2xl border flex overflow-hidden ${
                 theme === "dark"
                   ? "bg-white/[0.02] border-white/[0.08]"
                   : "bg-surface-solid border-stone-300"
               }`}
             >
-              {/* Compact one-line header — eyebrow + title side by side
-                  instead of stacked. */}
+              <div className="flex-1 min-w-0 flex flex-col">
               <div
-                className={`py-2 px-4 border-b flex items-center gap-3 shrink-0 select-none ${
+                className={`py-3 px-4 border-b flex items-center gap-3 shrink-0 select-none ${
                   theme === "dark" ? "border-white/[0.08]" : "border-[#6a787f]"
                 }`}
               >
@@ -670,19 +689,16 @@ export function LookupPage({
               <div
                 style={{
                   borderWidth: isSelectedPlanDisabled ? "1.5px" : undefined,
-                  minHeight: "clamp(68px, 7vh, 88px)",
                   padding: "clamp(8px, 1.2vh, 12px)",
                   borderColor: isSelectedPlanDisabled ? undefined : selectedPlan ? queueAccentHex : undefined,
                 }}
-                className={`flex-1 min-h-0 relative flex flex-col justify-between overflow-hidden ${
+                className={`flex-1 min-h-0 relative flex flex-col overflow-hidden ${
                   isSelectedPlanDisabled
                     ? theme === "dark"
                       ? "border-t border-amber-500/30 bg-amber-500/[0.06]"
                       : "border-t border-amber-300 bg-amber-50/70"
                     : selectedPlan
-                      ? theme === "dark"
-                        ? "border-t-[1.5px]"
-                        : "border-t-[1.5px]"
+                      ? "border-t-[1.5px]"
                       : ""
                 }`}
               >
@@ -711,37 +727,9 @@ export function LookupPage({
                     </div>
                   </div>
                 ) : (
-                <div className="flex items-start justify-between gap-4 h-full">
-                  {/* Selected condition list / empty text */}
-                  {/* Not `relative` while empty, so the placeholder below
-                      positions against the whole card body and centers on
-                      the card itself rather than on this padded column. */}
-                  <div className={`flex-grow text-left z-10 min-h-[46px] pl-20 pr-2 ${lookupPeds.length === 0 ? "" : "relative"}`}>
-                    {lookupPeds.length === 0 ? (
-                      /* Quiet placeholder — small, regular weight, muted
-                         color set directly (the dark theme's
-                         text-stone-400/500 classes are remapped to brighter
-                         tokens in index.css, and light --text-muted is
-                         near-black).
-                         Equal left/right insets keep it optically centered
-                         in the card while clearing the mascot and the
-                         Total Queue counter. */
-                      <div className="absolute inset-y-0 left-24 right-24 flex flex-col items-center justify-center gap-0.5 text-center select-none pointer-events-none font-sans">
-                        <span
-                          className="text-[11px] font-medium leading-snug opacity-80"
-                          style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }}
-                        >
-                          No conditions added to the lookup queue.
-                        </span>
-                        <span
-                          className="text-[10px] leading-snug opacity-60"
-                          style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }}
-                        >
-                          Search or type a condition on the left to start.
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5 w-full content-start max-h-[110px] overflow-y-auto pr-1">
+                <div className="flex-1 min-h-0 flex flex-col items-center gap-3">
+                  {lookupPeds.length > 0 && (
+                    <div className="shrink-0 flex flex-wrap justify-center gap-1.5 w-full content-start max-h-[110px] overflow-y-auto">
                         {lookupPeds.map((tag, idx) => (
                           <div
                             key={`${tag}-${idx}`}
@@ -793,55 +781,49 @@ export function LookupPage({
                             </button>
                           </div>
                         ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Total queued counter, top-right */}
-                  <div className="flex flex-col items-center gap-1 shrink-0 select-none">
-                    <span
-                      className={`text-[9px] font-black uppercase tracking-widest ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}
-                    >
-                      Total Queue
+                    </div>
+                  )}
+                  {/* Quiet helper state — document icon + two lines, small
+                      and muted (the dark theme's text-stone-400/500 classes
+                      are remapped to brighter tokens in index.css, and
+                      light --text-muted is near-black, so colour is set
+                      directly). */}
+                  <div className="flex-1 flex flex-col items-center justify-center gap-1 text-center select-none pointer-events-none font-sans">
+                    <FileText className="w-7 h-7 mb-1 opacity-50" strokeWidth={1.5} style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }} />
+                    <span className="text-[11px] font-medium leading-snug opacity-80" style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }}>
+                      {lookupPeds.length === 0 ? "No conditions added to the lookup queue." : "Add more conditions to the queue."}
                     </span>
-                    <span
-                      style={
-                        selectedPlan
-                          ? {
-                              backgroundColor: queueAccentHex,
-                              color: queueCounterTextColor,
-                            }
-                          : undefined
-                      }
-                      className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${
-                        selectedPlan
-                          ? ""
-                          : theme === "dark"
-                            ? "bg-white/10 text-white"
-                            : "bg-stone-600 text-white"
-                      }`}
-                    >
-                      {lookupPeds.length}
+                    <span className="text-[10px] leading-snug opacity-60" style={{ color: theme === "dark" ? "var(--text-muted)" : "#78716c" }}>
+                      Search or type a condition on the left to start.
                     </span>
-                  </div>
-
-                  {/* Doctor Mascot — left end of queue card */}
-                  <div
-                    style={{
-                      height: "clamp(72px, 9vh, 96px)",
-                      width: "clamp(60px, 7.5vh, 76px)",
-                    }}
-                    className="absolute left-3 bottom-0 pointer-events-none select-none overflow-hidden z-0 opacity-90 hidden sm:block"
-                  >
-                    <MascotWithFallback
-                      src="/assets/.aistudio/doctor-mascot.png"
-                      alt="Doctor Mascot"
-                      className="object-contain w-full h-full"
-                      type="doctor"
-                    />
                   </div>
                 </div>
                 )}
+              </div>
+              </div>
+
+              {/* Total queued counter — its own column at the right */}
+              <div className="shrink-0 w-[92px] flex flex-col items-center gap-2 pt-3 select-none">
+                <span
+                  className={`text-[9px] font-black uppercase tracking-widest ${theme === "dark" ? "text-stone-400" : "text-stone-500"}`}
+                >
+                  Total Queue
+                </span>
+                <span
+                  style={
+                    selectedPlan
+                      ? {
+                          backgroundColor: queueAccentHex,
+                          color: queueCounterTextColor,
+                        }
+                      : undefined
+                  }
+                  className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black ${
+                    selectedPlan ? "" : "bg-[var(--action-navy)] text-[var(--on-action-navy)]"
+                  }`}
+                >
+                  {lookupPeds.length}
+                </span>
               </div>
             </div>
             </div>

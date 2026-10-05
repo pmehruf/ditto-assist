@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, AlertTriangle, Plus, Minus, X, Save, Search, Trash2, CheckCircle2, SkipForward, RotateCcw, Download, Wrench, Pencil, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { Department, OrgTeam, AppRole } from "../types/permissions";
 import { CustomSelect } from "../components/CustomSelect";
@@ -250,6 +250,48 @@ function formatInr(usdAmount: number): string {
   return `₹${(usdAmount * USD_TO_INR_RATE).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** "2026-08" -> "August 2026" (plain string split, never a Date(), so no
+ * timezone shift can move it to a neighbouring month). */
+function formatMonthKey(key: string): string {
+  const [year, month] = key.split("-");
+  const name = MONTH_NAMES[Number(month) - 1];
+  return name ? `${name} ${year}` : key;
+}
+
+/** Overview cost text tones — theme tokens only. Order of emphasis: the INR
+ * amount (accent) -> the $ amount (secondaryAmount) -> the budget line
+ * (mutedLine). Light theme's --text-muted token is near-black, so light
+ * steps one token up (primary -> secondary) to keep the same order. */
+function overviewMoneyTones(dark: boolean) {
+  return {
+    secondaryAmount: { color: dark ? "var(--text-secondary)" : "var(--text-primary)" },
+    mutedLine: { color: dark ? "var(--text-muted)" : "var(--text-secondary)" },
+  };
+}
+
+/** Overview-only money figure: the INR amount is the highlighted one (accent
+ * colour, bold, large), with the USD amount shown beside it in a quieter
+ * tone. `tone` lets the Est. Cost card keep its budget-warning colour on the
+ * headline figure. Same static USD->INR rate as every other INR figure on
+ * this page (see USD_TO_INR_RATE). */
+function InrHighlight({ usdAmount, dark, size, tone }: { usdAmount: number; dark: boolean; size: "lg" | "sm"; tone?: "warning" }) {
+  const warningColor = dark ? "text-amber-300" : "text-amber-600";
+  return (
+    <div>
+      {/* Strongest: the INR amount. Table rows (sm) use a lighter weight so
+          the summary card's total stays the most prominent figure. */}
+      <div className={`${size === "lg" ? "text-2xl font-black mt-1" : "text-sm font-semibold"} ${tone === "warning" ? warningColor : "text-[var(--accent)]"}`}>
+        {formatInr(usdAmount)}
+      </div>
+      <div className={size === "lg" ? "text-sm font-semibold mt-0.5" : "text-[11px] font-semibold"} style={overviewMoneyTones(dark).secondaryAmount}>
+        {formatUsd(usdAmount)}
+      </div>
+    </div>
+  );
+}
+
 /** USD figure with an INR-converted subline below it — the standard shape
  * for every USD money value on this page (see USD_TO_INR_RATE above). Pass
  * a raw string (e.g. straight from a form field) or number; invalid/blank
@@ -355,20 +397,43 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
   const [overview, setOverview] = useState<any>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  // Selected month as "YYYY-MM"; "" = the current month (followed as it
+  // rolls over). Month list + current-month key come back with every load
+  // and are kept here so the selector stays usable while a month is loading.
+  const [overviewMonth, setOverviewMonth] = useState("");
+  const [overviewMonths, setOverviewMonths] = useState<string[]>([]);
+  const [overviewCurrentMonth, setOverviewCurrentMonth] = useState("");
+  // Only the newest request may update the page, so a slow response for a
+  // previously chosen month can never land under the new month's label.
+  const overviewRequestRef = useRef(0);
 
-  const refreshOverview = async () => {
+  const refreshOverview = async (monthOverride?: string) => {
+    const month = monthOverride ?? overviewMonth;
+    const requestId = ++overviewRequestRef.current;
     setOverviewLoading(true);
     try {
-      const res = await fetch("/api/product-assist/quota/overview");
+      const res = await fetch(`/api/product-assist/quota/overview${month ? `?month=${encodeURIComponent(month)}` : ""}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to load (HTTP ${res.status}).`);
+      if (requestId !== overviewRequestRef.current) return;
       setOverview(body);
+      setOverviewMonths(Array.isArray(body.availableMonths) ? body.availableMonths : []);
+      setOverviewCurrentMonth(body.currentMonth ?? "");
       setOverviewError(null);
     } catch (err) {
+      if (requestId !== overviewRequestRef.current) return;
       setOverviewError(err instanceof Error ? err.message : "Could not load the usage overview.");
     } finally {
-      setOverviewLoading(false);
+      if (requestId === overviewRequestRef.current) setOverviewLoading(false);
     }
+  };
+
+  const selectOverviewMonth = (key: string) => {
+    const next = key === overviewCurrentMonth ? "" : key;
+    setOverviewMonth(next);
+    setOverview(null); // never leave the previous month's numbers on screen
+    setOverviewError(null);
+    refreshOverview(next);
   };
 
   // ── Users ───────────────────────────────────────────────────────────────
@@ -871,14 +936,29 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
         <div className={`p-5 ${cardClass}`}>
           <div className="flex items-center justify-between pb-2 mb-4 border-b border-light-stone/5 dark:border-stone-800">
             <h3 className={`text-sm font-black uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>Company Overview</h3>
-            <button
-              type="button"
-              onClick={refreshOverview}
-              title="Refresh"
-              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${dark ? "border-white/[0.08] hover:bg-white/[0.05] text-stone-300" : "border-stone-200 hover:bg-stone-100 text-stone-600"}`}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${overviewLoading ? "animate-spin" : ""}`} />
-            </button>
+            <div className="flex items-center gap-2">
+              {overviewMonths.length > 0 && (
+                <div className="w-[150px]" title="Choose a month">
+                  <CustomSelect
+                    value={overviewMonth || overviewCurrentMonth}
+                    onChange={selectOverviewMonth}
+                    theme={theme}
+                    options={overviewMonths.map((m) => ({ value: m, label: formatMonthKey(m) }))}
+                    triggerClassName={`w-full flex items-center justify-between gap-2 pl-2.5 pr-7 py-1.5 rounded-lg border outline-none text-xs font-bold cursor-pointer relative ${
+                      dark ? "bg-white/[0.04] border-white/[0.08] text-stone-200" : "bg-white border-stone-200 text-stone-700"
+                    }`}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => refreshOverview()}
+                title="Refresh"
+                className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${dark ? "border-white/[0.08] hover:bg-white/[0.05] text-stone-300" : "border-stone-200 hover:bg-stone-100 text-stone-600"}`}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${overviewLoading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </div>
 
           {overviewError && (
@@ -889,11 +969,12 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
           )}
 
           {overview && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className={`grid grid-cols-2 gap-3 ${overview.isCurrentMonth ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
               {[
-                { label: "Credits Used Today", value: Math.round(overview.today.totalCredits * 100) / 100 },
-                { label: "Credits Used This Month", value: Math.round(overview.month.totalCredits * 100) / 100 },
-                { label: "Requests This Month", value: overview.month.requestCount },
+                // "Credits Used Today" only exists for the current month.
+                ...(overview.today ? [{ label: "Credits Used Today", value: Math.round(overview.today.totalCredits * 100) / 100 }] : []),
+                { label: `Credits Used ${overview.isCurrentMonth ? "This Month" : `in ${formatMonthKey(overview.selectedMonth)}`}`, value: Math.round(overview.month.totalCredits * 100) / 100 },
+                { label: `Requests ${overview.isCurrentMonth ? "This Month" : `in ${formatMonthKey(overview.selectedMonth)}`}`, value: overview.month.requestCount },
               ].map((stat) => (
                 <div key={stat.label} className={`p-4 ${rowClass}`}>
                   <div className={labelClass}>{stat.label}</div>
@@ -901,24 +982,14 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
                 </div>
               ))}
               <div className={`p-4 ${rowClass}`}>
-                <div className={labelClass}>Est. Cost This Month (USD)</div>
-                <div
-                  className={`text-2xl font-black mt-1 ${
-                    overview.budget.budgetUtilizationPercent !== null && overview.budget.budgetUtilizationPercent >= overview.budget.warningThresholdPercent
-                      ? dark
-                        ? "text-amber-300"
-                        : "text-amber-600"
-                      : dark
-                      ? "text-white"
-                      : "text-stone-900"
-                  }`}
-                >
-                  {formatUsd(overview.budget.estimatedCostThisMonth)}
-                </div>
-                <div className={`text-[10.5px] mt-0.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                  ≈ {formatInr(overview.budget.estimatedCostThisMonth)}
-                </div>
-                <div className={`text-[10.5px] mt-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                <div className={labelClass}>Est. Cost {overview.isCurrentMonth ? "This Month" : `in ${formatMonthKey(overview.selectedMonth)}`}</div>
+                <InrHighlight
+                  usdAmount={overview.budget.estimatedCostThisMonth}
+                  dark={dark}
+                  size="lg"
+                  tone={overview.budget.budgetUtilizationPercent !== null && overview.budget.budgetUtilizationPercent >= overview.budget.warningThresholdPercent ? "warning" : undefined}
+                />
+                <div className="text-[10.5px] mt-1" style={overviewMoneyTones(dark).mutedLine}>
                   of {overview.budget.currency} {overview.budget.monthlyBudget} budget
                   {overview.budget.budgetUtilizationPercent !== null ? ` — ${overview.budget.budgetUtilizationPercent}%` : ""}
                 </div>
@@ -930,11 +1001,16 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
             Per-user/per-day credit limits (below) are the actual enforcement mechanism.
           </p>
 
-          {overview && Array.isArray(overview.allSources) && overview.allSources.length > 0 && (
+          {overview && Array.isArray(overview.allSources) && (
             <div className="mt-5 pt-4 border-t border-light-stone/5 dark:border-stone-800">
               <h4 className={`text-[11px] font-black uppercase tracking-wider mb-2.5 ${dark ? "text-white" : "text-stone-900"}`}>
-                Total AI Usage — All Features (This Month)
+                Total AI Usage — All Features ({overview.isCurrentMonth ? "This Month" : formatMonthKey(overview.selectedMonth)})
               </h4>
+              {overview.allSources.length === 0 ? (
+                <p className={`py-3 text-xs font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`}>
+                  No AI usage recorded {overview.isCurrentMonth ? "this month" : `in ${formatMonthKey(overview.selectedMonth)}`}.
+                </p>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -942,7 +1018,7 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
                       <th className="py-2 pr-4 font-bold">Feature</th>
                       <th className="py-2 pr-4 font-bold">Requests</th>
                       <th className="py-2 pr-4 font-bold">Total Tokens</th>
-                      <th className="py-2 pr-4 font-bold">Est. Cost (USD)</th>
+                      <th className="py-2 pr-4 font-bold">Est. Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -955,7 +1031,7 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
                         <td className={`py-2 pr-4 ${dark ? "text-stone-300" : "text-stone-700"}`}>{s.totalTokens}</td>
                         <td className="py-2 pr-4">
                           <div className="flex items-start gap-1.5">
-                            <UsdWithInr amount={s.estimatedCost} dark={dark} />
+                            <InrHighlight usdAmount={s.estimatedCost} dark={dark} size="sm" />
                             {s.hasUnpricedModel && (
                               <span className={`text-[10px] font-bold ${dark ? "text-amber-300" : "text-amber-600"}`} title="One or more models used here have no price set in Settings — this total is an undercount.">
                                 (partial)
@@ -968,6 +1044,7 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
                   </tbody>
                 </table>
               </div>
+              )}
               <p className={`text-[10.5px] mt-3 ${dark ? "text-stone-400" : "text-stone-500"}`}>
                 Visibility only — credit limits apply to Product Assist alone. Set per-model pricing in Settings to keep cost estimates
                 accurate across every feature listed here.
@@ -1679,13 +1756,13 @@ export function ProductAssistQuotaPage({ theme, departments, orgTeams, roles, ef
                   </div>
                 ))}
                 <div>
-                  <div className={labelClass}>Input Price / 1M Tokens (USD)</div>
+                  <div className={labelClass}>Input Price / 1M Tokens</div>
                   <div className="mt-1">
                     <UsdWithInr amount={settings.inputPricePerMillionTokens} dark={dark} />
                   </div>
                 </div>
                 <div>
-                  <div className={labelClass}>Output Price / 1M Tokens (USD)</div>
+                  <div className={labelClass}>Output Price / 1M Tokens</div>
                   <div className="mt-1">
                     <UsdWithInr amount={settings.outputPricePerMillionTokens} dark={dark} />
                   </div>

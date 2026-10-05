@@ -41,6 +41,17 @@ export class AiUsageLogRepository {
     });
   }
 
+  /** Every IST calendar month ("YYYY-MM") that has at least one logged
+   * AI call — feeds the Overview tab's month selector. */
+  async distinctMonthsIST(): Promise<string[]> {
+    const rows: { month: string }[] = await this.db
+      .selectDistinct({
+        month: sql<string>`to_char(${aiUsageLog.createdAt} AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM')`,
+      })
+      .from(aiUsageLog);
+    return rows.map((r) => r.month);
+  }
+
   /** Token/request totals grouped by (source, model) in a date range — the
    * building block for the Overview tab's cross-feature cost breakdown,
    * since cost must be computed per model (see ai_model_pricing) before it

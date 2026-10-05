@@ -130,6 +130,8 @@ import {
   estimateCost,
   startOfDayIST,
   startOfMonthIST,
+  istMonthKey,
+  istMonthRange,
 } from "./src/server/knowledgeBase/productAssistQuota.js";
 import { DEFAULT_FEATURE_PERMISSIONS, DEVELOPER_ONLY_FEATURES, GROUP_CONFIGURABLE_FEATURES, isFeatureGroupGrantableForTier } from "./src/constants/featurePermissions.js";
 import { ruleMatchesCaller, levelAllows, type ActionType as AccessActionType } from "./src/accessRuleEvaluator.js";
@@ -9790,10 +9792,15 @@ app.delete("/api/product-assist/quota/eligibility-groups/:id", requireAuth, asyn
   }
 });
 
-// GET /api/product-assist/quota/overview — company-wide totals for the
-// Overview tab (this-IST-month credits/tokens used, request count, and a
+// GET /api/product-assist/quota/overview[?month=YYYY-MM] — company-wide
+// totals for the Overview tab: credits/tokens used, request count, and a
 // budget estimate from the configured pricing — visibility only, never an
-// auto-stop, per product decision).
+// auto-stop, per product decision. Defaults to the current IST month; a past
+// month ("YYYY-MM", IST calendar month — same boundaries as the current-month
+// figures) is read straight from the stored ledger/usage-log rows, bounded
+// [month start, next month start). A past month's cost is estimated with the
+// CURRENT per-token prices (no historical price is stored). `today` is only
+// meaningful for the current month, so it is null for a past one.
 app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
   try {
     const { users: usersRepo, productAssistQuotaSettings, productAssistUsageLedger, aiUsageLog, aiModelPricing } = createRepositories(getDb());
@@ -9801,14 +9808,31 @@ app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
 
     const settings = await productAssistQuotaSettings.get();
     const now = new Date();
-    const monthStart = startOfMonthIST(now);
+    const currentMonth = istMonthKey(now);
+    const requestedMonth = typeof req.query.month === "string" && req.query.month ? req.query.month : currentMonth;
+    const range = istMonthRange(requestedMonth);
+    if (!range || requestedMonth > currentMonth) {
+      return res.status(400).json({ error: "Choose a valid month, no later than the current month." });
+    }
+    const isCurrentMonth = requestedMonth === currentMonth;
+    const monthStart = range.start;
+    const monthEnd = isCurrentMonth ? undefined : range.end;
     const dayStart = startOfDayIST(now);
-    const [monthTotals, todayTotals, monthByModel, priceMap] = await Promise.all([
-      productAssistUsageLedger.companyTotals(monthStart),
-      productAssistUsageLedger.companyTotals(dayStart),
-      aiUsageLog.companyTotalsByModel(monthStart),
+    const [monthTotals, todayTotals, monthByModel, priceMap, ledgerMonths, usageLogMonths] = await Promise.all([
+      productAssistUsageLedger.companyTotals(monthStart, monthEnd),
+      isCurrentMonth ? productAssistUsageLedger.companyTotals(dayStart) : Promise.resolve(null),
+      aiUsageLog.companyTotalsByModel(monthStart, monthEnd),
       aiModelPricing.getMap(),
+      productAssistUsageLedger.distinctMonthsIST(),
+      aiUsageLog.distinctMonthsIST(),
     ]);
+    // Selector options: every month that has stored usage (either table) up
+    // to the current month, newest first. The current month is always
+    // offered, even before it has any usage.
+    const availableMonths = Array.from(new Set([...ledgerMonths, ...usageLogMonths, currentMonth]))
+      .filter((m) => m <= currentMonth)
+      .sort()
+      .reverse();
     const estimatedCostThisMonth = estimateCost(monthTotals.totalInputTokens, monthTotals.totalOutputTokens, {
       inputPricePerMillionTokens: Number(settings.inputPricePerMillionTokens),
       outputPricePerMillionTokens: Number(settings.outputPricePerMillionTokens),
@@ -9857,6 +9881,10 @@ app.get("/api/product-assist/quota/overview", requireAuth, async (req, res) => {
 
     return res.json({
       settings,
+      selectedMonth: requestedMonth,
+      currentMonth,
+      isCurrentMonth,
+      availableMonths,
       today: todayTotals,
       month: monthTotals,
       budget: {

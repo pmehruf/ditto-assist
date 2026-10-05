@@ -126,7 +126,7 @@ const BRANCHES: Branch[] = [
     methodHeading: "DECLARATION METHOD (INVESTIGATIVE TESTS)",
     method: [
       "General tests: “Medical tests were done.”",
-      "7 critical tests — name exactly: angiography, TRT / stress test, ECG, MRI, endoscopy, colonoscopy, USG",
+      "7 critical tests — name exactly: angiography, TMT / stress test, ECG, MRI, endoscopy, colonoscopy, USG",
     ],
   },
 ];
@@ -174,9 +174,9 @@ function CaseBlock({ branchCase, accent, theme }: { branchCase: BranchCase; acce
         {branchCase.example && <span className="ml-1.5 font-semibold opacity-75">{branchCase.example}</span>}
       </p>
       {branchCase.requirements?.map((r) => (
-        <div key={r.badge + r.text} className="mt-1 flex items-center gap-2 flex-wrap">
+        <div key={r.badge + r.text} className="mt-2 [@media(max-height:799px)]:mt-1 flex items-center gap-2.5 flex-wrap">
           <span
-            className="shrink-0 text-xs font-black uppercase tracking-wide px-1.5 py-px rounded"
+            className="shrink-0 text-xs font-black uppercase tracking-wide px-2 py-0.5 rounded"
             style={{ color: BADGE_TONE[r.badge][theme], backgroundColor: withAlpha(BADGE_TONE[r.badge][theme], theme === "dark" ? 0.14 : 0.1) }}
           >
             {r.badge}
@@ -197,17 +197,20 @@ function CaseBlock({ branchCase, accent, theme }: { branchCase: BranchCase; acce
  */
 export function DeclarationGuideSection({ theme }: DeclarationGuideSectionProps) {
   const t = cardText(theme);
-  const labelClass = `block text-xs font-bold tracking-wide mb-1 ${theme === "dark" ? "text-[#A7BBD3]" : "text-stone-500"}`;
+  const labelClass = `block text-xs font-bold tracking-wide mb-2 ${theme === "dark" ? "text-[#A7BBD3]" : "text-stone-500"}`;
   const divider = theme === "dark" ? "border-white/[0.08]" : "border-stone-200";
 
   return (
     // mt-2: a little extra separation from the workspace row above.
+    // Spacing inside the cards is roomier on taller screens; on short
+    // screens (under 800px tall) it falls back to the compact values so the
+    // page still fits without scrolling — text sizes never change.
     // flex-1 + the cards grid's flex-1: fills the page's bottom half, with
     // the four cards stretching to the available height.
     <div className="w-full mt-2 flex-1 min-h-0 flex flex-col">
       {/* Header row doubles as the divider between the Mapping Engine's
           working row and the cards (title + hairline rule). */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-3 [@media(max-height:799px)]:mb-2.5">
         <div className="flex items-center gap-2 shrink-0">
           <span
             className="w-6 h-0.5 flex-shrink-0"
@@ -235,7 +238,7 @@ export function DeclarationGuideSection({ theme }: DeclarationGuideSectionProps)
           return (
             <div
               key={branch.id}
-              className={`rounded-2xl border px-5 pt-4 pb-3 flex flex-col gap-2 ${
+              className={`rounded-2xl border px-5 pt-4 pb-3 flex flex-col gap-2.5 [@media(max-height:799px)]:pt-3.5 [@media(max-height:799px)]:pb-2.5 [@media(max-height:799px)]:gap-2 ${
                 theme === "dark" ? "bg-white/[0.03]" : "bg-white shadow-xs"
               }`}
               style={{
@@ -244,7 +247,7 @@ export function DeclarationGuideSection({ theme }: DeclarationGuideSectionProps)
                 borderTopColor: accent,
               }}
             >
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-3 mb-0.5">
                 <div
                   className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
                   style={{ backgroundColor: withAlpha(accent, theme === "dark" ? 0.14 : 0.1) }}
@@ -256,16 +259,16 @@ export function DeclarationGuideSection({ theme }: DeclarationGuideSectionProps)
                 </h4>
               </div>
 
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3 [@media(max-height:799px)]:gap-2">
                 {branch.cases.map((c) => (
                   <div key={c.label}><CaseBlock branchCase={c} accent={accent} theme={theme} /></div>
                 ))}
               </div>
 
-              <div className={`pt-2 border-t ${divider}`}>
+              <div className={`pt-3 [@media(max-height:799px)]:pt-2 border-t ${divider}`}>
                 <span className={labelClass}>{branch.optionsHeading}</span>
                 <ListTag
-                  className={`${branch.optionsStyle === "numbered" ? "list-decimal" : "list-disc"} pl-4 text-xs font-medium space-y-0.5`}
+                  className={`${branch.optionsStyle === "numbered" ? "list-decimal" : "list-disc"} pl-4 text-xs font-medium space-y-[3px] [@media(max-height:799px)]:space-y-0.5`}
                   style={t.body}
                 >
                   {branch.options.map((o) => (
@@ -275,9 +278,9 @@ export function DeclarationGuideSection({ theme }: DeclarationGuideSectionProps)
               </div>
 
               {branch.method && (
-                <div>
+                <div className={`pt-3 [@media(max-height:799px)]:pt-2 border-t ${divider}`}>
                   <span className={labelClass}>{branch.methodHeading}</span>
-                  <ul className="list-disc pl-4 text-xs font-medium space-y-0.5" style={t.body}>
+                  <ul className="list-disc pl-4 text-xs font-medium space-y-[3px] [@media(max-height:799px)]:space-y-0.5" style={t.body}>
                     {branch.method.map((m) => (
                       <li key={m}>{m}</li>
                     ))}
@@ -287,7 +290,7 @@ export function DeclarationGuideSection({ theme }: DeclarationGuideSectionProps)
 
               {branch.note && (
                 <p
-                  className={`text-xs leading-snug border rounded-lg px-2.5 py-1.5 ${
+                  className={`text-xs leading-snug border rounded-lg px-3 py-2 ${
                     theme === "dark" ? "bg-white/5 border-white/5" : "bg-[#F1F6FB] border-stone-200"
                   }`}
                   style={t.muted}
