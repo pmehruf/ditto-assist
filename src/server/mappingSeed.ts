@@ -7,7 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import type { AnyDb } from "./db/client.js";
 import { categories, mappingState, pedAliases, pedMappingOverrides, pedRepository, routingRules } from "./db/schema.js";
 import { PedRepositoryRepository } from "./db/repositories/pedRepositoryRepository.js";
-import { normalizeDictionaryKey } from "../engine.js";
+import { normalizeDictionaryKey } from "../mapping/helpers.js";
 import { LEGACY_RULE_SEED } from "../mapping/legacyRuleSeed.js";
 import { planSeed, type AliasException, type MappingDump, type SeedPlan } from "../mapping/seedBuilder.js";
 

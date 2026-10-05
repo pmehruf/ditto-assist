@@ -12,10 +12,8 @@ import {
   questionForCategory,
   findQuestion,
   sanitizeOutput,
-  checkNaturalLifeStages,
-  applyPostGuards,
   resolvePlanDecision,
-} from "../engine";
+} from "../mapping/helpers";
 
 const planConfigs = getPlanConfig();
 const optimaSecure = planConfigs["Optima Secure"];
@@ -186,76 +184,5 @@ describe("sanitizeOutput", () => {
     const result = sanitizeOutput(null, "hypertension", optimaSecure);
     expect(result.match_type).toBe("FALLBACK");
     expect(result.ped_input).toBe("hypertension");
-  });
-});
-
-describe("checkNaturalLifeStages", () => {
-  it.each([
-    "regular periods",
-    "menopause",
-    "puberty",
-    "pregnancy",
-    "routine checkup",
-    "vaccination",
-    "n/a",
-    "none",
-    "healthy",
-  ])("classifies %s as NON_AILMENT", (input) => {
-    const result = checkNaturalLifeStages(input);
-    expect(result).not.toBeNull();
-    expect(result?.match_type).toBe("NON_AILMENT");
-  });
-
-  it("does NOT firewall a genuine ailment (diabetes)", () => {
-    expect(checkNaturalLifeStages("diabetes")).toBeNull();
-  });
-
-  it("carves out an exception for ectopic pregnancy despite the word 'pregnancy'", () => {
-    // Explicit hard-firewall exception in the source: ectopic pregnancy is a
-    // real medical emergency, not a normal physiological pregnancy state.
-    expect(checkNaturalLifeStages("ectopic pregnancy")).toBeNull();
-  });
-
-  it("returns null for empty input", () => {
-    expect(checkNaturalLifeStages("")).toBeNull();
-  });
-});
-
-describe("applyPostGuards", () => {
-  it("reroutes non-insulin gestational/Type-2 diabetes to FALLBACK on plans requiring insulin dependency", () => {
-    // Care Supreme has overrides.requiresInsulinForDiabetes = true.
-    const diabetesQuestion = questionForCategory(careSupreme, "diabetes");
-    const output = {
-      ped_input: "gestational diabetes",
-      match_type: "P1" as const,
-      matched_question: diabetesQuestion,
-      explanation: "placeholder",
-    };
-    const result = applyPostGuards(output, "gestational diabetes", "Care Supreme", careSupreme);
-    expect(result.match_type).toBe("FALLBACK");
-    expect(result.matched_question).toBe(careSupreme.anyOther);
-  });
-
-  it("does not touch an output whose matched_question isn't the plan's diabetes question", () => {
-    const output = {
-      ped_input: "asthma",
-      match_type: "P1" as const,
-      matched_question: questionForCategory(careSupreme, "respiratory"),
-      explanation: "placeholder",
-    };
-    const result = applyPostGuards(output, "asthma", "Care Supreme", careSupreme);
-    expect(result.match_type).toBe("P1");
-    expect(result.matched_question).toBe(questionForCategory(careSupreme, "respiratory"));
-  });
-
-  it("leaves output completely unchanged when no post-guard rule applies", () => {
-    const output = {
-      ped_input: "fracture",
-      match_type: "P1" as const,
-      matched_question: optimaSecure.anyOther,
-      explanation: "placeholder",
-    };
-    const result = applyPostGuards(output, "fracture", "Optima Secure", optimaSecure);
-    expect(result).toEqual(output);
   });
 });

@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from "vitest";
 import { MASTER_ILLNESSES, matchSpecificIllness } from "../specificIllnessEngine";
-import { getSmokeTestCases } from "../engine";
+import { getSmokeTestCases } from "./helpers/smokeTestCases";
 
 /**
  * Regression safety net (added ahead of the Phase 1 architectural refactor).

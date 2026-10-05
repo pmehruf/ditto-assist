@@ -5,7 +5,8 @@
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2, Pencil, X, Check, Power, PowerOff } from "lucide-react";
-import { CATEGORY_LABELS, type PlanRestriction } from "../types.js";
+import type { PlanRestriction } from "../types.js";
+import { useCategoryLabels, useLiveCategories } from "../utils/categoryLabels";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { useDialog } from "../hooks/useDialog";
@@ -27,8 +28,6 @@ const MODE_OPTIONS = [
   { value: "exclude_keywords", label: "Exclude a keyword — these PEDs are diverted away from this category" },
   { value: "block_category", label: "Block entirely — every PED in this category is diverted" },
 ] as const;
-
-const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label }));
 
 function modeLabel(mode: string): string {
   return MODE_OPTIONS.find((m) => m.value === mode)?.label.split(" — ")[0] || mode;
@@ -71,7 +70,7 @@ interface PlanRestrictionsEditorProps {
  * routes (server.ts) rather than being bundled into the plan's own
  * save/PUT flow — a restriction takes effect immediately on
  * create/edit/delete/toggle, same as the Add/Edit Plan wizard is a separate
- * concern from this. See engine.ts's hasActiveRestriction /
+ * concern from this. See the routing engine's restriction handling /
  * isCategoryRestrictedForPed for how these rows are evaluated by the
  * Declaration Assistant at match time — deterministic keyword logic, no AI
  * involved anywhere.
@@ -79,6 +78,9 @@ interface PlanRestrictionsEditorProps {
 export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanRestrictionsEditorProps) {
   const dark = theme === "dark";
   const { confirm } = useDialog();
+  const categoryLabel = useCategoryLabels();
+  const { labels: liveCategories } = useLiveCategories();
+  const categoryOptions = Object.entries(liveCategories).map(([value, label]) => ({ value, label }));
   const [entries, setEntries] = useState<PlanRestrictionRowEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -209,7 +211,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
       <ul className="space-y-1">
         {active.map((e) => (
           <li key={e.id} className={`text-xs px-2 py-1.5 rounded-lg border ${dark ? "bg-white/[0.015] border-white/[0.05] text-stone-200" : "bg-stone-50 border-stone-150 text-stone-800"}`}>
-            <span className="font-bold">{CATEGORY_LABELS[e.categoryKey] || e.categoryKey}</span>: {e.explanation}
+            <span className="font-bold">{categoryLabel(e.categoryKey)}</span>: {e.explanation}
           </li>
         ))}
       </ul>
@@ -239,7 +241,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
             >
               <div className="flex-1 min-w-0">
                 <div className="font-bold">
-                  {CATEGORY_LABELS[e.categoryKey] || e.categoryKey}
+                  {categoryLabel(e.categoryKey)}
                   <span className="font-normal opacity-70"> — {modeLabel(e.mode)}</span>
                   {!e.isActive && <span className="ml-1.5 text-[10px] uppercase tracking-wide font-bold text-amber-500">Disabled</span>}
                 </div>
@@ -285,7 +287,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
             theme={theme}
             value={draft.categoryKey}
             onChange={(v) => setDraft((d) => (d ? { ...d, categoryKey: v } : d))}
-            options={CATEGORY_OPTIONS}
+            options={categoryOptions}
             placeholder="Category"
           />
           <CustomSelect

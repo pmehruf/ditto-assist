@@ -40,7 +40,7 @@
  * dictionary" quirk that made Bell's palsy special (its TOP_PED_DICTIONARY
  * key "bell's palsy" is unreachable at the O(1) dictionary stage because
  * normalizeDictionaryKey strips the apostrophe, so the literal object key
- * never matches the normalized lookup key — see engine.ts's dictionary
+ * never matches the normalized lookup key — see the routing engine (src/mapping)'s dictionary
  * routing comment). "Migraine", by contrast, IS directly reachable via the
  * dictionary today and already resolves to "neuro" (severe) under BOTH
  * legacy and the DB path — recategorizing it to neuro_mild would introduce a
@@ -63,7 +63,7 @@ import path from "path";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
 import { bumpMappingVersionAfterApply } from "./_mappingVersion.js";
-import { normalizeDictionaryKey } from "../src/engine.js";
+import { normalizeDictionaryKey } from "../src/mapping/helpers.js";
 
 dotenv.config();
 

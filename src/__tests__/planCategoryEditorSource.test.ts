@@ -90,3 +90,13 @@ describe("the change does not alter any saved plan / category mapping", () => {
     expect(util).not.toMatch(/method:\s*["'](POST|PUT|PATCH|DELETE)/);
   });
 });
+
+describe("every plan editor reads the live category list (Phase 6)", () => {
+  for (const file of ["src/components/PlanRestrictionsEditor.tsx", "src/components/PlanPedOverridesEditor.tsx"]) {
+    it(`${file} no longer uses the compiled category list`, () => {
+      const src = readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
+      expect(src).not.toContain("CATEGORY_LABELS");
+      expect(src).toMatch(/useCategoryLabels|useLiveCategories/);
+    });
+  }
+});

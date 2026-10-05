@@ -53,7 +53,7 @@ export interface PlanOverrides {
 /** One admin-authored Plan-Specific Restriction (Plan Management, 2026-08) —
  * the deterministic, DB-driven replacement for PlanOverrides above. See
  * schema.ts's `plan_restrictions` doc comment for the full design and
- * engine.ts's isCategoryRestrictedForPed for how these are evaluated. */
+ * src/mapping/helpers.ts's isCategoryRestrictedForPed for how these are evaluated. */
 export interface PlanRestriction {
   categoryKey: string;
   mode: "require_keywords" | "exclude_keywords" | "block_category";
@@ -65,7 +65,7 @@ export interface PlanRestriction {
 /** One admin-authored plan-specific PED mapping (`plan_overrides` row) in
  * the shape the engine evaluates on both the server (/api/match) and the
  * client fast path (App.tsx executeLookupAll). Takes precedence over every
- * category mapping — see engine.ts's applyPlanPedOverride. */
+ * category mapping — see src/mapping/helpers.ts's applyPlanPedOverride. */
 export interface PlanPedOverride {
   pedId: number;
   pedName: string;
@@ -87,7 +87,7 @@ export interface PlanConfig {
   categoryMap: Record<string, string | number>;
   /** @deprecated superseded by `restrictions` below (Plan-Specific
    * Restrictions, 2026-08) — kept only on the hardcoded getPlanConfig()
-   * bootstrap seed below for plans never customized in the DB; engine.ts no
+   * bootstrap seed below for plans never customized in the DB; the routing engine (src/mapping) no
    * longer reads it. See scripts/migratePlanRestrictions.ts. */
   overrides?: PlanOverrides;
   restrictions?: PlanRestriction[];
@@ -1163,7 +1163,7 @@ export const CATEGORY_AUTO_MAP_RULES: Array<{ key: string; regex: RegExp }> = [
  * skin conditions into a generic "any other" question instead of naming
  * skin explicitly). Callers that persist this map should run it through
  * fillUnmappedCategories() (PlanManagementPage.tsx) first — a category
- * missing from categoryMap makes the deterministic engine (engine.ts) skip
+ * missing from categoryMap makes the deterministic engine (the routing engine (src/mapping)) skip
  * this plan for that category entirely and fall through to the Gemini AI
  * fallback, which (lacking this app's plan-specific fallback logic) can
  * misjudge a real diagnosis, e.g. Urticaria, as a vague/ambiguous symptom
@@ -1231,7 +1231,7 @@ export function getPlanConfig(): Record<string, PlanConfig> {
         sarcoidosis: "Tuberculosis / Asthma or any other Lung disorder?",
         // Plan has no dedicated Covid-19 question — without this, a
         // Covid-19 declaration silently skips the deterministic engine
-        // entirely (the "covid" categoryKey rule at engine.ts's COVID-19
+        // entirely (the "covid" categoryKey rule at the routing engine (src/mapping)'s COVID-19
         // check returns nothing when this key is missing) and falls
         // through to the Gemini AI fallback instead of cleanly resolving
         // to this plan's own catch-all.

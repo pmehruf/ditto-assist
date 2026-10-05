@@ -4,8 +4,14 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { getPlanConfig, type PlanConfig, type PlanPedOverride } from "../types";
-import { classifyDeterministic, applyPostGuards, sanitizeOutput, finalizeOutput } from "../engine";
+import type { PlanConfig, PlanPedOverride } from "../types";
+import { snapshotFromDump } from "../mapping/seedBuilder";
+import { planConfigsFromDump } from "../mapping/equalityHarness";
+import { runDeterministicPipeline } from "../mapping/routingEngine";
+import { fixtureDump } from "./helpers/mappingTestDb";
+
+const snap = snapshotFromDump(fixtureDump);
+const plans = new Map(planConfigsFromDump(fixtureDump).map((p) => [p.planName, p.config] as const));
 
 const SLEEP_Q = "Nervous, Psychiatric or Mental or Sleep disorder?";
 const LUNG_Q = "Tuberculosis / Asthma or any other Lung disorder?";
@@ -20,13 +26,13 @@ const osaOverride: PlanPedOverride = {
 };
 
 function optima(overrides: PlanPedOverride[] = [osaOverride]): PlanConfig {
-  return { ...getPlanConfig()["Optima Secure"], pedOverrides: overrides };
+  return { ...plans.get("Optima Secure")!, pedOverrides: overrides };
 }
 
 function lookup(ped: string, config: PlanConfig, plan = "Optima Secure") {
-  const out = classifyDeterministic(ped, plan, config);
+  const out = runDeterministicPipeline(ped, plan, config, snap).result;
   expect(out).not.toBeNull();
-  return finalizeOutput(applyPostGuards(sanitizeOutput(out, ped, config), ped, plan, config), ped, config, config.questions);
+  return out!;
 }
 
 describe("Plan-specific PED mappings (plan_overrides → applyPlanPedOverride)", () => {
@@ -48,7 +54,7 @@ describe("Plan-specific PED mappings (plan_overrides → applyPlanPedOverride)",
   });
 
   it("only affects the plan it was added to", () => {
-    const careSupreme = { ...getPlanConfig()["Care Supreme"], pedOverrides: [] };
+    const careSupreme = { ...plans.get("Care Supreme")!, pedOverrides: [] };
     expect(lookup("osa", careSupreme, "Care Supreme").matched_question).not.toBe(SLEEP_Q);
   });
 

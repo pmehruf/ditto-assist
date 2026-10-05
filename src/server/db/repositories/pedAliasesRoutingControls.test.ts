@@ -46,7 +46,7 @@ describe("ped_aliases mapping-control compatibility controls", () => {
     const ped = await peds.create({ canonicalName: "Control Test Three", categoryKey: "heart", status: "approved", notes: null, addedBy: "t" });
     const alias = await aliases.create({ pedId: ped.id, aliasText: "Control Test Three", isPrimary: true, isVisible: true, addedBy: "t" });
     const after = await updateAliasRow(
-      { pedRepository: peds, pedAliases: aliases, pedMappingOverrides: {} as never },
+      { pedRepository: peds, pedAliases: aliases},
       alias.id,
       { categoryKeyOverride: "neuro", routingEnabled: true },
       "tester"

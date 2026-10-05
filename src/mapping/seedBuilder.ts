@@ -4,7 +4,7 @@
  */
 
 import { TOP_PED_DICTIONARY } from "../types.js";
-import { normalizeDictionaryKey } from "../engine.js";
+import { normalizeDictionaryKey } from "./helpers.js";
 import { LEGACY_RULE_SEED } from "./legacyRuleSeed.js";
 import type { AliasEntry, MappingSnapshot, RoutingRuleRow } from "./ruleTypes.js";
 

@@ -188,7 +188,7 @@ export function PlanManagementPage({
   const [questions, setQuestions] = useState<FormQuestion[]>([]);
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
   const [specificIllnesses, setSpecificIllnesses] = useState<FormSpecificIllness[]>([]);
-  // Plan-specific clinical guard flags (engine.ts reads these per-plan) —
+  // Plan-specific clinical guard flags (the routing engine (src/mapping) reads these per-plan) —
   // editable via the "Plan-Specific Restrictions" checkboxes below. Starts
   // out carried through unchanged from a built-in plan's hardcoded default
   // (see populateFormFields) so customizing a built-in plan for the first
@@ -1480,7 +1480,7 @@ export function PlanManagementPage({
               question only covers Type 1 / insulin-dependent / diabetes
               with blindness or a chronic foot ulcer". Live database/UI-
               controlled (2026-08) — Create/Edit/Delete/Enable-disable,
-              evaluated by engine.ts's isCategoryRestrictedForPed /
+              evaluated by src/mapping/helpers.ts's isCategoryRestrictedForPed /
               hasActiveRestriction with deterministic keyword logic, no AI
               involved. Replaces the old 3-checkbox PlanOverrides block
               (plan_configs.overrides — now deprecated, see types.ts). */}
@@ -1495,7 +1495,7 @@ export function PlanManagementPage({
               this plan only, overriding its category mapping (e.g. OSA →
               the Sleep disorder question on Optima Secure while other plans
               keep Respiratory). Saved live to plan_overrides; see
-              PlanPedOverridesEditor / engine.ts's applyPlanPedOverride. */}
+              PlanPedOverridesEditor / src/mapping/helpers.ts's applyPlanPedOverride. */}
           <div>
             <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
               Plan-Specific PED Mappings

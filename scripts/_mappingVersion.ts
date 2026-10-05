@@ -6,7 +6,7 @@
 /**
  * Operational scripts that write the authoritative mapping tables
  * (ped_repository / ped_aliases / plan_overrides) must bump the mapping
- * version afterwards. Without it, running servers on MAPPING_ENGINE=db keep
+ * version afterwards. Without it, running servers on the database-backed engine keep
  * their cached snapshot and never see the change (a silent no-op).
  */
 export async function bumpMappingVersionAfterApply(repos: { mappingState: { bump: () => Promise<number> } }): Promise<void> {

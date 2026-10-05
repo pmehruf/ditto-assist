@@ -74,13 +74,6 @@ import {
   matchesPhrase,
 } from "./specificIllnessEngine";
 
-import {
-  classifyDeterministic,
-  finalizeOutput,
-  sanitizeOutput,
-  applyPostGuards
-} from "./engine.js";
-
 import { SCRIPT_DICTIONARY } from "./constants/scriptDictionary";
 import { DEFAULT_FEATURE_PERMISSIONS } from "./constants/featurePermissions";
 import { resolveAccess, levelAllows } from "./accessRuleEvaluator";
@@ -627,21 +620,6 @@ export default function App() {
   // so an admin's change reaches every advisor without a page reload.
   const [pedOverridesByPlan, setPedOverridesByPlan] = useState<Record<string, PlanPedOverride[]>>({});
 
-  // Which engine the server uses for lookups. "db" = the server's data-driven
-  // engine decides everything, so this browser must not classify locally with
-  // its compiled-in rules (see server.ts /api/mapping-engine). Defaults to
-  // "legacy" until the server says otherwise, so nothing changes if the call fails.
-  const [mappingEngineMode, setMappingEngineMode] = useState<"legacy" | "db">("legacy");
-  const fetchMappingEngineMode = async () => {
-    try {
-      const res = await fetch("/api/mapping-engine");
-      const body = await res.json().catch(() => ({}));
-      if (res.ok && body.mode === "db") setMappingEngineMode("db");
-    } catch (err: unknown) {
-      console.error("Failed to read the mapping engine mode (continuing with local rules):", err);
-    }
-  };
-
   const fetchPlanPedOverrides = async (): Promise<Record<string, PlanPedOverride[]> | null> => {
     try {
       const res = await fetch("/api/plan-ped-overrides");
@@ -1079,7 +1057,6 @@ export default function App() {
       fetchPlanConfigs();
       fetchPlanRestrictions();
       fetchPlanPedOverrides();
-      fetchMappingEngineMode();
       fetchPedSuggestions();
       fetchPageVisibility();
       fetchFeatureAccessOverrides();
@@ -2052,7 +2029,7 @@ export default function App() {
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(-1);
   const [dynamicSuggestions, setDynamicSuggestions] = useState<string[]>(() => {
     // Categories that exist in TOP_PED_DICTIONARY purely so the deterministic
-    // engine can special-case them (see engine.ts categoryKey handling for
+    // engine can special-case them (see the routing engine (src/mapping) categoryKey handling for
     // "lifestyle" / "natural_life_stage") — they are habits or administrative
     // "no disease" entries, not PEDs, so they should never show up as
     // selectable suggestions even though they must stay in the dictionary
@@ -2446,61 +2423,42 @@ export default function App() {
     // Set loading
     setIsLookupLoading(true);
     const tempResults: Array<{ ped: string; result: MatchOutput; source: string }> = [];
-    // Fresh admin plan-specific PED mappings, so a change made a moment ago
-    // in Plan Management applies to this lookup (falls back to the last
-    // known set if the fetch fails).
-    const freshPedOverrides = await fetchPlanPedOverrides();
-    const config = planConfigs[plan]
-      ? { ...planConfigs[plan], pedOverrides: (freshPedOverrides ?? pedOverridesByPlan)[plan] || [] }
-      : planConfigs[plan];
+    // Every lookup is decided by the server's database-backed engine (POST /api/match); this is only the plan's catch-all
+    // wording for the offline fallback below.
+    const config = planConfigs[plan];
 
     for (const ped of peds) {
       const trimmedPed = ped.trim();
       if (!trimmedPed) continue;
 
-      // Deterministic classification locally
-      const clientMatch = mappingEngineMode === "db" ? null : classifyDeterministic(trimmedPed, plan, config);
-      if (clientMatch) {
-        const sanitized = sanitizeOutput(clientMatch, trimmedPed, config);
-        const guarded = applyPostGuards(sanitized, trimmedPed, plan, config);
-        const finalRes = finalizeOutput(guarded, trimmedPed, config, config.questions);
-        
+      // Fetch from API
+      try {
+        const response = await fetch("/api/match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planName: plan, ped: trimmedPed })
+        });
+        const data = await response.json();
         tempResults.push({
           ped: trimmedPed,
-          result: finalRes,
-          source: "Deterministic Underwriting Rule"
+          result: data,
+          source: data.source || "Clinical Guidance System AI"
         });
-        saveAuditLog(trimmedPed, plan, finalRes, "Deterministic Underwriting Rule");
-      } else {
-        // Fetch from API
-        try {
-          const response = await fetch("/api/match", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ planName: plan, ped: trimmedPed })
-          });
-          const data = await response.json();
-          tempResults.push({
-            ped: trimmedPed,
-            result: data,
-            source: data.source || "Clinical Guidance System AI"
-          });
-          saveAuditLog(trimmedPed, plan, data, data.source || "Clinical Guidance System AI");
-        } catch (e: unknown) {
-          const message = e instanceof Error ? e.message : String(e);
-          const fallbackResult: MatchOutput = {
-            ped_input: trimmedPed,
-            match_type: "FALLBACK" as const,
-            matched_question: config.anyOther,
-            explanation: `Underwriting API offline. System safely routed entry as other conditions: ${message}`
-          };
-          tempResults.push({
-            ped: trimmedPed,
-            result: fallbackResult,
-            source: "Disaster Recovery Local Rules"
-          });
-          saveAuditLog(trimmedPed, plan, fallbackResult, "Disaster Recovery Local Rules");
-        }
+        saveAuditLog(trimmedPed, plan, data, data.source || "Clinical Guidance System AI");
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        const fallbackResult: MatchOutput = {
+          ped_input: trimmedPed,
+          match_type: "FALLBACK" as const,
+          matched_question: config.anyOther,
+          explanation: `Underwriting API offline. System safely routed entry as other conditions: ${message}`
+        };
+        tempResults.push({
+          ped: trimmedPed,
+          result: fallbackResult,
+          source: "Disaster Recovery Local Rules"
+        });
+        saveAuditLog(trimmedPed, plan, fallbackResult, "Disaster Recovery Local Rules");
       }
     }
 

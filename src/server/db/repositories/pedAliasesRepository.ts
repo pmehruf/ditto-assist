@@ -6,7 +6,7 @@
 import { asc, eq } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { pedAliases, type PedAliasRow, type NewPedAliasRow } from "../schema.js";
-import { normalizeDictionaryKey } from "../../../engine.js";
+import { normalizeDictionaryKey } from "../../../mapping/helpers.js";
 
 export type CreatePedAliasEntry = Omit<NewPedAliasRow, "id" | "normalizedAlias" | "createdAt">;
 
@@ -14,7 +14,7 @@ export type CreatePedAliasEntry = Omit<NewPedAliasRow, "id" | "normalizedAlias" 
  * Data Access Layer for `ped_aliases` — every searchable text variant for a
  * `ped_repository` row (PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.3).
  * `normalizedAlias` is always derived here via `normalizeDictionaryKey` —
- * the exact same normalization `classifyDeterministic`'s dictionary stage
+ * the exact same normalization the routing engine's dictionary stage
  * uses at lookup time — never passed in by the caller, so it can't drift
  * out of sync the way the pre-migration override tables once did (see the
  * punctuation-normalization bug fixed earlier this project).
@@ -96,7 +96,7 @@ export class PedAliasesRepository {
 
   /** Flips which alias row is flagged primary for its PED (informational —
    * mirrors `canonicalName` by convention at seed time; not read by
-   * `classifyDeterministic`, which only ever keys off `normalizedAlias`). */
+   * the routing engine, which only ever keys off `normalizedAlias`). */
   async setPrimary(id: number, isPrimary: boolean): Promise<PedAliasRow | undefined> {
     const [row] = await this.db.update(pedAliases).set({ isPrimary }).where(eq(pedAliases.id, id)).returning();
     return row;

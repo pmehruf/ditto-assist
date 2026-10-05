@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { createMappingTestEnv, type MappingTestEnv } from "./helpers/mappingTestDb";
 import { createPedWithPrimaryAlias } from "../server/pedRepositoryLive";
 import { pedRepository } from "../server/db/schema";
-import { questionForCategory } from "../engine";
+import { questionForCategory } from "../mapping/helpers";
 import { categoriesInDefinition } from "../server/mappingAdmin";
 import { compareWorlds } from "../mapping/impact";
 import { snapshotFromDump } from "../mapping/seedBuilder";

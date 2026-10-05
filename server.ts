@@ -16,15 +16,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Import types & engine logic
-import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, type PlanConfig } from "./src/types.js";
-import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
+import { MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, type PlanConfig } from "./src/types.js";
+import { sanitizeOutput, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride } from "./src/mapping/helpers.js";
 import { MASTER_ILLNESSES } from "./src/specificIllnessEngine.js";
-import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
 import { getMappingSnapshot } from "./src/server/mappingSnapshot.js";
-import { applyAiApproval, revertAiApproval, undoChangeSet, type PromotionDeps } from "./src/server/aiMappingPromotion.js";
-import { legacyOnlyWriteBlocked, RETIRED_ACTION_MESSAGE } from "./src/server/legacyWriteGuard.js";
-import { runDeterministicPipeline } from "./src/mapping/routingEngine.js";
-import { ensurePedRuntimeCacheLoaded, getDbAliasLookup, planOverrideLookup as dbPlanOverrideLookup, updateDbPlanOverrideCache, removeDbPlanOverrideCache } from "./src/server/pedRuntimeCache.js";
+import { applyAiApproval, revertAiApproval, undoChangeSet, inferCategoryKeyForQuestion, type PromotionDeps } from "./src/server/aiMappingPromotion.js";
+import { runDeterministicPipeline, applyPostGuardsFromSnapshot } from "./src/mapping/routingEngine.js";
 import {
   createPedWithPrimaryAlias,
   updatePedRow,
@@ -269,7 +266,7 @@ function getAiClient(): GoogleGenAI {
 // ─────────────────────────────────────────────────────────────────────────
 // Three-level lookup memory — versioning constants.
 //
-//   L1  Deterministic Engine  (engine.ts — unchanged, always wins)
+//   L1  Deterministic Engine  (src/mapping/routingEngine.ts — always wins)
 //   L2  AI Memory             (ai_memory table — cache + human governance)
 //   L3  Gemini                (only on an L1 + L2 miss)
 //
@@ -286,53 +283,29 @@ function getAiClient(): GoogleGenAI {
 const ENGINE_VERSION = "2026-07-18.1";
 const PROMPT_VERSION = "match-v1";
 
-// ─────────────────────────────────────────────────────────────────────────
-// PED Repository DB migration, Phase 3 (PED_REPOSITORY_DB_MIGRATION_DESIGN.md
-// §3/§4) — runtime cutover feature flag. Defaults to "legacy" (today's
-// exact behavior: TOP_PED_DICTIONARY + the 4 hardcoded plan-specific
-// blocks in engine.ts) so nothing about production behavior changes just
-// from this code shipping. Only an explicit `PED_SOURCE=db` env var flips
-// classifyDeterministic over to reading src/server/pedRuntimeCache.ts's
-// DB-backed alias/plan-override cache instead. Per the rollback strategy in
-// the design doc, flipping this back to "legacy" (env var change + restart,
-// no deploy) is the cheapest rollback path if the DB-backed path ever
-// misbehaves — that's the whole reason this is a flag and not a code
-// branch decided at build time. Stays on "legacy" until Phase 4's cutover
-// validation report has been reviewed and Checkpoint B is explicitly
-// signed off.
-const PED_SOURCE: "legacy" | "db" = process.env.PED_SOURCE === "db" ? "db" : "legacy";
-
-// ─────────────────────────────────────────────────────────────────────────
-// Mapping-control (Phase 2) — data-driven routing engine switch. "legacy"
-// (the default) is today's behaviour: the hard-coded engine in src/engine.ts.
-// "db" routes every deterministic lookup through src/mapping/routingEngine.ts,
-// which reads the routing_rules / alias / category tables via a per-instance
-// snapshot that reloads whenever mapping_state.version changes (so an admin
-// edit is live on every instance on its next lookup). The Phase 2 equality
-// tests prove "db" reproduces the production day-one behaviour exactly.
-// Flipping this env var back to "legacy" (no redeploy needed) is the rollback.
-// ─────────────────────────────────────────────────────────────────────────
-const MAPPING_ENGINE: "legacy" | "db" = process.env.MAPPING_ENGINE === "db" ? "db" : "legacy";
+// Mapping engine: every deterministic lookup runs through src/mapping/routingEngine.ts, which reads the routing_rules /
+// ped_aliases / categories / plan tables via a per-instance snapshot that reloads whenever mapping_state.version changes,
+// so an admin edit is live on every instance on its next lookup. There is no other source of routing (the compiled
+// engine and its PED_SOURCE / MAPPING_ENGINE switches were removed in Phase 6).
 // Identifies this server process in lookup traces, so live propagation across Cloud Run instances can be observed.
 const MAPPING_INSTANCE_ID = crypto.randomUUID().slice(0, 8);
 
 /** Bumps the mapping version after a write that can change a routing result,
  * so every server instance reloads its snapshot on its next lookup. Never
- * fails the caller's request: if the mapping tables are not migrated yet
- * (legacy mode before 0085 is applied) this just logs. */
+ * fails the caller's request: if the mapping tables are not migrated yet this just logs. */
 async function bumpMappingVersion(): Promise<void> {
   try {
     await createRepositories(getDb()).mappingState.bump();
   } catch (err) {
-    console.error("Failed to bump mapping version (instances running MAPPING_ENGINE=db will not see this change until it is bumped):", err);
+    console.error("Failed to bump mapping version (other instances will not see this change until it is bumped):", err);
   }
 }
 
 // Mapping-control Phase 3B-i — impact preview, change-control fields, confirmation, change sets and
 // undo for every admin route that can change a routing result (src/server/mappingChange.ts).
-// MAPPING_IMPACT_GATE=on enables it (and only with MAPPING_ENGINE=db); off = Phase 3A behaviour exactly.
+// MAPPING_IMPACT_GATE=on enables it; off = Phase 3A behaviour exactly.
 // With the gate off, a preview request is refused rather than executed.
-const MAPPING_IMPACT_GATE_ON = () => MAPPING_ENGINE === "db" && process.env.MAPPING_IMPACT_GATE === "on";
+const MAPPING_IMPACT_GATE_ON = () => process.env.MAPPING_IMPACT_GATE === "on";
 const mappingGateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 150,
@@ -349,15 +322,13 @@ const mappingGate = createMappingGate({
 });
 
 // Phase 3B-ii: shared helpers for the routing-rule / category admin routes (defined here, ahead of every route).
-const DB_ONLY = "Routing rules can only be managed while the database-backed engine is active.";
 const sendOp = (res: any, op: { status: number; body: Record<string, unknown> }) => res.status(op.status).json(op.body);
 
-/** Shared shape of every gated admin write: access check, db-engine check, the op, then the version bump on success. */
-const adminWrite = (feature: string, action: string, run: (repos: ReturnType<typeof createRepositories>, req: any) => Promise<{ status: number; body: Record<string, unknown> }>, dbOnly = true) =>
+/** Shared shape of every gated admin write: access check, the op, then the version bump on success. */
+const adminWrite = (feature: string, action: string, run: (repos: ReturnType<typeof createRepositories>, req: any) => Promise<{ status: number; body: Record<string, unknown> }>) =>
   async (req: any, res: any) => {
     try {
       if (!(await requireFeatureAccess(req, res, feature, "Editor", action))) return;
-      if (dbOnly && MAPPING_ENGINE !== "db") return res.status(409).json({ error: DB_ONLY });
       const op = await run(createRepositories(getDb()), req);
       if (op.status < 400) await bumpMappingVersion();
       return sendOp(res, op);
@@ -369,48 +340,22 @@ const adminWrite = (feature: string, action: string, run: (repos: ReturnType<typ
 
 
 /**
- * Builds the optional 4th argument for classifyDeterministic. Returns null
- * on the default "legacy" flag setting (classifyDeterministic behaves
- * exactly as it always has) or if the DB-backed cache hasn't loaded for any
- * reason — a failed/slow DB cache load must never break matching, so this
- * degrades to the legacy path rather than throwing.
- */
-async function getDbSource(repos: Pick<Repositories, "pedAliases" | "pedRepository" | "categories" | "planOverrides">): Promise<DbDictionarySource | null> {
-  if (PED_SOURCE !== "db") return null;
-  try {
-    await ensurePedRuntimeCacheLoaded(repos);
-    return { aliasLookup: getDbAliasLookup(), planOverrideLookup: dbPlanOverrideLookup };
-  } catch (err) {
-    console.error("Failed to build DB-backed classifyDeterministic source (falling back to legacy dictionary):", err);
-    return null;
-  }
-}
-
-/**
  * Admin plan-specific PED mappings (plan_overrides) — read fresh from the DB
  * on every lookup and attached to `config.pedOverrides` (evaluated first by
- * engine.ts's applyPlanPedOverride), so an edit in Plan Management reaches
+ * src/mapping/helpers.ts's applyPlanPedOverride), so an edit in Plan Management reaches
  * every user and every server instance on their very next lookup, with no
- * restart and no stale in-process cache. Also returns a `dbSource` whose
- * planOverrideLookup answers from these same fresh rows instead of the
- * boot-time pedRuntimeCache map (which another instance's edit/delete would
- * otherwise leave stale).
+ * restart and no stale in-process cache.
  */
 async function attachPlanPedOverrides(
   config: PlanConfig,
   planName: string,
-  repos: Pick<Repositories, "planOverrides">,
-  dbSource: DbDictionarySource | null
-): Promise<DbDictionarySource | null> {
+  repos: Pick<Repositories, "planOverrides">
+): Promise<void> {
   try {
     const rows = await repos.planOverrides.listDetailed(planName);
     config.pedOverrides = toPlanPedOverrides(rows);
-    if (!dbSource) return dbSource;
-    const byPedId = new Map(rows.map((r) => [r.pedId, { categoryKey: r.categoryKey ?? null, reason: r.reason ?? null }] as const));
-    return { ...dbSource, planOverrideLookup: (p: string, pedId: number) => (p === planName ? byPedId.get(pedId) ?? null : null) };
   } catch (err) {
     console.error("Failed to load plan-specific PED mappings (continuing with none):", err);
-    return dbSource;
   }
 }
 
@@ -426,7 +371,7 @@ app.get("/api/mapping-engine", requireAuth, async (req, res) => {
   } catch {
     canViewTrace = false;
   }
-  res.json({ mode: MAPPING_ENGINE, instance: MAPPING_INSTANCE_ID, impactGate: MAPPING_IMPACT_GATE_ON(), canViewTrace });
+  res.json({ mode: "db", instance: MAPPING_INSTANCE_ID, impactGate: MAPPING_IMPACT_GATE_ON(), canViewTrace });
 });
 
 /**
@@ -435,7 +380,7 @@ app.get("/api/mapping-engine", requireAuth, async (req, res) => {
  * overrides). Used to verify an admin mapping change against the LIVE engine.
  */
 async function loadLookupConfig(repos: ReturnType<typeof createRepositories>, planName: string): Promise<PlanConfig | undefined> {
-  let config: PlanConfig | undefined = getPlanConfig()[planName];
+  let config: PlanConfig | undefined;
   try {
     const dbPlan = await repos.planConfigs.get(planName);
     if (dbPlan) config = dbRowToPlanConfig(dbPlan);
@@ -448,7 +393,7 @@ async function loadLookupConfig(repos: ReturnType<typeof createRepositories>, pl
   } catch (err) {
     console.error("Failed to load plan restrictions for live verification:", err);
   }
-  await attachPlanPedOverrides(config, planName, repos, null);
+  await attachPlanPedOverrides(config, planName, repos);
   return config;
 }
 
@@ -473,10 +418,9 @@ function buildMappingActionDeps(repos: ReturnType<typeof createRepositories>): P
   };
 }
 
-// In db mode the deterministic engine answers most lookups with no AI cost, so
-// the tight AI/cost limiter is applied only when a lookup actually has to go to
-// AI Memory / the model (see below); legacy mode keeps the limiter on every call.
-const matchLimiter: express.RequestHandler = (req, res, next) => (MAPPING_ENGINE === "db" ? next() : expensiveActionLimiter(req, res, next));
+// The deterministic engine answers most lookups with no AI cost, so the tight AI/cost limiter is applied only when a
+// lookup actually has to go to AI Memory / the model (see below).
+const matchLimiter: express.RequestHandler = (_req, _res, next) => next();
 function runLimiter(limiter: express.RequestHandler, req: express.Request, res: express.Response): Promise<boolean> {
   return new Promise((resolve) => {
     res.once("finish", () => resolve(false));
@@ -495,31 +439,27 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     const repos = createRepositories(getDb());
     const {
       planConfigs: planConfigsRepo,
-      pedMappingOverrides: pedOverridesRepo,
       aiMemory: aiMemoryRepo,
       planRestrictions: planRestrictionsRepo,
     } = repos;
-    await ensurePedOverridesLoaded(pedOverridesRepo);
-    let dbSource = await getDbSource(repos);
 
-    const PLAN_CONFIG = getPlanConfig();
-    let config = PLAN_CONFIG[planName];
+    // Plans are read from the database only (plan_configs); a plan with no row is not supported.
+    let config: PlanConfig | undefined;
 
     // DB-authored plans (added or edited via the Add/Edit Plan wizard) are
-    // the live source of truth and take precedence over the hardcoded
-    // bootstrap defaults — this is what lets a newly-added plan be matched
+    // the live source of truth — this is what lets a newly-added plan be matched
     // against immediately, with no code change or redeploy.
     let dbPlan: Awaited<ReturnType<typeof planConfigsRepo.get>>;
     try {
       dbPlan = await planConfigsRepo.get(planName);
       if (dbPlan) config = dbRowToPlanConfig(dbPlan);
     } catch (err) {
-      console.error("Failed to load DB plan config (falling back to hardcoded defaults if any exist):", err);
+      console.error("Failed to load DB plan config:", err);
     }
 
     // Plan-Specific Restrictions (2026-08) — DB-driven, applies uniformly
     // whether `config` above resolved from a DB row or the hardcoded seed.
-    // Attached before any classifyDeterministic/applyPostGuards call below
+    // Attached before the engine runs below
     // (both the L1 deterministic path and the L3 Gemini fallback path
     // further down reuse this same `config`) so isCategoryRestrictedForPed/
     // hasActiveRestriction see live restriction data either way.
@@ -529,7 +469,7 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
       } catch (err) {
         console.error("Failed to load plan restrictions (continuing with none active):", err);
       }
-      dbSource = await attachPlanPedOverrides(config, planName, repos, dbSource);
+      await attachPlanPedOverrides(config, planName, repos);
     }
 
     // Server-side enforcement of the Declaration Assistant Control page's
@@ -548,11 +488,7 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     }
 
     // A removed plan (Plan Management's Delete action — see schema.ts's
-    // plan_configs.removed comment) must be rejected outright, even though
-    // `config` above may still resolve from the hardcoded getPlanConfig()
-    // bootstrap seed for a built-in plan that was never customized before
-    // being removed. Without this check a "deleted" built-in plan would
-    // keep matching successfully off that hardcoded fallback forever.
+    // plan_configs.removed comment) must be rejected outright.
     if (dbPlan?.removed) {
       return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
     }
@@ -563,29 +499,13 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
 
     // ── LEVEL 1 ── Deterministic Engine. Highest priority, unchanged.
     // If this resolves, we return immediately: no AI Memory read, no Gemini.
-    // `dbSource` is null unless PED_SOURCE=db — see getDbSource above.
-    if (MAPPING_ENGINE === "db") {
-      const snapshot = await getMappingSnapshot(repos);
-      const { result, trace } = runDeterministicPipeline(ped, planName, config, snapshot);
-      if (result) {
-        return res.json({ ...result, decision_trace: { ...trace, instance: MAPPING_INSTANCE_ID, snapshotVersion: snapshot.version }, source: "Deterministic Engine" });
-      }
-      // No deterministic rule matched: this lookup may now use AI Memory / the model.
-      if (!(await runLimiter(expensiveActionLimiter, req, res))) return;
+    const snapshot = await getMappingSnapshot(repos);
+    const deterministic = runDeterministicPipeline(ped, planName, config, snapshot);
+    if (deterministic.result) {
+      return res.json({ ...deterministic.result, decision_trace: { ...deterministic.trace, instance: MAPPING_INSTANCE_ID, snapshotVersion: snapshot.version }, source: "Deterministic Engine" });
     }
-
-    let output = MAPPING_ENGINE === "db" ? null : classifyDeterministic(ped, planName, config, dbSource);
-
-    if (output) {
-      // Deterministic processing path
-      output = sanitizeOutput(output, ped, config);
-      output = applyPostGuards(output, ped, planName, config);
-      const finalResult = finalizeOutput(output, ped, config, config.questions);
-      return res.json({
-        ...finalResult,
-        source: "Deterministic Engine"
-      });
-    }
+    // No deterministic rule matched: this lookup may now use AI Memory / the model.
+    if (!(await runLimiter(expensiveActionLimiter, req, res))) return;
 
     // ── LEVEL 2 ── AI Memory. Consulted only because L1 could not classify
     // this PED. A hit means Gemini is NOT called again for this
@@ -912,7 +832,7 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     // confidence is HIGH and the Plan Decision Engine has an unambiguous
     // mapping for that category, show ITS routing to the advisor in place
     // of Gemini's own question selection — mirroring exactly how a
-    // repository-resolved category is handled (engine.ts's resolvePlanDecision
+    // repository-resolved category is handled (src/mapping/helpers.ts's resolvePlanDecision
     // call site: "direct_question" -> P1, "explicit_catchall" -> FALLBACK).
     // This does not touch Governance Rule 2 — Gemini's classification is
     // still never persisted into ped_repository/ped_aliases/categories,
@@ -961,7 +881,8 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
 
     // Apply global post-processing sanitization and post-guards
     parsedOutput = sanitizeOutput(parsedOutput, ped, config);
-    parsedOutput = applyPostGuards(parsedOutput, ped, planName, config);
+    // The guards are database rules (routing_rules, stage post_guard), the same ones the deterministic path uses.
+    parsedOutput = applyPostGuardsFromSnapshot(parsedOutput, ped, planName, config, await getMappingSnapshot(repos)).output;
     const finalResult = finalizeOutput(parsedOutput, ped, config, config.questions);
 
     // Cross-feature usage tracking (2026-09, visibility only — see
@@ -1024,8 +945,13 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     // Secure general fallback matching standard Apps Script logic on failure
     const planName = req.body.planName || "Optima Secure";
     const ped = req.body.ped || "";
-    const PLAN_CONFIG = getPlanConfig();
-    const config = PLAN_CONFIG[planName];
+    let config: PlanConfig | undefined;
+    try {
+      const dbPlan = await createRepositories(getDb()).planConfigs.get(planName);
+      if (dbPlan) config = dbRowToPlanConfig(dbPlan);
+    } catch {
+      config = undefined; // the database is the thing that failed: use the generic wording below
+    }
 
     const fallbackOutput: MatchOutput = {
       match_type: "FALLBACK",
@@ -1037,60 +963,6 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
       ...fallbackOutput,
       source: "Match API Error Fallback"
     });
-  }
-});
-
-// Dynamic route to let an advisor record a newly-discovered PED -> category
-// mapping.
-//
-// NOTE (audit fix, see Production_Readiness_Audit.md Finding 5): this used
-// to splice the raw request body directly into src/types.ts and
-// src/constants/scriptDictionary.ts via fs.writeFileSync on the live
-// server. That was (a) a code-injection-shaped risk — pedLower/category
-// were written into a .ts file with no character validation, so a value
-// containing a `"` could corrupt or inject into source that a dev server
-// re-evaluates on reload — and (b) silently useless in production, since
-// the deployed server runs the pre-built dist/server.cjs bundle, which a
-// runtime write to src/types.ts can never change.
-//
-// DB-backed as of the ped_mapping_overrides table (src/server/db/schema.ts):
-// a correction made here is (a) written to Postgres so it survives a
-// restart/redeploy, and (b) merged into the in-memory TOP_PED_DICTIONARY
-// immediately, so it affects every /api/match call from this moment on
-// without waiting for the lazy ensurePedOverridesLoaded() load to happen
-// again (that only runs once per process).
-const PED_INPUT_MAX_LENGTH = 200;
-
-app.post("/api/add-ped-mapping", requireAuth, expensiveActionLimiter, async (req, res) => {
-  try {
-    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
-    const { ped, category } = req.body;
-
-    if (typeof ped !== "string" || typeof category !== "string" || !ped.trim() || !category.trim()) {
-      return res.status(400).json({ error: "Missing required parameters: ped and category" });
-    }
-
-    const pedClean = ped.trim();
-    if (pedClean.length > PED_INPUT_MAX_LENGTH) {
-      return res.status(400).json({ error: `ped must be ${PED_INPUT_MAX_LENGTH} characters or fewer.` });
-    }
-    if (!Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, category)) {
-      return res.status(400).json({ error: `Unknown category "${category}".` });
-    }
-
-    const { users: usersRepo, pedMappingOverrides } = createRepositories(getDb());
-    const callerTier = await getCallerTier(req, usersRepo);
-    // Routed through the shared helper (also used by PED Library and AI
-    // Mapping Review) so this and every other live-override write path stay
-    // on one tested, correctly-normalized write path — see pedMappingLive.ts.
-    await promotePedMappingOverride(pedMappingOverrides, pedClean, category, `${req.user!.name} (${callerTier})`);
-
-    console.log(`[PED mapping] "${req.user?.email}" recorded "${pedClean}" -> category "${category}" (persisted)`);
-
-    return res.json({ success: true, ped: pedClean, category });
-  } catch (err: any) {
-    console.error("Error in add-ped-mapping API: ", err);
-    return res.status(500).json({ error: `Internal error while recording the mapping: ${err.message}` });
   }
 });
 
@@ -4836,8 +4708,7 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
       changeSetId?: number;
       engine?: "db";
     } = { promoted: false };
-    if (MAPPING_ENGINE === "db") {
-      // Authoritative path (Phase 3A): change ped_repository / ped_aliases, confirm with a
+    // Authoritative path (Phase 3A): change ped_repository / ped_aliases, confirm with a
       // fresh live lookup, record an undoable change set. Never writes ped_mapping_overrides.
       try {
         const actionRepos = createRepositories(getDb());
@@ -4875,44 +4746,6 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
         console.error("AI Mapping Review (db engine) could not complete the mapping change:", err);
         promotion = { promoted: false, reason: "The mapping change could not be completed — see server logs. Nothing was changed.", engine: "db" };
       }
-    } else if (status === "approved") {
-      try {
-        const storedResult = (existing.aiResponse as { result?: MatchOutput } | null)?.result;
-        const PLAN_CONFIG = getPlanConfig();
-        let config = PLAN_CONFIG[existing.planName];
-        try {
-          const dbPlan = await planConfigsRepo.get(existing.planName);
-          if (dbPlan) config = dbRowToPlanConfig(dbPlan);
-        } catch (err) {
-          console.error("Failed to load DB plan config for AI Mapping Review promotion:", err);
-        }
-
-        if (!storedResult || !config) {
-          promotion = { promoted: false, reason: "Plan configuration or cached answer unavailable." };
-        } else if (storedResult.match_type !== "P1" && storedResult.match_type !== "P2") {
-          promotion = { promoted: false, reason: `Answer type "${storedResult.match_type}" has no specific question to generalize.` };
-        } else if (storedResult.matched_question === config.anyOther) {
-          promotion = { promoted: false, reason: "Answer routes to this plan's general fallback, not a specific category." };
-        } else {
-          const categoryKey = inferCategoryKeyForQuestion(config, storedResult.matched_question);
-          if (categoryKey) {
-            await promotePedMappingOverride(pedOverridesRepo, existing.condition, categoryKey, reviewer);
-            promotion = { promoted: true, categoryKey };
-          } else {
-            promotion = { promoted: false, reason: "Could not confidently infer a single category from this plan's answer — assign one manually via PED Library or the Lookup page's \"teach it\" flow if this mapping should apply to every plan." };
-          }
-        }
-      } catch (err) {
-        console.error("Failed to promote approved AI Mapping Review entry into live mapping overrides:", err);
-        promotion = { promoted: false, reason: "Promotion failed unexpectedly — see server logs." };
-      }
-    } else if (status === "rejected" && existing.status === "approved") {
-      try {
-        await unmapPedMappingOverride(pedOverridesRepo, existing.condition, reviewer);
-      } catch (err) {
-        console.error("Failed to unmap rejected AI Mapping Review entry from live mapping overrides:", err);
-      }
-    }
 
     // Audit trail — the same shared modification history every other
     // admin action writes to.
@@ -4963,9 +4796,6 @@ app.get("/api/mapping-changes", requireAuth, async (req, res) => {
 app.post("/api/mapping-changes/:id/undo", requireAuth, async (req, res) => {
   try {
     if (!(await canEditMappingControl(req))) return res.status(403).json({ error: "Undoing a mapping change requires edit access to the PED Repository or Plan Management." });
-    if (MAPPING_ENGINE !== "db") {
-      return res.status(409).json({ error: "Mapping changes can only be undone while the database-backed mapping engine is active." });
-    }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid change id." });
     const repos = createRepositories(getDb());
@@ -5000,7 +4830,7 @@ app.post("/api/mapping-changes/:id/undo", requireAuth, async (req, res) => {
 // Mapping-control Phase 3B-ii — administration of the routing pipeline (routing_rules), the category list,
 // and "which rule decided this lookup". Every write goes through mappingGate (impact preview, change-control
 // fields, confirmation, change set + undo); validation lives in src/server/mappingAdmin.ts. Only meaningful
-// with MAPPING_ENGINE=db (the legacy engine reads none of this).
+// with the database-backed engine (the legacy engine reads none of this).
 // ─────────────────────────────────────────────────────────────────────────
 async function canEditMappingControl(req: any): Promise<boolean> {
   for (const feature of ["plan_scope", "ped_suggestions"]) {
@@ -5022,7 +4852,7 @@ app.get("/api/routing-rules", requireAuth, async (req, res) => {
   try {
     if (!(await canViewMappingControl(req))) return res.status(403).json({ error: "Viewing mapping rules requires access to this feature." });
     const rules = await createRepositories(getDb()).routingRules.listAll();
-    return res.json({ rules: rules.map(ruleToJson), bands: STAGE_BANDS, engine: MAPPING_ENGINE });
+    return res.json({ rules: rules.map(ruleToJson), bands: STAGE_BANDS, engine: "db" });
   } catch (err: any) {
     console.error("Failed to list routing rules:", err);
     return res.status(500).json({ error: `Failed to load rules: ${err.message}` });
@@ -5059,15 +4889,14 @@ app.get("/api/mapping-categories", requireAuth, async (req, res) => {
     return res.status(500).json({ error: `Failed to load categories: ${err.message}` });
   }
 });
-app.post("/api/mapping-categories", requireAuth, mappingGateRateLimit, mappingGate("Added a category"), adminWrite("plan_scope", "Adding a category", (repos, req) => createCategory(repos, req.body), false));
-app.patch("/api/mapping-categories/:categoryKey", requireAuth, mappingGateRateLimit, mappingGate("Edited a category"), adminWrite("plan_scope", "Editing a category", (repos, req) => patchCategory(repos, req.params.categoryKey, req.body), false));
-app.delete("/api/mapping-categories/:categoryKey", requireAuth, mappingGateRateLimit, mappingGate("Deleted a category"), adminWrite("plan_scope", "Deleting a category", (repos, req) => deleteCategory(getDb(), repos, req.params.categoryKey), false));
+app.post("/api/mapping-categories", requireAuth, mappingGateRateLimit, mappingGate("Added a category"), adminWrite("plan_scope", "Adding a category", (repos, req) => createCategory(repos, req.body)));
+app.patch("/api/mapping-categories/:categoryKey", requireAuth, mappingGateRateLimit, mappingGate("Edited a category"), adminWrite("plan_scope", "Editing a category", (repos, req) => patchCategory(repos, req.params.categoryKey, req.body)));
+app.delete("/api/mapping-categories/:categoryKey", requireAuth, mappingGateRateLimit, mappingGate("Deleted a category"), adminWrite("plan_scope", "Deleting a category", (repos, req) => deleteCategory(getDb(), repos, req.params.categoryKey)));
 
 // ── "which rule decides this lookup?" — read-only: no AI call, no search history, no AI Memory write ──
 app.post("/api/mapping-trace", requireAuth, matchLimiter, async (req, res) => {
   try {
     if (!(await canViewMappingControl(req))) return res.status(403).json({ error: "Tracing a lookup requires access to this feature." });
-    if (MAPPING_ENGINE !== "db") return res.status(409).json({ error: "Lookup tracing is only available with the database-backed engine." });
     const { term, planName } = req.body ?? {};
     if (typeof term !== "string" || !term.trim() || term.length > 200 || typeof planName !== "string") return res.status(400).json({ error: "Give a condition (up to 200 characters) and a plan." });
     const repos = createRepositories(getDb());
@@ -5138,185 +4967,13 @@ async function logPedRepositoryChange(
   }
 }
 
-app.post("/api/ped-suggestions", requireAuth, async (req, res) => {
-  try {
-    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Adding PED suggestions"))) return;
-    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
-    const { term, category } = req.body;
-    if (typeof term !== "string" || !term.trim()) {
-      return res.status(400).json({ error: "term is required." });
-    }
-    if (category !== undefined && category !== null && typeof category !== "string") {
-      return res.status(400).json({ error: "category must be a string." });
-    }
-    // Validated against CATEGORY_LABELS now that a category assigned here is
-    // live (see promotePedMappingOverride below) — previously this field was
-    // display-only so an arbitrary string was harmless; now it would silently
-    // fail to resolve for every plan if it doesn't match a real categoryKey.
-    const categoryClean = category ? String(category).trim() : null;
-    if (categoryClean && !Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, categoryClean)) {
-      return res.status(400).json({ error: `Unknown category "${categoryClean}".` });
-    }
-    const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
-    const callerTier = await getCallerTier(req, usersRepo);
-    const addedBy = `${req.user!.name} (${callerTier})`;
-    const row = await pedSuggestions.create({
-      term: term.trim(),
-      // Empty string from a "no category" select option is stored as null,
-      // not "" — keeps "no category assigned yet" unambiguous.
-      category: categoryClean,
-      addedBy,
-    });
-
-    // Live effect: a categorized PED Library entry now actually routes
-    // through the deterministic engine for every plan, not just the
-    // autocomplete dropdown.
-    if (row.category) {
-      try {
-        await promotePedMappingOverride(pedOverridesRepo, row.term, row.category, addedBy);
-      } catch (err) {
-        console.error("Failed to promote new PED Library entry into live mapping overrides:", err);
-      }
-    }
-
-    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Added",
-      `Added "${row.term}" to the PED Repository${row.category ? ` under category "${row.category}" — now live in classification` : " with no category assigned"}.`);
-
-    return res.json({ entry: row });
-  } catch (err: any) {
-    // Postgres unique-violation (ped_directory.term is UNIQUE). The admin UI
-    // used to catch this client-side by scanning its fully-loaded entry
-    // list; now that the directory is server-paginated, the client only
-    // holds the current page, so that check can miss a duplicate that's on
-    // a different page — this server-side message keeps the error friendly
-    // either way.
-    if (err.cause?.code === "23505" || err.code === "23505") {
-      return res.status(409).json({ error: `"${req.body?.term?.trim?.() || "This term"}" is already in the PED directory.` });
-    }
-    console.error("Failed to create PED suggestion:", err);
-    const detail = err.cause?.message || err.message;
-    return res.status(500).json({ error: `Failed to add this PED suggestion: ${detail}` });
-  }
-});
-
-app.put("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
-  try {
-    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Editing PED suggestions"))) return;
-    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
-    const { term, category } = req.body;
-    if (term !== undefined && (typeof term !== "string" || !term.trim())) {
-      return res.status(400).json({ error: "term must be a non-empty string." });
-    }
-    if (category !== undefined && category !== null && typeof category !== "string") {
-      return res.status(400).json({ error: "category must be a string." });
-    }
-    const categoryClean = category !== undefined ? (category ? String(category).trim() : null) : undefined;
-    if (categoryClean && !Object.prototype.hasOwnProperty.call(CATEGORY_LABELS, categoryClean)) {
-      return res.status(400).json({ error: `Unknown category "${categoryClean}".` });
-    }
-    const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
-    // Capture the pre-edit state so the history entry can show what changed,
-    // and so a renamed term or cleared category can unmap its OLD live
-    // mapping (see below) — the DB row will no longer reflect it once
-    // updated.
-    const before = await pedSuggestions.get(id);
-
-    const row = await pedSuggestions.update(id, {
-      ...(term !== undefined ? { term: term.trim() } : {}),
-      ...(categoryClean !== undefined ? { category: categoryClean } : {}),
-    });
-    if (!row) return res.status(404).json({ error: "PED suggestion not found." });
-
-    const callerTier = await getCallerTier(req, usersRepo);
-    const addedBy = `${req.user!.name} (${callerTier})`;
-
-    // Live effect: keep ped_mapping_overrides in sync with this edit.
-    //  - Renaming the term or clearing its category orphans the OLD live
-    //    mapping (it's keyed on pedText) — unmap it so a stale override
-    //    doesn't linger under text that's no longer shown anywhere.
-    //  - A term with a category (new or unchanged) is (re-)promoted so the
-    //    engine reflects exactly what's shown in the table.
-    try {
-      const termChanged = before && before.term !== row.term;
-      const categoryCleared = before && before.category && !row.category;
-      if (before?.category && (termChanged || categoryCleared)) {
-        await unmapPedMappingOverride(pedOverridesRepo, before.term, addedBy);
-      }
-      if (row.category) {
-        await promotePedMappingOverride(pedOverridesRepo, row.term, row.category, addedBy);
-      }
-    } catch (err) {
-      console.error("Failed to sync edited PED Library entry into live mapping overrides:", err);
-    }
-
-    const changes: string[] = [];
-    if (before && before.term !== row.term) changes.push(`term "${before.term}" → "${row.term}"`);
-    if (before && before.category !== row.category) {
-      changes.push(`category "${before.category || "none"}" → "${row.category || "none"}"${row.category ? " — now live in classification" : ""}`);
-    }
-    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Edited",
-      changes.length > 0
-        ? `Edited PED Repository entry "${row.term}": ${changes.join("; ")}.`
-        : `Saved PED Repository entry "${row.term}" with no field changes.`);
-
-    return res.json({ entry: row });
-  } catch (err: any) {
-    console.error("Failed to update PED suggestion:", err);
-    const detail = err.cause?.message || err.message;
-    return res.status(500).json({ error: `Failed to update this PED suggestion: ${detail}` });
-  }
-});
-
-app.delete("/api/ped-suggestions/:id", requireAuth, async (req, res) => {
-  try {
-    if (!(await requireFeatureAccess(req, res, "ped_suggestions", "Editor", "Deleting PED suggestions"))) return;
-    if (legacyOnlyWriteBlocked(MAPPING_ENGINE)) return res.status(410).json({ error: RETIRED_ACTION_MESSAGE, retired: true }); // LEGACY_ONLY_WRITE_GUARD
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid PED suggestion id." });
-    const { users: usersRepo, pedSuggestions, pedMappingOverrides: pedOverridesRepo, changeLogs } = createRepositories(getDb());
-    // Read before deleting — afterwards there is nothing left to name.
-    const before = await pedSuggestions.get(id);
-    await pedSuggestions.delete(id);
-
-    const callerTier = await getCallerTier(req, usersRepo);
-    const addedBy = `${req.user!.name} (${callerTier})`;
-
-    // Live effect: a categorized entry was actually routing PEDs through the
-    // engine, so deleting it here must also stop that — otherwise "delete"
-    // would only remove the directory listing while the mapping kept firing.
-    if (before?.category) {
-      try {
-        await unmapPedMappingOverride(pedOverridesRepo, before.term, addedBy);
-      } catch (err) {
-        console.error("Failed to unmap deleted PED Library entry from live mapping overrides:", err);
-      }
-    }
-
-    await logPedRepositoryChange(changeLogs, req, callerTier, "PED Repository Entry Deleted",
-      `Deleted "${before?.term ?? `entry #${id}`}" from the PED Repository${before?.category ? ` (category "${before.category}") — no longer live in classification` : ""}.`);
-
-    return res.json({ success: true });
-  } catch (err: any) {
-    console.error("Failed to delete PED suggestion:", err);
-    return res.status(500).json({ error: `Failed to delete this PED suggestion: ${err.message}` });
-  }
-});
-
 // ─────────────────────────────────────────────────────────────────────────
 // PED Repository (NEW schema) — ped_repository / ped_aliases / categories.
 //
-// This is the write path onto the tables the deterministic engine actually
-// reads when PED_SOURCE=db (see getDbSource above, pedRuntimeCache.ts).
-// Cutover decision (2026-07-29): the "PED Repository" admin page now reads
-// and writes THIS schema, not the legacy ped_directory table above — see
-// pedRepositoryLive.ts's module doc for the full write-path pattern
-// (DB write -> pedRuntimeCache sync -> legacy ped_mapping_overrides mirror
-// for PED_SOURCE=legacy rollback safety). The legacy routes above are left
-// running unchanged (nothing currently calls them from the client) rather
-// than deleted, so no historical data is lost and PED_SOURCE=legacy still
-// has somewhere to read from if ever needed.
+// This is the write path onto the tables the deterministic engine reads (via the
+// mapping snapshot). See pedRepositoryLive.ts's module doc: every write is the
+// database write only. The legacy ped_directory / ped_mapping_overrides tables are
+// kept as historical data but nothing reads or writes them.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Flat shape (not a discriminated union) — see pagination.ts's pickEnumValue
@@ -5428,7 +5085,7 @@ app.post("/api/ped-repository", requireAuth, mappingGateRateLimit, mappingGate("
     const addedBy = `${req.user!.name} (${callerTier})`;
 
     const { ped, alias } = await createPedWithPrimaryAlias(
-      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      { pedRepository: pedRepositoryRepo, pedAliases },
       { canonicalName: canonicalName.trim(), categoryKey: categoryCheck.value, status: statusValue, notes: notes ?? null, addedBy }
     );
     await bumpMappingVersion();
@@ -5492,9 +5149,6 @@ app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingG
         }
         if (categoryChain !== undefined) {
           chainValue = check.value;
-          if (chainValue && MAPPING_ENGINE !== "db") {
-            return res.status(409).json({ error: "Fallback categories only take effect with the database-backed engine, so they cannot be saved here." });
-          }
         }
       }
     }
@@ -5503,7 +5157,7 @@ app.patch("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mappingG
     const performedBy = `${req.user!.name} (${callerTier})`;
 
     const after = await updatePedRow(
-      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      { pedRepository: pedRepositoryRepo, pedAliases },
       id,
       {
         ...(canonicalName !== undefined ? { canonicalName: canonicalName.trim() } : {}),
@@ -5554,7 +5208,7 @@ app.delete("/api/ped-repository/:id", requireAuth, mappingGateRateLimit, mapping
     const callerTier = await getCallerTier(req, usersRepo);
     const performedBy = `${req.user!.name} (${callerTier})`;
 
-    const deleted = await deletePedRow({ pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides }, id, performedBy);
+    const deleted = await deletePedRow({ pedRepository: pedRepositoryRepo, pedAliases }, id, performedBy);
     if (!deleted) return res.status(404).json({ error: "PED not found." });
     await bumpMappingVersion();
 
@@ -5594,7 +5248,7 @@ app.post("/api/ped-repository/:id/aliases", requireAuth, mappingGateRateLimit, m
     const addedBy = `${req.user!.name} (${callerTier})`;
 
     const alias = await addAliasToPed(
-      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      { pedRepository: pedRepositoryRepo, pedAliases },
       { pedId, aliasText: aliasText.trim(), isVisible, addedBy }
     );
     await bumpMappingVersion();
@@ -5676,7 +5330,7 @@ app.patch("/api/ped-repository/aliases/:aliasId", requireAuth, mappingGateRateLi
     const performedBy = `${req.user!.name} (${callerTier})`;
 
     const after = await updateAliasRow(
-      { pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides },
+      { pedRepository: pedRepositoryRepo, pedAliases },
       aliasId,
       { ...(aliasText !== undefined ? { aliasText: aliasText.trim() } : {}), isVisible, isPrimary, routingEnabled, categoryKeyOverride, fallbackCategoryKey },
       performedBy
@@ -5719,7 +5373,7 @@ app.delete("/api/ped-repository/aliases/:aliasId", requireAuth, mappingGateRateL
     const callerTier = await getCallerTier(req, usersRepo);
     const performedBy = `${req.user!.name} (${callerTier})`;
 
-    const deleted = await deleteAliasRow({ pedRepository: pedRepositoryRepo, pedAliases, pedMappingOverrides }, aliasId, performedBy);
+    const deleted = await deleteAliasRow({ pedRepository: pedRepositoryRepo, pedAliases }, aliasId, performedBy);
     if (!deleted) return res.status(404).json({ error: "Alias not found." });
     await bumpMappingVersion();
 
@@ -5811,17 +5465,14 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     }
 
     const smokeTestRepos = createRepositories(getDb());
-    const { planConfigs: planConfigsRepo, pedMappingOverrides: pedOverridesRepo, planRestrictions: planRestrictionsRepo } = smokeTestRepos;
-    await ensurePedOverridesLoaded(pedOverridesRepo);
-    const dbSource = await getDbSource(smokeTestRepos);
+    const { planConfigs: planConfigsRepo, planRestrictions: planRestrictionsRepo } = smokeTestRepos;
 
-    const PLAN_CONFIG = getPlanConfig();
-    let config = PLAN_CONFIG[planName];
+    let config: PlanConfig | undefined;
     try {
       const dbPlan = await planConfigsRepo.get(planName);
       if (dbPlan) config = dbRowToPlanConfig(dbPlan);
     } catch (err) {
-      console.error("Failed to load DB plan config for smoke test (falling back to hardcoded defaults if any exist):", err);
+      console.error("Failed to load DB plan config for smoke test:", err);
     }
 
     if (!config) {
@@ -5835,36 +5486,19 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     } catch (err) {
       console.error("Failed to load plan restrictions for smoke test (continuing with none active):", err);
     }
-    const smokeDbSource = await attachPlanPedOverrides(config, planName, smokeTestRepos, dbSource);
+    await attachPlanPedOverrides(config, planName, smokeTestRepos);
 
-    const smokeSnapshot = MAPPING_ENGINE === "db" ? await getMappingSnapshot(smokeTestRepos) : null;
+    const smokeSnapshot = await getMappingSnapshot(smokeTestRepos);
     const results = peds.map((ped: string) => {
-      if (smokeSnapshot) {
-        const { result } = runDeterministicPipeline(ped, planName, config, smokeSnapshot);
-        if (!result) return { ped, resolved: false as const };
-        return {
-          ped,
-          resolved: true as const,
-          match_type: result.match_type,
-          matched_question: result.matched_question,
-          question_number: result.question_number,
-          explanation: result.explanation,
-        };
-      }
-      let output = classifyDeterministic(ped, planName, config, smokeDbSource);
-      if (!output) {
-        return { ped, resolved: false as const };
-      }
-      output = sanitizeOutput(output, ped, config);
-      output = applyPostGuards(output, ped, planName, config);
-      const finalResult = finalizeOutput(output, ped, config, config.questions);
+      const { result } = runDeterministicPipeline(ped, planName, config, smokeSnapshot);
+      if (!result) return { ped, resolved: false as const };
       return {
         ped,
         resolved: true as const,
-        match_type: finalResult.match_type,
-        matched_question: finalResult.matched_question,
-        question_number: finalResult.question_number,
-        explanation: finalResult.explanation,
+        match_type: result.match_type,
+        matched_question: result.matched_question,
+        question_number: result.question_number,
+        explanation: result.explanation,
       };
     });
 
@@ -6110,7 +5744,7 @@ app.delete("/api/plan-configs/:planName", requireAuth, mappingGateRateLimit, map
 // Plan-Specific Restrictions (2026-08) — the deterministic, admin-authored
 // replacement for the old hardcoded plan_configs.overrides booleans
 // (requiresInsulinForDiabetes / excludePrediabetes / bypassBenignTumors).
-// See schema.ts's doc comment on `plan_restrictions` and engine.ts's
+// See schema.ts's doc comment on `plan_restrictions` and the routing engine (src/mapping)'s
 // isCategoryRestrictedForPed for how these are evaluated at match time — no
 // AI is ever involved, purely a plain-text keyword check. Same permission
 // model as the rest of Plan Management: Admin or Developer can view/manage
@@ -6120,13 +5754,7 @@ app.delete("/api/plan-configs/:planName", requireAuth, mappingGateRateLimit, map
 
 // Every active restriction, across every plan — readable by every signed-in
 // user (requireAuth only, no admin gate), unlike the per-plan editor route
-// below. Needed so App.tsx's client-side deterministic path
-// (executeLookupAll's classifyDeterministic call) sees the same live
-// restriction data /api/match applies server-side for EVERY plan, including
-// one that's still 100% on the hardcoded getPlanConfig() seed and has no
-// plan_configs row at all — GET /api/plan-configs only lists rows from that
-// table, so it can't be relied on alone to surface restrictions for such a
-// plan. Mirrors why /api/plan-configs itself is requireAuth-only: matching
+// below. Mirrors why /api/plan-configs itself is requireAuth-only: matching
 // must work identically for General tier, not just Admin/Developer.
 app.get("/api/plan-restrictions", requireAuth, async (req, res) => {
   try {
@@ -6299,7 +5927,7 @@ app.delete("/api/plan-restrictions/:id", requireAuth, mappingGateRateLimit, mapp
 // Plan-Specific PED Mappings — admin-authored `plan_overrides` rows that pin
 // one PED to an exact question on one plan (e.g. Obstructive Sleep Apnea →
 // Optima Secure's "Sleep disorder" question while every other plan keeps
-// routing it by its Respiratory category). Evaluated FIRST by engine.ts's
+// routing it by its Respiratory category). Evaluated FIRST by the routing engine (src/mapping)'s
 // applyPlanPedOverride, ahead of every category mapping. Writes take effect
 // for every user on their next lookup: /api/match re-reads these rows per
 // request (attachPlanPedOverrides) and the client fast path re-fetches
@@ -6360,7 +5988,7 @@ app.get("/api/plan-ped-overrides-ped-search", requireAuth, async (req, res) => {
 async function resolvePlanQuestionsForOverride(planName: string): Promise<string[] | null> {
   const { planConfigs } = createRepositories(getDb());
   const dbPlan = await planConfigs.get(planName);
-  const config = dbPlan ? dbRowToPlanConfig(dbPlan) : getPlanConfig()[planName];
+  const config = dbPlan ? dbRowToPlanConfig(dbPlan) : undefined;
   if (!config) return null;
   return Array.from(new Set([...(config.questions || []), config.anyOther].filter(Boolean)));
 }
@@ -6394,7 +6022,6 @@ app.put("/api/plan-ped-overrides/:planName/:pedId", requireAuth, mappingGateRate
       reason,
       addedBy: `${req.user!.name} (${callerTier})`,
     });
-    updateDbPlanOverrideCache(planName, pedId, null, reason);
 
     try {
       await repos.changeLogs.create({
@@ -6426,7 +6053,6 @@ app.delete("/api/plan-ped-overrides/:planName/:pedId", requireAuth, mappingGateR
     const existing = await repos.planOverrides.get(planName, pedId);
     if (!existing) return res.status(404).json({ error: "Mapping not found." });
     await repos.planOverrides.delete(planName, pedId);
-    removeDbPlanOverrideCache(planName, pedId);
 
     try {
       const callerTier = await getCallerTier(req, repos.users);
@@ -10351,52 +9977,18 @@ app.get("/assets/.aistudio/GUIDE%20MASCOT.png", (req, res) => {
 
 // Configure Vite integration or static file rendering
 async function startServer() {
-  // PED Repository DB migration — Phase 5 cutover (2026-07-28): log which
-  // classification source is active on every boot, and — when PED_SOURCE=db
-  // — eagerly warm the DB-backed runtime cache here rather than waiting for
-  // the first inbound /api/match request. This makes a broken DB connection
-  // or an empty/unseeded cache visible in the boot log immediately, instead
-  // of being discovered silently by the first advisor's failed lookup (which
-  // would otherwise look like a normal "no match" and fall through to AI
-  // Memory/Gemini without anyone noticing the cache never loaded).
-  console.log(
-    `[PED Repository] Runtime source: ${
-      PED_SOURCE === "db"
-        ? "PostgreSQL (ped_repository / ped_aliases / plan_overrides — governed PED Repository)"
-        : "legacy (TOP_PED_DICTIONARY + hardcoded regex blocks in engine.ts)"
-    }`
-  );
-  console.log(
-    `[Mapping engine] ${MAPPING_ENGINE === "db" ? "db — data-driven routing (routing_rules / aliases / categories; live across instances via mapping_state)" : "legacy — hard-coded engine in src/engine.ts"}`
-  );
-  if (MAPPING_ENGINE === "db") {
-    try {
-      const snapshot = await getMappingSnapshot(createRepositories(getDb()));
-      console.log(`[Mapping engine] Snapshot v${snapshot.version} loaded: ${snapshot.steps.length} pipeline steps, ${snapshot.aliases.size} aliases.`);
-      if (snapshot.steps.length === 0) {
-        console.warn("[Mapping engine] WARNING: no routing rules found — every lookup would fall through to AI. Run the mapping seed (npm run mapping:seed -- --apply) against this database, or set MAPPING_ENGINE=legacy.");
-      }
-    } catch (err) {
-      console.error("[Mapping engine] Failed to load the mapping snapshot at startup (lookups will retry per request):", err);
+  // Log the mapping snapshot at every boot so a broken connection or an empty / unseeded database is visible in the boot
+  // log immediately, instead of being discovered by the first advisor's lookup (which would otherwise look like a normal
+  // "no match" and fall through to AI Memory / Gemini).
+  console.log("[Mapping engine] db — data-driven routing (routing_rules / aliases / categories; live across instances via mapping_state)");
+  try {
+    const snapshot = await getMappingSnapshot(createRepositories(getDb()));
+    console.log(`[Mapping engine] Snapshot v${snapshot.version} loaded: ${snapshot.steps.length} pipeline steps, ${snapshot.aliases.size} aliases.`);
+    if (snapshot.steps.length === 0) {
+      console.warn("[Mapping engine] WARNING: no routing rules found — every lookup would fall through to AI. Restore the mapping tables from a backup or a clone of a seeded environment.");
     }
-  }
-  if (PED_SOURCE === "db") {
-    try {
-      const repos = createRepositories(getDb());
-      await ensurePedRuntimeCacheLoaded(repos);
-      const aliasCount = getDbAliasLookup().size;
-      console.log(`[PED Repository] DB-backed runtime cache initialized: ${aliasCount} aliases loaded and ready.`);
-      if (aliasCount === 0) {
-        console.warn(
-          "[PED Repository] WARNING: DB-backed cache loaded with 0 aliases — classifyDeterministic will resolve nothing deterministically and every lookup will fall through to AI Memory/Gemini. Check DATABASE_URL and confirm the PED Repository has been populated (via the PED Repository admin page, which now writes ped_repository/ped_aliases directly) against this database."
-        );
-      }
-    } catch (err) {
-      console.error(
-        "[PED Repository] Failed to warm the DB-backed runtime cache at startup (per-request calls will retry lazily; classifyDeterministic falls back to the legacy dictionary on any DB-source error, so this does not block matching, but should be investigated):",
-        err
-      );
-    }
+  } catch (err) {
+    console.error("[Mapping engine] Failed to load the mapping snapshot at startup (lookups will retry per request):", err);
   }
 
   if (process.env.NODE_ENV !== "production") {
