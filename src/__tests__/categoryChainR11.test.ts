@@ -260,4 +260,17 @@ describe("staff trace panels show category labels and plain wording", () => {
     const panel = read("src/components/DecisionTracePanel.tsx").replace(/\/\/.*$/gm, "");
     for (const w of ["Dictionary alias", "Post-guard", "PED category", "Alias override", "The dictionary category"]) expect(panel).not.toContain(w);
   });
+  it("the staff 'Why this result' panel never prints the internal rule key (e.g. primitive.plan_decision)", () => {
+    const panel = read("src/components/DecisionTracePanel.tsx");
+    // The "Decided by" row shows only the plain-language description, not the rule key beside it.
+    expect(panel).toContain('row("Decided by", describeStage(t.decidedBy))');
+    expect(panel).not.toMatch(/\{t\.decidedBy\}/);
+    // Every description the panel can show is free of engine terminology.
+    const describe = panel.slice(panel.indexOf("function describeStage"), panel.indexOf("export function DecisionTracePanel"));
+    const texts = [...describe.matchAll(/return "([^"]+)"/g)].map((m) => m[1]);
+    expect(texts.length).toBeGreaterThanOrEqual(7);
+    for (const text of texts) expect(text, text).not.toMatch(/primitive|plan_decision|plan_override|p0_wording|dict\.|shield\.|family\.|snapshot|ruleKey|_/i);
+    // The fallback explanation (skip + next category used) is untouched.
+    expect(panel).toContain("a Fallback category (the Primary has no declaration question on this plan)");
+  });
 });

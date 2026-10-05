@@ -78,7 +78,7 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
       {open && (
         <div className={`mt-1.5 rounded-lg border p-2.5 space-y-1 ${dark ? "border-slate-600 bg-slate-900/40" : "border-slate-200 bg-slate-50"}`}>
           {row("Match level", tier.levelLabel)}
-          {row("Decided by", <>{describeStage(t.decidedBy)} <code className="opacity-60">({t.decidedBy})</code></>)}
+          {row("Decided by", describeStage(t.decidedBy))}
           {t.postGuard && row("Then adjusted by", <code>{t.postGuard}</code>)}
           {t.dictionary && (
             <>
