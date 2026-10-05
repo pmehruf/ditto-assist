@@ -197,12 +197,20 @@ interface QuickActionTile {
  * the AnimatePresence block in App.tsx for why — moving them here would break the
  * AnimatePresence exit animation).
  */
-export function LookupIntroPage({
+export function LookupIntroPage(props: LookupIntroPageProps) {
+  // Trainee Advisors in Advisory bypass every tile/hook below — a plain welcome screen, nothing to
+  // measure or fetch. Decided here, before the hook-using page mounts, so the Rules of Hooks hold.
+  if (props.showTrainingHome) {
+    return <TrainingHomePage theme={props.theme} firstName={props.currentUser?.name?.split(" ")[0]} />;
+  }
+  return <LookupIntroPageContent {...props} />;
+}
+
+function LookupIntroPageContent({
   theme,
   currentUser,
   setShowIntro,
   setActiveTab,
-  showTrainingHome,
   activeAnnouncements,
   noticeIndex,
   setNoticeIndex,
@@ -212,14 +220,6 @@ export function LookupIntroPage({
   onOpenExternalResources,
   allAnnouncements,
 }: LookupIntroPageProps) {
-  // Trainee Advisors in Advisory bypass every tile/hook below — a plain
-  // welcome screen, nothing to measure or fetch. Kept before ALL hooks
-  // (useState/useMediaQuery/useMeasuredHeight further down) so the Rules
-  // of Hooks hold even if this flag could change within one mount.
-  if (showTrainingHome) {
-    return <TrainingHomePage theme={theme} firstName={currentUser?.name?.split(" ")[0]} />;
-  }
-
   const firstName = currentUser?.name?.split(" ")[0];
 
   // Which Announcement Counter stat's browse-list modal is open, if any —
