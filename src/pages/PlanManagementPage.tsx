@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Plus, Trash2, Pencil, X, Sparkles, Wand2, AlertTriangle, Check, ChevronDown, ChevronUp, PowerOff } from "lucide-react";
-import { getPlanConfig, CATEGORY_LABELS, guessCategoryMap } from "../types.js";
+import { getPlanConfig, guessCategoryMap } from "../types.js";
+import { fillUnmappedCategories, useLiveCategories } from "../utils/categoryLabels";
 import { DbPlanConfigEntry, PlanQuestionEntry, PlanQuestionTag, SpecificIllnessEntry } from "../types/plans";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
@@ -80,23 +81,6 @@ function taggedQuestionsFromHardcoded(config: ReturnType<typeof getPlanConfig>[s
   return sortByTagOrder(rows);
 }
 
-/** Fills in every category with NO mapping at all (not even a keyword/AI
- * suggestion) with the plan's catch-all question — used after the "Refine
- * with AI" server round-trip, whose response can omit a category the same
- * way guessCategoryMap's keyword rules can (see guessCategoryMap's own
- * comment in types.ts for why an unmapped category is a real problem, not
- * just a cosmetic gap: it makes the deterministic engine skip this plan
- * for that category and fall through to the Gemini fallback, which can
- * misjudge a real diagnosis as an ambiguous symptom). */
-function fillUnmappedCategories(map: Record<string, string>, anyOther: string): Record<string, string> {
-  if (!anyOther) return map;
-  const filled = { ...map };
-  Object.keys(CATEGORY_LABELS).forEach((key) => {
-    if (filled[key] === undefined) filled[key] = anyOther;
-  });
-  return filled;
-}
-
 function normalizeCategoryMapToStrings(categoryMap: Record<string, string | number>, questions: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   Object.entries(categoryMap || {}).forEach(([key, val]) => {
@@ -136,6 +120,8 @@ export function PlanManagementPage({
   canManage,
 }: PlanManagementPageProps) {
   const dark = theme === "dark";
+  // The live category list (same source as the rest of Mapping Control) — not a compiled-in list.
+  const { labels: categoryLabels, status: categoriesStatus } = useLiveCategories();
   const { alertUser } = useDialog();
   // Corrected 2026-09 (permission architecture fix): this used to hardcode
   // canEdit to Admin/Platform Admin/Developer, and further hardcoded a
@@ -304,10 +290,10 @@ export function PlanManagementPage({
   const applyKeywordSuggestionsForManageCat = () => {
     const suggested = guessCategoryMap(manageCatQuestionTexts);
     const matchedCount = Object.keys(suggested).length;
-    setManageCatMap(fillUnmappedCategories(suggested, manageCatAnyOther));
+    setManageCatMap(fillUnmappedCategories(suggested, manageCatAnyOther, Object.keys(categoryLabels)));
     setManageCatAiNotice(
       matchedCount > 0
-        ? `Keyword rules matched ${matchedCount} of ${Object.keys(CATEGORY_LABELS).length} categories from this plan's current question wording — the rest default to the catch-all question below.`
+        ? `Keyword rules matched ${matchedCount} of ${Object.keys(categoryLabels).length} categories from this plan's current question wording — the rest default to the catch-all question below.`
         : "No keyword matches found in this plan's questions — map categories manually below."
     );
   };
@@ -337,7 +323,7 @@ export function PlanManagementPage({
         if (m.mappedCategory) refined[m.mappedCategory] = m.question;
       });
       const matchedCount = Object.keys(refined).length;
-      setManageCatMap(fillUnmappedCategories(refined, manageCatAnyOther));
+      setManageCatMap(fillUnmappedCategories(refined, manageCatAnyOther, Object.keys(categoryLabels)));
       setManageCatAiNotice(
         body.usedAi
           ? `AI matched ${matchedCount} categories — the rest default to the catch-all question below; review before saving.`
@@ -508,10 +494,10 @@ export function PlanManagementPage({
     // defaulted to the catch-all question via fillUnmappedCategories, so
     // none are left silently unmapped (see its comment for why that
     // matters for matching, not just completeness).
-    setCategoryMap(fillUnmappedCategories(suggested, catchAllText));
+    setCategoryMap(fillUnmappedCategories(suggested, catchAllText, Object.keys(categoryLabels)));
     setAiNotice(
       matchedCount > 0
-        ? `Keyword rules matched ${matchedCount} of ${Object.keys(CATEGORY_LABELS).length} categories from the current question wording — the rest default to the catch-all question below.`
+        ? `Keyword rules matched ${matchedCount} of ${Object.keys(categoryLabels).length} categories from the current question wording — the rest default to the catch-all question below.`
         : "No keyword matches found in the current questions — try adding more specific wording (e.g. \"diabetes\", \"hypertension\") or map categories manually below."
     );
   };
@@ -544,7 +530,7 @@ export function PlanManagementPage({
       const catchAllText = questions.find((q) => q.tag === "Catch-all")?.text.trim() || "";
       // Same fill-the-gaps step as Suggest — the AI (or its keyword-rule
       // fallback below) can just as easily leave a category out entirely.
-      setCategoryMap(fillUnmappedCategories(refined, catchAllText));
+      setCategoryMap(fillUnmappedCategories(refined, catchAllText, Object.keys(categoryLabels)));
       setAiNotice(
         body.usedAi
           ? `AI matched ${matchedCount} categories — the rest default to the catch-all question below; review before saving.`
@@ -934,7 +920,7 @@ export function PlanManagementPage({
     setDbPlanConfigs(prev => [...prev.filter((r) => r.planName !== savedRow.planName), savedRow]);
     logAction(
       "Plan Edited",
-      `Updated category mapping for "${targetPlanName}" — ${Object.keys(newCategoryMap).length} of ${Object.keys(CATEGORY_LABELS).length} categories mapped.`,
+      `Updated category mapping for "${targetPlanName}" — ${Object.keys(newCategoryMap).length} of ${Object.keys(categoryLabels).length} categories mapped.`,
       targetPlanName
     );
   };
@@ -1082,7 +1068,7 @@ export function PlanManagementPage({
               }`}
               options={allPlanNames.map((name) => {
                 const count = Object.keys(dbByName[name]?.categoryMap || hardcodedConfigs[name]?.categoryMap || {}).length;
-                return { value: name, label: `${name} (${count} of ${Object.keys(CATEGORY_LABELS).length} mapped)` };
+                return { value: name, label: `${name} (${count} of ${Object.keys(categoryLabels).length} mapped)` };
               })}
             />
           </div>
@@ -1111,7 +1097,7 @@ export function PlanManagementPage({
 
               <div className="flex items-center justify-between">
                 <label className={`block text-[10px] font-bold uppercase tracking-wide ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                  {Object.keys(manageCatMap).length} of {Object.keys(CATEGORY_LABELS).length} categories mapped
+                  {Object.keys(manageCatMap).length} of {Object.keys(categoryLabels).length} categories mapped
                 </label>
                 <div className="flex items-center gap-2">
                   {manageCatSaved && (
@@ -1154,8 +1140,13 @@ export function PlanManagementPage({
                 <p className={`text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>{manageCatAiNotice}</p>
               )}
 
+              {categoriesStatus !== "ready" && (
+                <p className={`text-[11px] font-semibold ${categoriesStatus === "error" ? "text-red-400" : dark ? "text-stone-400" : "text-stone-500"}`}>
+                  {categoriesStatus === "loading" ? "Loading categories…" : "The category list could not be loaded, so nothing can be mapped yet. Reload the page to try again."}
+                </p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
-                {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                {Object.entries(categoryLabels).map(([key, label]) => (
                   <div key={key} className="flex items-center gap-2">
                     <span className={`text-[10.5px] w-32 shrink-0 truncate ${dark ? "text-stone-400" : "text-stone-500"}`} title={label}>
                       {label}
@@ -1629,7 +1620,7 @@ export function PlanManagementPage({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className={`block text-[10px] font-bold uppercase tracking-wide ${dark ? "text-stone-400" : "text-stone-500"}`}>
-                Category → Question Mapping ({Object.keys(categoryMap).length} of {Object.keys(CATEGORY_LABELS).length} mapped)
+                Category → Question Mapping ({Object.keys(categoryMap).length} of {Object.keys(categoryLabels).length} mapped)
               </label>
               {formMode === "edit" && (
                 <div className="flex items-center gap-2">
@@ -1656,8 +1647,13 @@ export function PlanManagementPage({
               <p className={`text-[10.5px] mb-2 ${dark ? "text-stone-400" : "text-stone-500"}`}>{aiNotice}</p>
             )}
 
+            {categoriesStatus !== "ready" && (
+              <p className={`text-[11px] font-semibold ${categoriesStatus === "error" ? "text-red-400" : dark ? "text-stone-400" : "text-stone-500"}`}>
+                {categoriesStatus === "loading" ? "Loading categories…" : "The category list could not be loaded, so nothing can be mapped yet. Reload the page to try again."}
+              </p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-              {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+              {Object.entries(categoryLabels).map(([key, label]) => (
                 <div key={key} className="flex items-center gap-2">
                   <span className={`text-[10.5px] w-32 shrink-0 truncate ${dark ? "text-stone-400" : "text-stone-500"}`} title={label}>{label}</span>
                   {formMode === "view" ? (
@@ -1698,7 +1694,7 @@ export function PlanManagementPage({
           }`}>
             <p className={`text-[11px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
               Category Mapping management now lives on the <b className={dark ? "text-stone-200" : "text-stone-700"}>Category Mapping</b> sub-tab
-              {" "}— {Object.keys(categoryMap).length} of {Object.keys(CATEGORY_LABELS).length} categories currently mapped for this plan.
+              {" "}— {Object.keys(categoryMap).length} of {Object.keys(categoryLabels).length} categories currently mapped for this plan.
             </p>
             <ClippedButton
               onClick={() => {
