@@ -4,6 +4,7 @@
  */
 
 import { beforeAll, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { snapshotFromDump } from "../mapping/seedBuilder";
 import { planConfigsFromDump } from "../mapping/equalityHarness";
 import { runDeterministicPipeline } from "../mapping/routingEngine";
@@ -188,7 +189,6 @@ describe("chain validation", () => {
 });
 
 describe("R11 isolation", () => {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
   const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), "utf8");
   it("the legacy engine and the seeded legacy rules know nothing about chains", () => {
     expect(read("src/engine.ts")).not.toMatch(/categoryChain|chooseFromChain/);
@@ -208,7 +208,6 @@ describe("R11 isolation", () => {
 });
 
 describe("Constitution v1.6 matches the R11 implementation", () => {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
   const constitution = readFileSync(new URL("../../MASTER_CONSTITUTION.md", import.meta.url), "utf8");
   it("documents the chain, its single evaluation point, the limit and the history entry", () => {
     expect(constitution).toMatch(/\*\*Version:\*\* 1\.[6-9]/);
@@ -220,7 +219,6 @@ describe("Constitution v1.6 matches the R11 implementation", () => {
 });
 
 describe("R11 admin screen is written for admins, not engineers", () => {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
   const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const FORBIDDEN = /category chain|catch-all|catch all|dictionary stage|category key|categoryKey\b(?=[^"'`]*["'`]\s*[,}])|engine stage|decided by|primitive|snapshot|impact hash/i;
   const visibleText = (file: string) => {
@@ -244,7 +242,6 @@ describe("R11 admin screen is written for admins, not engineers", () => {
 });
 
 describe("staff trace panels show category labels and plain wording", () => {
-  const { readFileSync } = require("node:fs") as typeof import("node:fs");
   const read = (f: string) => readFileSync(new URL(`../../${f}`, import.meta.url), "utf8");
   it("both panels use the category label lookup instead of printing raw category keys", () => {
     const panel = read("src/components/DecisionTracePanel.tsx");
