@@ -88,6 +88,9 @@ import { invalidateQaSheetsAuthCache, getQaSheetsHealth, QA_MASTER_SPREADSHEET_I
 import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.js";
 import { syncAdvisorDirectory } from "./src/server/qaDashboard/advisorDirectorySync.js";
 import { syncGuideMentorRelationships } from "./src/server/qaDashboard/guideMentorRelationshipsSync.js";
+import { resolveQaCallerRole } from "./src/server/qaDashboard/qaRoles.js";
+import { getQipExceptionScores } from "./src/server/qipException/qipExceptionScores.js";
+import { buildPrompt as buildQipPrompt, parseModelJson as parseQipModelJson, shape as shapeQipDraft, QIP_MAX_FACTS_CHARS } from "./src/server/qipException/qipExceptionWriter.js";
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
@@ -7270,6 +7273,79 @@ app.get("/api/qa-dashboard/team-tracker/current-month-period-change", requireAut
     console.error("Team Tracker: failed to load current-month period change:", err);
     return res.status(500).json({ error: `Failed to load current-month period change: ${err.message}` });
   }
+});
+
+// --- QIP Exception Request generator (Quality group, below Team Tracker) ---
+// Only the narrative text is AI-written here (see qipExceptionWriter.ts). The
+// page builds every heading, table, number and Blunder % itself and checks
+// the result before the .docx can be downloaded, so this route only turns a
+// "facts" string into paragraphs. Same Admin/Guide/Mentor gate as Team
+// Tracker (a plain Advisor has no use for it and its facts contain other
+// advisors' performance data).
+app.post("/api/qip-exception/draft", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    const role = await resolveQaCallerRole(req.user!.email);
+    if (!role.isAdmin && !role.isGuide && !role.isMentor) {
+      return res.status(403).json({ error: "The QIP Exception Request generator is only available to Admins, Guides, and Mentors." });
+    }
+    const { task, facts } = req.body || {};
+    if ((task !== "advisor" && task !== "shared") || typeof facts !== "string" || !facts.trim() || facts.length > QIP_MAX_FACTS_CHARS) {
+      return res.status(400).json({ error: "Bad request." });
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({ error: "The writing feature is not available right now. Please contact the Ditto Assist team." });
+    }
+    const { system, user } = buildQipPrompt(task, facts);
+    const ai = getAiClient();
+    const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+    let text = "";
+    let lastError: any = null;
+    for (const model of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: user,
+          config: { systemInstruction: system, responseMimeType: "application/json", maxOutputTokens: 4096 },
+        });
+        text = response.text || "";
+        if (text) break;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[QIP Exception] Attempt failed with model ${model}:`, err?.message || err);
+      }
+    }
+    if (!text) {
+      if (lastError) console.error("[QIP Exception] All models failed:", lastError);
+      return res.status(502).json({ error: "The writing service did not answer. Try again." });
+    }
+    let parsed: any;
+    try {
+      parsed = parseQipModelJson(text);
+    } catch {
+      return res.status(502).json({ error: "The writing service returned an unreadable answer. Try again." });
+    }
+    return res.json(shapeQipDraft(task, parsed));
+  } catch (err: any) {
+    console.error("QIP Exception: draft failed:", err);
+    return res.status(500).json({ error: "Something went wrong. Try again." });
+  }
+});
+
+// Autofill source for the page: one advisor's Lead Score / Payments QA numbers
+// per month, from the same scoring Team Tracker uses. Read-only; the advisor
+// must be inside the caller's own Team Tracker scope (Guide: their team,
+// Mentor: their mentees, Admin: everyone).
+app.get("/api/qip-exception/scores", requireAuth, async (req, res) => {
+  const tactId = typeof req.query.tactId === "string" ? req.query.tactId : "";
+  const fromYm = typeof req.query.fromMonth === "string" ? req.query.fromMonth.trim() : "";
+  const toYm = typeof req.query.toMonth === "string" ? req.query.toMonth.trim() : "";
+  const result = await getQipExceptionScores(req.user!.email, tactId, fromYm, toYm);
+  if ("error" in result) {
+    const status = result.error === "FORBIDDEN" ? 403 : result.error === "BAD_REQUEST" ? 400 : 500;
+    if (status === 500) console.error("QIP Exception: failed to load scores:", result.message);
+    return res.status(status).json({ error: result.message });
+  }
+  return res.json(result);
 });
 
 // --- Team Tracker: Coaching Workspace ---

@@ -127,6 +127,9 @@ const QaDashboardPage = lazy(() =>
 const TeamTrackerPage = lazy(() =>
   import("./pages/TeamTrackerPage").then((m) => ({ default: m.TeamTrackerPage }))
 );
+const QipExceptionPage = lazy(() =>
+  import("./pages/QipExceptionPage").then((m) => ({ default: m.QipExceptionPage }))
+);
 const ProfileAccessPage = lazy(() =>
   import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
 );
@@ -265,7 +268,7 @@ export default function App() {
   // (see DialogContext.tsx) — used below by confirmDestructiveAction and
   // handleDeleteResource.
   const { confirm, alertUser } = useDialog();
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "qip_exception" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -937,7 +940,7 @@ export default function App() {
   type SidebarSectionKey = "advisorWorkspace" | "quality" | "reference" | "appOpsControls" | "administration" | "developer";
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
     advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist"],
-    quality: ["qa_dashboard", "team_tracker"],
+    quality: ["qa_dashboard", "team_tracker", "qip_exception"],
     reference: ["advisory_zone", "announcement_archive", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
     administration: ["profile_access", "audit", "flagged_responses"],
@@ -3336,6 +3339,7 @@ export default function App() {
           pages: [
             navPage("qa_dashboard", "QA Dashboard", QaDashboardIcon, "Viewer"),
             navPage("team_tracker", "Team Tracker", Users2, "Viewer", { visibleOverride: qaTeamTrackerAllowed }),
+            navPage("qip_exception", "QIP Exception", FileText, "Viewer", { visibleOverride: qaTeamTrackerAllowed }),
           ],
         },
         {
@@ -4995,6 +4999,27 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Team Tracker">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <TeamTrackerPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* QIP EXCEPTION REQUEST — builds the .docx exception request for
+              one or more advisors. Same Admin/Guide/Mentor gate as Team
+              Tracker (the sidebar link uses qaTeamTrackerAllowed; the AI
+              route /api/qip-exception/draft re-checks the role server-side). */}
+          {activeTab === "qip_exception" && (
+            <motion.div
+              key="qip_exception"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="QIP Exception Request">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <QipExceptionPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>
