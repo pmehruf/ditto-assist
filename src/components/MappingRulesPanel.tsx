@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { mappingFetch } from "../utils/mappingFetch";
 import { describeCategoryChain, type ChainTraceLike } from "../utils/categoryChainText";
+import { useCategoryLabels } from "../utils/categoryLabels";
 
 /**
  * Mapping Control > Rules (Phase 3B-ii): the routing pipeline as the engine runs it, with the controls an admin
@@ -46,6 +47,15 @@ interface Trace {
   snapshotVersion: number;
 }
 
+const SOURCE_PLAIN: Record<string, string> = {
+  ped_category: "the PED's Primary category",
+  category_chain: "a Fallback category",
+  alias_override: "a category set on this alias",
+  fallback_category: "this alias's last-resort category",
+  not_routed: "nothing — matching is off for this alias",
+  none: "nothing — not a known condition",
+};
+
 const TEMPLATE = JSON.stringify(
   {
     when: [{ t: "text", re: "\\bexample term\\b", flags: "i" }],
@@ -57,6 +67,7 @@ const TEMPLATE = JSON.stringify(
 
 export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark"; canManage: boolean }) {
   const dark = theme === "dark";
+  const label = useCategoryLabels();
   const [rules, setRules] = useState<Rule[]>([]);
   const [bands, setBands] = useState<Band[]>([]);
   const [plans, setPlans] = useState<string[]>([]);
@@ -243,12 +254,12 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
             {trace.result.postGuard && <p className={muted}>Then adjusted by post-guard <code>{trace.result.postGuard}</code>.</p>}
             {trace.result.dictionary && (
               <p className={muted}>
-                Dictionary: "{trace.result.dictionary.alias}" → category {trace.result.dictionary.effectiveCategory ?? "none"} (from {trace.result.dictionary.source.replace(/_/g, " ")}).
+                Matched “{trace.result.dictionary.alias}” → category {label(trace.result.dictionary.effectiveCategory)} (from {SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).
               </p>
             )}
             {trace.result.dictionary?.chain && (
               <div className={muted}>
-                {describeCategoryChain(trace.result.dictionary.chain).map((l) => (
+                {describeCategoryChain(trace.result.dictionary.chain, label).map((l) => (
                   <p key={l}>{l}</p>
                 ))}
               </div>

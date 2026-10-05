@@ -242,3 +242,22 @@ describe("R11 admin screen is written for admins, not engineers", () => {
     expect(src).toContain("Not saved yet");
   });
 });
+
+describe("staff trace panels show category labels and plain wording", () => {
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const read = (f: string) => readFileSync(new URL(`../../${f}`, import.meta.url), "utf8");
+  it("both panels use the category label lookup instead of printing raw category keys", () => {
+    const panel = read("src/components/DecisionTracePanel.tsx");
+    expect(panel).toContain("useCategoryLabels()");
+    expect(panel).toContain("label(t.dictionary.pedCategory)");
+    expect(panel).toContain("label(t.dictionary.effectiveCategory)");
+    expect(panel).not.toMatch(/t\.dictionary\.pedCategory \?\? "none"|t\.dictionary\.effectiveCategory \?\? "none"/);
+    const rules = read("src/components/MappingRulesPanel.tsx");
+    expect(rules).toContain("label(trace.result.dictionary.effectiveCategory)");
+    expect(rules).not.toContain('Dictionary: "');
+  });
+  it("the older internal words are gone from the panel text", () => {
+    const panel = read("src/components/DecisionTracePanel.tsx").replace(/\/\/.*$/gm, "");
+    for (const w of ["Dictionary alias", "Post-guard", "PED category", "Alias override", "The dictionary category"]) expect(panel).not.toContain(w);
+  });
+});

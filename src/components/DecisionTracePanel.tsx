@@ -7,6 +7,7 @@ import React, { useEffect, useState } from "react";
 import type { MatchOutput } from "../types";
 import { getMatchTierInfo } from "../utils/matchTier";
 import { describeCategoryChain } from "../utils/categoryChainText";
+import { useCategoryLabels } from "../utils/categoryLabels";
 
 /**
  * "Why this result" (Phase 3B-i) — shows staff which stage of the routing engine decided a lookup, and the
@@ -36,19 +37,19 @@ function useCanViewTrace(): boolean {
 }
 
 const SOURCE_TEXT: Record<string, string> = {
-  ped_category: "the PED's own category",
+  ped_category: "the PED's Primary category",
   category_chain: "a Fallback category (the Primary has no declaration question on this plan)",
-  alias_override: "a category set on this alias (overrides the PED's)",
-  fallback_category: "the alias's last-resort category (nothing else resolved)",
-  not_routed: "not used for routing (alias has routing turned off)",
-  none: "no dictionary entry",
+  alias_override: "a category set on this alias (it replaces the PED's Primary category)",
+  fallback_category: "this alias's last-resort category (nothing else gave an answer)",
+  not_routed: "not used (matching is turned off for this alias)",
+  none: "no category (the text is not a known condition)",
 };
 
 function describeStage(decidedBy: string): string {
   if (decidedBy === "unresolved") return "No built-in rule decided this — it goes to AI Memory / the AI step.";
   if (decidedBy === "primitive.plan_override") return "A plan-specific PED mapping set by an admin for this plan.";
   if (decidedBy === "primitive.p0_wording") return "The condition is exactly a fragment of this plan's own question wording.";
-  if (decidedBy === "primitive.plan_decision") return "The dictionary category was looked up in this plan's category map.";
+  if (decidedBy === "primitive.plan_decision") return "The PED's category was matched to this plan's declaration question.";
   if (decidedBy.startsWith("family.")) return "A condition-family rule (e.g. diabetes, hypertension).";
   if (decidedBy.startsWith("shield.")) return "A safety shield (a term that must not be mapped by keyword).";
   if (decidedBy.startsWith("lifestage.") || decidedBy.startsWith("life_stage.")) return "A natural life-stage rule (e.g. pregnancy-related).";
@@ -57,6 +58,7 @@ function describeStage(decidedBy: string): string {
 
 export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark: boolean }) {
   const can = useCanViewTrace();
+  const label = useCategoryLabels();
   const [open, setOpen] = useState(false);
   const t = result.decision_trace;
   if (!can || !t) return null;
@@ -76,16 +78,16 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
       {open && (
         <div className={`mt-1.5 rounded-lg border p-2.5 space-y-1 ${dark ? "border-slate-600 bg-slate-900/40" : "border-slate-200 bg-slate-50"}`}>
           {row("Match level", tier.levelLabel)}
-          {row("Decided by", <><code>{t.decidedBy}</code> — {describeStage(t.decidedBy)}</>)}
-          {t.postGuard && row("Post-guard", t.postGuard)}
+          {row("Decided by", <>{describeStage(t.decidedBy)} <code className="opacity-60">({t.decidedBy})</code></>)}
+          {t.postGuard && row("Then adjusted by", <code>{t.postGuard}</code>)}
           {t.dictionary && (
             <>
-              {row("Dictionary alias", t.dictionary.alias || "—")}
+              {row("Matched text", t.dictionary.alias || "—")}
               {row("Category from", SOURCE_TEXT[t.dictionary.source] ?? t.dictionary.source)}
-              {row("PED category", t.dictionary.pedCategory ?? "none")}
-              {t.dictionary.categoryOverride && row("Alias override", t.dictionary.categoryOverride)}
-              {row("Category used", t.dictionary.effectiveCategory ?? "none")}
-              {t.dictionary.chain && row("Primary and Fallbacks", <>{describeCategoryChain(t.dictionary.chain).map((l) => <div key={l}>{l}</div>)}</>)}
+              {row("Primary category", label(t.dictionary.pedCategory))}
+              {t.dictionary.categoryOverride && row("Set on this alias", label(t.dictionary.categoryOverride))}
+              {row("Category used", label(t.dictionary.effectiveCategory))}
+              {t.dictionary.chain && row("Primary and Fallbacks", <>{describeCategoryChain(t.dictionary.chain, label).map((l) => <div key={l}>{l}</div>)}</>)}
             </>
           )}
           {row("Mapping version", `${t.snapshotVersion ?? "—"}${t.instance ? ` · server ${t.instance}` : ""}`)}
