@@ -16,7 +16,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 // Import types & engine logic
-import { getPlanConfig, MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, type PlanConfig } from "./src/types.js";
+import { MatchOutput, CATEGORY_LABELS, CATEGORY_AUTO_MAP_RULES, type PlanConfig } from "./src/types.js";
 import { classifyDeterministic, sanitizeOutput, applyPostGuards, finalizeOutput, resolvePlanDecision, normalizeDictionaryKey, applyHighConfidenceCategoryOverride, type DbDictionarySource } from "./src/engine.js";
 import { MASTER_ILLNESSES } from "./src/specificIllnessEngine.js";
 import { ensurePedOverridesLoaded, promotePedMappingOverride, unmapPedMappingOverride, inferCategoryKeyForQuestion } from "./src/server/pedMappingLive.js";
@@ -436,7 +436,7 @@ app.get("/api/mapping-engine", requireAuth, async (req, res) => {
  * overrides). Used to verify an admin mapping change against the LIVE engine.
  */
 async function loadLookupConfig(repos: ReturnType<typeof createRepositories>, planName: string): Promise<PlanConfig | undefined> {
-  let config: PlanConfig | undefined = getPlanConfig()[planName];
+  let config: PlanConfig | undefined;
   try {
     const dbPlan = await repos.planConfigs.get(planName);
     if (dbPlan) config = dbRowToPlanConfig(dbPlan);
@@ -505,19 +505,18 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     if (MAPPING_ENGINE !== "db") await ensurePedOverridesLoaded(pedOverridesRepo);
     let dbSource = await getDbSource(repos);
 
-    const PLAN_CONFIG = getPlanConfig();
-    let config = PLAN_CONFIG[planName];
+    // Plans are read from the database only (plan_configs); a plan with no row is not supported.
+    let config: PlanConfig | undefined;
 
     // DB-authored plans (added or edited via the Add/Edit Plan wizard) are
-    // the live source of truth and take precedence over the hardcoded
-    // bootstrap defaults — this is what lets a newly-added plan be matched
+    // the live source of truth — this is what lets a newly-added plan be matched
     // against immediately, with no code change or redeploy.
     let dbPlan: Awaited<ReturnType<typeof planConfigsRepo.get>>;
     try {
       dbPlan = await planConfigsRepo.get(planName);
       if (dbPlan) config = dbRowToPlanConfig(dbPlan);
     } catch (err) {
-      console.error("Failed to load DB plan config (falling back to hardcoded defaults if any exist):", err);
+      console.error("Failed to load DB plan config:", err);
     }
 
     // Plan-Specific Restrictions (2026-08) — DB-driven, applies uniformly
@@ -551,11 +550,7 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     }
 
     // A removed plan (Plan Management's Delete action — see schema.ts's
-    // plan_configs.removed comment) must be rejected outright, even though
-    // `config` above may still resolve from the hardcoded getPlanConfig()
-    // bootstrap seed for a built-in plan that was never customized before
-    // being removed. Without this check a "deleted" built-in plan would
-    // keep matching successfully off that hardcoded fallback forever.
+    // plan_configs.removed comment) must be rejected outright.
     if (dbPlan?.removed) {
       return res.status(400).json({ error: `Insurance plan '${planName}' not supported.` });
     }
@@ -1032,8 +1027,13 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
     // Secure general fallback matching standard Apps Script logic on failure
     const planName = req.body.planName || "Optima Secure";
     const ped = req.body.ped || "";
-    const PLAN_CONFIG = getPlanConfig();
-    const config = PLAN_CONFIG[planName];
+    let config: PlanConfig | undefined;
+    try {
+      const dbPlan = await createRepositories(getDb()).planConfigs.get(planName);
+      if (dbPlan) config = dbRowToPlanConfig(dbPlan);
+    } catch {
+      config = undefined; // the database is the thing that failed: use the generic wording below
+    }
 
     const fallbackOutput: MatchOutput = {
       match_type: "FALLBACK",
@@ -4886,8 +4886,7 @@ app.patch("/api/ai-memory/:id/status", requireAuth, async (req, res) => {
     } else if (status === "approved") {
       try {
         const storedResult = (existing.aiResponse as { result?: MatchOutput } | null)?.result;
-        const PLAN_CONFIG = getPlanConfig();
-        let config = PLAN_CONFIG[existing.planName];
+        let config: PlanConfig | undefined;
         try {
           const dbPlan = await planConfigsRepo.get(existing.planName);
           if (dbPlan) config = dbRowToPlanConfig(dbPlan);
@@ -5823,13 +5822,12 @@ app.post("/api/smoke-test", requireAuth, async (req, res) => {
     if (MAPPING_ENGINE !== "db") await ensurePedOverridesLoaded(pedOverridesRepo);
     const dbSource = await getDbSource(smokeTestRepos);
 
-    const PLAN_CONFIG = getPlanConfig();
-    let config = PLAN_CONFIG[planName];
+    let config: PlanConfig | undefined;
     try {
       const dbPlan = await planConfigsRepo.get(planName);
       if (dbPlan) config = dbRowToPlanConfig(dbPlan);
     } catch (err) {
-      console.error("Failed to load DB plan config for smoke test (falling back to hardcoded defaults if any exist):", err);
+      console.error("Failed to load DB plan config for smoke test:", err);
     }
 
     if (!config) {
@@ -6128,13 +6126,7 @@ app.delete("/api/plan-configs/:planName", requireAuth, mappingGateRateLimit, map
 
 // Every active restriction, across every plan — readable by every signed-in
 // user (requireAuth only, no admin gate), unlike the per-plan editor route
-// below. Needed so App.tsx's client-side deterministic path
-// (executeLookupAll's classifyDeterministic call) sees the same live
-// restriction data /api/match applies server-side for EVERY plan, including
-// one that's still 100% on the hardcoded getPlanConfig() seed and has no
-// plan_configs row at all — GET /api/plan-configs only lists rows from that
-// table, so it can't be relied on alone to surface restrictions for such a
-// plan. Mirrors why /api/plan-configs itself is requireAuth-only: matching
+// below. Mirrors why /api/plan-configs itself is requireAuth-only: matching
 // must work identically for General tier, not just Admin/Developer.
 app.get("/api/plan-restrictions", requireAuth, async (req, res) => {
   try {
@@ -6368,7 +6360,7 @@ app.get("/api/plan-ped-overrides-ped-search", requireAuth, async (req, res) => {
 async function resolvePlanQuestionsForOverride(planName: string): Promise<string[] | null> {
   const { planConfigs } = createRepositories(getDb());
   const dbPlan = await planConfigs.get(planName);
-  const config = dbPlan ? dbRowToPlanConfig(dbPlan) : getPlanConfig()[planName];
+  const config = dbPlan ? dbRowToPlanConfig(dbPlan) : undefined;
   if (!config) return null;
   return Array.from(new Set([...(config.questions || []), config.anyOther].filter(Boolean)));
 }

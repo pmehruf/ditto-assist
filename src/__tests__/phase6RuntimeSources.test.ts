@@ -31,3 +31,10 @@ describe("AI answers use the database post-guard rules (batch C)", () => {
     expect(server).toContain("applyPostGuardsFromSnapshot(parsedOutput, ped, planName, config, await getMappingSnapshot(repos)).output");
   });
 });
+
+describe("plans come from the database only (batch D)", () => {
+  it("the server no longer reads the compiled plan configs", () => {
+    expect(server).not.toContain("getPlanConfig");
+    expect(server).not.toMatch(/PLAN_CONFIG\[/);
+  });
+});
