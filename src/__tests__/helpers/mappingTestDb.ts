@@ -25,7 +25,9 @@ import type { PlanConfig } from "../../types";
  */
 
 const FIXTURES = new URL("../fixtures/mapping/", import.meta.url);
-export const fixtureDump: MappingDump = (JSON.parse(gunzipSync(readFileSync(new URL("production-day-one.snapshot.json.gz", FIXTURES))).toString()) as { data: MappingDump }).data;
+const defaultFixtureDump: MappingDump = (JSON.parse(gunzipSync(readFileSync(new URL("production-day-one.snapshot.json.gz", FIXTURES))).toString()) as { data: MappingDump }).data;
+
+export const fixtureDump: MappingDump = defaultFixtureDump;
 
 export interface MappingTestEnv {
   db: TestDb;
@@ -35,7 +37,8 @@ export interface MappingTestEnv {
   newInstance: () => { lookup: (term: string, planName: string) => Promise<LiveLookup> };
 }
 
-export async function createMappingTestEnv(): Promise<MappingTestEnv> {
+export async function createMappingTestEnv(dumpOverride?: MappingDump): Promise<MappingTestEnv> {
+  const fixtureDump = dumpOverride ?? defaultFixtureDump;
   const db = await createTestDb();
   const repos = createRepositories(db as never);
   await db.insert(categories).values(fixtureDump.categories.map((c) => ({ categoryKey: c.categoryKey, label: c.label })));
