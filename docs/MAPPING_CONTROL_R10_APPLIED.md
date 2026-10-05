@@ -66,3 +66,22 @@ Steps (production, two saves):
 4. Check afterwards: Declaration Assist on Activ Fit Preferred for "acute kidney injury" (Q6) and on Activ One Max for "adenoid" (Q12).
 
 Production plan data differs from staging (production still has Care Supreme; it has no Care Supreme V2), so the numbers in the preview may differ slightly from the staging numbers above. Compare the preview with this table before confirming.
+
+## Applied on production (2026-10-05) — Phase 5 closed
+
+Approved by Mehruf P in chat for exactly these six corrections; A10 and every skipped / needs-decision item were not applied.
+
+| Change set | Plan | Corrections | Preview | Advisor lookups of these, last 90 days |
+|------------|------|-------------|---------|-----------------------------------------|
+| #32 | Activ Fit Preferred | A1 kidney Q19→Q6, A2 diabetes Q16→Q2, A3 hypertension Q18→Q2 | High impact, 116 lookups, 1 plan, no specificity loss | 0 |
+| #33 | Activ One Max | A7 blood →Q11, A8 eyeEnt →Q12, sarcoidosis →Q11 | High impact, 94 lookups, 1 plan, no specificity loss | 97 |
+
+Undo: Mapping Control → History → #33 then #32 → Undo.
+
+### Production verification (read-only, after saving)
+
+- Mapped plan data: Activ Fit Preferred kidney=Q6, diabetes=Q2, hypertension=Q2; Activ One Max blood=Q11, eyeEnt=Q12, sarcoidosis=Q11.
+- Live lookups: Activ Fit Preferred acute kidney injury / chronic kidney disease → Q6, diabetes mellitus → Q2, hypertension → Q2; Activ One Max adenoid / meniere disease → Q12, sarcoidosis → Q11, anemia → Q11.
+- Unaffected plans: mapped counts unchanged (Aspire 24, Care Supreme 16, Optima Secure 24, Reassure 2.0 23); Aspire / Optima Secure / Care Supreme / Reassure 2.0 lookups return the same questions as before.
+- Both previews reported only the plan being saved ("across 1 plan") and no "loses a specific question" warning, so no other plan or condition was affected.
+- Not run: the offline baseline-equality tool against production (production database reads from this session are blocked); the preview's measured before/after comparison is the evidence for the regression check.
