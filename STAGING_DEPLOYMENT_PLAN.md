@@ -16,7 +16,7 @@ Same SQL, same transaction (`MAPPING_GOVERNANCE_REVIEW_CONGENITAL_FINAL.md`, Par
 
 **3. Deploy the code (the F1 fix) to staging:**
 ```
-git checkout develop
+git checkout main
 git merge <your branch with the engine.ts F1 fix>
 gcloud run deploy ditto-assist-staging --source . --region asia-south1 --allow-unauthenticated --env-vars-file .env.staging.yaml
 ```

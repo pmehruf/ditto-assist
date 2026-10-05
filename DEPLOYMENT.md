@@ -22,7 +22,7 @@ Env file:    .env.production.yaml (local, git-ignored)
 
 Staging
 -------
-Branch:      develop
+Branch:      main (single canonical branch; staging is deployed from a branch or main, then production from main)
 Cloud Run:   ditto-assist-staging
 Database:    Neon "ditto-assist-staging" branch (branched from production, isolated)
 APP_URL:     https://ditto-assist-staging-y5biuzxgda-el.a.run.app   (confirmed 2026-08-25, see note above)
@@ -31,7 +31,7 @@ Env file:    .env.staging.yaml (local, git-ignored)
 
 ## Deploy commands
 
-**Staging** (from `develop` branch):
+**Staging** (from `main`, or a short-lived feature branch you want to try first):
 ```
 gcloud run deploy ditto-assist-staging --source . --region asia-south1 --allow-unauthenticated --env-vars-file .env.staging.yaml
 ```
@@ -50,6 +50,6 @@ gcloud run deploy ditto-assist --source . --region asia-south1 --allow-unauthent
 ## Status
 
 - [x] Staging deployed and verified isolated from production (2026-08-05)
-- [ ] `develop` branch created
+- [x] `develop` retired: `main` is the single long-lived branch (2026-10-05)
 - [ ] Production service `ditto-assist` deployed
 - [ ] `declaration-assistant` converted to a 301-redirect stub pointing at `ditto-assist`
