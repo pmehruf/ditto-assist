@@ -22,7 +22,7 @@
  * (ASD, GBS, MI, MS, RA, VF, VT). When uncertain, terms are left ungrouped.
  *
  * Deliberately NOT stored in the database and NOT used anywhere in the
- * matching engine (engine.ts) — this is purely a presentation grouping for
+ * matching engine (the routing engine (src/mapping)) — this is purely a presentation grouping for
  * dynamicSuggestions in App.tsx / LookupPage.tsx. It changes only what the
  * dropdown displays and which single term is inserted on click; it never
  * changes any declaration mapping, routing, or category. ped_directory
@@ -175,7 +175,7 @@ export interface GroupedSuggestionItem {
   aliases: string[];
   /** The literal term to insert into the lookup field when this row is
    * selected — always a single real ped_directory term, never the joined
-   * label or displayName, so the exact-match dictionary lookup in engine.ts
+   * label or displayName, so the exact-match dictionary lookup in the routing engine (src/mapping)
    * is unaffected by this display-only grouping. Unchanged behaviour. */
   insertValue: string;
 }

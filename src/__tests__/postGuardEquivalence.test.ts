@@ -3,22 +3,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { gunzipSync } from "node:zlib";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { snapshotFromDump } from "../mapping/seedBuilder";
 import { planConfigsFromDump } from "../mapping/equalityHarness";
 import { applyPostGuardsFromSnapshot } from "../mapping/routingEngine";
-import { applyPostGuards } from "../engine";
 import { fixtureDump } from "./helpers/mappingTestDb";
 import type { MatchOutput } from "../types";
 
 /**
- * Phase 6 batch C. After Gemini (and AI Memory) answer, the server used to run the hard-coded `applyPostGuards` from
- * engine.ts; the same rules live in the database as `post_guard` rows. The server now runs the database rules, so this
- * proves they give the identical result for answer-shaped inputs: every question of every plan x a wide set of
- * conditions x every match type. Any difference here would be a routing change and must stop the batch.
+ * Phase 6. After Gemini (and AI Memory) answer, the server applies the database `post_guard` rules. They must give the
+ * result the original hard-coded guards gave, frozen in `ai-postguard.expected.json.gz` (131,124 answer-shaped inputs:
+ * every question of every plan x every match type x 150+ conditions; 173 of them are rewritten by a guard). Any
+ * difference is a routing change and must stop the batch.
  */
 const MATCH_TYPES: MatchOutput["match_type"][] = ["P0", "P1", "P2", "FALLBACK", "NON_AILMENT", "ESCALATE", "INVALID"];
-
 const GUARD_TERMS = [
   "diabetes", "gestational diabetes", "type 2 diabetes", "type 1 diabetes", "type 2 diabetes on insulin", "diabetes on insulin",
   "pre diabetes", "diabetic retinopathy", "diabetic foot", "diabetes mellitus", "high blood sugar", "gdm",
@@ -26,39 +27,37 @@ const GUARD_TERMS = [
   "asthma", "obstructive sleep apnea", "fracture", "xqzprobe",
 ];
 
-describe("AI-answer post-guards: database rules equal the hard-coded guards", () => {
-  const snap = snapshotFromDump(fixtureDump);
-  const plans = planConfigsFromDump(fixtureDump);
-  const aliasTerms = fixtureDump.pedAliases.map((a) => a.aliasText).filter((_, i) => i % 7 === 0);
-  const terms = [...new Set([...GUARD_TERMS, ...aliasTerms])];
+const expected = JSON.parse(gunzipSync(readFileSync(new URL("./fixtures/mapping/ai-postguard.expected.json.gz", import.meta.url))).toString()) as {
+  meta: { combinations: number; rewrittenCount: number; sha256: string };
+  rewritten: Array<[string, string, string, string, MatchOutput]>;
+};
 
-  it("covers all plans and a meaningful number of conditions", () => {
-    expect(plans.length).toBeGreaterThanOrEqual(5);
-    expect(terms.length).toBeGreaterThan(150);
-  });
-
+describe("AI-answer post-guards: the database rules reproduce the frozen hard-coded guards", () => {
   it("gives identical output for every (plan, question, match type, condition)", () => {
-    let compared = 0;
-    let guardsFired = 0;
-    const diffs: string[] = [];
+    const snap = snapshotFromDump(fixtureDump);
+    const plans = planConfigsFromDump(fixtureDump);
+    const aliasTerms = fixtureDump.pedAliases.map((a) => a.aliasText).filter((_, i) => i % 7 === 0);
+    const terms = [...new Set([...GUARD_TERMS, ...aliasTerms])];
+    const all = createHash("sha256");
+    const rewritten: Array<[string, string, string, string, MatchOutput]> = [];
+    let n = 0;
     for (const { planName, config } of plans) {
       const questions = [...new Set([...config.questions, config.anyOther].filter(Boolean))];
       for (const q of questions) {
         for (const mt of MATCH_TYPES) {
           for (const ped of terms) {
             const make = (): MatchOutput => ({ ped_input: ped, match_type: mt, matched_question: q, explanation: "x", confused_questions: [] });
-            const legacy = applyPostGuards(make(), ped, planName, config);
-            const data = applyPostGuardsFromSnapshot(make(), ped, planName, config, snap).output;
-            compared++;
-            if (JSON.stringify(legacy) !== JSON.stringify(make())) guardsFired++;
-            if (JSON.stringify(legacy) !== JSON.stringify(data)) {
-              if (diffs.length < 5) diffs.push(`${planName} | ${ped} | ${mt} | ${q.slice(0, 40)}`);
-            }
+            const out = applyPostGuardsFromSnapshot(make(), ped, planName, config, snap).output;
+            all.update(JSON.stringify(out) + "\n");
+            n++;
+            if (JSON.stringify(out) !== JSON.stringify(make())) rewritten.push([planName, q, mt, ped, out]);
           }
         }
       }
     }
-    expect(diffs, `differences (of ${compared})`).toEqual([]);
-    expect(guardsFired).toBeGreaterThan(0); // the comparison actually exercises a rewriting guard
+    expect(n).toBe(expected.meta.combinations);
+    expect(rewritten.length).toBe(expected.meta.rewrittenCount);
+    expect(rewritten).toEqual(expected.rewritten);
+    expect(all.digest("hex")).toBe(expected.meta.sha256);
   });
 });

@@ -4,31 +4,19 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { TOP_PED_DICTIONARY, type MatchOutput, type PlanConfig } from "../types.js";
-import { PED_SYNONYM_GROUPS } from "../constants/pedSynonymGroups.js";
-import { COMMON_SMOKE_TEST_PEDS } from "../constants/commonSmokeTestPeds.js";
-import {
-  applyPostGuards,
-  classifyDeterministic,
-  finalizeOutput,
-  getSmokeTestCases,
-  normalizeDictionaryKey,
-  sanitizeOutput,
-} from "../engine.js";
+import type { MatchOutput, PlanConfig } from "../types.js";
 import { dbRowToPlanConfig, toPlanPedOverrides, toPlanRestrictions } from "../server/planConfigUtils.js";
 import { runDeterministicPipeline } from "./routingEngine.js";
 import type { MappingSnapshot } from "./ruleTypes.js";
 import type { MappingDump } from "./seedBuilder.js";
 
 /**
- * Equality harness for the mapping-control migration (Phase 2).
+ * Regression harness for the data-driven mapping engine.
  *
- * Reproduces what an advisor gets from production TODAY (PED_SOURCE unset →
- * legacy), via the legacy engine (src/engine.ts, untouched): the browser's
- * classification first (compiled dictionary, plan data + fresh plan
- * overrides), and only when that finds nothing the server's (dictionary +
- * ped_mapping_overrides). Then compares it with the data-driven engine.
+ * Computes the outcome of one (condition, plan) pair with the data-driven engine in a comparable form, and builds the
+ * (condition, plan) corpus the frozen baselines cover. The frozen baselines (src/__tests__/fixtures/mapping/) were
+ * produced by the original hard-coded engine during the Phase 2 migration; that engine has been removed (Phase 6) and
+ * the baselines are now the regression oracle.
  */
 
 export interface PairOutcome {
@@ -86,110 +74,22 @@ export function planConfigsFromDump(dump: MappingDump): Array<{ planName: string
     });
 }
 
-// ── legacy oracle ─────────────────────────────────────────────────────────
-
-function runLegacy(ped: string, planName: string, config: PlanConfig): MatchOutput | null {
-  let o = classifyDeterministic(ped, planName, config, null);
-  if (!o) return null;
-  o = sanitizeOutput(o, ped, config);
-  o = applyPostGuards(o, ped, planName, config);
-  return finalizeOutput(o, ped, config, config.questions);
-}
-
-/**
- * Legacy production behaviour for one pair: browser leg first (static
- * dictionary), then — only if that resolves nothing — the server leg (static
- * dictionary + ped_mapping_overrides). The dictionary object is mutated for
- * the server leg and restored.
- */
-export function legacyEffectiveFactory(dump: MappingDump) {
-  const staticDict = { ...TOP_PED_DICTIONARY };
-  const overrides = dump.pedMappingOverrides.map((o) => [normalizeDictionaryKey(o.pedText), o.category] as const);
-  return (ped: string, planName: string, config: PlanConfig): PairOutcome => {
-    const client = runLegacy(ped, planName, config);
-    if (client) return outcomeOf(client);
-    for (const [k, v] of overrides) TOP_PED_DICTIONARY[k] = v;
-    try {
-      return outcomeOf(runLegacy(ped, planName, config));
-    } finally {
-      for (const [k] of overrides) {
-        if (k in staticDict) TOP_PED_DICTIONARY[k] = staticDict[k];
-        else delete TOP_PED_DICTIONARY[k];
-      }
-    }
-  };
-}
-
 export function newEngineOutcome(ped: string, planName: string, config: PlanConfig, snap: MappingSnapshot): PairOutcome {
   return outcomeOf(runDeterministicPipeline(ped, planName, config, snap).result);
 }
 
 // ── corpus ────────────────────────────────────────────────────────────────
 
-/** Regex-alternation probes taken from the legacy engine source, so every hard-coded family is exercised. */
-export function regexProbeTerms(engineSourcePath: string): string[] {
-  const src = readFileSync(engineSourcePath, "utf8");
-  const BS = String.fromCharCode(92);
-  const reAlt = new RegExp(BS + "/" + BS + BS + "b" + BS + "(([^)]*?)" + BS + ")" + BS + BS + "b" + BS + "/i", "g");
-  const out = new Set<string>();
-  for (const m of src.matchAll(reAlt)) {
-    for (let alt of m[1].split("|")) {
-      alt = alt
-        .split(BS + "b").join("")
-        .split(BS + "w*").join("")
-        .split("[" + BS + "s-]?").join(" ")
-        .split(BS + "s*").join(" ")
-        .split(BS + "s+").join(" ")
-        .split("[- ]?").join(" ")
-        .split("?").join("")
-        .split(BS).join("")
-        .replace(/[()]/g, "")
-        .trim();
-      if (alt && alt.length > 1 && !/[[\]{}*+^$]/.test(alt)) out.add(alt);
-    }
-  }
-  return [...out];
-}
-
-export function baseTerms(dump: MappingDump, engineSourcePath: string): string[] {
-  const terms = new Set<string>();
+/**
+ * The (condition) corpus for a dump: every term of the frozen baseline plus every alias text of the dump, so conditions
+ * added after the baseline was frozen are covered too. The frozen terms are the union of the original corpus (aliases,
+ * the compiled dictionary, synonym groups, smoke-test conditions, regex-alternation probes, generated variants and
+ * compound conditions) fixed at the Phase 2 migration.
+ */
+export function corpusTerms(dump: MappingDump, frozenTerms: string[]): string[] {
+  const terms = new Set<string>(frozenTerms);
   for (const a of dump.pedAliases) terms.add(a.aliasText);
-  for (const k of Object.keys(TOP_PED_DICTIONARY)) terms.add(k);
-  for (const g of PED_SYNONYM_GROUPS) for (const t of g) terms.add(t);
-  for (const t of COMMON_SMOKE_TEST_PEDS) terms.add(t);
-  for (const c of getSmokeTestCases()) terms.add(c.ped);
-  for (const t of regexProbeTerms(engineSourcePath)) terms.add(t);
   return [...terms].sort();
-}
-
-/** Generated variants exercising normalisation, free-text and substring paths. */
-export function variantTerms(base: string[]): string[] {
-  const out = new Set<string>();
-  for (const t of base) {
-    out.add(t.toUpperCase());
-    out.add(`history of ${t}`);
-    out.add(`${t} since 2019`);
-    out.add(`${t}.`);
-  }
-  for (const t of base) out.delete(t);
-  return [...out].sort();
-}
-
-/** Deterministic (seeded) compound terms — two conditions in one entry — to exercise stage precedence on free text. */
-export function compoundTerms(base: string[], count: number, seed = 12345): string[] {
-  let x = seed >>> 0;
-  const next = () => {
-    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
-    return x / 0x100000000;
-  };
-  const joiners = [" and ", ", ", " with ", " / ", " after "];
-  const out = new Set<string>();
-  while (out.size < count) {
-    const a = base[Math.floor(next() * base.length)];
-    const b = base[Math.floor(next() * base.length)];
-    if (a !== b) out.add(a + joiners[Math.floor(next() * joiners.length)] + b);
-  }
-  return [...out].sort();
 }
 
 export function sha1(text: string): string {

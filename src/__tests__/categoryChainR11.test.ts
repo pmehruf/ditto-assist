@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { snapshotFromDump } from "../mapping/seedBuilder";
 import { planConfigsFromDump } from "../mapping/equalityHarness";
 import { runDeterministicPipeline } from "../mapping/routingEngine";
-import { questionForCategory } from "../engine";
+import { questionForCategory } from "../mapping/helpers";
 import { categoriesInDefinition } from "../server/mappingAdmin";
 import { validateCategoryChain, MAX_CHAIN_LENGTH } from "../server/categoryChain";
 import { fixtureDump } from "./helpers/mappingTestDb";
@@ -190,8 +190,8 @@ describe("chain validation", () => {
 
 describe("R11 isolation", () => {
   const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), "utf8");
-  it("the legacy engine and the seeded legacy rules know nothing about chains", () => {
-    expect(read("src/engine.ts")).not.toMatch(/categoryChain|chooseFromChain/);
+  it("the shared helpers and the seeded legacy rules know nothing about chains", () => {
+    expect(read("src/mapping/helpers.ts")).not.toMatch(/categoryChain|chooseFromChain/);
     expect(read("src/mapping/legacyRuleSeed.ts")).not.toMatch(/categoryChain|chooseFromChain/);
   });
   it("the engine evaluates the chain in exactly one place (the dictionary stage), nowhere else", () => {

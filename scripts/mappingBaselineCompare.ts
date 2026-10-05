@@ -25,12 +25,15 @@ import { sql } from "drizzle-orm";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
 import { createMappingSnapshotProvider } from "../src/server/mappingSnapshot.js";
-import { baseTerms, compoundTerms, newEngineOutcome, planConfigsFromDump, primaryKey, strictHash, variantTerms } from "../src/mapping/equalityHarness.js";
+import { corpusTerms, newEngineOutcome, planConfigsFromDump, primaryKey, strictHash } from "../src/mapping/equalityHarness.js";
 import { snapshotFromDump, type MappingDump } from "../src/mapping/seedBuilder.js";
 import type { MappingSnapshot } from "../src/mapping/ruleTypes.js";
 import { categories, pedAliases, pedMappingOverrides, pedRepository, planConfigs, planOverrides, planRestrictions } from "../src/server/db/schema.js";
 
 dotenv.config();
+
+/** The corpus of the committed post-R10 baseline; aliases added to the database since are added on top. */
+const FROZEN_TERMS = (JSON.parse(gunzipSync(readFileSync(new URL("../src/__tests__/fixtures/mapping/post-r10.baseline.json.gz", import.meta.url))).toString()) as { terms: string[] }).terms;
 
 const arg = (name: string): string | undefined => {
   const i = process.argv.indexOf(`--${name}`);
@@ -43,8 +46,7 @@ async function computeAll(dumpPath?: string): Promise<{ outcomes: Record<string,
     // while `mapping:verify` is EQUAL), the data is the captured mapping tables.
     const dump = (JSON.parse(gunzipSync(readFileSync(dumpPath)).toString()) as { data: MappingDump }).data;
     const snapshot: MappingSnapshot = snapshotFromDump(dump);
-    const base = baseTerms(dump, "src/engine.ts");
-    const terms = [...new Set([...base, ...variantTerms(base), ...compoundTerms(base, 6000)])].sort();
+    const terms = corpusTerms(dump, FROZEN_TERMS);
     const outcomes: Record<string, string> = {};
     for (const { planName, config } of planConfigsFromDump(dump)) {
       for (const ped of terms) {
@@ -77,8 +79,7 @@ async function computeAll(dumpPath?: string): Promise<{ outcomes: Record<string,
     pedMappingOverrides: legacyOverrides.map((o) => ({ pedText: o.pedText, category: o.category })),
   } as unknown as MappingDump;
   const snapshot = await createMappingSnapshotProvider(createRepositories(db)).get();
-  const base = baseTerms(dump, "src/engine.ts");
-  const terms = [...new Set([...base, ...variantTerms(base), ...compoundTerms(base, 6000)])].sort();
+  const terms = corpusTerms(dump, FROZEN_TERMS);
   const outcomes: Record<string, string> = {};
   for (const { planName, config } of planConfigsFromDump(dump)) {
     for (const ped of terms) {

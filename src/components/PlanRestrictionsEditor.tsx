@@ -70,7 +70,7 @@ interface PlanRestrictionsEditorProps {
  * routes (server.ts) rather than being bundled into the plan's own
  * save/PUT flow — a restriction takes effect immediately on
  * create/edit/delete/toggle, same as the Add/Edit Plan wizard is a separate
- * concern from this. See engine.ts's hasActiveRestriction /
+ * concern from this. See the routing engine's restriction handling /
  * isCategoryRestrictedForPed for how these rows are evaluated by the
  * Declaration Assistant at match time — deterministic keyword logic, no AI
  * involved anywhere.

@@ -91,8 +91,8 @@ function statusBadge(status: PedEntry["status"], dark: boolean) {
 
 /**
  * Admin management UI for `ped_repository` / `ped_aliases` — the tables the
- * deterministic matching engine actually reads when PED_SOURCE=db (see
- * server.ts's getDbSource, src/server/pedRuntimeCache.ts). This REPLACES
+ * deterministic matching engine actually reads when the database-backed engine (see
+ * server.ts's getDbSource, src/server/the mapping snapshot (src/server/mappingSnapshot.ts)). This REPLACES
  * PedSuggestionsManagement (the old `ped_directory`-backed page) as the tab
  * an admin reaches under "PED Repository": edits made here are the live
  * source of truth the engine classifies against, not a separate directory
@@ -106,7 +106,7 @@ function statusBadge(status: PedEntry["status"], dark: boolean) {
  * rendered in a clearly separate, visually muted group for that reason.
  *
  * Every write here also mirrors into the legacy ped_mapping_overrides table
- * (server-side, see pedRepositoryLive.ts) purely as PED_SOURCE=legacy
+ * (server-side, see pedRepositoryLive.ts) purely as the removed legacy engine
  * rollback insurance — nothing in this component needs to know that.
  */
 export function PedRepositoryManagement({ theme, effectiveTier, currentUser, setChangeLogs, canManage }: PedRepositoryManagementProps) {

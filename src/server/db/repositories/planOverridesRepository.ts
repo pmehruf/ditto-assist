@@ -6,7 +6,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { planOverrides, pedRepository, pedAliases, type PlanOverrideRow, type NewPlanOverrideRow } from "../schema.js";
-import { normalizeDictionaryKey } from "../../../engine.js";
+import { normalizeDictionaryKey } from "../../../mapping/helpers.js";
 
 export type CreatePlanOverrideEntry = Omit<NewPlanOverrideRow, "id" | "createdAt">;
 
@@ -21,7 +21,7 @@ export interface PlanOverrideDetailedRow extends PlanOverrideRow {
  * Data Access Layer for `plan_overrides` — per-plan category overrides for
  * a specific PED (PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.5), replacing
  * the 4 hardcoded "0.4 PLAN-SPECIFIC OVERRIDES & INTERCEPTS" blocks in
- * engine.ts. One row per (planName, pedId) — enforced by a unique index in
+ * the routing engine (src/mapping). One row per (planName, pedId) — enforced by a unique index in
  * the migration, so `upsert` is the normal write path.
  */
 export class PlanOverridesRepository {

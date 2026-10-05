@@ -6,9 +6,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createMappingTestEnv, type MappingTestEnv } from "./helpers/mappingTestDb";
-import { applyAiApproval, revertAiApproval, undoChangeSet, type PromotionDeps } from "../server/aiMappingPromotion";
+import { applyAiApproval, revertAiApproval, undoChangeSet, inferCategoryKeyForQuestion, type PromotionDeps } from "../server/aiMappingPromotion";
+import type { PlanConfig } from "../types";
 import { pedAliases, pedMappingOverrides, pedRepository } from "../server/db/schema";
-import { questionForCategory } from "../engine";
+import { questionForCategory } from "../mapping/helpers";
 
 /**
  * Phase 3A — AI Mapping Review approve / reject on the AUTHORITATIVE tables,
@@ -192,5 +193,32 @@ describe("AI Mapping Review — Reject / Undo", () => {
     expect((applied.verification as { observed: { effectiveCategory: string } }).observed.effectiveCategory).toBe("heart");
     const rows = await env.db.select().from(pedAliases).where(eq(pedAliases.normalizedAlias, "quirkelzorb 7742"));
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("inferCategoryKeyForQuestion", () => {
+  const cfg: PlanConfig = {
+    questions: ["Question A", "Question B", "Question C"],
+    anyOther: "Other",
+    hasUmbrella: false,
+    umbrellaQuestions: [],
+    categoryMap: { cat_unique: 0, cat_ambig_1: 1, cat_ambig_2: 1 },
+  } as unknown as PlanConfig;
+
+  it("returns the single categoryKey that resolves to the given question", () => {
+    expect(inferCategoryKeyForQuestion(cfg, "Question A")).toBe("cat_unique");
+  });
+
+  it("returns null when more than one categoryKey resolves to the same question (ambiguous)", () => {
+    expect(inferCategoryKeyForQuestion(cfg, "Question B")).toBeNull();
+  });
+
+  it("returns null when no categoryKey resolves to the given question", () => {
+    expect(inferCategoryKeyForQuestion(cfg, "Question Z — never mapped")).toBeNull();
+  });
+
+  it("returns null for empty question text or a plan with no categoryMap", () => {
+    expect(inferCategoryKeyForQuestion(cfg, "")).toBeNull();
+    expect(inferCategoryKeyForQuestion({ ...cfg, categoryMap: {} } as unknown as PlanConfig, "Question A")).toBeNull();
   });
 });

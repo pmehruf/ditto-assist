@@ -426,7 +426,7 @@ export type NewPedMappingOverrideRow = typeof pedMappingOverrides.$inferInsert;
 // types.ts (see PED_REPOSITORY_DB_MIGRATION_DESIGN.md). category_key is kept
 // as the primary key, not a new integer id, because a large amount of
 // existing application code already speaks in these exact string keys
-// (engine.ts, plan_configs.categoryMap JSONB) — reusing the string avoids an
+// (the routing engine (src/mapping), plan_configs.categoryMap JSONB) — reusing the string avoids an
 // app-wide int-id rewrite everywhere else.
 // ─────────────────────────────────────────────────────────────────────────
 export const categories = pgTable("categories", {
@@ -488,7 +488,7 @@ export type NewPedRepositoryRow = typeof pedRepository.$inferInsert;
 // ─────────────────────────────────────────────────────────────────────────
 // ped_aliases — every searchable text variant for a ped_repository row,
 // including one is_primary row mirroring canonical_name. normalized_alias
-// (via normalizeDictionaryKey, src/engine.ts) is the actual runtime lookup
+// (via normalizeDictionaryKey, src/mapping/helpers.ts) is the actual runtime lookup
 // key the deterministic engine's dictionary stage queries; its uniqueness
 // constraint is what enforces "Alias Collision" at the database level — two
 // PEDs can never claim the same normalized text.
@@ -504,8 +504,8 @@ export const pedAliases = pgTable("ped_aliases", {
   // must still resolve via search (normalizeDictionaryKey lookup, unchanged),
   // but must never be shown in a dropdown, search suggestion, or lookup
   // result. `isVisible=false` marks an alias as a hidden normalization-only
-  // entry: it stays in `normalizedAlias` for matching (classifyDeterministic
-  // reads every alias regardless of this flag — see pedRuntimeCache.ts,
+  // entry: it stays in `normalizedAlias` for matching (the routing engine
+  // reads every alias regardless of this flag — see the mapping snapshot (src/server/mappingSnapshot.ts),
   // deliberately unfiltered), but any admin UI listing a PED's aliases
   // should filter this out. Defaults true so every existing/new alias is
   // visible unless explicitly hidden.
@@ -532,7 +532,7 @@ export type NewPedAliasRow = typeof pedAliases.$inferInsert;
 // ─────────────────────────────────────────────────────────────────────────
 // plan_overrides — per-plan category overrides for a specific PED,
 // replacing the 4 hardcoded "0.4 PLAN-SPECIFIC OVERRIDES & INTERCEPTS"
-// blocks in engine.ts (Activ Fit Preferred: OSA -> genetic, DVT/PE family
+// blocks in the routing engine (src/mapping) (Activ Fit Preferred: OSA -> genetic, DVT/PE family
 // -> heart; Care Supreme: Crohn's/colitis/IBD -> blood; Optima Secure:
 // RA/ankylosing spondylitis -> musculoskeletal). One row per (planName,
 // pedId) — a term FAMILY previously matched by a single regex becomes one
@@ -552,7 +552,7 @@ export const planOverrides = pgTable(
     categoryKey: text("category_key"),
     // The exact plan question this PED maps to on this plan (0084). Takes
     // precedence over categoryKey and over the PED's own category mapping —
-    // see engine.ts's applyPlanPedOverride. Falls back to categoryKey if the
+    // see src/mapping/helpers.ts's applyPlanPedOverride. Falls back to categoryKey if the
     // question text no longer exists on the plan (e.g. it was reworded).
     targetQuestion: text("target_question"),
     reason: text("reason"),
@@ -567,7 +567,7 @@ export type NewPlanOverrideRow = typeof planOverrides.$inferInsert;
 
 // ─────────────────────────────────────────────────────────────────────────
 // routing_rules — the ordered routing pipeline as data (mapping-control
-// Phase 2). Every hard-coded rule the legacy engine (src/engine.ts) applied
+// Phase 2). Every hard-coded rule the legacy engine (src/mapping/helpers.ts) applied
 // — life-stage firewall, plan-specific rules, shields, disease-family
 // sections, generic shields, post-guards — plus the named primitives'
 // editable parameters. `position` is the evaluation order (ascending);
@@ -664,7 +664,7 @@ export type NewMappingChangeSetRow = typeof mappingChangeSets.$inferInsert;
 // bypassBenignTumors — PlanOverrides in types.ts) with a real Create/Edit/
 // Delete/Enable-disable UI. No AI involved anywhere in evaluating these:
 // `mode` + `keywords` below is read by a small, pure, plain-text
-// word-boundary matcher in engine.ts (isCategoryRestrictedForPed) — the
+// word-boundary matcher in the routing engine (src/mapping) (isCategoryRestrictedForPed) — the
 // exact same mechanism the old hardcoded regex checks already used, just
 // table-driven instead of code-hardcoded.
 //
@@ -808,7 +808,7 @@ export type NewSmokeTestPedRow = typeof smokeTestPeds.$inferInsert;
 // ─────────────────────────────────────────────────────────────────────────
 // ai_memory — Level 2 of the three-level lookup memory.
 //
-//   L1  Deterministic Engine (engine.ts + TOP_PED_DICTIONARY + plan config)
+//   L1  Deterministic Engine (database-backed routing engine, src/mapping)
 //   L2  AI Memory (this table)
 //   L3  Gemini
 //
@@ -894,7 +894,7 @@ export type NewAiMemoryRow = typeof aiMemory.$inferInsert;
 // collision_repository — institutional memory of alias/category/plan/AI/
 // regression collisions (PED_REPOSITORY_DB_MIGRATION_DESIGN.md §1.8).
 // Advisory-only for the initial PED repository DB migration: nothing in
-// engine.ts consults this table at match time yet. `severity`/`active`
+// the routing engine (src/mapping) consults this table at match time yet. `severity`/`active`
 // already let a later change decide which rows to actively enforce against
 // (block a known-bad mapping) without another schema change — see
 // "Approved Decisions" #1 in the design doc.

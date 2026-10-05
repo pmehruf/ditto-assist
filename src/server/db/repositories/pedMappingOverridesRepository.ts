@@ -6,7 +6,7 @@
 import { asc, eq } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
 import { pedMappingOverrides, type PedMappingOverrideRow } from "../schema.js";
-import { normalizeDictionaryKey } from "../../../engine.js";
+import { normalizeDictionaryKey } from "../../../mapping/helpers.js";
 
 /**
  * Data Access Layer for admin-curated PED -> category corrections that sit
@@ -14,11 +14,11 @@ import { normalizeDictionaryKey } from "../../../engine.js";
  * the static dictionary in /api/match so an admin's correction takes effect
  * for every future search of that exact PED text, without a code change.
  *
- * Normalization here MUST exactly match engine.ts's dictionary-routing
+ * Normalization here MUST exactly match the routing engine (src/mapping)'s dictionary-routing
  * lookup key (normalizeDictionaryKey: lowercased, punctuation deleted,
  * whitespace collapsed) — not just trim+lowercase. A row stored under the
  * wrong normalization (e.g. "c-section" with the hyphen kept) is silently
- * unreachable: classifyDeterministic looks up "csection" and never finds it,
+ * unreachable: the routing engine looks up "csection" and never finds it,
  * so the override appears to do nothing even though it saved successfully.
  */
 export class PedMappingOverridesRepository {

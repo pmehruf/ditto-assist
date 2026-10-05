@@ -6,7 +6,7 @@
 /**
  * Baseline PED list for the Smoke Test page — 100 pre-existing diseases an
  * advisor is most likely to actually encounter day to day, spanning every
- * major TOP_PED_DICTIONARY/engine.ts category (diabetes, cardiac,
+ * major TOP_PED_DICTIONARY/the routing engine (src/mapping) category (diabetes, cardiac,
  * respiratory, endocrine, eye, kidney, digestive, autoimmune,
  * neuro/psychiatric, reproductive, musculoskeletal, blood, HIV/liver,
  * oncology, infectious, skin, and several of the named surgical procedures
@@ -15,7 +15,7 @@
  * Cataract Surgery/Knee & Hip Replacement — rather than a generic fallback).
  * Also includes Covid-19 and Sarcoidosis, which surfaced as real
  * plan-categoryMap gaps during this app's own mapping audit (see
- * engine.ts/types.ts) — kept here as a standing regression check of that
+ * the routing engine (src/mapping)/types.ts) — kept here as a standing regression check of that
  * fix.
  *
  * Deliberately a FIXED, hardcoded list (not admin-editable) — it's meant to

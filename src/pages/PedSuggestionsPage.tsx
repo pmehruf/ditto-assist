@@ -32,7 +32,7 @@ interface PedSuggestionsPageProps {
  * Admin+ only (gated in App.tsx's sidebar/hasAccess via the
  * "ped_suggestions" feature id). "PED Library" now renders
  * PedRepositoryManagement — the `ped_repository`/`ped_aliases` schema the
- * deterministic engine actually reads when PED_SOURCE=db (cutover,
+ * deterministic engine actually reads when the database-backed engine (cutover,
  * 2026-07-28/29; see PED_REPOSITORY_PHASE5_CUTOVER_REPORT.md and
  * pedRepositoryLive.ts). Edits here ARE the live source of truth — no
  * separate promotion step — and also feed the Lookup page's autocomplete

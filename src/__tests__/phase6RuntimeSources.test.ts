@@ -4,37 +4,36 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 /**
- * Phase 6 (R1/R9): with MAPPING_ENGINE=db a lookup reads the database snapshot only. These source-level guards pin the
- * places where the legacy override table / dictionary cache used to be loaded on every request.
+ * Phase 6 (R1/R5/R9): the database snapshot is the only source of routing. These source-level guards pin that the legacy
+ * engine, its switches, its caches and the compiled plan configs are gone from the runtime.
  */
-const server = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
+const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), "utf8");
+const code = (f: string) => read(f).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+const server = code("server.ts");
+const app = code("src/App.tsx");
 
-describe("db-mode lookups do not touch the legacy sources", () => {
-  it("the legacy ped_mapping_overrides table is loaded only when the legacy engine is selected", () => {
-    const calls = server.match(/ensurePedOverridesLoaded\(pedOverridesRepo\)/g) ?? [];
-    expect(calls.length).toBe(2); // /api/match and the smoke-test endpoint
-    for (const m of server.matchAll(/^.*ensurePedOverridesLoaded\(pedOverridesRepo\).*$/gm)) {
-      expect(m[0]).toContain('MAPPING_ENGINE !== "db"');
+describe("the legacy engine and its switches are removed", () => {
+  it("the legacy engine, its caches and its mirror modules no longer exist", () => {
+    for (const f of ["src/engine.ts", "src/server/pedRuntimeCache.ts", "src/server/pedMappingLive.ts", "src/server/legacyWriteGuard.ts"]) {
+      expect(existsSync(new URL(`../../${f}`, import.meta.url)), f).toBe(false);
     }
   });
 
-  it("the legacy dictionary cache source is never built in db mode", () => {
-    expect(server).toMatch(/if \(MAPPING_ENGINE === "db" \|\| PED_SOURCE !== "db"\) return null;/);
+  it("the server has no engine switch, no legacy classifier and no legacy caches", () => {
+    expect(server).not.toMatch(/MAPPING_ENGINE|PED_SOURCE|classifyDeterministic|ensurePedOverridesLoaded|pedRuntimeCache|legacyOnlyWriteBlocked/);
+    expect(server).not.toMatch(/applyPostGuards\(/);
   });
-});
 
-describe("AI answers use the database post-guard rules (batch C)", () => {
-  it("the Gemini path runs the snapshot's post_guard rows in db mode", () => {
-    expect(server).toContain("applyPostGuardsFromSnapshot(parsedOutput, ped, planName, config, await getMappingSnapshot(repos)).output");
+  it("the browser never classifies a condition; every lookup goes to the server", () => {
+    expect(app).not.toMatch(/classifyDeterministic|from "\.\/engine/);
+    expect(app).toContain('fetch("/api/match"');
   });
-});
 
-describe("plans come from the database only (batch D)", () => {
-  it("the server no longer reads the compiled plan configs", () => {
+  it("the server reads plans from the database only and runs the database post-guards on AI answers", () => {
     expect(server).not.toContain("getPlanConfig");
-    expect(server).not.toMatch(/PLAN_CONFIG\[/);
+    expect(server).toContain("applyPostGuardsFromSnapshot(parsedOutput, ped, planName, config, await getMappingSnapshot(repos)).output");
   });
 });

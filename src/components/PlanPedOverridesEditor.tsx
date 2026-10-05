@@ -60,7 +60,7 @@ interface PlanPedOverridesEditorProps {
  * disorder?" on Optima Secure, while every other plan keeps routing it by
  * its Respiratory category). Saves straight to `plan_overrides` via
  * /api/plan-ped-overrides; takes effect for every advisor on their next
- * lookup. Evaluated by engine.ts's applyPlanPedOverride.
+ * lookup. Evaluated by src/mapping/helpers.ts's applyPlanPedOverride.
  */
 export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mode }: PlanPedOverridesEditorProps) {
   const liveLabel = useCategoryLabels();
