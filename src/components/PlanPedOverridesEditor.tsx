@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2, Pencil, X, Check, Search, ArrowRight } from "lucide-react";
-import { CATEGORY_LABELS } from "../types.js";
+import { useCategoryLabels } from "../utils/categoryLabels";
 import { ClippedButton } from "./ClippedButton";
 import { CustomSelect } from "./CustomSelect";
 import { useDialog } from "../hooks/useDialog";
@@ -53,11 +53,6 @@ interface PlanPedOverridesEditorProps {
   mode: "view" | "edit";
 }
 
-function categoryLabel(key: string | null): string {
-  if (!key) return "Uncategorized";
-  return CATEGORY_LABELS[key] || key;
-}
-
 /**
  * Plan-Specific PED Mappings — pins one PED to an exact question on this
  * plan only, taking precedence over the PED's category mapping (e.g.
@@ -68,6 +63,8 @@ function categoryLabel(key: string | null): string {
  * lookup. Evaluated by engine.ts's applyPlanPedOverride.
  */
 export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mode }: PlanPedOverridesEditorProps) {
+  const liveLabel = useCategoryLabels();
+  const categoryLabel = (key: string | null): string => (key ? liveLabel(key) : "Uncategorized");
   const dark = theme === "dark";
   const { confirm } = useDialog();
   const [entries, setEntries] = useState<PlanPedOverrideRowEntry[]>([]);
