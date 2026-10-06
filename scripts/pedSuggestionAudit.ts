@@ -233,6 +233,22 @@ const nm = nonMedical.length;
 writeFileSync(`${outDir}/1-visible-name-cleanup.csv`, csv(tierRows));
 writeFileSync(`${outDir}/2-non-medical-suggestions.csv`, csv(nonMedical));
 writeFileSync(`${outDir}/3-left-untouched-for-review.csv`, csv([...review, ...engineQuirk.map((r) => ({ Group: "-", ...r }))]));
+// The approved hide list: Tier A, Tier B1 and the non-medical names. Never Tier B2 (alternative wording stays visible).
+const byText = new Map<string, Alias>();
+for (const a of visible) if (!byText.has(a.aliasText)) byText.set(a.aliasText, a);
+const planItems: Array<Record<string, unknown>> = [];
+for (const d of decisions.values()) {
+  if (d.tier !== "A" && d.tier !== "B1") continue;
+  const keeper = d.keep ? byText.get(d.keep) : undefined;
+  planItems.push({ id: d.alias.id, text: d.alias.aliasText, normalized: d.alias.normalizedAlias, group: d.tier, pedId: d.alias.pedId, category: null, keeperId: keeper?.id ?? null, keeperText: d.keep ?? null });
+}
+for (const a of visibleAll) {
+  if (!nonMedicalIds.has(a.id)) continue;
+  const p = pedById.get(a.pedId);
+  planItems.push({ id: a.id, text: a.aliasText, normalized: a.normalizedAlias, group: "NON_MEDICAL", pedId: p ? a.pedId : null, category: p?.categoryKey ?? null, keeperId: null, keeperText: null });
+}
+writeFileSync(`${outDir}/hide-plan.json`, JSON.stringify({ version: 1, madeFrom: { environment: raw.meta.environment, capturedAt: raw.meta.capturedAt }, expectedVisibleBefore: visibleAll.length, expectedVisibleAfter: visibleAll.length - planItems.length, items: planItems }, null, 1));
+writeFileSync(`${outDir}/hide-list-106.csv`, csv(planItems.map((i) => ({ Group: i.group === "NON_MEDICAL" ? "Non-medical" : i.group, "Name to hide": i.text, "Stays visible instead": i.keeperText ?? "", "Alias id": i.id }))));
 const total = visibleAll.length;
 const md = `# Declaration Assist suggestion list: revised Phase 1 (read-only)
 
