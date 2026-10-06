@@ -88,7 +88,7 @@ const RULE_PLAIN: Record<string, { from: string; to: string }> = {
   "primitive.dictionary_lookup": { from: "Alias lookup (PED category, alias override, routing_enabled) → category for the stages below.", to: "Finds the condition (or one of its other names) in the Condition List and takes its category." },
   "primitive.plan_decision": { from: "Plan Decision: the plan's category map decides direct question / explicit catch-all / no mapping. Wording and templates live in params.", to: "Turns the category into the question this plan asks for it (Category match), or the Others question if the plan has none (Fallback)." },
   "dict.natural_life_stage": { from: "Natural life stage: delegates to the life-stage firewall (unresolved when it does not match).", to: "Normal life stages are passed to the not-a-disease check." },
-  "family.digestive": { from: "Digestive (Activ Fit Preferred: ulcer → exact tumour/ulcer listing, P0).", to: "Digestive conditions. On Activ Fit Preferred, ulcer goes directly to the tumour/ulcer question (Direct match)." },
+  "family.digestive": { from: "Digestive (Activ Fit Preferred: ulcer → exact tumour/ulcer listing, P0).", to: "Digestive conditions. On Activ Fit Preferred, ulcer goes straight to the tumour/ulcer question." },
   "generic.allergy": { from: "Generic allergy shield.", to: "Allergy check." },
   "generic.ambiguous_symptoms": { from: "Ambiguous symptoms shield.", to: "Vague symptoms check." },
 };

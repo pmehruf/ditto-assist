@@ -55,7 +55,7 @@ const SOURCE_PLAIN: Record<string, string> = {
   alias_override: "a category set on this name",
   fallback_category: "this name's last-resort category",
   not_routed: "nothing — this name is switched off for matching",
-  none: "nothing — not a known condition",
+  none: "so it has no category there",
 };
 
 const TEMPLATE = JSON.stringify(
@@ -254,7 +254,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
             {trace.result.postGuard && <p className={muted}>Then adjusted by a final-adjustment step (reference: <code>{trace.result.postGuard}</code>).</p>}
             {trace.result.dictionary && (
               <p className={muted}>
-                Matched “{trace.result.dictionary.alias}” → category {label(trace.result.dictionary.effectiveCategory)} (from {SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).
+                {trace.result.dictionary.effectiveCategory ? <>Matched “{trace.result.dictionary.alias}” → category {label(trace.result.dictionary.effectiveCategory)} (from {SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).</> : <>“{trace.result.dictionary.alias}” is not in the Condition List ({SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).</>}
               </p>
             )}
             {trace.result.dictionary?.chain && (
