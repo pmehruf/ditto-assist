@@ -269,7 +269,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
                 AI Memory has a {trace.result.aiMemory.status} answer for this: {trace.result.aiMemory.question ?? "(rejected — advisors see the Others question with a manual-review note)"}.
               </p>
             )}
-            <p className={`text-[11px] ${muted}`}>Mapping settings version {trace.result.snapshotVersion}. Read-only: no AI call and no search history.</p>
+            <p className={`text-[11px] ${muted}`}>Read-only: no AI call and no search history.</p>
           </div>
         )}
       </div>

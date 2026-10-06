@@ -535,7 +535,6 @@ export function AiMappingReview({
                             <Detail label="Plan" value={entry.planName} dark={dark} />
                             <Detail label="AI model" value={entry.geminiModel} dark={dark} />
                             <Detail label="AI instructions version" value={entry.promptVersion} dark={dark} />
-                            <Detail label="Mapping version" value={entry.engineVersion} dark={dark} />
                             <Detail label="Times searched" value={String(entry.accessCount)} dark={dark} />
                             <Detail
                               label="Approved By"

@@ -93,7 +93,6 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
               {t.dictionary.chain && row("Primary and Fallbacks", <>{describeCategoryChain(t.dictionary.chain, label).map((l) => <div key={l}>{l}</div>)}</>)}
             </>
           )}
-          {row("Mapping version", `${t.snapshotVersion ?? "—"}${t.instance ? ` · server ${t.instance}` : ""}`)}
         </div>
       )}
     </div>
