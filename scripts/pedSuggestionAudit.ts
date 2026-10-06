@@ -138,7 +138,8 @@ for (const a of visible) {
   for (const key of new Set([`1:${k1(a.aliasText)}`, `2:${k2(a.aliasText)}`])) byKey.set(key, [...(byKey.get(key) ?? []), a]);
 }
 const handledBuckets = new Set<string>();
-const rank = (a: Alias) => { const p = pedById.get(a.pedId)!; return [p.status === "approved" ? 0 : 1, p.categoryKey ? 0 : 1, a.isPrimary ? 0 : 1, looksClean(a.aliasText) ? 0 : 1, -(aliasesByPed.get(p.id)?.length ?? 0), p.id]; };
+const directCount = (a: Alias) => answers(a.aliasText).filter((x) => x.split("|")[1] === "P0").length;
+const rank = (a: Alias) => { const p = pedById.get(a.pedId)!; return [p.status === "approved" ? 0 : 1, p.categoryKey ? 0 : 1, a.isPrimary ? 0 : 1, -directCount(a), looksClean(a.aliasText) ? 0 : 1, -(aliasesByPed.get(p.id)?.length ?? 0), p.id]; };
 const cmp = (x: number[], y: number[]) => { for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 for (const list of byKey.values()) {
   const pedIds = new Set(list.map((a) => a.pedId));
@@ -152,11 +153,22 @@ for (const list of byKey.values()) {
   const ans0 = pedAnswers(ps[0]);
   const sameAns = ps.every((p) => differing(ans0, pedAnswers(p)).length === 0);
   const names = list.filter((a) => a.isPrimary).length ? list.filter((a) => a.isPrimary) : list;
+  // Same wording, different category or label, but the SAME question on every plan (only the result label can differ, for example
+  // Direct match on one plan versus Category match). Hiding one cannot change what an advisor is told; proposed as Tier C.
+  const questionOf = (p: Ped) => pedAnswers(p).map((x) => x.split("|")[2] ?? "");
+  const q0 = questionOf(ps[0]);
+  const sameQuestions = ps.every((p) => questionOf(p).every((q, i) => q === q0[i]));
   if (sameCat && sameAns) {
     const keeper = [...names].sort((x, y) => cmp(rank(x), rank(y)))[0];
     for (const a of list) {
       if (a.pedId === keeper.pedId) continue;
       if (a.isPrimary || list.some((o) => o.pedId === a.pedId && o.isPrimary)) decisions.set(a.id, { alias: a, tier: "A", action: "Hide", reason: `Same wording as "${keeper.aliasText}" (another condition with the same category and the same answer on every plan)`, group: gid, keep: keeper.aliasText });
+    }
+  } else if (sameQuestions) {
+    const keeper = [...names].sort((x, y) => cmp(rank(x), rank(y)))[0];
+    for (const a of list) {
+      if (a.pedId === keeper.pedId) continue;
+      if (a.isPrimary || list.some((o) => o.pedId === a.pedId && o.isPrimary)) decisions.set(a.id, { alias: a, tier: "C", action: "Hide", reason: `Same wording as "${keeper.aliasText}"; the question is identical on every plan (only the result label can differ: ${[...new Set(ps.flatMap((p) => differing(ans0, pedAnswers(p))))].join(", ") || "category"})`, group: gid, keep: keeper.aliasText });
     }
   } else {
     for (const a of list) review.push({ Group: gid, Why: `Same wording, but the conditions differ: ${!sameCat ? "category differs" : ""}${!sameCat && !sameAns ? "; " : ""}${!sameAns ? `answers differ on ${[...new Set(ps.flatMap((p) => differing(ans0, pedAnswers(p))))].join(", ")}` : ""}`, Action: "Leave both visible (untouched)", ...info(a) });
@@ -249,6 +261,15 @@ for (const a of visibleAll) {
 }
 writeFileSync(`${outDir}/hide-plan.json`, JSON.stringify({ version: 1, madeFrom: { environment: raw.meta.environment, capturedAt: raw.meta.capturedAt }, expectedVisibleBefore: visibleAll.length, expectedVisibleAfter: visibleAll.length - planItems.length, items: planItems }, null, 1));
 writeFileSync(`${outDir}/hide-list-106.csv`, csv(planItems.map((i) => ({ Group: i.group === "NON_MEDICAL" ? "Non-medical" : i.group, "Name to hide": i.text, "Stays visible instead": i.keeperText ?? "", "Alias id": i.id }))));
+const planC: Array<Record<string, unknown>> = [];
+for (const d of decisions.values()) {
+  if (d.tier !== "C") continue;
+  const keeper = d.keep ? byText.get(d.keep) : undefined;
+  planC.push({ id: d.alias.id, text: d.alias.aliasText, normalized: d.alias.normalizedAlias, group: "A", pedId: d.alias.pedId, category: null, keeperId: keeper?.id ?? null, keeperText: d.keep ?? null });
+}
+const beforeC = visibleAll.length - planItems.length;
+writeFileSync(`${outDir}/hide-plan-C.json`, JSON.stringify({ version: 1, madeFrom: { environment: raw.meta.environment, capturedAt: raw.meta.capturedAt }, expectedVisibleBefore: beforeC, expectedVisibleAfter: beforeC - planC.length, items: planC }, null, 1));
+writeFileSync(`${outDir}/hide-list-C.csv`, csv(planC.map((i) => ({ "Name to hide": i.text, "Stays visible instead": i.keeperText ?? "", "Alias id": i.id }))));
 const total = visibleAll.length;
 const md = `# Declaration Assist suggestion list: revised Phase 1 (read-only)
 
