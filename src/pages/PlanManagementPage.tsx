@@ -170,7 +170,9 @@ export function PlanManagementPage({
   // vs. the Specific Illness Ledger (catalog + matching sandbox for the
   // hardcoded MASTER_ILLNESSES schedules in specificIllnessEngine.ts, which
   // previously had no UI at all).
-  const [planMgmtView, setPlanMgmtView] = useState<"plans" | "category-mapping" | "illness-ledger">("plans");
+  const [planMgmtView, setPlanMgmtView] = useState<"plans" | "category-mapping" | "ped-mappings" | "illness-ledger">("plans");
+  // Plan-Specific PED Mappings view: which plan the admin is looking at.
+  const [pedMapPlan, setPedMapPlan] = useState("");
 
   // --- Form state (view === "list" | "form") ---
   const [view, setView] = useState<"list" | "form">("list");
@@ -253,6 +255,17 @@ export function PlanManagementPage({
       .filter((q) => q.tag !== "Umbrella" && q.text.trim())
       .map((q) => q.text.trim());
   }, [manageCatPlan, dbByName, hardcodedConfigs]);
+
+  // Candidate target questions for a plan-specific PED mapping on the plan picked in that view: Specific / Catch-all
+  // questions only (Umbrella questions are not routing targets), same source as manageCatQuestionTexts.
+  const pedMapQuestionTexts = useMemo(() => {
+    if (!pedMapPlan) return [];
+    const dbRow = dbByName[pedMapPlan];
+    if (dbRow) return dbRow.questions.filter((q) => q.tag !== "Umbrella" && q.text.trim()).map((q) => q.text.trim());
+    const hardcoded = hardcodedConfigs[pedMapPlan];
+    if (!hardcoded) return [];
+    return taggedQuestionsFromHardcoded(hardcoded).filter((q) => q.tag !== "Umbrella" && q.text.trim()).map((q) => q.text.trim());
+  }, [pedMapPlan, dbByName, hardcodedConfigs]);
 
   // The selected plan's catch-all question — passed to guessCategoryMap /
   // fillUnmappedCategories so Suggest/Refine with AI default any category
@@ -964,6 +977,8 @@ export function PlanManagementPage({
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {planMgmtView === "plans"
               ? "Add or edit a plan's declaration questionnaire. Category-to-question mapping is suggested automatically — review it, then save; it's live for matching immediately."
+              : planMgmtView === "ped-mappings"
+                ? "Pin one condition (PED) to one exact question on one plan. A pinned mapping takes precedence over the condition's category mapping and over plan restrictions, for every advisor, from their next lookup."
               : planMgmtView === "category-mapping"
                 ? "Browse and edit how each plan's declaration questions map to the engine's PED categories — the same category-to-question logic the deterministic engine consults when routing a matched condition."
                 : "Explore the hardcoded specific-illness schedules and test how a declared PED maps against them."}
@@ -1022,6 +1037,18 @@ export function PlanManagementPage({
           Category Mapping
         </button>
         <button
+          role="tab" aria-selected={planMgmtView === "ped-mappings"} onClick={() => setPlanMgmtView("ped-mappings")}
+          className={`px-2.5 py-1 rounded-md text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+            planMgmtView === "ped-mappings"
+              ? "bg-[var(--tab-active-bg)] text-[var(--tab-active-text)] shadow-md font-extrabold"
+              : dark
+                ? "text-stone-400 hover:text-stone-200"
+                : "text-stone-600 hover:text-stone-900 font-bold"
+          }`}
+        >
+          Plan-Specific PED Mappings
+        </button>
+        <button
           role="tab" aria-selected={planMgmtView === "illness-ledger"} onClick={() => setPlanMgmtView("illness-ledger")}
           className={`px-2.5 py-1 rounded-md text-[10.5px] font-black uppercase tracking-wider transition-all cursor-pointer ${
             planMgmtView === "illness-ledger"
@@ -1043,6 +1070,57 @@ export function PlanManagementPage({
           canEdit={canEdit}
           onSaveIllnesses={saveSpecificIllnessesForPlan}
         />
+      ) : planMgmtView === "ped-mappings" ? (
+        <div className={`rounded-2xl border p-5 space-y-5 transition-all ${
+          dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
+        }`}>
+          <div className="flex items-center gap-2 pb-2.5 border-b border-stone-200 dark:border-stone-850">
+            <Wand2 className={`w-4 h-4 ${dark ? "text-cyan-400" : "text-cyan-600"}`} />
+            <h3 className={`text-xs font-black uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
+              Plan-Specific PED Mappings
+            </h3>
+          </div>
+          <div className="space-y-1.5 max-w-sm">
+            <label className={`block text-[10px] font-bold uppercase tracking-wide ${dark ? "text-stone-400" : "text-stone-500"}`}>
+              Select Plan
+            </label>
+            <CustomSelect
+              theme={theme}
+              value={pedMapPlan}
+              onChange={setPedMapPlan}
+              placeholder="— choose a plan —"
+              triggerClassName={`w-full flex items-center justify-between gap-2 text-xs pl-3 pr-8 py-2.5 rounded-lg border outline-none cursor-pointer relative ${
+                dark ? "bg-white/[0.03] border-white/[0.08] text-[#F5F7FA]" : "bg-white border-stone-200 text-stone-900"
+              }`}
+              options={allPlanNames.map((name) => ({ value: name, label: name }))}
+            />
+          </div>
+          {!pedMapPlan ? (
+            <p className={`text-xs italic ${dark ? "text-stone-500" : "text-stone-400"}`}>
+              Choose a plan above to see or change which conditions are pinned to an exact question on it. Use this when one condition
+              must go to a specific question on this plan while every other plan keeps its normal category routing.
+            </p>
+          ) : (
+            <>
+              <p className={`text-[11px] ${dark ? "text-stone-500" : "text-stone-400"}`}>
+                Map a specific PED to a specific question on this plan. Takes precedence over the PED's category mapping and over this
+                plan's restrictions, for every advisor, from their next lookup. Each change is saved immediately, after you review its impact.
+              </p>
+              {pedMapQuestionTexts.length === 0 && (
+                <p className={`text-[11px] ${dark ? "text-amber-400" : "text-amber-700"}`}>
+                  This plan has no Specific/Catch-all declaration questions yet — add some on the Plan Configuration tab first.
+                </p>
+              )}
+              <PlanPedOverridesEditor
+                theme={theme}
+                planName={pedMapPlan}
+                questions={pedMapQuestionTexts}
+                canEdit={canEdit}
+                mode={canEdit ? "edit" : "view"}
+              />
+            </>
+          )}
+        </div>
       ) : planMgmtView === "category-mapping" ? (
         <div className={`rounded-2xl border p-5 space-y-5 transition-all ${
           dark ? "bg-white/[0.03] border-white/[0.08]" : "bg-black/[0.02] border-black/[0.08]"
@@ -1488,28 +1566,10 @@ export function PlanManagementPage({
             <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
               Plan-Specific Restrictions
             </label>
-            <PlanRestrictionsEditor theme={theme} planName={planName || undefined} canEdit={canEdit} mode={formMode === "view" ? "view" : "edit"} />
-          </div>
-
-          {/* Plan-Specific PED Mappings — pin one PED to an exact question on
-              this plan only, overriding its category mapping (e.g. OSA →
-              the Sleep disorder question on Optima Secure while other plans
-              keep Respiratory). Saved live to plan_overrides; see
-              PlanPedOverridesEditor / src/mapping/helpers.ts's applyPlanPedOverride. */}
-          <div>
-            <label className={`block text-[10px] font-bold uppercase tracking-wide mb-1 ${dark ? "text-stone-400" : "text-stone-500"}`}>
-              Plan-Specific PED Mappings
-            </label>
             <p className={`text-[11px] mb-1.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>
-              Map a specific PED to a specific question on this plan. Takes precedence over the PED's category mapping, for every advisor, from their next lookup.
+              Restrictions are saved immediately (not with the Save Changes button below). A condition pinned in the Plan-Specific PED Mappings tab is not affected by a restriction.
             </p>
-            <PlanPedOverridesEditor
-              theme={theme}
-              planName={planName || undefined}
-              questions={questions.filter((q) => q.tag !== "Umbrella").map((q) => q.text)}
-              canEdit={canEdit}
-              mode={formMode === "view" ? "view" : "edit"}
-            />
+            <PlanRestrictionsEditor theme={theme} planName={planName || undefined} canEdit={canEdit} mode={formMode === "view" ? "view" : "edit"} />
           </div>
 
           {/* Declaration Questions */}
