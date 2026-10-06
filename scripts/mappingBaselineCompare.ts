@@ -19,7 +19,8 @@
 
 import dotenv from "dotenv";
 import { gzipSync, gunzipSync } from "node:zlib";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getDb, closeDb } from "../src/server/db/client.js";
@@ -101,6 +102,7 @@ async function main() {
   const hash = createHash("sha256").update(JSON.stringify(Object.entries(now.outcomes).sort(([a], [b]) => (a < b ? -1 : 1)))).digest("hex");
   console.log(`Snapshot v${now.snapshotVersion}: ${now.steps} pipeline steps, ${now.aliases} aliases, ${Object.keys(now.outcomes).length} pairs, sha256 ${hash}`);
   if (out) {
+    mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, gzipSync(JSON.stringify({ capturedAt: new Date().toISOString(), snapshotVersion: now.snapshotVersion, sha256: hash, outcomes: now.outcomes })));
     console.log(`Frozen to ${out}`);
   } else if (compare) {
