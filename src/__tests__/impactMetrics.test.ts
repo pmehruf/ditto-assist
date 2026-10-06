@@ -11,7 +11,7 @@ import { fixtureDump } from "./helpers/mappingTestDb";
 
 /** Pins the written definitions of the impact metrics (src/mapping/impact.ts, "DEFINITIONS"). */
 
-const out = (over: Partial<PairOutcome>): PairOutcome => ({ resolved: true, matchType: "P1", question: "Q", decidedBy: "x", specific: true, tier: "P1", ...over });
+const out = (over: Partial<PairOutcome>): PairOutcome => ({ resolved: true, matchType: "P1", question: "Q", decidedBy: "x", specific: true, tier: "P1", kind: "category", ...over });
 const pair = (plan: string, term: string, before: Partial<PairOutcome>, after: Partial<PairOutcome>): ChangedPair => ({ plan, term, before: out(before), after: out(after) });
 
 describe("impact metric definitions", () => {

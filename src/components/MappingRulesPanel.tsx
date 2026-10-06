@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { STAGE_PLAIN, stageLabel } from "../utils/mappingTerms";
+import { STAGE_PLAIN, plainRuleDescription, stageLabel } from "../utils/mappingTerms";
+import { resultLabel } from "../utils/resultKind";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { mappingFetch } from "../utils/mappingFetch";
 import { describeCategoryChain, type ChainTraceLike } from "../utils/categoryChainText";
@@ -241,11 +242,11 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
         {trace.result && (
           <div className="mt-3 text-sm space-y-1">
             <p>
-              <strong>{trace.result.resolved ? `${trace.result.matchType}: ${trace.result.question}` : "No fixed step decided this"}</strong>
+              <strong>{trace.result.resolved ? `${resultLabel(trace.result.matchType)}: ${trace.result.question}` : "No fixed step decided this"}</strong>
             </p>
             {trace.result.rule ? (
               <p className={muted}>
-                Decided by: {trace.result.rule.description} ({stageLabel(trace.result.rule.stage, bands.find((b) => b.stage === trace.result!.rule!.stage)?.label ?? trace.result.rule.stage)}). Reference: <code>{trace.result.rule.ruleKey}</code>
+                Decided by: {plainRuleDescription(trace.result.rule.ruleKey, trace.result.rule.description)} ({stageLabel(trace.result.rule.stage, bands.find((b) => b.stage === trace.result!.rule!.stage)?.label ?? trace.result.rule.stage)}). Reference: <code>{trace.result.rule.ruleKey}</code>
               </p>
             ) : (
               <p className={muted}>{trace.result.resolved ? `Decided by a built-in step (reference: ${trace.result.decidedBy}).` : "No fixed step decided this: it would use a saved AI answer if there is one, otherwise the AI assistant."}</p>
@@ -362,7 +363,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
                       <span className={`text-[11px] font-mono w-10 shrink-0 ${muted}`}>{r.position}</span>
                       <div className="flex-1 min-w-[12rem]">
                         <div className="text-sm font-semibold">
-                          {r.description}{" "}
+                          {plainRuleDescription(r.ruleKey, r.description)}{" "}
                           {r.kind === "primitive" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20" title="A fixed part of the system; it cannot be edited.">fixed step</span>}
                           {r.kind === "rule" && !r.builtIn && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20">added by an admin</span>}
                           {!r.enabled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 ml-1">switched off</span>}

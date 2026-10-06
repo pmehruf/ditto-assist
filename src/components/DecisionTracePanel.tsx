@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState } from "react";
 import type { MatchOutput } from "../types";
-import { getMatchTierInfo } from "../utils/matchTier";
+import { getLookupResultInfo } from "../utils/matchTier";
 import { describeCategoryChain } from "../utils/categoryChainText";
 import { useCategoryLabels } from "../utils/categoryLabels";
 
@@ -46,14 +46,17 @@ const SOURCE_TEXT: Record<string, string> = {
 };
 
 function describeStage(decidedBy: string): string {
-  if (decidedBy === "unresolved") return "No built-in rule decided this — it goes to AI Memory / the AI step.";
-  if (decidedBy === "primitive.plan_override") return "A plan-specific PED mapping set by an admin for this plan.";
-  if (decidedBy === "primitive.p0_wording") return "The condition is exactly a fragment of this plan's own question wording.";
-  if (decidedBy === "primitive.plan_decision") return "The PED's category was matched to this plan's declaration question.";
-  if (decidedBy.startsWith("family.")) return "A condition-family rule (e.g. diabetes, hypertension).";
-  if (decidedBy.startsWith("shield.")) return "A safety shield (a term that must not be mapped by keyword).";
-  if (decidedBy.startsWith("lifestage.") || decidedBy.startsWith("life_stage.")) return "A natural life-stage rule (e.g. pregnancy-related).";
-  return "A routing rule.";
+  if (decidedBy === "unresolved") return "None of the defined mapping rules decided this, so it goes to a saved AI answer or to the AI.";
+  if (decidedBy === "primitive.plan_override") return "A plan-specific mapping set for this plan.";
+  if (decidedBy === "primitive.p0_wording") return "The condition is exactly one of the items listed in this plan's own question.";
+  if (decidedBy === "primitive.plan_decision") return "The condition's category was matched to this plan's question.";
+  if (decidedBy.startsWith("plan_rule.")) return "A rule that applies to this plan only.";
+  if (decidedBy.startsWith("family.")) return "A disease-group rule (it recognises a group of related conditions).";
+  if (decidedBy.startsWith("shield.")) return "A safety check (it stops a risky condition being filed under the wrong question).";
+  if (decidedBy.startsWith("generic.")) return "A last safety check (symptoms, test findings or one-off events).";
+  if (decidedBy.startsWith("dict.")) return "A rule applied to the condition's category.";
+  if (decidedBy.startsWith("firewall.") || decidedBy.startsWith("lifestage.") || decidedBy.startsWith("life_stage.")) return "The not-a-disease check (normal life stages such as pregnancy).";
+  return "A built-in step.";
 }
 
 export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark: boolean }) {
@@ -62,7 +65,7 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
   const [open, setOpen] = useState(false);
   const t = result.decision_trace;
   if (!can || !t) return null;
-  const tier = getMatchTierInfo(result.match_type);
+  const tier = getLookupResultInfo(result.match_type, (result as { source?: string }).source);
   const muted = dark ? "#94a3b8" : "#64748b";
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex gap-2 text-[11.5px] leading-snug">
@@ -77,7 +80,7 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
       </button>
       {open && (
         <div className={`mt-1.5 rounded-lg border p-2.5 space-y-1 ${dark ? "border-slate-600 bg-slate-900/40" : "border-slate-200 bg-slate-50"}`}>
-          {row("Match level", tier.levelLabel)}
+          {row("Result", tier.label + (tier.role ? ` — ${tier.role.toLowerCase()}` : ""))}
           {row("Decided by", describeStage(t.decidedBy))}
           {t.postGuard && row("Then adjusted by", <code>{t.postGuard}</code>)}
           {t.dictionary && (

@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ResultKind } from "./resultKind";
+
 /**
  * Client side of the admin mapping-change safety backbone (Phase 3B-i, server side:
  * src/server/mappingChange.ts). Use `mappingFetch` instead of `fetch` for any admin
@@ -24,6 +26,8 @@ export interface PairOutcome {
   decidedBy: string;
   specific: boolean;
   tier: "P0" | "P1" | "P3" | "NON_AILMENT" | "UNRESOLVED";
+  /** Display name chosen on the server from the result type (never from `tier`). */
+  kind?: ResultKind;
 }
 
 export interface ImpactReport {

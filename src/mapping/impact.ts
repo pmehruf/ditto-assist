@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { resultKind, type ResultKind } from "../utils/resultKind.js";
 import type { PlanConfig } from "../types.js";
 import { normalizeDictionaryKey } from "./helpers.js";
 import { runDeterministicPipeline } from "./routingEngine.js";
@@ -41,6 +42,8 @@ export interface PairOutcome {
   /** True when the question is the plan's specific question for this condition (not the catch-all). */
   specific: boolean;
   tier: Tier;
+  /** The name shown to people (Direct match, Category match, Fallback, AI generated, Not a condition). Display only; the gate uses `tier`. */
+  kind: ResultKind;
 }
 
 export interface ChangedPair {
@@ -54,11 +57,13 @@ const SEP = "\u0000";
 
 function toOutcome(term: string, plan: string, config: PlanConfig, snapshot: MappingSnapshot): PairOutcome {
   const { result, trace } = runDeterministicPipeline(term, plan, config, snapshot);
-  if (!result) return { resolved: false, matchType: null, question: null, decidedBy: "unresolved", specific: false, tier: "UNRESOLVED" };
+  if (!result) return { resolved: false, matchType: null, question: null, decidedBy: "unresolved", specific: false, tier: "UNRESOLVED", kind: "ai" };
   const isOverride = trace.decidedBy === "primitive.plan_override";
   const tier: Tier = isOverride || result.match_type === "P0" ? "P0" : result.match_type === "P1" || result.match_type === "P2" ? "P1" : result.match_type === "NON_AILMENT" ? "NON_AILMENT" : "P3";
   const specific = !!result.matched_question && result.matched_question !== config.anyOther && (result.match_type === "P0" || result.match_type === "P1" || result.match_type === "P2");
-  return { resolved: true, matchType: result.match_type, question: result.matched_question, decidedBy: trace.decidedBy, specific, tier };
+  // The shown name comes from the type the engine returned, not from `tier`: a plan-specific mapping is counted as P0 for the
+  // impact gate (unchanged) but is a category-type result, so it must never be shown as a Direct match.
+  return { resolved: true, matchType: result.match_type, question: result.matched_question, decidedBy: trace.decidedBy, specific, tier, kind: resultKind(result.match_type) };
 }
 
 /** Runs the engine for every (plan, term) in the corpus. Key = `${plan}\0${term}`. */

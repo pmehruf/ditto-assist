@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { RESULT_LABEL, RESULT_MEANING, RESULT_ROLE, resultKind, type ResultKind } from "./resultKind";
+import { getSourceInfo } from "./labelTranslation";
+
 /**
  * Single source of truth for how a raw `match_type` (the deterministic
  * engine / Gemini AI classification code stored on search_history.matchType
@@ -148,4 +151,47 @@ export function getMatchTierInfo(matchType: string | null | undefined): MatchTie
       // confidence tier rather than crashing or showing a raw code.
       return TIERS.fallback;
   }
+}
+
+/**
+ * How the Lookup screen names a result. Same colours as the tiers above, but the names are the plain ones: Direct match,
+ * Category match, Fallback and AI generated, with no "Level 1/2/3" (Direct and Category are both primary results and
+ * Fallback is the secondary one, so numbering them as three ranks would be misleading).
+ * `source` is the string the server sends with the result; an AI source means the answer is AI generated.
+ */
+export interface LookupResultInfo {
+  kind: ResultKind;
+  label: string;
+  role: "Primary result" | "Secondary result" | null;
+  meaning: string;
+  icon: string;
+  colorDark: string;
+  colorLight: string;
+  bgDark: string;
+  bgLight: string;
+}
+
+const AI_STYLE = { icon: "🤖", colorDark: "#C4B5FD", colorLight: "#6D28D9", bgDark: "rgba(139,92,246,0.14)", bgLight: "rgba(109,40,217,0.08)" };
+
+export function getLookupResultInfo(matchType: string | null | undefined, source?: string | null): LookupResultInfo {
+  const aiGenerated = source ? !getSourceInfo(source).isSystemRule : false;
+  const kind = resultKind(matchType, { aiGenerated });
+  const base =
+    kind === "direct" ? TIERS.direct
+    : kind === "category" ? TIERS.category
+    : kind === "fallback" ? TIERS.fallback
+    : kind === "clarify" ? TIERS.needsClarification
+    : kind === "notCondition" ? TIERS.notMedicalAilment
+    : AI_STYLE;
+  return {
+    kind,
+    label: RESULT_LABEL[kind],
+    role: RESULT_ROLE[kind],
+    meaning: RESULT_MEANING[kind],
+    icon: base.icon,
+    colorDark: base.colorDark,
+    colorLight: base.colorLight,
+    bgDark: base.bgDark,
+    bgLight: base.bgLight,
+  };
 }

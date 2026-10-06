@@ -210,7 +210,7 @@ describe("R11 isolation", () => {
 describe("Constitution v1.6 matches the R11 implementation", () => {
   const constitution = readFileSync(new URL("../../MASTER_CONSTITUTION.md", import.meta.url), "utf8");
   it("documents the chain, its single evaluation point, the limit and the history entry", () => {
-    expect(constitution).toMatch(/\*\*Version:\*\* 1\.[6-9]/);
+    expect(constitution).toMatch(/\*\*Version:\*\* 1\.(?:[6-9]|1\d)/);
     expect(constitution).toContain("Ordered category fallback per PED");
     expect(constitution).toContain("primDictionaryLookup");
     expect(constitution).toContain(`at most ${MAX_CHAIN_LENGTH}`);

@@ -590,7 +590,7 @@ export function AiMappingReview({
                           ) : (
                             <>
                               <DetailBlock label="Suggested question" dark={dark}>
-                                <span className="font-semibold">{result?.match_type || "—"}</span>
+                                <span className="font-semibold">{aiAnswerKind(result?.match_type)}</span>
                                 {" → "}
                                 <span>{result?.matched_question || "—"}</span>
                               </DetailBlock>
@@ -628,7 +628,7 @@ export function AiMappingReview({
                           {entry.planName}
                         </td>
                         <td className={`py-2.5 pr-3 text-xs max-w-[280px] ${dark ? "text-stone-300" : "text-stone-700"}`}>
-                          <span className="font-bold">{result?.match_type || "—"}</span>
+                          <span className="font-bold">{aiAnswerKind(result?.match_type)}</span>
                           <span className="block truncate opacity-80">{result?.matched_question || "—"}</span>
                         </td>
                         <td className="py-2.5 pr-3">{statusPill(entry.status)}</td>
@@ -707,6 +707,8 @@ export function AiMappingReview({
     </div>
   );
 }
+
+const aiAnswerKind = (t?: string): string => (t === "ESCALATE" || t === "INVALID" ? "Needs clarification" : t === "FALLBACK" ? "Others question" : t ? "A specific question" : "—");
 
 function Detail({ label, value, dark }: { label: string; value: string; dark: boolean }) {
   return (

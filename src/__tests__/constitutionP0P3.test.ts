@@ -21,7 +21,7 @@ const constitution = readFileSync(new URL("../../MASTER_CONSTITUTION.md", import
 
 describe("Constitution v1.4 matches the implemented model", () => {
   it("is version 1.4 and records the ladder, the gate and the change-control fields", () => {
-    expect(constitution).toMatch(/\*\*Version:\*\* 1\.[4-9]/);
+    expect(constitution).toMatch(/\*\*Version:\*\* 1\.(?:[4-9]|1\d)/);
     expect(constitution).toContain("Match priority ladder P0");
     expect(constitution).toContain("Impact gate for admin mapping writes");
     expect(constitution).toContain("Change-control fields for admin mapping changes");

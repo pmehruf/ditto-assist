@@ -15,7 +15,7 @@ import {
 import { SpecificIllnessLedgerCard } from "./SpecificIllnessLedgerCard";
 import { MatchOutput, PlanConfig } from "../types.js";
 import { ReportingItem } from "../types/lookup";
-import { getMatchTierInfo as getSharedMatchTierInfo } from "../utils/matchTier";
+import { getLookupResultInfo } from "../utils/matchTier";
 import { PED_BORDER_COLOR, PLAN_INSURER_BORDER_COLOR } from "../utils/planInsurerColors";
 import { DecisionTracePanel } from "./DecisionTracePanel";
 
@@ -123,14 +123,17 @@ const CARD_SECONDARY_BG: Record<SidebarCard, { dark: string; darkGradient: strin
 // than the shorter `label` so this matches the audit/activity pages exactly.
 function getMatchTierInfo(
   matchType: MatchOutput["match_type"],
-  dark: boolean
-): { label: string; icon: string; color: string; bg: string } {
-  const tier = getSharedMatchTierInfo(matchType);
+  dark: boolean,
+  source?: string
+): { label: string; icon: string; color: string; bg: string; role: string | null; meaning: string } {
+  const info = getLookupResultInfo(matchType, source);
   return {
-    label: tier.levelLabel,
-    icon: tier.icon,
-    color: dark ? tier.colorDark : tier.colorLight,
-    bg: dark ? tier.bgDark : tier.bgLight,
+    label: info.label,
+    icon: info.icon,
+    color: dark ? info.colorDark : info.colorLight,
+    bg: dark ? info.bgDark : info.bgLight,
+    role: info.role,
+    meaning: info.meaning,
   };
 }
 
@@ -339,7 +342,7 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                   const hasLinkedNarrative = pedHasLinkedNarrative(ped);
                   const isNarrativeExpanded = expandedNarratives[idx] || false;
                   const isSIExpanded = expandedSI[idx] || false;
-                  const tierInfo = getMatchTierInfo(result.match_type, dark);
+                  const tierInfo = getMatchTierInfo(result.match_type, dark, source);
                   const questionText =
                     result.matched_question ||
                     planConfig?.anyOther ||
@@ -422,7 +425,7 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                             className="text-[10.5px] font-black uppercase tracking-wider mb-1 flex items-center gap-1.5"
                           >
                             <List className="w-3 h-3 shrink-0" />
-                            Check These Umbrella Questions First
+                            Also Check These Umbrella Questions
                           </div>
                           <ul className="space-y-1">
                             {result.secondary_recommendation.map((q, i) => (
@@ -447,8 +450,8 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                             className="text-[11px] font-semibold leading-snug mt-1 pt-1 border-t"
                           >
                             {result.match_type === "FALLBACK"
-                              ? "If none of these apply, fall back to the Others Section question below."
-                              : "This PED separately maps to its own category question below — check both."}
+                              ? "If none of these apply, use the Others question below."
+                              : "This condition also has its own question below — check both."}
                           </div>
                         </div>
                       )}
@@ -475,8 +478,8 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                                 "Fallback — Others Section" when the mapped
                                 question actually IS that catch-all. */}
                             {result.match_type === "FALLBACK"
-                              ? "Fallback — Others Section"
-                              : "Also Applies — PED Category Question"}
+                              ? "Fallback — Others question"
+                              : "Also Applies — this condition's question"}
                           </span>
                         )}
                         {questionText}
@@ -489,6 +492,7 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                       >
                         <span
                           style={{ backgroundColor: tierInfo.bg, color: tierInfo.color }}
+                          title={`${tierInfo.role ? `${tierInfo.role}. ` : ""}${tierInfo.meaning}`}
                           className="inline-flex items-center gap-1 text-[9.5px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md mb-1 select-none"
                         >
                           <span aria-hidden="true">{tierInfo.icon}</span>

@@ -5,13 +5,13 @@
 
 import React, { useEffect, useState } from "react";
 import { CHANGE_TYPES, OUTCOME_PLAIN, changeTypeHint, changeTypeLabel } from "../utils/mappingTerms";
+import { RESULT_LABEL } from "../utils/resultKind";
 import { registerMappingChangeDialog, type MappingChangeDecision, type MappingChangeRequest, type PairOutcome } from "../utils/mappingFetch";
 
 const CATEGORIES = CHANGE_TYPES.map((c) => c.value);
 
-const TIER_LABEL: Record<string, string> = OUTCOME_PLAIN;
-
-const outcomeText = (o: PairOutcome) => (o.question ? `${TIER_LABEL[o.tier] ?? o.tier}: ${o.question}` : TIER_LABEL[o.tier] ?? o.tier);
+const outcomeName = (o: PairOutcome) => (o.kind ? RESULT_LABEL[o.kind] : OUTCOME_PLAIN[o.tier] ?? o.tier);
+const outcomeText = (o: PairOutcome) => (o.question ? `${outcomeName(o)}: ${o.question}` : outcomeName(o));
 
 const TIER_TEXT: Record<string, { label: string; light: string; dark: string }> = {
   low: { label: "Low impact", light: "bg-emerald-100 text-emerald-800", dark: "bg-emerald-900/40 text-emerald-300" },

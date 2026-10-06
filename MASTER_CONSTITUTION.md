@@ -33,7 +33,7 @@ When AI is used to review or integrate mappings:
 
 ## Version Information
 
-- **Version:** 1.9
+- **Version:** 1.10
 - **Status:** Authoritative — approved baseline. This is the single highest-authority governance document for the mapping engine.
 - **Last Updated:** 2026-10-07
 - **Authority:** This document supersedes and consolidates all prior governance material — the Mapping Policy Charter, the Production Governance Manual, and any Validation Framework, Integration Playbook, Change Control, Mapping Governance, or Integration Rules notes. Those documents become optional historical reference. Where any of them conflicts with this Constitution, **this Constitution governs.**
@@ -352,7 +352,7 @@ Standard change types and their review expectations. — [PROCESS]
 | Regression fix | Intentionally correct an existing output. | Regression owner; corrected diff tied to a documented decision. |
 | Documentation update | Manual-only change, no code impact. | Documentation owner. |
 
-**On-screen names** — [CURRENT] (v1.9). The Review window shows the change category in plain language, under the question "What kind of change is this?", but saves the category names in this table unchanged: New synonym = "Add another name for a condition"; New canonical condition = "Add a new condition"; Dictionary update = "Change a condition or its category"; Regex update = "Change a disease-group rule"; Shield update = "Change a safety check"; New category = "Add a new category"; Plan override = "Change something for one plan only"; Fallback update = "Change a second-choice or Others setting"; Regression fix = "Correct a wrong answer". Result labels in the impact preview: P0 = "Direct match"; P1 and P2 = "Category match"; FALLBACK = "Fallback"; a lookup the fixed steps cannot decide (passed to the AI) = "AI generated"; NON_AILMENT = "Not a condition". Direct match and Category match are the primary results; Fallback is the secondary one. Plan question tags are shown as Specific, Umbrella and Others (stored as Specific, Umbrella and Catch-all). Tabs: "AI Mapping Review" (formerly "PED Library & AI Review"), "Plans & Questions", "Categories", "Decision Steps" (stored as the routing rules) and "History"; the plan screen is headed "DA Mapping Config".
+**On-screen names** — [CURRENT] (v1.9). The Review window shows the change category in plain language, under the question "What kind of change is this?", but saves the category names in this table unchanged: New synonym = "Add another name for a condition"; New canonical condition = "Add a new condition"; Dictionary update = "Change a condition or its category"; Regex update = "Change a disease-group rule"; Shield update = "Change a safety check"; New category = "Add a new category"; Plan override = "Change something for one plan only"; Fallback update = "Change a second-choice or Others setting"; Regression fix = "Correct a wrong answer". Result names (impact preview, decision trace and Lookup): "Direct match" (type P0: the condition itself is listed in the plan's question); "Category match" (types P1 and P2: the question was reached through the condition's category, a plan-specific mapping or a plan-specific rule; a few plan-specific results whose question also lists the condition, for example Activ Fit Preferred "Ulcer" and "Obstructive sleep apnea", are shown as Category match because the engine returns P1 for them and does not record that the condition is named); "Fallback" (type FALLBACK: the result is the plan's Others question; Umbrella questions are a separate list of questions to also check and can also accompany other results); "AI generated" (the defined rules did not decide the condition, so a saved AI answer or the AI did; the AI is not itself instructed to try direct match, then category match, then fallback: the engine does that before the AI is called); "Not a condition" (NON_AILMENT); "Needs clarification" (ESCALATE, INVALID). The name is taken from the type the engine returns, never from the impact-gate tier, so a plan-specific mapping is never shown as a Direct match. Direct match and Category match are the primary results; Fallback is the secondary one. Lookup no longer shows "Level 1/2/3"; the audit, activity and smoke-test screens still do. Plan question tags are shown as Specific, Umbrella and Others (stored as Specific, Umbrella and Catch-all). Tabs: "AI Mapping Review" (formerly "PED Library & AI Review"), "Plans & Questions", "Categories", "Decision Steps" (stored as the routing rules) and "History"; the plan screen is headed "DA Mapping Config".
 
 ---
 
@@ -719,6 +719,15 @@ v1.9  (2026-10-07)  — Mapping Control: Review window no longer asks for an own
   [ ] Regression expected
   Owner sign-off: approved in chat 2026-10-07 (wording only).
   Regression diff reviewed: not applicable (documentation / display only); full test suite, Zero Regression Audit and the frozen-baseline equality check unchanged and pass.
+v1.10 (2026-10-08)  — Mapping Control and Lookup: result names defined
+- Change Impact:
+  [x] Documentation only        — Part XIV "On-screen names" records the result names and what each means, as the code behaves
+  [ ] Governance only
+  [ ] Business decision
+  [ ] Runtime behavior change   — none: engine, routes, rules, the AI step and stored values are unchanged
+  [ ] Regression expected       — none
+  Owner sign-off: instructed by the owner 2026-10-08 (wording and display only).
+  Regression diff reviewed: not applicable (display only); full test suite, Zero Regression Audit and the frozen-baseline equality check unchanged and pass.
 ```
 
 Each future entry must summarize what changed and cite its Change Impact classification. A version that changes runtime behavior must reference the regression sign-off.

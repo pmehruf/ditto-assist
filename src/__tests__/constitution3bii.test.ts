@@ -13,7 +13,7 @@ const constitution = readFileSync(new URL("../../MASTER_CONSTITUTION.md", import
 
 describe("Constitution v1.5 matches the implemented rule administration", () => {
   it("records the unified section, the validation rules and the v1.5 history entry", () => {
-    expect(constitution).toMatch(/\*\*Version:\*\* 1\.[5-9]/);
+    expect(constitution).toMatch(/\*\*Version:\*\* 1\.(?:[5-9]|1\d)/);
     expect(constitution).toContain("Mapping Control — one admin section; rule and category administration");
     expect(constitution).toMatch(/v1\.5 {2}\(2026-10-02\)/);
   });
