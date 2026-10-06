@@ -8,7 +8,7 @@ import { createMappingTestEnv, fixtureDump, type MappingTestEnv } from "./helper
 import { loadMappingSnapshot } from "../server/mappingSnapshot";
 import { evaluateWorld } from "../mapping/impact";
 import { runDeterministicPipeline } from "../mapping/routingEngine";
-import { RESULT_LABEL, resultKind } from "../utils/resultKind";
+import { RESULT_LABEL, pedNamedInQuestion, resultKind } from "../utils/resultKind";
 import { getLookupResultInfo } from "../utils/matchTier";
 
 /**
@@ -46,10 +46,11 @@ describe("result names from the real engine", () => {
     expect(anyNamed).toBe(false);
   });
 
-  it("a plan-specific mapping that is category-based is a Category match, never a Direct match", () => {
+  it("a category-based plan-specific mapping is a Category match unless its question itself names the condition", () => {
     const categoryPins = (fixtureDump.planOverrides as Array<{ planName: string; pedId: number; categoryKey: string | null; targetQuestion: string | null }>).filter((p) => p.categoryKey && !p.targetQuestion);
     expect(categoryPins.length).toBeGreaterThan(0);
     let checked = 0;
+    let unnamed = 0;
     for (const pin of categoryPins.slice(0, 40)) {
       const ped = (fixtureDump.pedRepository as Array<{ id: number; canonicalName: string }>).find((x) => x.id === pin.pedId);
       if (!ped || !env.plans.has(pin.planName)) continue;
@@ -57,21 +58,32 @@ describe("result names from the real engine", () => {
       if (!result || trace.decidedBy !== "primitive.plan_override") continue;
       const o = outcome(pin.planName, ped.canonicalName);
       expect(result.match_type === "P1" || result.match_type === "FALLBACK").toBe(true);
-      expect(o.kind).not.toBe("direct");
-      expect(o.kind).toBe(result.match_type === "P1" ? "category" : "fallback");
+      const named = pedNamedInQuestion(ped.canonicalName, result.matched_question, env.plans.get(pin.planName)!.anyOther);
+      // Direct match only when the chosen question itself names the condition; otherwise by what the engine chose.
+      expect(o.kind).toBe(named ? "direct" : result.match_type === "P1" ? "category" : "fallback");
+      if (!named) unnamed++;
       // The impact gate still counts a plan-specific mapping as P0 (unchanged); only the shown name differs.
       if (result.match_type === "P1") expect(o.tier).toBe("P0");
       checked++;
     }
     expect(checked).toBeGreaterThan(0);
+    expect(unnamed).toBeGreaterThan(0);
   });
 
-  it("limit: a plan-specific result whose question also lists the condition is shown as Category match (the engine returns P1)", () => {
-    const { result, trace } = raw("Activ Fit Preferred", "ulcer");
-    expect(trace.decidedBy).toBe("primitive.plan_override");
-    expect(result!.match_type).toBe("P1");
-    expect(result!.matched_question.toLowerCase()).toContain("ulcer");
-    expect(outcome("Activ Fit Preferred", "ulcer").kind).toBe("category");
+  it("a result the engine types P1 is a Direct match when the chosen question itself names the condition", () => {
+    for (const term of ["ulcer", "Obstructive sleep apnea"]) {
+      const { result } = raw("Activ Fit Preferred", term);
+      expect(result!.match_type, term).toBe("P1"); // the engine type is not changed
+      expect(pedNamedInQuestion(term, result!.matched_question), term).toBe(true);
+      const o = outcome("Activ Fit Preferred", term);
+      expect(o.matchType, term).toBe("P1");
+      expect(o.kind, term).toBe("direct");
+      expect(getLookupResultInfo(result!.match_type, "Deterministic Engine", { ped: term, question: result!.matched_question, anyOther: env.plans.get("Activ Fit Preferred")!.anyOther }).label).toBe("Direct match");
+    }
+    // Same plan, same question, but the condition is not literally listed: still a Category match.
+    const { result } = raw("Activ Fit Preferred", "sleep apnea");
+    expect(pedNamedInQuestion("sleep apnea", result!.matched_question)).toBe(false);
+    expect(outcome("Activ Fit Preferred", "sleep apnea").kind).toBe("category");
   });
 
   it("Fallback: the result is the plan's Others question; Umbrella questions are a separate list", () => {

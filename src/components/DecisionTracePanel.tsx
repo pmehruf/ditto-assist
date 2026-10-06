@@ -65,7 +65,7 @@ export function DecisionTracePanel({ result, dark }: { result: MatchOutput; dark
   const [open, setOpen] = useState(false);
   const t = result.decision_trace;
   if (!can || !t) return null;
-  const tier = getLookupResultInfo(result.match_type, (result as { source?: string }).source);
+  const tier = getLookupResultInfo(result.match_type, (result as { source?: string }).source, { ped: result.ped_input, question: result.matched_question });
   const muted = dark ? "#94a3b8" : "#64748b";
   const row = (label: string, value: React.ReactNode) => (
     <div className="flex gap-2 text-[11.5px] leading-snug">

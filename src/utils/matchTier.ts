@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { RESULT_LABEL, RESULT_MEANING, RESULT_ROLE, resultKind, type ResultKind } from "./resultKind";
+import { RESULT_LABEL, RESULT_MEANING, RESULT_ROLE, classifyResult, type ResultKind } from "./resultKind";
 import { getSourceInfo } from "./labelTranslation";
 
 /**
@@ -173,9 +173,9 @@ export interface LookupResultInfo {
 
 const AI_STYLE = { icon: "🤖", colorDark: "#C4B5FD", colorLight: "#6D28D9", bgDark: "rgba(139,92,246,0.14)", bgLight: "rgba(109,40,217,0.08)" };
 
-export function getLookupResultInfo(matchType: string | null | undefined, source?: string | null): LookupResultInfo {
+export function getLookupResultInfo(matchType: string | null | undefined, source?: string | null, wording: { ped?: string | null; question?: string | null; anyOther?: string | null } = {}): LookupResultInfo {
   const aiGenerated = source ? !getSourceInfo(source).isSystemRule : false;
-  const kind = resultKind(matchType, { aiGenerated });
+  const kind = classifyResult({ matchType, aiGenerated, ...wording });
   const base =
     kind === "direct" ? TIERS.direct
     : kind === "category" ? TIERS.category

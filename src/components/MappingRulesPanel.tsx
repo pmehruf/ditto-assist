@@ -4,7 +4,7 @@
  */
 
 import { STAGE_PLAIN, plainRuleDescription, stageLabel } from "../utils/mappingTerms";
-import { resultLabel } from "../utils/resultKind";
+import { RESULT_LABEL, classifyResult } from "../utils/resultKind";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { mappingFetch } from "../utils/mappingFetch";
 import { describeCategoryChain, type ChainTraceLike } from "../utils/categoryChainText";
@@ -242,7 +242,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
         {trace.result && (
           <div className="mt-3 text-sm space-y-1">
             <p>
-              <strong>{trace.result.resolved ? `${resultLabel(trace.result.matchType)}: ${trace.result.question}` : "No fixed step decided this"}</strong>
+              <strong>{trace.result.resolved ? `${RESULT_LABEL[classifyResult({ ped: trace.term, matchType: trace.result.matchType, question: trace.result.question })]}: ${trace.result.question}` : "No fixed step decided this"}</strong>
             </p>
             {trace.result.rule ? (
               <p className={muted}>

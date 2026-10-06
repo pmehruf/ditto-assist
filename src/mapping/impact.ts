@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { resultKind, type ResultKind } from "../utils/resultKind.js";
+import { classifyResult, type ResultKind } from "../utils/resultKind.js";
 import type { PlanConfig } from "../types.js";
 import { normalizeDictionaryKey } from "./helpers.js";
 import { runDeterministicPipeline } from "./routingEngine.js";
@@ -61,9 +61,9 @@ function toOutcome(term: string, plan: string, config: PlanConfig, snapshot: Map
   const isOverride = trace.decidedBy === "primitive.plan_override";
   const tier: Tier = isOverride || result.match_type === "P0" ? "P0" : result.match_type === "P1" || result.match_type === "P2" ? "P1" : result.match_type === "NON_AILMENT" ? "NON_AILMENT" : "P3";
   const specific = !!result.matched_question && result.matched_question !== config.anyOther && (result.match_type === "P0" || result.match_type === "P1" || result.match_type === "P2");
-  // The shown name comes from the type the engine returned, not from `tier`: a plan-specific mapping is counted as P0 for the
-  // impact gate (unchanged) but is a category-type result, so it must never be shown as a Direct match.
-  return { resolved: true, matchType: result.match_type, question: result.matched_question, decidedBy: trace.decidedBy, specific, tier, kind: resultKind(result.match_type) };
+  // The shown name comes from the result's wording (classifyResult), not from `tier` or the engine type: a plan-specific mapping is
+  // counted as P0 for the impact gate (unchanged) but is only a Direct match when its question names the condition.
+  return { resolved: true, matchType: result.match_type, question: result.matched_question, decidedBy: trace.decidedBy, specific, tier, kind: classifyResult({ ped: term, matchType: result.match_type, question: result.matched_question, anyOther: config.anyOther }) };
 }
 
 /** Runs the engine for every (plan, term) in the corpus. Key = `${plan}\0${term}`. */

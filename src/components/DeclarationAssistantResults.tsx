@@ -124,9 +124,10 @@ const CARD_SECONDARY_BG: Record<SidebarCard, { dark: string; darkGradient: strin
 function getMatchTierInfo(
   matchType: MatchOutput["match_type"],
   dark: boolean,
-  source?: string
+  source?: string,
+  wording?: { ped?: string; question?: string; anyOther?: string }
 ): { label: string; icon: string; color: string; bg: string; role: string | null; meaning: string } {
-  const info = getLookupResultInfo(matchType, source);
+  const info = getLookupResultInfo(matchType, source, wording);
   return {
     label: info.label,
     icon: info.icon,
@@ -342,7 +343,7 @@ export const DeclarationAssistantResults: React.FC<DeclarationAssistantResultsPr
                   const hasLinkedNarrative = pedHasLinkedNarrative(ped);
                   const isNarrativeExpanded = expandedNarratives[idx] || false;
                   const isSIExpanded = expandedSI[idx] || false;
-                  const tierInfo = getMatchTierInfo(result.match_type, dark, source);
+                  const tierInfo = getMatchTierInfo(result.match_type, dark, source, { ped, question: result.matched_question, anyOther: planConfig?.anyOther });
                   const questionText =
                     result.matched_question ||
                     planConfig?.anyOther ||
