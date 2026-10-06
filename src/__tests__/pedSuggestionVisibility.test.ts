@@ -29,7 +29,7 @@ describe("hiding a name only removes it from the suggestion list", () => {
     const before = env.newInstance();
     const answers = async (inst: ReturnType<MappingTestEnv["newInstance"]>) => {
       const out: string[] = [];
-      for (const a of picked) for (const plan of plans) { const { snapshotVersion: _v, ...answer } = (await inst.lookup(a.aliasText, plan)) as Record<string, unknown>; out.push(JSON.stringify(answer)); }
+      for (const a of picked) for (const plan of plans) { const { snapshotVersion: _v, ...answer } = await inst.lookup(a.aliasText, plan); out.push(JSON.stringify(answer)); }
       return out;
     };
     const was = await answers(before);
