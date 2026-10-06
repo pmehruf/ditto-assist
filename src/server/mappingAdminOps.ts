@@ -68,16 +68,16 @@ export async function validateRuleCandidate(repos: Repos, candidate: { ruleKey: 
 }
 
 const RULE_KEY_RE = /^[a-z0-9][a-z0-9_.-]{2,59}$/;
-const DESCRIPTION_MSG = "Describe what the rule does (up to 300 characters).";
+const DESCRIPTION_MSG = "Describe what the step does, in plain words (up to 300 characters).";
 
 export async function createRule(repos: Repos, body: any): Promise<OpResult> {
   const { suffix, stage, position, planScope, description, definition } = body ?? {};
   const band = bandFor(stage);
-  if (!band || !band.allowsNew) return fail(400, "New rules can be added to plan rules, shields, disease-family rules, generic shields and post-guards.");
-  if (typeof suffix !== "string" || !RULE_KEY_RE.test(suffix)) return fail(400, "Give the rule a short name: lowercase letters, digits, dots, dashes or underscores (3–60 characters).");
+  if (!band || !band.allowsNew) return fail(400, "New steps can be added to: plan-specific rules, safety checks, disease-group rules, last safety checks and final adjustments.");
+  if (typeof suffix !== "string" || !RULE_KEY_RE.test(suffix)) return fail(400, "Give the step a short name: lowercase letters, digits, dots, dashes or underscores (3–60 characters).");
   if (typeof description !== "string" || !description.trim() || description.length > 300) return fail(400, DESCRIPTION_MSG);
   const ruleKey = `${CUSTOM_PREFIX}${suffix}`;
-  if (await repos.routingRules.getByKey(ruleKey)) return fail(409, `A rule named "${ruleKey}" already exists.`);
+  if (await repos.routingRules.getByKey(ruleKey)) return fail(409, `A step named "${ruleKey}" already exists.`);
   const posError = checkPosition(await repos.routingRules.listAll(), { ruleKey, stage }, position);
   if (posError) return fail(400, posError);
   const errors = await validateRuleCandidate(repos, { ruleKey, stage, definition, planScope: planScope || null }, undefined);
@@ -90,7 +90,7 @@ export async function createRule(repos: Repos, body: any): Promise<OpResult> {
 export async function patchRule(repos: Repos, ruleKey: string, body: any): Promise<OpResult> {
   const existing = await repos.routingRules.getByKey(ruleKey);
   if (!existing) return fail(404, "Rule not found.");
-  if (existing.kind !== "rule") return fail(400, "This is a built-in algorithm step of the pipeline; it cannot be edited, disabled or moved.");
+  if (existing.kind !== "rule") return fail(400, "This is a fixed part of the system; it cannot be edited, switched off or moved.");
   const { enabled, position, description, planScope, definition } = body ?? {};
   const next: RoutingRuleRow = { ...existing };
   if (enabled !== undefined) {
@@ -121,7 +121,7 @@ export async function moveRule(repos: Repos, ruleKey: string, direction: unknown
   const all = await repos.routingRules.listAll();
   const rule = all.find((r) => r.ruleKey === ruleKey);
   if (!rule) return fail(404, "Rule not found.");
-  if (rule.kind !== "rule") return fail(400, "A built-in algorithm step cannot be moved.");
+  if (rule.kind !== "rule") return fail(400, "A fixed step cannot be moved.");
   const moved = movePosition(all, rule.ruleKey, direction);
   if (moved.error !== undefined) return fail(400, moved.error);
   const other = moved.swapWith;
@@ -133,9 +133,9 @@ export async function moveRule(repos: Repos, ruleKey: string, direction: unknown
 export async function deleteRule(repos: Repos, ruleKey: string): Promise<OpResult> {
   const existing = await repos.routingRules.getByKey(ruleKey);
   if (!existing) return fail(404, "Rule not found.");
-  if (!isCustom(existing.ruleKey) || existing.kind !== "rule") return fail(400, "Built-in rules cannot be deleted — disable them instead.");
+  if (!isCustom(existing.ruleKey) || existing.kind !== "rule") return fail(400, "Built-in steps cannot be deleted — switch them off instead.");
   const users = (await repos.routingRules.listAll()).filter((r) => r.ruleKey !== existing.ruleKey && JSON.stringify(r.definition).includes(`"rule":"${existing.ruleKey}"`));
-  if (users.length) return fail(409, `Other rules still refer to this rule: ${users.map((u) => u.ruleKey).join(", ")}.`);
+  if (users.length) return fail(409, `Other steps still depend on this step: ${users.map((u) => u.ruleKey).join(", ")}.`);
   await repos.routingRules.delete(existing.ruleKey);
   return { status: 200, body: { deleted: existing.ruleKey } };
 }
@@ -177,8 +177,8 @@ export async function listCategories(db: AnyDb, repos: Repos): Promise<OpResult>
 
 export async function createCategory(repos: Repos, body: any): Promise<OpResult> {
   const { categoryKey, label, description } = body ?? {};
-  if (typeof categoryKey !== "string" || !CATEGORY_KEY_RE.test(categoryKey)) return fail(400, "The category key must be lowercase letters, digits and underscores, starting with a letter (2–40 characters).");
-  if (typeof label !== "string" || !label.trim() || label.length > 120) return fail(400, "Give the category a label (up to 120 characters).");
+  if (typeof categoryKey !== "string" || !CATEGORY_KEY_RE.test(categoryKey)) return fail(400, "The category's short code must be lowercase letters, digits and underscores, starting with a letter (2–40 characters).");
+  if (typeof label !== "string" || !label.trim() || label.length > 120) return fail(400, "Give the category a name (up to 120 characters).");
   if (await repos.categories.get(categoryKey)) return fail(409, `Category "${categoryKey}" already exists.`);
   const all = await repos.categories.list();
   const row = await repos.categories.upsert({ categoryKey, label: label.trim(), description: typeof description === "string" && description.trim() ? description.trim() : null, sortOrder: Math.max(0, ...all.map((c) => c.sortOrder)) + 10 });
@@ -191,7 +191,7 @@ export async function patchCategory(repos: Repos, categoryKey: string, body: any
   const { label, description } = body ?? {};
   const patch: { label?: string; description?: string | null } = {};
   if (label !== undefined) {
-    if (typeof label !== "string" || !label.trim() || label.length > 120) return fail(400, "Give the category a label (up to 120 characters).");
+    if (typeof label !== "string" || !label.trim() || label.length > 120) return fail(400, "Give the category a name (up to 120 characters).");
     patch.label = label.trim();
   }
   if (description !== undefined) patch.description = typeof description === "string" && description.trim() ? description.trim() : null;
@@ -203,7 +203,7 @@ export async function deleteCategory(db: AnyDb, repos: Repos, categoryKey: strin
   if (!existing) return fail(404, "Category not found.");
   const usage = (await categoryUsage(db, repos)).get(existing.categoryKey) ?? emptyUsage();
   if (usage.total > 0) {
-    return fail(409, `"${existing.label}" is still used (${usage.peds} PEDs, ${usage.aliasOverrides + usage.aliasFallbacks} alias settings, ${usage.planMappings} plan question mappings, ${usage.planOverrides} plan-specific mappings, ${usage.restrictions} restrictions, ${usage.rules} rules). Move those first.`, { usage });
+    return fail(409, `"${existing.label}" is still used (${usage.peds} conditions, ${usage.aliasOverrides + usage.aliasFallbacks} name settings, ${usage.planMappings} plan question mappings, ${usage.planOverrides} plan-specific condition mappings, ${usage.restrictions} restrictions, ${usage.rules} decision steps). Move those first.`, { usage });
   }
   await repos.categories.delete(existing.categoryKey);
   return { status: 200, body: { deleted: existing.categoryKey } };

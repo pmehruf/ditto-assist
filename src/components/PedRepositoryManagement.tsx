@@ -290,7 +290,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
   };
 
   const deleteEntry = async (entry: PedEntry) => {
-    if (!(await confirm(`Delete "${entry.canonicalName}" and all of its aliases from the PED Repository? This cannot be undone.`))) return;
+    if (!(await confirm(`Delete "${entry.canonicalName}" and all of its other names from the conditions list? This cannot be undone.`))) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -309,7 +309,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
 
   const addEntry = async () => {
     const name = newName.trim();
-    if (!name) { setSaveError("Enter a canonical name before adding it."); return; }
+    if (!name) { setSaveError("Enter the condition's official name before adding it."); return; }
     setSaving(true);
     setSaveError(null);
     try {
@@ -471,9 +471,9 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
     const chip = `px-1.5 py-0.5 rounded text-[9.5px] font-bold border ${dark ? "border-amber-500/30 text-amber-300 bg-amber-500/10" : "border-amber-500/40 text-amber-700 bg-amber-50"}`;
     return (
       <>
-        {alias.routingEnabled === false && <span className={chip}>Not matched by category</span>}
+        {alias.routingEnabled === false && <span className={chip}>Not used to find a category</span>}
         {alias.categoryKeyOverride && <span className={chip}>Category: {categoryLabel(alias.categoryKeyOverride)}</span>}
-        {alias.fallbackCategoryKey && <span className={chip}>If nothing else matches: {categoryLabel(alias.fallbackCategoryKey)}</span>}
+        {alias.fallbackCategoryKey && <span className={chip}>Last resort: {categoryLabel(alias.fallbackCategoryKey)}</span>}
       </>
     );
   };
@@ -483,15 +483,15 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
       <div className={`ml-4 px-3 py-2.5 rounded-lg border space-y-2 ${dark ? "border-stone-800 bg-white/[0.02]" : "border-stone-200 bg-stone-50"}`}>
         <label className={`flex items-center gap-2 text-[11px] font-bold ${dark ? "text-stone-200" : "text-stone-700"}`}>
           <input type="checkbox" checked={draftRouting.enabled} onChange={e => setDraftRouting(d => ({ ...d, enabled: e.target.checked }))} />
-          Match by category
+          Use this name to find the condition's category
         </label>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           <div>
-            <p className={`text-[9.5px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>Category for this term</p>
-            <CustomSelect theme={theme} value={draftRouting.override} onChange={v => setDraftRouting(d => ({ ...d, override: v }))} placeholder="— Same as the PED —" triggerClassName={selectTriggerClass} options={CATEGORY_OPTIONS} />
+            <p className={`text-[9.5px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>File this name under a different category (optional)</p>
+            <CustomSelect theme={theme} value={draftRouting.override} onChange={v => setDraftRouting(d => ({ ...d, override: v }))} placeholder="— Same as the condition —" triggerClassName={selectTriggerClass} options={CATEGORY_OPTIONS} />
           </div>
           <div>
-            <p className={`text-[9.5px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>If nothing else matches</p>
+            <p className={`text-[9.5px] font-bold uppercase tracking-wider mb-1 ${dark ? "text-stone-500" : "text-stone-400"}`}>Last-resort category (used only if nothing else works)</p>
             <CustomSelect theme={theme} value={draftRouting.fallback} onChange={v => setDraftRouting(d => ({ ...d, fallback: v }))} placeholder="— None —" triggerClassName={selectTriggerClass} options={CATEGORY_OPTIONS} />
           </div>
         </div>
@@ -529,7 +529,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
   };
 
   const deleteAlias = async (ped: PedEntry, alias: AliasEntry) => {
-    if (!(await confirm(`Remove alias "${alias.aliasText}" from "${ped.canonicalName}"?`))) return;
+    if (!(await confirm(`Remove the name "${alias.aliasText}" from "${ped.canonicalName}"?`))) return;
     setSaving(true);
     setAliasError(null);
     try {
@@ -570,7 +570,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
               </span>
             ) : (
               <span className="text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap text-emerald-500">
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {total.toLocaleString()} {hasActiveFilter ? "matching PEDs" : "PEDs synced"}
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> {total.toLocaleString()} {hasActiveFilter ? "matching conditions" : "conditions"}
               </span>
             )}
             {saving && (
@@ -593,7 +593,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search PEDs..."
+              placeholder="Search conditions..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className={`w-full py-2 pl-10 pr-4 text-xs font-semibold rounded-lg border outline-none transition-all ${
@@ -666,7 +666,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
             <thead>
               <tr className={`border-b ${dark ? "bg-white/[0.02] border-stone-850" : "bg-[var(--table-header-bg)] border-stone-200"}`}>
                 <th className={`${thClass} w-8`}></th>
-                <SortableTh label="Canonical Name" sortKey="canonicalName" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
+                <SortableTh label="Official Name" sortKey="canonicalName" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 <SortableTh label="Category" sortKey="categoryKey" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 <SortableTh label="Status" sortKey="status" activeSort={entriesSort} onSort={toggleEntriesSort} className={thClass} />
                 <th className={thClass}>Added By</th>
@@ -692,12 +692,12 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                   </td>
                   <td className={tdClass}>
                     <CustomSelect theme={theme} value={newStatus} onChange={(v) => setNewStatus(v as PedEntry["status"])} triggerClassName={selectTriggerClass} options={STATUS_OPTIONS} />
-                    <p className={`mt-1 text-[10px] leading-tight ${dark ? "text-stone-400" : "text-stone-500"}`} title="Matching uses the category and aliases only. Status is a record-keeping label: changing it does not change any lookup.">Label only — does not affect matching</p>
+                    <p className={`mt-1 text-[10px] leading-tight ${dark ? "text-stone-400" : "text-stone-500"}`} title="Status is a record-keeping label: changing it does not change any lookup.">Label only — does not change any answer</p>
                   </td>
                   <td className={`${tdClass} text-[10.5px] ${dark ? "text-stone-400" : "text-stone-500"}`}>Set on save</td>
                   <td className={`${tdClass} text-right`}>
                     <div className="flex items-center justify-end gap-1.5">
-                      <ClippedButton onClick={addEntry} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save new PED">
+                      <ClippedButton onClick={addEntry} disabled={saving} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" title="Save new condition">
                         <Save className="w-3.5 h-3.5" />
                       </ClippedButton>
                       <ClippedButton onClick={() => { setAddingNew(false); setNewName(""); setNewCategory(""); setSaveError(null); }} cornerBg={dark ? "#0e2236" : "#f0f9ff"} className="p-1.5 bg-stone-700 hover:bg-stone-600 text-stone-50" title="Cancel">
@@ -711,7 +711,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
               {!loading && entries.length === 0 && (
                 <tr>
                   <td colSpan={columnCount} className="py-10 text-center text-xs font-semibold text-stone-400">
-                    {hasActiveFilter ? (searchQuery ? `No PEDs match "${searchQuery}".` : "No PEDs match this filter.") : "No PEDs yet."}
+                    {hasActiveFilter ? (searchQuery ? `No PEDs match "${searchQuery}".` : "No conditions match this filter.") : "No conditions yet."}
                   </td>
                 </tr>
               )}
@@ -756,7 +756,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                           <span className={`text-[10.5px] italic ${dark ? "text-stone-500" : "text-stone-400"}`}>Uncategorized</span>
                         )}
                         {!isEditing && entry.categoryKey && entry.categoryChain && entry.categoryChain.length > 0 && (
-                          <span className={`ml-1.5 text-[10px] font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`} title={`Fallback: ${entry.categoryChain.map(k => categoryLabel(k) || k).join(" → ")}`}>
+                          <span className={`ml-1.5 text-[10px] font-semibold ${dark ? "text-stone-400" : "text-stone-500"}`} title={`Second choices: ${entry.categoryChain.map(k => categoryLabel(k) || k).join(" → ")}`}>
                             +{entry.categoryChain.length} fallback{entry.categoryChain.length > 1 ? "s" : ""}
                           </span>
                         )}
@@ -765,7 +765,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                         {isEditing ? (
                           <>
                           <CustomSelect theme={theme} value={draftStatus} onChange={(v) => setDraftStatus(v as PedEntry["status"])} triggerClassName={selectTriggerClass} options={STATUS_OPTIONS} />
-                            <p className={`mt-1 text-[10px] leading-tight ${dark ? "text-stone-400" : "text-stone-500"}`}>Label only — does not affect matching</p>
+                            <p className={`mt-1 text-[10px] leading-tight ${dark ? "text-stone-400" : "text-stone-500"}`}>Label only — does not change any answer</p>
                           </>
                         ) : (
                           statusBadge(entry.status, dark)
@@ -785,10 +785,10 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                             </div>
                           ) : (
                             <div className="flex items-center justify-end gap-1.5">
-                              <ClippedButton onClick={() => startEdit(entry)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1.5 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Edit PED">
+                              <ClippedButton onClick={() => startEdit(entry)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1.5 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Edit condition">
                                 <Pencil className="w-3.5 h-3.5" />
                               </ClippedButton>
-                              <ClippedButton onClick={() => deleteEntry(entry)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Delete PED">
+                              <ClippedButton onClick={() => deleteEntry(entry)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1.5 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Delete condition">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </ClippedButton>
                             </div>
@@ -835,7 +835,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                       <span className={`flex-1 text-xs font-semibold ${dark ? "text-white" : "text-stone-900"}`}>{alias.aliasText}</span>
                                     )}
                                     {alias.isPrimary && (
-                                      <span title="Primary alias"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" /></span>
+                                      <span title="Main name"><Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" /></span>
                                     )}
                                     {aliasRoutingBadges(alias)}
                                     {canManage && (
@@ -850,10 +850,10 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                             {!alias.isPrimary && (
                                               <ClippedButton onClick={() => setPrimaryAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-amber-500/15 text-stone-400 hover:text-amber-400" : "hover:bg-amber-500/10 text-stone-500 hover:text-amber-600"}`} title="Make primary"><Star className="w-3 h-3" /></ClippedButton>
                                             )}
-                                            <ClippedButton onClick={() => startRouting(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Matching options"><SlidersHorizontal className="w-3 h-3" /></ClippedButton>
-                                            <ClippedButton onClick={() => toggleAliasVisibility(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Hide (normalization-only)"><EyeOff className="w-3 h-3" /></ClippedButton>
-                                            <ClippedButton onClick={() => startEditAlias(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Rename"><Pencil className="w-3 h-3" /></ClippedButton>
-                                            <ClippedButton onClick={() => deleteAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Delete"><Trash2 className="w-3 h-3" /></ClippedButton>
+                                            <ClippedButton onClick={() => startRouting(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="How this name is matched"><SlidersHorizontal className="w-3 h-3" /></ClippedButton>
+                                            <ClippedButton onClick={() => toggleAliasVisibility(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Hide this name from the list (it still helps find the condition)"><EyeOff className="w-3 h-3" /></ClippedButton>
+                                            <ClippedButton onClick={() => startEditAlias(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Rename this name"><Pencil className="w-3 h-3" /></ClippedButton>
+                                            <ClippedButton onClick={() => deleteAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Remove this name"><Trash2 className="w-3 h-3" /></ClippedButton>
                                           </>
                                         )}
                                       </div>
@@ -886,10 +886,10 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                               </>
                                             ) : (
                                               <>
-                                                <ClippedButton onClick={() => startRouting(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Matching options"><SlidersHorizontal className="w-3 h-3" /></ClippedButton>
+                                                <ClippedButton onClick={() => startRouting(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="How this name is matched"><SlidersHorizontal className="w-3 h-3" /></ClippedButton>
                                                 <ClippedButton onClick={() => toggleAliasVisibility(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-emerald-500/15 text-stone-400 hover:text-emerald-400" : "hover:bg-emerald-500/10 text-stone-500 hover:text-emerald-600"}`} title="Unhide"><Eye className="w-3 h-3" /></ClippedButton>
-                                                <ClippedButton onClick={() => startEditAlias(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Rename"><Pencil className="w-3 h-3" /></ClippedButton>
-                                                <ClippedButton onClick={() => deleteAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Delete"><Trash2 className="w-3 h-3" /></ClippedButton>
+                                                <ClippedButton onClick={() => startEditAlias(alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-sky-500/15 text-stone-400 hover:text-sky-400" : "hover:bg-sky-500/10 text-stone-500 hover:text-sky-600"}`} title="Rename this name"><Pencil className="w-3 h-3" /></ClippedButton>
+                                                <ClippedButton onClick={() => deleteAlias(entry, alias)} cornerBg={dark ? "#0e2236" : "#ffffff"} className={`p-1 ${dark ? "hover:bg-red-500/15 text-stone-400 hover:text-red-400" : "hover:bg-red-500/10 text-stone-500 hover:text-red-600"}`} title="Remove this name"><Trash2 className="w-3 h-3" /></ClippedButton>
                                               </>
                                             )}
                                           </div>
@@ -907,7 +907,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                               <div className="flex items-center gap-2 pt-1">
                                 <input
                                   className={`${inputClass} flex-1`}
-                                  placeholder="Add an alias (e.g. a misspelling or synonym)..."
+                                  placeholder="Add another name (a spelling, abbreviation or synonym)..."
                                   value={newAliasText}
                                   onChange={e => setNewAliasText(e.target.value)}
                                   onKeyDown={e => { if (e.key === "Enter") addAlias(entry); }}
@@ -916,7 +916,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
                                   <input type="checkbox" checked={newAliasVisible} onChange={e => setNewAliasVisible(e.target.checked)} />
                                   Visible
                                 </label>
-                                <ClippedButton onClick={() => addAlias(entry)} disabled={saving || !newAliasText.trim()} cornerBg={dark ? "#0e2236" : "#ffffff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40" title="Add alias">
+                                <ClippedButton onClick={() => addAlias(entry)} disabled={saving || !newAliasText.trim()} cornerBg={dark ? "#0e2236" : "#ffffff"} className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40" title="Add name">
                                   <Plus className="w-3.5 h-3.5" />
                                 </ClippedButton>
                               </div>
@@ -937,7 +937,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
             Showing {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
             {"–"}
             {Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()}
-            {hasActiveFilter ? " matching PEDs" : " PEDs"}. {canManage ? "Changes here are the live source of truth for the matching engine and feed the Lookup page's dropdown immediately." : "Admin or Developer clearance is required to add, edit, or remove entries."}
+            {hasActiveFilter ? " matching conditions" : " conditions"}. {canManage ? "Changes here take effect for every advisor straight away and feed the Lookup page's suggestions." : "Admin or Developer clearance is required to add, edit, or remove entries."}
           </p>
           <Pagination theme={theme} page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>

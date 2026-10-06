@@ -4,11 +4,12 @@
  */
 
 import React, { useEffect, useState } from "react";
+import { CHANGE_TYPES, OUTCOME_PLAIN, changeTypeHint, changeTypeLabel } from "../utils/mappingTerms";
 import { registerMappingChangeDialog, type MappingChangeDecision, type MappingChangeRequest, type PairOutcome } from "../utils/mappingFetch";
 
-const CATEGORIES = ["New synonym", "New canonical condition", "Dictionary update", "Regex update", "Shield update", "New category", "Plan override", "Fallback update", "Regression fix"];
+const CATEGORIES = CHANGE_TYPES.map((c) => c.value);
 
-const TIER_LABEL: Record<string, string> = { P0: "Direct Match", P1: "Category Match", P3: "Fallback (Others)", NON_AILMENT: "Not a condition", UNRESOLVED: "Sent to the AI step" };
+const TIER_LABEL: Record<string, string> = OUTCOME_PLAIN;
 
 const outcomeText = (o: PairOutcome) => (o.question ? `${TIER_LABEL[o.tier] ?? o.tier}: ${o.question}` : TIER_LABEL[o.tier] ?? o.tier);
 
@@ -99,9 +100,9 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
             )}
             {req.impact?.aiMemory && req.impact.aiMemory.checked > 0 && (
               <p className={`rounded-lg p-3 text-xs ${dark ? "bg-slate-700 text-slate-200" : "bg-slate-50 text-slate-700"}`}>
-                {m.resolvedToUnresolved} lookup{m.resolvedToUnresolved === 1 ? "" : "s"} would stop being answered by the rules. Of the {req.impact.aiMemory.checked} checked, <strong>{req.impact.aiMemory.withEntry}</strong> already have an AI Memory entry
+                {m.resolvedToUnresolved} lookup{m.resolvedToUnresolved === 1 ? "" : "s"} would stop being answered by the fixed decision steps. Of the {req.impact.aiMemory.checked} checked, <strong>{req.impact.aiMemory.withEntry}</strong> already have a saved AI answer
                 {Object.keys(req.impact.aiMemory.byStatus).length > 0 && <> ({Object.entries(req.impact.aiMemory.byStatus).map(([k, v]) => `${v} ${k}`).join(", ")})</>}: advisors would be served that saved answer
-                {req.impact.aiMemory.withEntry < req.impact.aiMemory.checked ? "; the rest would be sent to the AI step" : ""}. A rejected entry shows the Others question with a manual-review note.
+                {req.impact.aiMemory.withEntry < req.impact.aiMemory.checked ? "; the rest would be passed to the AI assistant" : ""}. A rejected AI answer shows the plan's “any other condition” question with a manual-review note.
               </p>
             )}
             {req.impact && req.impact.sample.length > 0 && (
@@ -131,23 +132,24 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
             <textarea className={`${field} mt-1 font-normal`} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this change needed?" />
           </label>
           <label className="block text-sm font-semibold">
-            Change category
+            What kind of change is this?
             <select className={`${field} mt-1 font-normal`} value={category} onChange={(e) => setCategory(e.target.value)}>
               <option value="">Choose…</option>
               {CATEGORIES.map((c) => (
-                <option key={c}>{c}</option>
+                <option key={c} value={c}>{changeTypeLabel(c)}</option>
               ))}
             </select>
+            {category && <span className={`block mt-1 text-xs font-normal ${muted}`}>{changeTypeHint(category)}</span>}
           </label>
           <fieldset className="text-sm">
-            <legend className="font-semibold">Business-Decision check</legend>
+            <legend className="font-semibold">Does this need an owner's approval?</legend>
             <label className="flex items-center gap-2 mt-1">
-              <input type="radio" checked={bdChoice === "none"} onChange={() => setBdChoice("none")} /> No business decision is involved (no change to which question applies in a way the owners haven't approved)
+              <input type="radio" checked={bdChoice === "none"} onChange={() => setBdChoice("none")} /> No — this is a routine or obvious fix; nobody has to approve it
             </label>
             <label className="flex items-center gap-2 mt-1">
-              <input type="radio" checked={bdChoice === "approved"} onChange={() => setBdChoice("approved")} /> A business decision is involved and was approved by:
+              <input type="radio" checked={bdChoice === "approved"} onChange={() => setBdChoice("approved")} /> Yes — it is a judgement call, and it was approved by:
             </label>
-            {bdChoice === "approved" && <input className={`${field} mt-1`} value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="Name / reference" />}
+            {bdChoice === "approved" && <input className={`${field} mt-1`} value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="Name of the person who approved it" />}
           </fieldset>
           {needsReview && (
             <label className="flex items-start gap-2 text-sm font-semibold">

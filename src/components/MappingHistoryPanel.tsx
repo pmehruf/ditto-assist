@@ -4,6 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
+import { changeStatusLabel, changeTypeLabel } from "../utils/mappingTerms";
 
 /**
  * Mapping Control > History: every admin mapping change (who, what, why, how much it affected) with Undo.
@@ -75,7 +76,7 @@ export function MappingHistoryPanel({ theme, canManage }: { theme: "light" | "da
     <div className="space-y-4 text-left">
       <div>
         <h2 className={`text-lg font-black ${dark ? "text-white" : "text-[#111827]"}`}>Change history</h2>
-        <p className={`text-xs mt-1 font-semibold ${muted}`}>The most recent 50 mapping changes across the dictionary, plans, categories and rules.{!canManage && " Read-only — you can't undo changes."}</p>
+        <p className={`text-xs mt-1 font-semibold ${muted}`}>The 50 most recent changes to conditions, plans, categories and decision steps.{!canManage && " Read-only — you can't undo changes."}</p>
       </div>
       {(error || notice) && <div className={`rounded-lg p-3 text-sm ${error ? (dark ? "bg-red-900/30 text-red-200" : "bg-red-50 text-red-800") : dark ? "bg-emerald-900/30 text-emerald-200" : "bg-emerald-50 text-emerald-800"}`}>{error ?? notice}</div>}
       {loading ? (
@@ -90,12 +91,12 @@ export function MappingHistoryPanel({ theme, canManage }: { theme: "light" | "da
               <div className="flex-1 min-w-[14rem]">
                 <div className="text-sm font-semibold">
                   {e.summary}{" "}
-                  {e.impactTier && <span className={`text-[10px] px-1.5 py-0.5 rounded ${tierClass(e.impactTier)}`}>{e.impactTier} impact</span>}{" "}
-                  {e.status !== "applied" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20">{e.status.replace(/_/g, " ")}</span>}
+                  {e.impactTier && <span className={`text-[10px] px-1.5 py-0.5 rounded ${tierClass(e.impactTier)}`}>{e.impactTier === "high" ? "High" : e.impactTier === "elevated" ? "Elevated" : e.impactTier === "low" ? "Low" : e.impactTier} impact</span>}{" "}
+                  {e.status !== "applied" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20">{changeStatusLabel(e.status)}</span>}
                 </div>
                 <div className={`text-xs ${muted}`}>
                   {e.performedBy} · {new Date(e.performedAt).toLocaleString()}
-                  {e.changeCategory ? ` · ${e.changeCategory}` : ""}
+                  {e.changeCategory ? ` · ${changeTypeLabel(e.changeCategory)}` : ""}
                 </div>
                 {e.reason && <div className="text-xs mt-0.5">“{e.reason}”</div>}
                 {e.status === "undone" && <div className={`text-xs ${muted}`}>Undone by {e.undoneBy}{e.undoNote ? ` — ${e.undoNote}` : ""}</div>}

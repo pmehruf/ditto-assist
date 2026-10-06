@@ -44,10 +44,10 @@ export function MappingControlPage({ theme, planPage, pedPage, access }: Mapping
   const dark = theme === "dark";
   const either = access.planView || access.pedView;
   const views: Array<{ key: SubView; label: string; Icon: typeof Waypoints; show: boolean }> = [
-    { key: "dictionary", label: "PED Library & AI Review", Icon: BookMarked, show: access.pedView },
+    { key: "dictionary", label: "Conditions & AI Review", Icon: BookMarked, show: access.pedView },
     { key: "plans", label: "Plans & Questions", Icon: Waypoints, show: access.planView },
     { key: "categories", label: "Categories", Icon: FolderTree, show: either },
-    { key: "rules", label: "Rules", Icon: ListOrdered, show: either },
+    { key: "rules", label: "Decision Steps", Icon: ListOrdered, show: either },
     { key: "history", label: "History", Icon: History, show: either },
   ];
   const visible = views.filter((v) => v.show);
@@ -67,7 +67,7 @@ export function MappingControlPage({ theme, planPage, pedPage, access }: Mapping
           <span>Mapping Control</span>
         </h1>
         <p className="text-xs mt-1 font-semibold text-content-muted">
-          Everything that decides how a condition is routed, in one place: the dictionary, categories, each plan's questions and mappings, and the rules. Changes show their impact first and apply to every advisor immediately.
+          Everything that decides which declaration question an advisor sees for a condition, in one place: the list of conditions, categories, each plan's questions and mappings, and the decision steps. Every change shows its effect first, applies to every advisor straight away, and can be undone from History.
         </p>
         <div className="flex flex-wrap gap-2 mt-3">
           {visible.map((v) => (

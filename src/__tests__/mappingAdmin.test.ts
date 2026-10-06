@@ -174,7 +174,7 @@ describe("built-in pipeline steps and built-in rules are protected", () => {
     const rules = await env.repos.routingRules.listAll();
     const family = rules.filter((r) => r.stage === "family").sort((a, b) => a.position - b.position);
     const idx = family.findIndex((r, i) => r.kind === "rule" && family[i + 1]?.kind === "primitive");
-    if (idx >= 0) expect(movePosition(rules, family[idx].ruleKey, "down").error).toMatch(/algorithm step/);
+    if (idx >= 0) expect(movePosition(rules, family[idx].ruleKey, "down").error).toMatch(/fixed step/);
   });
 });
 

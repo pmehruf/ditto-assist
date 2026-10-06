@@ -88,10 +88,10 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
     try {
       const res = await fetch(`/api/plan-ped-overrides/${encodeURIComponent(planName)}`);
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Failed to load PED mappings (HTTP ${res.status}).`);
+      if (!res.ok) throw new Error(body.error || `Failed to load the condition mappings (HTTP ${res.status}).`);
       setEntries(body.entries || []);
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : "Could not load PED mappings.");
+      setLoadError(err instanceof Error ? err.message : "Could not load the condition mappings.");
     } finally {
       setLoading(false);
     }
@@ -155,8 +155,8 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
 
   const saveDraft = async () => {
     if (!planName || !draft) return;
-    if (!draft.ped) return setSaveError("Choose a PED.");
-    if (!draft.targetQuestion) return setSaveError("Choose the question this PED should map to on this plan.");
+    if (!draft.ped) return setSaveError("Choose a condition.");
+    if (!draft.targetQuestion) return setSaveError("Choose the question this condition should go to on this plan.");
     if (!draft.isEdit && entries.some((e) => e.pedId === draft.ped!.id)) {
       const ok = await confirm(`${draft.ped.name} already has a mapping on ${planName}. Replace it?`);
       if (!ok) return;
@@ -195,7 +195,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
   };
 
   const targetLabel = (e: PlanPedOverrideRowEntry) =>
-    e.targetQuestion ? e.targetQuestion : e.categoryKey ? `${categoryLabel(e.categoryKey)} question (category-based)` : "—";
+    e.targetQuestion ? e.targetQuestion : e.categoryKey ? `${categoryLabel(e.categoryKey)} question (its category's question)` : "—";
 
   const staleTarget = (e: PlanPedOverrideRowEntry) =>
     !!e.targetQuestion && questionOptions.length > 0 && !questionOptions.some((o) => o.value === e.targetQuestion!.trim());
@@ -204,7 +204,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
     <li key={e.id} className={`flex items-start gap-2 p-2 rounded-lg border text-xs ${cardClass}`}>
       <div className="flex-1 min-w-0">
         <div className="font-bold">
-          {e.pedName} <span className={`font-normal ${mutedText}`}>· {e.pedCode} · normally {categoryLabel(e.pedCategoryKey)}</span>
+          {e.pedName} <span className={`font-normal ${mutedText}`}>· {e.pedCode} · normally filed under {categoryLabel(e.pedCategoryKey)}</span>
         </div>
         <div className="mt-0.5 flex items-start gap-1">
           <ArrowRight className="w-3 h-3 mt-0.5 shrink-0 opacity-70" />
@@ -239,13 +239,13 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
     if (!planName) return <p className={`text-xs font-semibold px-2 py-2 ${mutedText}`}>—</p>;
     if (loading) return <p className={`text-xs font-semibold px-2 py-2 ${mutedText}`}>Loading…</p>;
     if (entries.length === 0) {
-      return <p className={`text-xs font-semibold px-2 py-2 ${mutedText}`}>None — every PED follows its normal category mapping on this plan.</p>;
+      return <p className={`text-xs font-semibold px-2 py-2 ${mutedText}`}>None — every condition follows its normal category on this plan.</p>;
     }
     return <ul className="space-y-1">{entries.map((e) => renderEntry(e, false))}</ul>;
   }
 
   if (!planName) {
-    return <p className={`text-xs font-semibold px-2 py-2 ${mutedText}`}>Save this plan first, then add PED mappings.</p>;
+    return <p className={`text-xs font-semibold px-2 py-2 ${mutedText}`}>Save this plan first, then add condition mappings.</p>;
   }
 
   return (
@@ -261,13 +261,13 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
             <div className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-xs ${cardClass}`}>
               <div className="flex-1 min-w-0">
                 <span className="font-bold">{draft.ped.name}</span>
-                <span className={mutedText}> · {draft.ped.code} · normally {categoryLabel(draft.ped.categoryKey)}</span>
+                <span className={mutedText}> · {draft.ped.code} · normally filed under {categoryLabel(draft.ped.categoryKey)}</span>
               </div>
               {!draft.isEdit && (
                 <button
                   type="button"
                   onClick={() => setDraft((d) => (d ? { ...d, ped: null } : d))}
-                  title="Choose a different PED"
+                  title="Choose a different condition"
                   className={`p-1 rounded cursor-pointer ${dark ? "hover:bg-white/10 text-stone-300" : "hover:bg-stone-200 text-stone-600"}`}
                 >
                   <X className="w-3.5 h-3.5" />
@@ -281,7 +281,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search a PED by name, abbreviation or code — e.g. OSA"
+                  placeholder="Search a condition by name, abbreviation or code — e.g. OSA"
                   className={`${inputClass} pl-8`}
                   autoFocus
                 />
@@ -289,7 +289,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
               {search.trim().length >= 2 && (
                 <ul className={`mt-1 max-h-56 overflow-y-auto rounded-lg border ${dark ? "border-white/[0.08] bg-black/20" : "border-stone-200 bg-white"}`}>
                   {searching && searchResults.length === 0 && <li className={`px-2.5 py-2 text-xs ${mutedText}`}>Searching…</li>}
-                  {!searching && searchResults.length === 0 && <li className={`px-2.5 py-2 text-xs ${mutedText}`}>No PEDs found.</li>}
+                  {!searching && searchResults.length === 0 && <li className={`px-2.5 py-2 text-xs ${mutedText}`}>No conditions found.</li>}
                   {searchResults.map((r) => (
                     <li key={r.id}>
                       <button
@@ -312,7 +312,7 @@ export function PlanPedOverridesEditor({ theme, planName, questions, canEdit, mo
             value={draft.targetQuestion}
             onChange={(v) => setDraft((d) => (d ? { ...d, targetQuestion: v } : d))}
             options={questionOptions}
-            placeholder="Map to this question on this plan"
+            placeholder="Which question should it go to on this plan?"
           />
           <textarea
             value={draft.reason}

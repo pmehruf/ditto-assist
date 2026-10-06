@@ -268,7 +268,7 @@ export function findRefLoop(ruleKey: string, candidateRefs: string[], rules: Map
   const stack = [...candidateRefs];
   while (stack.length) {
     const k = stack.pop()!;
-    if (k === ruleKey) return "This rule refers back to itself (directly or through other rules), which would loop.";
+    if (k === ruleKey) return "This step depends on itself (directly or through other steps), which would loop forever.";
     if (seen.has(k)) continue;
     seen.add(k);
     stack.push(...refsOf(k));
@@ -354,7 +354,7 @@ export async function checkRegexSafety(regexes: RegexRef[], aliasKeys: string[],
   results.forEach((r, i) => {
     const where = toCheck[i].where;
     if (r.error) errors.push(`${where}: ${r.error}`);
-    else if (r.empty) errors.push(`${where}: this pattern matches empty text, so it would match every condition.`);
+    else if (r.empty) errors.push(`${where}: this wording pattern matches empty text, so it would match every condition.`);
     else if (samples.length && r.matched / samples.length > MAX_MATCH_SHARE) errors.push(`${where}: this pattern matches ${Math.round((100 * r.matched) / samples.length)}% of the dictionary — too broad.`);
   });
   return errors;
@@ -399,8 +399,8 @@ export function movePosition(rules: RoutingRuleRow[], ruleKey: string, direction
   const i = sameGroup.findIndex((r) => r.ruleKey === ruleKey);
   const neighbour = sameGroup[direction === "up" ? i - 1 : i + 1];
   if (!neighbour) return { error: `Already ${direction === "up" ? "first" : "last"}.` };
-  if (neighbour.stage !== rule.stage) return { error: "A rule can only be reordered within its own stage." };
-  if (neighbour.kind !== "rule") return { error: "A built-in algorithm step sits next to it here; it cannot be moved past that step." };
+  if (neighbour.stage !== rule.stage) return { error: "A step can only be moved within its own group." };
+  if (neighbour.kind !== "rule") return { error: "A fixed step sits next to it here; it cannot be moved past that step." };
   return { swapWith: neighbour };
 }
 

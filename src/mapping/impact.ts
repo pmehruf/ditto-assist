@@ -227,9 +227,9 @@ export function classifyImpact(m: ImpactMetrics, t: ImpactThresholds = IMPACT_TH
   const elevated: string[] = [];
   // Wording/specificity safety: a direct match changing, a specific question lost, or a lookup that
   // would now need the AI are never ordinary edits.
-  if (m.p0Changed > 0) high.push(`${m.p0Changed} direct-match (exact wording or plan-specific) result${m.p0Changed === 1 ? "" : "s"} would change`);
-  if (m.specificityLoss > 0) high.push(`${m.specificityLoss} lookup${m.specificityLoss === 1 ? "" : "s"} would lose a specific question and fall back to Others`);
-  if (m.resolvedToUnresolved > 0) high.push(`${m.resolvedToUnresolved} lookup${m.resolvedToUnresolved === 1 ? "" : "s"} would no longer be answered by the rules and would go to the AI step`);
+  if (m.p0Changed > 0) high.push(`${m.p0Changed} exact-wording (or plan-specific) answer${m.p0Changed === 1 ? "" : "s"} would change`);
+  if (m.specificityLoss > 0) high.push(`${m.specificityLoss} lookup${m.specificityLoss === 1 ? "" : "s"} would lose a specific question and fall back to the plan's “any other condition” question`);
+  if (m.resolvedToUnresolved > 0) high.push(`${m.resolvedToUnresolved} lookup${m.resolvedToUnresolved === 1 ? "" : "s"} would no longer be answered by the fixed decision steps and would be passed to the AI assistant`);
   if (m.pairsChanged >= t.highMinPairs) high.push(`${m.pairsChanged} lookups would change`);
   if (m.advisorLookupsAffected >= t.highAdvisorLookups) high.push(`advisors made ${m.advisorLookupsAffected} lookups of these in the last 90 days`);
   if (high.length) return { tier: "high", reasons: high };

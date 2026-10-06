@@ -24,9 +24,9 @@ export interface PlanRestrictionRowEntry extends PlanRestriction {
 }
 
 const MODE_OPTIONS = [
-  { value: "require_keywords", label: "Require a keyword — only these PEDs map to this category" },
-  { value: "exclude_keywords", label: "Exclude a keyword — these PEDs are diverted away from this category" },
-  { value: "block_category", label: "Block entirely — every PED in this category is diverted" },
+  { value: "require_keywords", label: "Only accept conditions that mention a keyword — all others go to the plan's “any other condition” question" },
+  { value: "exclude_keywords", label: "Do not accept conditions that mention a keyword — they go to the plan's “any other condition” question" },
+  { value: "block_category", label: "Do not accept this category at all — every condition in it goes to the plan's “any other condition” question" },
 ] as const;
 
 function modeLabel(mode: string): string {
@@ -143,7 +143,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
     const explanation = draft.explanation.trim();
     const keywords = draft.keywordsText.split(",").map((k) => k.trim()).filter(Boolean);
     if (!categoryKey) return setSaveError("Choose a category.");
-    if (!explanation) return setSaveError("Explanation is required — this is what the advisor sees when a PED is diverted.");
+    if (!explanation) return setSaveError("An explanation is required — it is what the advisor reads when a condition is sent to the “any other condition” question.");
     if (draft.mode !== "block_category" && keywords.length === 0) {
       return setSaveError("At least one keyword is required for this mode.");
     }
@@ -186,7 +186,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
   };
 
   const deleteEntry = async (entry: PlanRestrictionRowEntry) => {
-    if (!(await confirm(`Delete the "${entry.categoryKey}" restriction on ${entry.planName}? This can't be undone.`))) return;
+    if (!(await confirm(`Delete the restriction on the "${entry.categoryKey}" category on ${entry.planName}? This can't be undone.`))) return;
     setSaveError(null);
     try {
       const res = await mappingFetch(`/api/plan-restrictions/${entry.id}`, { method: "DELETE" });
@@ -288,7 +288,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
             value={draft.categoryKey}
             onChange={(v) => setDraft((d) => (d ? { ...d, categoryKey: v } : d))}
             options={categoryOptions}
-            placeholder="Category"
+            placeholder="Which category does this apply to?"
           />
           <CustomSelect
             theme={theme}
@@ -300,14 +300,14 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
             <input
               value={draft.keywordsText}
               onChange={(e) => setDraft((d) => (d ? { ...d, keywordsText: e.target.value } : d))}
-              placeholder="Keywords, comma-separated — e.g. type 1, insulin, blindness, chronic foot ulcer"
+              placeholder="Keywords, separated by commas — e.g. type 1, insulin, blindness, chronic foot ulcer"
               className={inputClass}
             />
           )}
           <textarea
             value={draft.explanation}
             onChange={(e) => setDraft((d) => (d ? { ...d, explanation: e.target.value } : d))}
-            placeholder="Shown to the advisor when a PED is diverted by this restriction, e.g. &quot;This plan's diabetes question covers only Type 1 / insulin-dependent diabetes.&quot;"
+            placeholder="What the advisor reads when a condition is sent to the “any other condition” question, e.g. &quot;This plan's diabetes question covers only Type 1 / insulin-dependent diabetes.&quot;"
             rows={2}
             className={inputClass}
           />

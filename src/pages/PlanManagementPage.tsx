@@ -8,6 +8,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Plus, Trash2, Pencil, X, Sparkles, Wand2, AlertTriangle, Check, ChevronDown, ChevronUp, PowerOff } from "lucide-react";
 import { getPlanConfig, guessCategoryMap } from "../types.js";
 import { fillUnmappedCategories, useLiveCategories } from "../utils/categoryLabels";
+import { questionTagLabel } from "../utils/mappingTerms";
 import { DbPlanConfigEntry, PlanQuestionEntry, PlanQuestionTag, SpecificIllnessEntry } from "../types/plans";
 import { LoggedUser } from "../types/user";
 import { ChangeLogEntry } from "../types/changeLog";
@@ -340,7 +341,7 @@ export function PlanManagementPage({
       setManageCatAiNotice(
         body.usedAi
           ? `AI matched ${matchedCount} categories — the rest default to the catch-all question below; review before saving.`
-          : `No GEMINI_API_KEY is configured on the server, so this ran the same keyword rules as "Suggest" (matched ${matchedCount} categories).`
+          : `The AI assistant is not set up on this server, so this used the same word-matching as “Suggest mapping” (matched ${matchedCount} categories).`
       );
     } catch (err: unknown) {
       setManageCatAiNotice(err instanceof Error ? err.message : "AI refinement failed. Keyword-rule suggestions are still available.");
@@ -547,7 +548,7 @@ export function PlanManagementPage({
       setAiNotice(
         body.usedAi
           ? `AI matched ${matchedCount} categories — the rest default to the catch-all question below; review before saving.`
-          : `No GEMINI_API_KEY is configured on the server, so this ran the same keyword rules as "Suggest" (matched ${matchedCount} categories). Set GEMINI_API_KEY to get real AI refinement.`
+          : `The AI assistant is not set up on this server, so this used the same word-matching as “Suggest mapping” (matched ${matchedCount} categories). Ask your developer to set it up to get full AI refinement.`
       );
     } catch (err: unknown) {
       setAiNotice(err instanceof Error ? err.message : "AI refinement failed. Keyword-rule suggestions are still available.");
@@ -575,7 +576,7 @@ export function PlanManagementPage({
     if (!trimmedInsurer) return setSaveError("Insurer name is required.");
     if (cleanQuestions.length === 0) return setSaveError("Add at least one declaration question.");
     if (!cleanQuestions.some((q) => q.tag === "Catch-all")) {
-      return setSaveError("Tag one question as \"Catch-all\" (e.g. \"Any other disease...?\") so unmatched PEDs have somewhere to route.");
+      return setSaveError("Mark one question as “Any other condition” (for example “Any other disease…?”) so conditions with no better question have somewhere to go.");
     }
 
     setSaving(true);
@@ -972,7 +973,7 @@ export function PlanManagementPage({
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>DA Mapping Config</span>
+            <span>Plans &amp; Questions</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {planMgmtView === "plans"
@@ -980,8 +981,8 @@ export function PlanManagementPage({
               : planMgmtView === "ped-mappings"
                 ? "Pin one condition (PED) to one exact question on one plan. A pinned mapping takes precedence over the condition's category mapping and over plan restrictions, for every advisor, from their next lookup."
               : planMgmtView === "category-mapping"
-                ? "Browse and edit how each plan's declaration questions map to the engine's PED categories — the same category-to-question logic the deterministic engine consults when routing a matched condition."
-                : "Explore the hardcoded specific-illness schedules and test how a declared PED maps against them."}
+                ? "For each plan, choose which of its questions each category goes to. This is how a condition's category becomes the question an advisor sees."
+                : "Browse the specific-illness schedules (the fixed illness lists each insurer defines) and test how a declared condition is checked against them."}
           </p>
         </div>
 
@@ -1103,8 +1104,8 @@ export function PlanManagementPage({
           ) : (
             <>
               <p className={`text-[11px] ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                Map a specific PED to a specific question on this plan. Takes precedence over the PED's category mapping and over this
-                plan's restrictions, for every advisor, from their next lookup. Each change is saved immediately, after you review its impact.
+                Send a specific condition to a specific question on this plan. This beats the condition's normal category and this plan's
+                restrictions, for every advisor, from their next lookup. Each change is saved immediately, after you review its impact.
               </p>
               {pedMapQuestionTexts.length === 0 && (
                 <p className={`text-[11px] ${dark ? "text-amber-400" : "text-amber-700"}`}>
@@ -1128,7 +1129,7 @@ export function PlanManagementPage({
           <div className="flex items-center gap-2 pb-2.5 border-b border-stone-200 dark:border-stone-850">
             <Wand2 className={`w-4 h-4 ${dark ? "text-cyan-400" : "text-cyan-600"}`} />
             <h3 className={`text-xs font-black uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
-              Category → Question Mapping
+              Which question each category goes to
             </h3>
           </div>
 
@@ -1153,10 +1154,7 @@ export function PlanManagementPage({
 
           {!manageCatPlan ? (
             <p className={`text-xs italic ${dark ? "text-stone-500" : "text-stone-400"}`}>
-              Choose a plan above to view or edit how its declaration questions map to each PED category — this is the
-              same category-to-question logic the deterministic engine uses to route a matched condition to the right
-              question. Built-in plans (Optima Secure, Care Supreme, Activ One Max, Activ Fit Preferred) show their
-              real, currently-live mapping from the underlying config, not a blank slate.
+              Choose a plan above to see or change which question each category goes to on that plan. This is how a condition's category becomes the question an advisor sees. Built-in plans show their real, live mapping, not a blank slate.
             </p>
           ) : (
             <>
@@ -1189,15 +1187,15 @@ export function PlanManagementPage({
                         onClick={applyKeywordSuggestionsForManageCat}
                         disabled={manageCatQuestionTexts.length === 0}
                         className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-700"}`}
-                        title="Instant, free keyword-based suggestions"
+                        title="Quick suggestions based on matching words in the questions"
                       >
-                        <Wand2 className="w-3 h-3" /> Suggest
+                        <Wand2 className="w-3 h-3" /> Suggest mapping
                       </button>
                       <button
                         onClick={refineWithAiForManageCat}
                         disabled={manageCatRefining || manageCatQuestionTexts.length === 0}
                         className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${dark ? "text-purple-300 hover:text-purple-200" : "text-purple-600 hover:text-purple-700"}`}
-                        title="Refine with AI (Gemini) — reviews wording more carefully than keyword rules"
+                        title="Refine with AI — reads the question wording more carefully than the quick suggestion"
                       >
                         <Sparkles className="w-3 h-3" /> {manageCatRefining ? "Refining…" : "Refine with AI"}
                       </button>
@@ -1263,9 +1261,7 @@ export function PlanManagementPage({
               </div>
 
               <p className={`text-[10.5px] ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                This is the same category-to-question mapping the deterministic engine consults when a searched PED
-                resolves to a category (e.g. "diabetes") — it decides which of this plan's declaration questions the
-                PED should be flagged against. New entries you add and save here take effect immediately.
+                Once the system has found a condition's category (for example “diabetes”), this decides which of the plan's questions the condition is declared under. Changes you save here take effect immediately.
               </p>
 
               {manageCatMode === "edit" && manageCatError && (
@@ -1599,7 +1595,7 @@ export function PlanManagementPage({
                     <span className={`shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded ${
                       dark ? "bg-white/[0.06] text-stone-300" : "bg-stone-150 text-stone-600"
                     }`}>
-                      {q.tag}
+                      {questionTagLabel(q.tag)}
                     </span>
                   </div>
                 ))}
@@ -1627,9 +1623,9 @@ export function PlanManagementPage({
                           dark ? "bg-white/[0.03] border-white/[0.08] text-[#F5F7FA]" : "bg-white border-stone-200 text-stone-900"
                         }`}
                         options={[
-                          { value: "Specific", label: "Specific" },
-                          { value: "Umbrella", label: "Umbrella" },
-                          { value: "Catch-all", label: "Catch-all" },
+                          { value: "Specific", label: questionTagLabel("Specific") },
+                          { value: "Umbrella", label: questionTagLabel("Umbrella") },
+                          { value: "Catch-all", label: questionTagLabel("Catch-all") },
                         ]}
                       />
                     </div>
@@ -1660,7 +1656,7 @@ export function PlanManagementPage({
             )}
             {formMode === "edit" && (
               <p className={`text-[10.5px] mt-2 ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                Tag "Umbrella" for general tests/medication/hospitalisation questions, and exactly one "Catch-all" for the "any other condition" question.
+                Mark broad questions about tests, medication or hospitalisation as “Group question”, and mark exactly one question as “Any other condition” — it is where conditions with no better question go.
               </p>
             )}
           </div>
@@ -1687,15 +1683,15 @@ export function PlanManagementPage({
                   <button
                     onClick={applyKeywordSuggestions}
                     className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-pointer ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-700"}`}
-                    title="Instant, free keyword-based suggestions"
+                    title="Quick suggestions based on matching words in the questions"
                   >
-                    <Wand2 className="w-3 h-3" /> Suggest
+                    <Wand2 className="w-3 h-3" /> Suggest mapping
                   </button>
                   <button
                     onClick={refineWithAi}
                     disabled={refiningWithAi || specificAndCatchAllTexts.length === 0}
                     className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${dark ? "text-purple-300 hover:text-purple-200" : "text-purple-600 hover:text-purple-700"}`}
-                    title="Refine with AI (Gemini) — reviews wording more carefully than keyword rules"
+                    title="Refine with AI — reads the question wording more carefully than the quick suggestion"
                   >
                     <Sparkles className="w-3 h-3" /> {refiningWithAi ? "Refining…" : "Refine with AI"}
                   </button>

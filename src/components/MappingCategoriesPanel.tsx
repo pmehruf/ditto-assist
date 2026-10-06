@@ -87,7 +87,7 @@ export function MappingCategoriesPanel({ theme, canManage }: { theme: "light" | 
   const usageText = (u: Usage) =>
     u.total === 0
       ? "Not used"
-      : [u.peds && `${u.peds} PEDs`, u.aliasOverrides + u.aliasFallbacks && `${u.aliasOverrides + u.aliasFallbacks} alias settings`, u.planMappings && `${u.planMappings} plan questions`, u.planOverrides && `${u.planOverrides} plan-specific mappings`, u.restrictions && `${u.restrictions} restrictions`, u.rules && `${u.rules} rules`]
+      : [u.peds && `${u.peds} condition${u.peds === 1 ? "" : "s"}`, u.aliasOverrides + u.aliasFallbacks && `${u.aliasOverrides + u.aliasFallbacks} name setting${u.aliasOverrides + u.aliasFallbacks === 1 ? "" : "s"}`, u.planMappings && `${u.planMappings} plan question mapping${u.planMappings === 1 ? "" : "s"}`, u.planOverrides && `${u.planOverrides} plan-specific condition mapping${u.planOverrides === 1 ? "" : "s"}`, u.restrictions && `${u.restrictions} restriction${u.restrictions === 1 ? "" : "s"}`, u.rules && `${u.rules} decision step${u.rules === 1 ? "" : "s"}`]
           .filter(Boolean)
           .join(", ");
 
@@ -96,15 +96,15 @@ export function MappingCategoriesPanel({ theme, canManage }: { theme: "light" | 
       <div>
         <h2 className={`text-lg font-black ${dark ? "text-white" : "text-[#111827]"}`}>Categories</h2>
         <p className={`text-xs mt-1 font-semibold ${muted}`}>
-          The one category list for the whole engine. A new category only routes something once it is assigned to PEDs and mapped to a plan question (Plans &amp; Questions).{!canManage && " Read-only — you don't have permission to make changes."}
+          The master list of categories used everywhere. A new category does nothing until conditions are filed under it and each plan has a question mapped to it (Plans &amp; Questions).{!canManage && " Read-only — you don't have permission to make changes."}
         </p>
       </div>
       {(error || notice) && <div className={`rounded-lg p-3 text-sm ${error ? (dark ? "bg-red-900/30 text-red-200" : "bg-red-50 text-red-800") : dark ? "bg-emerald-900/30 text-emerald-200" : "bg-emerald-50 text-emerald-800"}`}>{error ?? notice}</div>}
 
       {canManage && (
         <div className="flex flex-col md:flex-row gap-2">
-          <input className={input} placeholder="key (e.g. sleep_disorders)" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
-          <input className={`${input} flex-1`} placeholder="Label shown to admins" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
+          <input className={input} placeholder="Short code, no spaces (e.g. sleep_disorders) — cannot be changed later" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
+          <input className={`${input} flex-1`} placeholder="Category name shown on screen" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
           <button
             className={btn(true)}
             disabled={busy || !newKey.trim() || !newLabel.trim()}

@@ -453,11 +453,11 @@ export function AiMappingReview({
             <tr className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>
               <SortableTh label="Condition" sortKey="condition" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
               <SortableTh label="Plan" sortKey="planName" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
-              <SortableTh label="Suggested Route" sortKey="matched_question" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
+              <SortableTh label="Suggested Question" sortKey="matched_question" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
               <SortableTh label="Status" sortKey="status" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3" />
               <SortableTh label="Created" sortKey="createdAt" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" />
               <SortableTh label="Last Used" sortKey="lastAccessedAt" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" />
-              <SortableTh label="Uses" sortKey="accessCount" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" align="center" />
+              <SortableTh label="Searches" sortKey="accessCount" activeSort={entriesSort} onSort={toggleEntriesSort} className="py-2 pr-3 whitespace-nowrap" align="center" />
               <th className="py-2 text-right">Actions</th>
             </tr>
           </thead>
@@ -514,7 +514,7 @@ export function AiMappingReview({
 
                           {entryChanges.length > 0 && (
                             <div className={`rounded-lg border p-2.5 space-y-1.5 text-[11px] ${dark ? "border-white/[0.08] bg-white/[0.02]" : "border-stone-200 bg-white"}`}>
-                              <p className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Mapping changes made by this review</p>
+                              <p className={`text-[10px] font-black uppercase tracking-wider ${dark ? "text-stone-400" : "text-stone-500"}`}>Changes made by this review</p>
                               {entryChanges.map((c) => (
                                 <div key={c.id} className="flex items-center gap-2">
                                   <span className="flex-1">
@@ -533,10 +533,10 @@ export function AiMappingReview({
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px]">
                             <Detail label="Plan" value={entry.planName} dark={dark} />
-                            <Detail label="Gemini Model" value={entry.geminiModel} dark={dark} />
-                            <Detail label="Prompt Version" value={entry.promptVersion} dark={dark} />
-                            <Detail label="Engine Version" value={entry.engineVersion} dark={dark} />
-                            <Detail label="Usage Count" value={String(entry.accessCount)} dark={dark} />
+                            <Detail label="AI model" value={entry.geminiModel} dark={dark} />
+                            <Detail label="AI instructions version" value={entry.promptVersion} dark={dark} />
+                            <Detail label="Mapping version" value={entry.engineVersion} dark={dark} />
+                            <Detail label="Times searched" value={String(entry.accessCount)} dark={dark} />
                             <Detail
                               label="Approved By"
                               value={entry.approvedBy ? `${entry.approvedBy} (${fmtDate(entry.approvedAt)})` : "—"}
@@ -589,18 +589,18 @@ export function AiMappingReview({
                             </div>
                           ) : (
                             <>
-                              <DetailBlock label="Suggested Declaration Route" dark={dark}>
+                              <DetailBlock label="Suggested question" dark={dark}>
                                 <span className="font-semibold">{result?.match_type || "—"}</span>
                                 {" → "}
                                 <span>{result?.matched_question || "—"}</span>
                               </DetailBlock>
 
-                              <DetailBlock label="Gemini Reasoning" dark={dark}>
+                              <DetailBlock label="Why the AI chose this" dark={dark}>
                                 <span className="whitespace-pre-wrap">{result?.explanation || "—"}</span>
                               </DetailBlock>
 
                               {!!result?.confused_questions?.length && (
-                                <DetailBlock label="Rejected / Competing Alternatives" dark={dark}>
+                                <DetailBlock label="Other questions the AI considered" dark={dark}>
                                   <ul className="list-disc pl-4 space-y-0.5">
                                     {result.confused_questions.map((q, i) => (
                                       <li key={i}>{q}</li>
@@ -609,7 +609,7 @@ export function AiMappingReview({
                                 </DetailBlock>
                               )}
 
-                              <DetailBlock label="Full JSON Response" dark={dark}>
+                              <DetailBlock label="Full technical response (for support)" dark={dark}>
                                 <pre className={`text-[10px] leading-relaxed overflow-x-auto p-2 rounded ${
                                   dark ? "bg-black/40 text-stone-300" : "bg-stone-50 text-stone-700"
                                 }`}>
@@ -653,7 +653,7 @@ export function AiMappingReview({
                             {canReview && (
                               <>
                                 <IconBtn
-                                  title="Edit cached answer"
+                                  title="Edit saved answer"
                                   dark={dark}
                                   disabled={isBusy}
                                   onClick={() => {

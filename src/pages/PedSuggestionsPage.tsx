@@ -71,10 +71,10 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
             theme === "dark" ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: theme === "dark" ? "#00D3F3" : "#4673a9" }} />
-            <span>PED Repository</span>
+            <span>Conditions</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
-            Manage the application's PED repository and review AI-assisted mapping recommendations before they become part of the knowledge base.
+            Manage the list of conditions (PEDs) the system recognises, and review the AI's suggested answers before they are trusted.
             {canManage ? " Changes apply to every advisor immediately." : " Read-only — you don't have permission to make changes."}
           </p>
         </div>
@@ -84,11 +84,11 @@ export function PedSuggestionsPage({ theme, effectiveTier, currentUser, setChang
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => setActiveSubTab("library")} className={tabClass(activeSubTab === "library")}>
           <BookMarked className="w-3.5 h-3.5 shrink-0" />
-          PED Library
+          Condition List
         </button>
         <button type="button" onClick={() => setActiveSubTab("queue")} className={tabClass(activeSubTab === "queue")}>
           <Bot className="w-3.5 h-3.5 shrink-0" />
-          AI Mapping Review
+          AI Suggestions to Review
         </button>
       </div>
 

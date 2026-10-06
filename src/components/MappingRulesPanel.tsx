@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { STAGE_PLAIN, stageLabel } from "../utils/mappingTerms";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { mappingFetch } from "../utils/mappingFetch";
 import { describeCategoryChain, type ChainTraceLike } from "../utils/categoryChainText";
@@ -48,11 +49,11 @@ interface Trace {
 }
 
 const SOURCE_PLAIN: Record<string, string> = {
-  ped_category: "the PED's Primary category",
-  category_chain: "a Fallback category",
-  alias_override: "a category set on this alias",
-  fallback_category: "this alias's last-resort category",
-  not_routed: "nothing — matching is off for this alias",
+  ped_category: "the condition's main category",
+  category_chain: "a second-choice category",
+  alias_override: "a category set on this name",
+  fallback_category: "this name's last-resort category",
+  not_routed: "nothing — this name is switched off for matching",
   none: "nothing — not a known condition",
 };
 
@@ -188,7 +189,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
   const saveEdit = async (r: Rule) => {
     const p = parse(draft.definition);
     if (p.ok === false) return setProblems([p.error]);
-    if (await write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}`, "PATCH", { description: draft.description, definition: p.value }, `Edited rule ${r.ruleKey}`, terms(draft.testTerms))) setEditing(null);
+    if (await write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}`, "PATCH", { description: draft.description, definition: p.value }, `Edited the decision step “${r.description}”`, terms(draft.testTerms))) setEditing(null);
   };
 
   const freePosition = (stage: string): number => {
@@ -202,10 +203,9 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
   return (
     <div className="space-y-5 text-left">
       <div>
-        <h2 className={`text-lg font-black ${dark ? "text-white" : "text-[#111827]"}`}>Routing rules</h2>
+        <h2 className={`text-lg font-black ${dark ? "text-white" : "text-[#111827]"}`}>How a lookup is decided</h2>
         <p className={`text-xs mt-1 font-semibold ${muted}`}>
-          The order the engine evaluates, first match wins within the pipeline. Built-in algorithm steps are fixed; rules can be switched off, reordered inside their stage, edited, or added. Every change shows its impact before it
-          is saved and can be undone from History.
+          The steps the system follows for every lookup, in order. The first step that gives an answer wins. Fixed steps cannot be changed; the others can be switched off, moved earlier or later within their group, edited or added. Every change shows its effect before it is saved and can be undone from History.
           {!canManage && " Read-only — you don't have permission to make changes."}
         </p>
       </div>
@@ -225,9 +225,9 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
 
       {/* Test a lookup */}
       <div className={card}>
-        <h3 className="text-sm font-black mb-2">Test a lookup — which rule decides it?</h3>
+        <h3 className="text-sm font-black mb-2">Test a lookup — which step decides it?</h3>
         <div className="flex flex-col md:flex-row gap-2">
-          <input className={input} placeholder="Condition, e.g. sleep apnea" value={trace.term} onChange={(e) => setTrace((t) => ({ ...t, term: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && trace.term.trim() && runTrace()} />
+          <input className={input} placeholder="A condition, e.g. sleep apnea" value={trace.term} onChange={(e) => setTrace((t) => ({ ...t, term: e.target.value }))} onKeyDown={(e) => e.key === "Enter" && trace.term.trim() && runTrace()} />
           <select className={`${input} md:w-64`} value={trace.plan} onChange={(e) => setTrace((t) => ({ ...t, plan: e.target.value }))}>
             {plans.map((p) => (
               <option key={p}>{p}</option>
@@ -241,17 +241,16 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
         {trace.result && (
           <div className="mt-3 text-sm space-y-1">
             <p>
-              <strong>{trace.result.resolved ? `${trace.result.matchType}: ${trace.result.question}` : "Not decided by the rules"}</strong>
+              <strong>{trace.result.resolved ? `${trace.result.matchType}: ${trace.result.question}` : "No fixed step decided this"}</strong>
             </p>
             {trace.result.rule ? (
               <p className={muted}>
-                Decided by <code>{trace.result.rule.ruleKey}</code> ({trace.result.rule.kind}, {bands.find((b) => b.stage === trace.result!.rule!.stage)?.label ?? trace.result.rule.stage}, position {trace.result.rule.position}) —{" "}
-                {trace.result.rule.description}
+                Decided by: {trace.result.rule.description} ({stageLabel(trace.result.rule.stage, bands.find((b) => b.stage === trace.result!.rule!.stage)?.label ?? trace.result.rule.stage)}). Reference: <code>{trace.result.rule.ruleKey}</code>
               </p>
             ) : (
-              <p className={muted}>{trace.result.resolved ? `Decided by ${trace.result.decidedBy}.` : "No rule decided this: it would go to AI Memory / the AI step."}</p>
+              <p className={muted}>{trace.result.resolved ? `Decided by a built-in step (reference: ${trace.result.decidedBy}).` : "No fixed step decided this: it would use a saved AI answer if there is one, otherwise the AI assistant."}</p>
             )}
-            {trace.result.postGuard && <p className={muted}>Then adjusted by post-guard <code>{trace.result.postGuard}</code>.</p>}
+            {trace.result.postGuard && <p className={muted}>Then adjusted by a final-adjustment step (reference: <code>{trace.result.postGuard}</code>).</p>}
             {trace.result.dictionary && (
               <p className={muted}>
                 Matched “{trace.result.dictionary.alias}” → category {label(trace.result.dictionary.effectiveCategory)} (from {SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).
@@ -269,7 +268,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
                 AI Memory has a {trace.result.aiMemory.status} answer for this: {trace.result.aiMemory.question ?? "(rejected — advisors see the Others question with a manual-review note)"}.
               </p>
             )}
-            <p className={`text-[11px] ${muted}`}>Mapping version {trace.result.snapshotVersion}. Read-only: no AI call and no search history.</p>
+            <p className={`text-[11px] ${muted}`}>Mapping settings version {trace.result.snapshotVersion}. Read-only: no AI call and no search history.</p>
           </div>
         )}
       </div>
@@ -295,9 +294,9 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
 
       {adding && canManage && (
         <div className={card}>
-          <h3 className="text-sm font-black mb-2">New rule</h3>
+          <h3 className="text-sm font-black mb-2">Add a decision step</h3>
           <div className="grid md:grid-cols-4 gap-2">
-            <input className={input} placeholder="short name (e.g. sleep_apnea_guard)" value={add.suffix} onChange={(e) => setAdd({ ...add, suffix: e.target.value })} />
+            <input className={input} placeholder="Short name, letters and underscores (e.g. sleep_apnea_check)" value={add.suffix} onChange={(e) => setAdd({ ...add, suffix: e.target.value })} />
             <select
               className={input}
               value={add.stage}
@@ -305,18 +304,20 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
             >
               {bands.filter((b) => b.allowsNew).map((b) => (
                 <option key={b.stage} value={b.stage}>
-                  {b.label}
+                  {stageLabel(b.stage, b.label)}
                 </option>
               ))}
             </select>
-            <input className={input} placeholder="position" inputMode="numeric" value={add.position} onChange={(e) => setAdd({ ...add, position: e.target.value })} />
-            <input className={input} placeholder="what it does" value={add.description} onChange={(e) => setAdd({ ...add, description: e.target.value })} />
+            <input className={input} placeholder="Order within that group (a number)" inputMode="numeric" value={add.position} onChange={(e) => setAdd({ ...add, position: e.target.value })} />
+            <input className={input} placeholder="What it does, in plain words" value={add.description} onChange={(e) => setAdd({ ...add, description: e.target.value })} />
           </div>
-          <textarea className={`${input} mt-2 font-mono text-xs`} rows={9} value={add.definition} onChange={(e) => setAdd({ ...add, definition: e.target.value })} spellCheck={false} />
-          <textarea className={`${input} mt-2 text-xs`} rows={2} placeholder="Terms to include in the impact preview, one per line (e.g. wording this rule should catch)" value={add.testTerms} onChange={(e) => setAdd({ ...add, testTerms: e.target.value })} />
+          <details className="mt-2"><summary className={`cursor-pointer text-xs font-semibold ${muted}`}>Technical definition — for trained owners only (the starting text is a safe example)</summary>
+            <textarea className={`${input} mt-2 font-mono text-xs`} rows={9} value={add.definition} onChange={(e) => setAdd({ ...add, definition: e.target.value })} spellCheck={false} />
+          </details>
+          <textarea className={`${input} mt-2 text-xs`} rows={2} placeholder="Conditions to include in the impact preview, one per line (e.g. wording this step should catch)" value={add.testTerms} onChange={(e) => setAdd({ ...add, testTerms: e.target.value })} />
           <div className="mt-2 flex gap-2">
             <button className={btn()} onClick={() => validate(add.stage, add.definition)}>
-              Validate
+              Check this step
             </button>
             <button
               className={btn(true)}
@@ -324,13 +325,13 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
               onClick={async () => {
                 const p = parse(add.definition);
                 if (p.ok === false) return setProblems([p.error]);
-                if (await write("/api/routing-rules", "POST", { suffix: add.suffix.trim(), stage: add.stage, position: Number(add.position), description: add.description, definition: p.value }, `Added rule custom.${add.suffix.trim()}`, terms(add.testTerms))) {
+                if (await write("/api/routing-rules", "POST", { suffix: add.suffix.trim(), stage: add.stage, position: Number(add.position), description: add.description, definition: p.value }, `Added the decision step “${add.description.trim()}”`, terms(add.testTerms))) {
                   setAdding(false);
                   setAdd({ suffix: "", stage: "shield", position: "", description: "", definition: TEMPLATE, testTerms: "" });
                 }
               }}
             >
-              Preview &amp; save
+              Review impact &amp; save
             </button>
           </div>
           {problems.length > 0 && (
@@ -351,39 +352,40 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
           if (!list?.length) return null;
           return (
             <div key={`${band.group}-${band.stage}`} className={card}>
-              <h3 className="text-sm font-black">{band.label}</h3>
-              <p className={`text-[11px] mb-2 ${muted}`}>Positions {band.min}–{band.max}{band.group === "post_guard" ? " (ordered separately, applied after an answer is chosen)" : ""}</p>
+              <h3 className="text-sm font-black">{stageLabel(band.stage, band.label)}</h3>
+              <p className={`text-[11px] ${muted}`}>{STAGE_PLAIN[band.stage]?.help}</p>
+              <p className={`text-[11px] mb-2 ${muted}`}>Order numbers {band.min}–{band.max}{band.group === "post_guard" ? " (ordered separately, applied after an answer is chosen)" : ""}</p>
               <ul className="divide-y divide-stone-200/40">
                 {list.map((r, i) => (
                   <li key={r.ruleKey} className="py-2">
                     <div className="flex flex-wrap items-start gap-2">
                       <span className={`text-[11px] font-mono w-10 shrink-0 ${muted}`}>{r.position}</span>
                       <div className="flex-1 min-w-[12rem]">
-                        <div className="text-sm font-semibold break-all">
-                          {r.ruleKey}{" "}
-                          {r.kind === "primitive" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20">built-in step</span>}
-                          {r.kind === "rule" && !r.builtIn && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20">custom</span>}
-                          {!r.enabled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 ml-1">disabled</span>}
+                        <div className="text-sm font-semibold">
+                          {r.description}{" "}
+                          {r.kind === "primitive" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20" title="A fixed part of the system; it cannot be edited.">fixed step</span>}
+                          {r.kind === "rule" && !r.builtIn && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20">added by an admin</span>}
+                          {!r.enabled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 ml-1">switched off</span>}
                           {r.planScope && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20 ml-1">{r.planScope}</span>}
                         </div>
-                        <div className={`text-xs ${muted}`}>{r.description}</div>
+                        <div className={`text-[11px] break-all ${muted}`}>Reference: {r.ruleKey}</div>
                       </div>
                       {canManage && r.editable && (
                         <div className="flex gap-1 shrink-0">
-                          <button className={btn()} disabled={busy || i === 0} title="Move earlier" onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}/move`, "POST", { direction: "up" }, `Moved ${r.ruleKey} earlier`)}>
+                          <button className={btn()} disabled={busy || i === 0} title="Move earlier" onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}/move`, "POST", { direction: "up" }, `Moved the decision step “${r.description}” earlier`)}>
                             ↑
                           </button>
-                          <button className={btn()} disabled={busy || i === list.length - 1} title="Move later" onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}/move`, "POST", { direction: "down" }, `Moved ${r.ruleKey} later`)}>
+                          <button className={btn()} disabled={busy || i === list.length - 1} title="Move later" onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}/move`, "POST", { direction: "down" }, `Moved the decision step “${r.description}” later`)}>
                             ↓
                           </button>
-                          <button className={btn()} disabled={busy} onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}`, "PATCH", { enabled: !r.enabled }, `${r.enabled ? "Disabled" : "Enabled"} rule ${r.ruleKey}`)}>
-                            {r.enabled ? "Disable" : "Enable"}
+                          <button className={btn()} disabled={busy} onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}`, "PATCH", { enabled: !r.enabled }, `${r.enabled ? "Switched off" : "Switched on"} the decision step “${r.description}”`)}>
+                            {r.enabled ? "Switch off" : "Switch on"}
                           </button>
                           <button className={btn()} disabled={busy} onClick={() => (editing === r.ruleKey ? setEditing(null) : startEdit(r))}>
                             {editing === r.ruleKey ? "Close" : "Edit"}
                           </button>
                           {!r.builtIn && (
-                            <button className={btn()} disabled={busy} onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}`, "DELETE", undefined, `Deleted rule ${r.ruleKey}`)}>
+                            <button className={btn()} disabled={busy} onClick={() => write(`/api/routing-rules/${encodeURIComponent(r.ruleKey)}`, "DELETE", undefined, `Deleted the decision step “${r.description}”`)}>
                               Delete
                             </button>
                           )}
@@ -393,14 +395,16 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
                     {editing === r.ruleKey && (
                       <div className="mt-2 space-y-2">
                         <input className={input} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
-                        <textarea className={`${input} font-mono text-xs`} rows={12} value={draft.definition} onChange={(e) => setDraft({ ...draft, definition: e.target.value })} spellCheck={false} />
-                        <textarea className={`${input} text-xs`} rows={2} placeholder="Terms to include in the impact preview, one per line" value={draft.testTerms} onChange={(e) => setDraft({ ...draft, testTerms: e.target.value })} />
+                        <details><summary className={`cursor-pointer text-xs font-semibold ${muted}`}>Technical definition — for trained owners only</summary>
+                          <textarea className={`${input} mt-2 font-mono text-xs`} rows={12} value={draft.definition} onChange={(e) => setDraft({ ...draft, definition: e.target.value })} spellCheck={false} />
+                        </details>
+                        <textarea className={`${input} text-xs`} rows={2} placeholder="Conditions to include in the impact preview, one per line" value={draft.testTerms} onChange={(e) => setDraft({ ...draft, testTerms: e.target.value })} />
                         <div className="flex gap-2">
                           <button className={btn()} onClick={() => validate(r.stage, draft.definition, r.ruleKey)}>
-                            Validate
+                            Check this step
                           </button>
                           <button className={btn(true)} disabled={busy} onClick={() => saveEdit(r)}>
-                            Preview &amp; save
+                            Review impact &amp; save
                           </button>
                         </div>
                         {problems.length > 0 && (
