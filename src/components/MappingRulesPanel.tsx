@@ -254,7 +254,7 @@ export function MappingRulesPanel({ theme, canManage }: { theme: "light" | "dark
             {trace.result.postGuard && <p className={muted}>Then adjusted by a final-adjustment step (reference: <code>{trace.result.postGuard}</code>).</p>}
             {trace.result.dictionary && (
               <p className={muted}>
-                {trace.result.dictionary.effectiveCategory ? <>Matched “{trace.result.dictionary.alias}” → category {label(trace.result.dictionary.effectiveCategory)} (from {SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).</> : <>“{trace.result.dictionary.alias}” is not in the Condition List ({SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).</>}
+                {trace.result.dictionary.effectiveCategory ? <>Matched “{trace.result.dictionary.alias}” → category {label(trace.result.dictionary.effectiveCategory)} (from {SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).</> : <>“{trace.result.dictionary.alias}” is not in the PED Library ({SOURCE_PLAIN[trace.result.dictionary.source] ?? trace.result.dictionary.source.replace(/_/g, " ")}).</>}
               </p>
             )}
             {trace.result.dictionary?.chain && (

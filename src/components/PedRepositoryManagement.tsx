@@ -290,7 +290,7 @@ export function PedRepositoryManagement({ theme, effectiveTier, currentUser, set
   };
 
   const deleteEntry = async (entry: PedEntry) => {
-    if (!(await confirm(`Delete "${entry.canonicalName}" and all of its other names from the conditions list? This cannot be undone.`))) return;
+    if (!(await confirm(`Delete "${entry.canonicalName}" and all of its other names from the PED Library? This cannot be undone.`))) return;
     setSaving(true);
     setSaveError(null);
     try {
