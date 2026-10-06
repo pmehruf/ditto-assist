@@ -118,3 +118,13 @@ describe("Lookup result names", () => {
     }
   });
 });
+
+describe("closing advice wording", () => {
+  it("says Declaration Guide, never Declaration Framework, on real results", () => {
+    for (const [plan, term] of [["Optima Secure", "asthma"], ["Optima Secure", "appendix"], ["Optima Secure", "typhoid fever"], ["Optima Secure", "angioplasty"]] as const) {
+      const text = String(runDeterministicPipeline(term, plan, env.plans.get(plan)!, world.snapshot).result?.explanation);
+      expect(text, `${plan} :: ${term}`).toContain("Please cross-check the Declaration Guide personally before taking the final disclosure call.");
+      expect(text).not.toContain("Declaration Framework");
+    }
+  });
+});

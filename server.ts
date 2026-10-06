@@ -608,6 +608,8 @@ app.post("/api/match", requireAuth, matchLimiter, async (req, res) => {
         } catch (_) {}
         return res.json({
           ...toServe,
+          // Answers saved before 2026-10-08 end with the old closing advice ("Declaration Framework"); show the current wording.
+          explanation: typeof toServe.explanation === "string" ? toServe.explanation.split("Declaration Framework").join("Declaration Guide") : toServe.explanation,
           source:
             cached.status === "approved"
               ? "AI Memory (Approved)"

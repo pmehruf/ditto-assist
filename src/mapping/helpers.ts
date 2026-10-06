@@ -545,9 +545,9 @@ export function finalizeOutput(output: MatchOutput, ped: string, config: PlanCon
 
   // 5. PX TRIGGER LOGIC
   // We keep the raw medical explanation primary, removing repetitive redundant fallback text as requested.
-  let explanationSuffix = "Please cross-check the Declaration Framework personally before taking the final disclosure call.";
+  let explanationSuffix = "Please cross-check the Declaration Guide personally before taking the final disclosure call.";
   if (output.match_type === "FALLBACK") {
-    explanationSuffix = "Check if the umbrella questions are applicable first‼️. If not applicable, declare under the 'Others Section' question.\n\nPlease cross-check the Declaration Framework personally before taking the final disclosure call.";
+    explanationSuffix = "Check if the umbrella questions are applicable first‼️. If not applicable, declare under the 'Others Section' question.\n\nPlease cross-check the Declaration Guide personally before taking the final disclosure call.";
   } else if (output.secondary_recommendation && output.secondary_recommendation.length > 0) {
     // A genuine direct/category match (P0/P1) that ALSO carries a
     // hospitalisation/surgery supporting flag — e.g. a named surgical
@@ -564,7 +564,7 @@ export function finalizeOutput(output: MatchOutput, ped: string, config: PlanCon
     // panel is shown.
     const pedDisplayName = String(ped || "").trim();
     const pedSentenceCase = pedDisplayName ? pedDisplayName.charAt(0).toUpperCase() + pedDisplayName.slice(1) : "This PED";
-    explanationSuffix = `${pedSentenceCase} is flagged as a surgical/hospitalisation-related procedure — check the umbrella question(s) above first as well. Separately, as a diagnosed condition, it maps to the category question below.\n\nPlease cross-check the Declaration Framework personally before taking the final disclosure call.`;
+    explanationSuffix = `${pedSentenceCase} is flagged as a surgical/hospitalisation-related procedure — check the umbrella question(s) above first as well. Separately, as a diagnosed condition, it maps to the category question below.\n\nPlease cross-check the Declaration Guide personally before taking the final disclosure call.`;
   }
   // Always terminate the reasoning with a period before appending the
   // standardized advisory footer, so the two never run together as one

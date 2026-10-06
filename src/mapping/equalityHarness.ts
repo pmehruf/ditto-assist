@@ -38,7 +38,9 @@ export function outcomeOf(result: MatchOutput | null): PairOutcome {
     matched_question: result.matched_question,
     question_number: result.question_number ?? null,
     strict: JSON.stringify({
-      explanation: result.explanation,
+      // The frozen baselines were captured before the closing advice said "Declaration Guide" instead of "Declaration Framework"
+      // (an intentional wording change, 2026-10-08). Comparing with the old name keeps every other character of the text checked.
+      explanation: result.explanation?.split("Declaration Guide").join("Declaration Framework"),
       secondary_recommendation: result.secondary_recommendation ?? null,
       supporting_flags: result.supporting_flags ?? null,
       confused_questions: result.confused_questions ?? null,
