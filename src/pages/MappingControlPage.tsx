@@ -4,8 +4,12 @@
  */
 
 import { lazy, Suspense, useState, type ComponentProps } from "react";
-import { BookMarked, FolderTree, History, ListOrdered, Waypoints } from "lucide-react";
-import { PedSuggestionsPage } from "./PedSuggestionsPage";
+import { BookMarked, Bot, FolderTree, History, ListOrdered, Waypoints } from "lucide-react";
+import { PedRepositoryManagement } from "../components/PedRepositoryManagement";
+import { AiMappingReview } from "../components/AiMappingReview";
+import type { Dispatch, SetStateAction } from "react";
+import type { LoggedUser } from "../types/user";
+import type { ChangeLogEntry } from "../types/changeLog";
 import { MappingRulesPanel } from "../components/MappingRulesPanel";
 import { MappingCategoriesPanel } from "../components/MappingCategoriesPanel";
 import { MappingHistoryPanel } from "../components/MappingHistoryPanel";
@@ -14,9 +18,13 @@ import { TabLoadingFallback } from "../components/ErrorBoundary";
 const PlanManagementPage = lazy(() => import("./PlanManagementPage").then((m) => ({ default: m.PlanManagementPage })));
 
 type PlanPageProps = ComponentProps<typeof PlanManagementPage>;
-type PedPageProps = Parameters<typeof PedSuggestionsPage>[0];
+interface PedPageProps {
+  effectiveTier: "General" | "Admin" | "Platform Admin" | "Developer";
+  currentUser: LoggedUser | null;
+  setChangeLogs: Dispatch<SetStateAction<ChangeLogEntry[]>>;
+}
 
-type SubView = "dictionary" | "plans" | "categories" | "rules" | "history";
+type SubView = "library" | "queue" | "plans" | "categories" | "rules" | "history";
 
 interface MappingControlPageProps {
   theme: "light" | "dark";
@@ -31,7 +39,8 @@ interface MappingControlPageProps {
  * Mapping Control — the one admin section for the declaration engine (R3/R9). It hosts, as sub-views, everything that
  * used to live on two separate pages plus the new rule / category administration:
  *
- *   PED Library & AI Review  (was: PED Repository)            access: ped_suggestions
+ *   PED Library              (was: PED Repository)            access: ped_suggestions
+ *   AI Mapping Review        (AI answers waiting for review)   access: ped_suggestions
  *   Plans & Questions        (was: DA Mapping Config —         access: plan_scope
  *                             questions, category maps, plan-specific PED mappings, restrictions)
  *   Categories               (new)                              access: plan_scope (edit) / either (view)
@@ -44,7 +53,8 @@ export function MappingControlPage({ theme, planPage, pedPage, access }: Mapping
   const dark = theme === "dark";
   const either = access.planView || access.pedView;
   const views: Array<{ key: SubView; label: string; Icon: typeof Waypoints; show: boolean }> = [
-    { key: "dictionary", label: "AI Mapping Review", Icon: BookMarked, show: access.pedView },
+    { key: "library", label: "PED Library", Icon: BookMarked, show: access.pedView },
+    { key: "queue", label: "AI Mapping Review", Icon: Bot, show: access.pedView },
     { key: "plans", label: "Plans & Questions", Icon: Waypoints, show: access.planView },
     { key: "categories", label: "Categories", Icon: FolderTree, show: either },
     { key: "rules", label: "Decision Steps", Icon: ListOrdered, show: either },
@@ -79,7 +89,8 @@ export function MappingControlPage({ theme, planPage, pedPage, access }: Mapping
         </div>
       </div>
 
-      {current === "dictionary" && <PedSuggestionsPage theme={theme} canManage={access.pedEdit} {...pedPage} />}
+      {current === "library" && <PedRepositoryManagement theme={theme} canManage={access.pedEdit} {...pedPage} />}
+      {current === "queue" && <AiMappingReview theme={theme} canReview={access.pedEdit} />}
       {current === "plans" && (
         <Suspense fallback={<TabLoadingFallback theme={theme} />}>
           <PlanManagementPage theme={theme} canManage={access.planEdit} {...planPage} />

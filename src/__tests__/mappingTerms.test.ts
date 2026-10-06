@@ -59,9 +59,12 @@ describe("round two: restored names, result labels and no approval question", ()
     expect(OUTCOME_PLAIN).toMatchObject({ P0: "Direct match", P1: "Category match", P3: "Fallback", UNRESOLVED: "AI generated" });
   });
 
-  it("calls the tab AI Mapping Review", () => {
+  it("has PED Library and AI Mapping Review as the first two top tabs", () => {
+    expect(control).toContain('label: "PED Library"');
     expect(control).toContain('label: "AI Mapping Review"');
-    expect(control).not.toContain("Conditions & AI Review");
+    expect(control.indexOf('label: "PED Library"')).toBeLessThan(control.indexOf('label: "AI Mapping Review"'));
+    expect(control.indexOf('label: "AI Mapping Review"')).toBeLessThan(control.indexOf('label: "Plans & Questions"'));
+    for (const old of ["Conditions & AI Review", "Condition List", "AI Suggestions to Review", "PedSuggestionsPage"]) expect(control).not.toContain(old);
   });
 
   it("no longer asks for an owner approval; a change saves with just a reason and a kind of change", () => {
