@@ -44,7 +44,7 @@ export function MappingControlPage({ theme, planPage, pedPage, access }: Mapping
   const dark = theme === "dark";
   const either = access.planView || access.pedView;
   const views: Array<{ key: SubView; label: string; Icon: typeof Waypoints; show: boolean }> = [
-    { key: "dictionary", label: "Conditions & AI Review", Icon: BookMarked, show: access.pedView },
+    { key: "dictionary", label: "AI Mapping Review", Icon: BookMarked, show: access.pedView },
     { key: "plans", label: "Plans & Questions", Icon: Waypoints, show: access.planView },
     { key: "categories", label: "Categories", Icon: FolderTree, show: either },
     { key: "rules", label: "Decision Steps", Icon: ListOrdered, show: either },

@@ -56,14 +56,14 @@ export type ChangeCategory = (typeof CHANGE_CATEGORIES)[number];
 export interface ChangeControl {
   reason: string;
   changeCategory: ChangeCategory;
-  /** "none" = no Business Decision (Part IX) is involved; otherwise "approved: <who / reference>". */
+  /** No longer asked for: every new change is stored with the neutral value "none". Earlier records keep what they had. */
   businessDecision: string;
   /** Hash of the impact the admin confirmed in the preview (required when impact is elevated/high). */
   confirmHash?: string;
 }
 
 export function parseChangeControl(raw: string | undefined): { ok: true; value: ChangeControl } | { ok: false; error: string } {
-  if (!raw) return { ok: false, error: "Change details are required: a reason, a change category and the Business-Decision check." };
+  if (!raw) return { ok: false, error: "Change details are required: a reason and the kind of change." };
   let v: any;
   try {
     v = JSON.parse(decodeURIComponent(raw));
@@ -72,10 +72,8 @@ export function parseChangeControl(raw: string | undefined): { ok: true; value: 
   }
   const reason = typeof v?.reason === "string" ? v.reason.trim() : "";
   if (reason.length < 8) return { ok: false, error: "Give a reason for this change (at least a short sentence)." };
-  if (!CHANGE_CATEGORIES.includes(v?.changeCategory)) return { ok: false, error: "Choose a valid change category." };
-  const bd = typeof v?.businessDecision === "string" ? v.businessDecision.trim() : "";
-  if (bd !== "none" && !/^approved:\s*\S+/i.test(bd)) return { ok: false, error: 'Business-Decision check: choose "none involved" or record who approved it.' };
-  return { ok: true, value: { reason, changeCategory: v.changeCategory, businessDecision: bd, confirmHash: typeof v?.confirmHash === "string" ? v.confirmHash : undefined } };
+  if (!CHANGE_CATEGORIES.includes(v?.changeCategory)) return { ok: false, error: "Choose the kind of change." };
+  return { ok: true, value: { reason, changeCategory: v.changeCategory, businessDecision: "none", confirmHash: typeof v?.confirmHash === "string" ? v.confirmHash : undefined } };
 }
 
 // ── row-level before/after capture ─────────────────────────────────────────

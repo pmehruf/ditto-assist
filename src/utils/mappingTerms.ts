@@ -17,20 +17,20 @@ export const CHANGE_TYPES: Array<{ value: string; label: string; hint: string }>
   { value: "Shield update", label: "Change a safety check", hint: "Edit a built-in check that stops a risky condition being filed under the wrong question." },
   { value: "New category", label: "Add a new category", hint: "Create a new group that conditions can be filed under." },
   { value: "Plan override", label: "Change something for one plan only", hint: "A plan-specific mapping, restriction or question wording." },
-  { value: "Fallback update", label: "Change a second-choice or catch-all setting", hint: "A condition's fallback categories, or what happens when nothing else applies." },
+  { value: "Fallback update", label: "Change a second-choice or Others setting", hint: "A condition's fallback categories, or what happens when nothing else applies." },
   { value: "Regression fix", label: "Correct a wrong answer", hint: "A lookup is giving the wrong question and you are fixing it on purpose." },
 ];
 
 export const changeTypeLabel = (stored: string | null | undefined): string => CHANGE_TYPES.find((c) => c.value === stored)?.label ?? stored ?? "";
 export const changeTypeHint = (stored: string): string => CHANGE_TYPES.find((c) => c.value === stored)?.hint ?? "";
 
-/** How a lookup result is described in the impact preview (stored tier code -> text). */
+/** How a lookup result is named in the impact preview (stored tier code -> text). Direct match and Category match are the primary results; Fallback is the secondary one. */
 export const OUTCOME_PLAIN: Record<string, string> = {
-  P0: "Exact wording match",
-  P1: "Matched by category",
-  P3: "Other-conditions question",
+  P0: "Direct match",
+  P1: "Category match",
+  P3: "Fallback",
   NON_AILMENT: "Not a condition",
-  UNRESOLVED: "Passed to the AI assistant",
+  UNRESOLVED: "AI generated",
 };
 
 /** History: change status -> text. */
@@ -44,13 +44,13 @@ export const changeStatusLabel = (s: string): string => CHANGE_STATUS_PLAIN[s] ?
 
 /** Decision-step groups ("stages"), in the order a lookup goes through them. */
 export const STAGE_PLAIN: Record<string, { label: string; help: string }> = {
-  plan_override: { label: "Plan-specific condition mappings", help: "Conditions you pinned to an exact question on one plan. Set them in Plans & Questions → Plan-Specific PED Mappings." },
+  plan_override: { label: "Plan-specific condition mappings", help: "Conditions you pinned to an exact question on one plan." },
   firewall: { label: "Not-a-disease check", help: "Recognises things that are not diseases (pregnancy, menopause, “healthy”, “none”, routine check-ups)." },
   plan_rule: { label: "Plan-specific rules", help: "Rules that apply to one plan only." },
   shield: { label: "Safety checks", help: "Checks that stop a risky condition from being filed under the wrong question." },
-  wording: { label: "Exact wording in the plan's question", help: "If the condition's words appear in one of the plan's questions, that question is used." },
-  dictionary: { label: "Condition list lookup", help: "Finds the condition (or one of its other names) in the Conditions list and its category." },
-  plan_decision: { label: "Choose the plan's question for the category", help: "Turns the category into the question this plan asks for it, including plan restrictions." },
+  wording: { label: "Exact wording in the plan's question", help: "If the condition's name appears exactly in one of the plan's questions, that question is used (a Direct match)." },
+  dictionary: { label: "Condition list lookup", help: "Finds the condition (or one of its other names) in the Condition List and its category." },
+  plan_decision: { label: "Choose the plan's question for the category", help: "Turns the category into the question this plan asks for it (a Category match), or Others if it has none (Fallback)." },
   family: { label: "Disease-group rules", help: "Wider rules that recognise a whole group of related diseases that are not in the list." },
   generic: { label: "Last safety checks", help: "Final checks for symptoms, test findings and one-off events." },
   post_guard: { label: "Final adjustments", help: "Applied after an answer is chosen, for example a plan that only covers insulin-dependent diabetes." },
@@ -59,8 +59,8 @@ export const stageLabel = (stage: string, fallback: string): string => STAGE_PLA
 
 /** Plan question tags (stored values) -> what the admin reads. */
 export const QUESTION_TAG_PLAIN: Record<string, string> = {
-  Specific: "Specific question",
-  Umbrella: "Group question",
-  "Catch-all": "Any other condition",
+  Specific: "Specific",
+  Umbrella: "Umbrella",
+  "Catch-all": "Others",
 };
 export const questionTagLabel = (tag: string): string => QUESTION_TAG_PLAIN[tag] ?? tag;

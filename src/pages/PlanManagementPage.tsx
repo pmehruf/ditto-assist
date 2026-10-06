@@ -307,7 +307,7 @@ export function PlanManagementPage({
     setManageCatMap(fillUnmappedCategories(suggested, manageCatAnyOther, Object.keys(categoryLabels)));
     setManageCatAiNotice(
       matchedCount > 0
-        ? `Keyword rules matched ${matchedCount} of ${Object.keys(categoryLabels).length} categories from this plan's current question wording — the rest default to the catch-all question below.`
+        ? `Suggest matched ${matchedCount} of ${Object.keys(categoryLabels).length} categories from this plan's current question wording — the rest default to the Others question below.`
         : "No keyword matches found in this plan's questions — map categories manually below."
     );
   };
@@ -340,11 +340,11 @@ export function PlanManagementPage({
       setManageCatMap(fillUnmappedCategories(refined, manageCatAnyOther, Object.keys(categoryLabels)));
       setManageCatAiNotice(
         body.usedAi
-          ? `AI matched ${matchedCount} categories — the rest default to the catch-all question below; review before saving.`
-          : `The AI assistant is not set up on this server, so this used the same word-matching as “Suggest mapping” (matched ${matchedCount} categories).`
+          ? `AI matched ${matchedCount} categories — the rest default to the Others question below; review before saving.`
+          : `The AI assistant is not set up on this server, so this used the same word-matching as “Suggest” (matched ${matchedCount} categories).`
       );
     } catch (err: unknown) {
-      setManageCatAiNotice(err instanceof Error ? err.message : "AI refinement failed. Keyword-rule suggestions are still available.");
+      setManageCatAiNotice(err instanceof Error ? err.message : "AI refinement failed. The Suggest button still works.");
     } finally {
       setManageCatRefining(false);
     }
@@ -511,7 +511,7 @@ export function PlanManagementPage({
     setCategoryMap(fillUnmappedCategories(suggested, catchAllText, Object.keys(categoryLabels)));
     setAiNotice(
       matchedCount > 0
-        ? `Keyword rules matched ${matchedCount} of ${Object.keys(categoryLabels).length} categories from the current question wording — the rest default to the catch-all question below.`
+        ? `Suggest matched ${matchedCount} of ${Object.keys(categoryLabels).length} categories from the current question wording — the rest default to the Others question below.`
         : "No keyword matches found in the current questions — try adding more specific wording (e.g. \"diabetes\", \"hypertension\") or map categories manually below."
     );
   };
@@ -547,11 +547,11 @@ export function PlanManagementPage({
       setCategoryMap(fillUnmappedCategories(refined, catchAllText, Object.keys(categoryLabels)));
       setAiNotice(
         body.usedAi
-          ? `AI matched ${matchedCount} categories — the rest default to the catch-all question below; review before saving.`
-          : `The AI assistant is not set up on this server, so this used the same word-matching as “Suggest mapping” (matched ${matchedCount} categories). Ask your developer to set it up to get full AI refinement.`
+          ? `AI matched ${matchedCount} categories — the rest default to the Others question below; review before saving.`
+          : `The AI assistant is not set up on this server, so this used the same word-matching as “Suggest” (matched ${matchedCount} categories). Ask your developer to set it up to get full AI refinement.`
       );
     } catch (err: unknown) {
-      setAiNotice(err instanceof Error ? err.message : "AI refinement failed. Keyword-rule suggestions are still available.");
+      setAiNotice(err instanceof Error ? err.message : "AI refinement failed. The Suggest button still works.");
     } finally {
       setRefiningWithAi(false);
     }
@@ -576,7 +576,7 @@ export function PlanManagementPage({
     if (!trimmedInsurer) return setSaveError("Insurer name is required.");
     if (cleanQuestions.length === 0) return setSaveError("Add at least one declaration question.");
     if (!cleanQuestions.some((q) => q.tag === "Catch-all")) {
-      return setSaveError("Mark one question as “Any other condition” (for example “Any other disease…?”) so conditions with no better question have somewhere to go.");
+      return setSaveError("Mark one question as “Others” (for example “Any other disease…?”) so conditions with no better question have somewhere to go.");
     }
 
     setSaving(true);
@@ -973,13 +973,13 @@ export function PlanManagementPage({
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Plans &amp; Questions</span>
+            <span>DA Mapping Config</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             {planMgmtView === "plans"
               ? "Add or edit a plan's declaration questionnaire. Category-to-question mapping is suggested automatically — review it, then save; it's live for matching immediately."
               : planMgmtView === "ped-mappings"
-                ? "Pin one condition (PED) to one exact question on one plan. A pinned mapping takes precedence over the condition's category mapping and over plan restrictions, for every advisor, from their next lookup."
+                ? "Pin one condition (PED) to one exact question on one plan. It applies to every advisor from their next lookup."
               : planMgmtView === "category-mapping"
                 ? "For each plan, choose which of its questions each category goes to. This is how a condition's category becomes the question an advisor sees."
                 : "Browse the specific-illness schedules (the fixed illness lists each insurer defines) and test how a declared condition is checked against them."}
@@ -1104,12 +1104,11 @@ export function PlanManagementPage({
           ) : (
             <>
               <p className={`text-[11px] ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                Send a specific condition to a specific question on this plan. This beats the condition's normal category and this plan's
-                restrictions, for every advisor, from their next lookup. Each change is saved immediately, after you review its impact.
+                Send a specific condition to a specific question on this plan. It is used even if a restriction on this plan would send the condition to Others. Each change is saved as soon as you confirm it.
               </p>
               {pedMapQuestionTexts.length === 0 && (
                 <p className={`text-[11px] ${dark ? "text-amber-400" : "text-amber-700"}`}>
-                  This plan has no Specific/Catch-all declaration questions yet — add some on the Plan Configuration tab first.
+                  This plan has no Specific/Others declaration questions yet — add some on the Plan Configuration tab first.
                 </p>
               )}
               <PlanPedOverridesEditor
@@ -1166,7 +1165,7 @@ export function PlanManagementPage({
 
               {manageCatQuestionTexts.length === 0 && (
                 <p className={`text-[11px] ${dark ? "text-amber-400" : "text-amber-700"}`}>
-                  This plan has no Specific/Catch-all declaration questions yet — add some on the Plan Configuration
+                  This plan has no Specific/Others declaration questions yet — add some on the Plan Configuration
                   tab first, then come back here to map categories to them.
                 </p>
               )}
@@ -1189,7 +1188,7 @@ export function PlanManagementPage({
                         className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-700"}`}
                         title="Quick suggestions based on matching words in the questions"
                       >
-                        <Wand2 className="w-3 h-3" /> Suggest mapping
+                        <Wand2 className="w-3 h-3" /> Suggest
                       </button>
                       <button
                         onClick={refineWithAiForManageCat}
@@ -1250,7 +1249,7 @@ export function PlanManagementPage({
                             dark ? "bg-white/[0.03] border-white/[0.08] text-[#F5F7FA]" : "bg-white border-stone-200 text-stone-900"
                           }`}
                           options={[
-                            { value: "", label: "— No mapping (skip to next matching rule / AI fallback) —" },
+                            { value: "", label: "— No question for this category —" },
                             ...manageCatQuestionTexts.map((text) => ({ value: text, label: text })),
                           ]}
                         />
@@ -1563,7 +1562,7 @@ export function PlanManagementPage({
               Plan-Specific Restrictions
             </label>
             <p className={`text-[11px] mb-1.5 ${dark ? "text-stone-500" : "text-stone-400"}`}>
-              Restrictions are saved immediately (not with the Save Changes button below). A condition pinned in the Plan-Specific PED Mappings tab is not affected by a restriction.
+              Restrictions are saved immediately (not with the Save Changes button below). A condition that has its own plan-specific mapping is not affected by a restriction.
             </p>
             <PlanRestrictionsEditor theme={theme} planName={planName || undefined} canEdit={canEdit} mode={formMode === "view" ? "view" : "edit"} />
           </div>
@@ -1656,7 +1655,7 @@ export function PlanManagementPage({
             )}
             {formMode === "edit" && (
               <p className={`text-[10.5px] mt-2 ${dark ? "text-stone-500" : "text-stone-400"}`}>
-                Mark broad questions about tests, medication or hospitalisation as “Group question”, and mark exactly one question as “Any other condition” — it is where conditions with no better question go.
+                Mark broad questions about tests, medication or hospitalisation as “Umbrella”, and mark exactly one question as “Others” — it is where conditions with no better question go.
               </p>
             )}
           </div>
@@ -1685,7 +1684,7 @@ export function PlanManagementPage({
                     className={`text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 cursor-pointer ${dark ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-700"}`}
                     title="Quick suggestions based on matching words in the questions"
                   >
-                    <Wand2 className="w-3 h-3" /> Suggest mapping
+                    <Wand2 className="w-3 h-3" /> Suggest
                   </button>
                   <button
                     onClick={refineWithAi}
@@ -1734,7 +1733,7 @@ export function PlanManagementPage({
                           dark ? "bg-white/[0.03] border-white/[0.08] text-[#F5F7FA]" : "bg-white border-stone-200 text-stone-900"
                         }`}
                         options={[
-                          { value: "", label: "— No mapping (skip to next matching rule / AI fallback) —" },
+                          { value: "", label: "— No question for this category —" },
                           ...specificAndCatchAllTexts.map((text) => ({ value: text, label: text })),
                         ]}
                       />

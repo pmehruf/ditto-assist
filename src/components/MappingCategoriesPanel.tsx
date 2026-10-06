@@ -96,7 +96,7 @@ export function MappingCategoriesPanel({ theme, canManage }: { theme: "light" | 
       <div>
         <h2 className={`text-lg font-black ${dark ? "text-white" : "text-[#111827]"}`}>Categories</h2>
         <p className={`text-xs mt-1 font-semibold ${muted}`}>
-          The master list of categories used everywhere. A new category does nothing until conditions are filed under it and each plan has a question mapped to it (Plans &amp; Questions).{!canManage && " Read-only — you don't have permission to make changes."}
+          The master list of categories used everywhere. A new category does nothing until conditions are filed under it and each plan has a question mapped to it.{!canManage && " Read-only — you don't have permission to make changes."}
         </p>
       </div>
       {(error || notice) && <div className={`rounded-lg p-3 text-sm ${error ? (dark ? "bg-red-900/30 text-red-200" : "bg-red-50 text-red-800") : dark ? "bg-emerald-900/30 text-emerald-200" : "bg-emerald-50 text-emerald-800"}`}>{error ?? notice}</div>}

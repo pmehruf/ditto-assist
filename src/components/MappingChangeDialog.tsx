@@ -31,8 +31,6 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
   const [pending, setPending] = useState<Pending | null>(null);
   const [reason, setReason] = useState("");
   const [category, setCategory] = useState("");
-  const [bdChoice, setBdChoice] = useState<"none" | "approved">("none");
-  const [approver, setApprover] = useState("");
   const [reviewed, setReviewed] = useState(false);
 
   useEffect(() => {
@@ -51,8 +49,7 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
   const { req } = pending;
   const m = req.impact?.metrics;
   const needsReview = req.tier === "elevated" || req.tier === "high";
-  const bd = bdChoice === "none" ? "none" : `approved: ${approver.trim()}`;
-  const valid = reason.trim().length >= 8 && !!category && (bdChoice === "none" || approver.trim().length > 0) && (!needsReview || reviewed);
+  const valid = reason.trim().length >= 8 && !!category && (!needsReview || reviewed);
   const close = (d: MappingChangeDecision | null) => {
     pending.resolve(d);
     setPending(null);
@@ -102,7 +99,7 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
               <p className={`rounded-lg p-3 text-xs ${dark ? "bg-slate-700 text-slate-200" : "bg-slate-50 text-slate-700"}`}>
                 {m.resolvedToUnresolved} lookup{m.resolvedToUnresolved === 1 ? "" : "s"} would stop being answered by the fixed decision steps. Of the {req.impact.aiMemory.checked} checked, <strong>{req.impact.aiMemory.withEntry}</strong> already have a saved AI answer
                 {Object.keys(req.impact.aiMemory.byStatus).length > 0 && <> ({Object.entries(req.impact.aiMemory.byStatus).map(([k, v]) => `${v} ${k}`).join(", ")})</>}: advisors would be served that saved answer
-                {req.impact.aiMemory.withEntry < req.impact.aiMemory.checked ? "; the rest would be passed to the AI assistant" : ""}. A rejected AI answer shows the plan's “any other condition” question with a manual-review note.
+                {req.impact.aiMemory.withEntry < req.impact.aiMemory.checked ? "; the rest would be passed to the AI assistant" : ""}. A rejected AI answer shows the plan's Others question with a manual-review note.
               </p>
             )}
             {req.impact && req.impact.sample.length > 0 && (
@@ -141,16 +138,6 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
             </select>
             {category && <span className={`block mt-1 text-xs font-normal ${muted}`}>{changeTypeHint(category)}</span>}
           </label>
-          <fieldset className="text-sm">
-            <legend className="font-semibold">Does this need an owner's approval?</legend>
-            <label className="flex items-center gap-2 mt-1">
-              <input type="radio" checked={bdChoice === "none"} onChange={() => setBdChoice("none")} /> No — this is a routine or obvious fix; nobody has to approve it
-            </label>
-            <label className="flex items-center gap-2 mt-1">
-              <input type="radio" checked={bdChoice === "approved"} onChange={() => setBdChoice("approved")} /> Yes — it is a judgement call, and it was approved by:
-            </label>
-            {bdChoice === "approved" && <input className={`${field} mt-1`} value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="Name of the person who approved it" />}
-          </fieldset>
           {needsReview && (
             <label className="flex items-start gap-2 text-sm font-semibold">
               <input type="checkbox" className="mt-1" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} />
@@ -167,7 +154,7 @@ export function MappingChangeDialogHost({ theme }: { theme: "light" | "dark" }) 
             type="button"
             disabled={!valid}
             className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            onClick={() => close({ reason: reason.trim(), changeCategory: category, businessDecision: bd })}
+            onClick={() => close({ reason: reason.trim(), changeCategory: category })}
           >
             Save change
           </button>

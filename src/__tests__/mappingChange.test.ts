@@ -127,7 +127,7 @@ describe("mapping change gate", () => {
     const r = await call("PATCH", `/ped/${ped.id}`, { body: { categoryKey: null }, change: null });
     expect(r.status).toBe(400);
     expect(r.body.code).toBe("change_control_required");
-    for (const bad of [{ reason: "x" }, { changeCategory: "Nonsense" }, { businessDecision: "maybe" }]) {
+    for (const bad of [{ reason: "x" }, { changeCategory: "Nonsense" }]) {
       const r2 = await call("PATCH", `/ped/${ped.id}`, { body: { categoryKey: null }, change: control(bad) });
       expect(r2.status).toBe(400);
     }

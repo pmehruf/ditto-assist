@@ -24,9 +24,9 @@ export interface PlanRestrictionRowEntry extends PlanRestriction {
 }
 
 const MODE_OPTIONS = [
-  { value: "require_keywords", label: "Only accept conditions that mention a keyword — all others go to the plan's “any other condition” question" },
-  { value: "exclude_keywords", label: "Do not accept conditions that mention a keyword — they go to the plan's “any other condition” question" },
-  { value: "block_category", label: "Do not accept this category at all — every condition in it goes to the plan's “any other condition” question" },
+  { value: "require_keywords", label: "Only accept conditions that mention a keyword — all others go to the plan's Others question" },
+  { value: "exclude_keywords", label: "Do not accept conditions that mention a keyword — they go to the plan's Others question" },
+  { value: "block_category", label: "Do not accept this category at all — every condition in it goes to the plan's Others question" },
 ] as const;
 
 function modeLabel(mode: string): string {
@@ -143,7 +143,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
     const explanation = draft.explanation.trim();
     const keywords = draft.keywordsText.split(",").map((k) => k.trim()).filter(Boolean);
     if (!categoryKey) return setSaveError("Choose a category.");
-    if (!explanation) return setSaveError("An explanation is required — it is what the advisor reads when a condition is sent to the “any other condition” question.");
+    if (!explanation) return setSaveError("An explanation is required — it is what the advisor reads when a condition is sent to the Others question.");
     if (draft.mode !== "block_category" && keywords.length === 0) {
       return setSaveError("At least one keyword is required for this mode.");
     }
@@ -307,7 +307,7 @@ export function PlanRestrictionsEditor({ theme, planName, canEdit, mode }: PlanR
           <textarea
             value={draft.explanation}
             onChange={(e) => setDraft((d) => (d ? { ...d, explanation: e.target.value } : d))}
-            placeholder="What the advisor reads when a condition is sent to the “any other condition” question, e.g. &quot;This plan's diabetes question covers only Type 1 / insulin-dependent diabetes.&quot;"
+            placeholder="What the advisor reads when a condition is sent to the Others question, e.g. &quot;This plan's diabetes question covers only Type 1 / insulin-dependent diabetes.&quot;"
             rows={2}
             className={inputClass}
           />

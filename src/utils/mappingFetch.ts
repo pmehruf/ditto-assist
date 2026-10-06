@@ -59,7 +59,6 @@ export interface MappingChangeRequest {
 export interface MappingChangeDecision {
   reason: string;
   changeCategory: string;
-  businessDecision: string;
 }
 
 type Opener = (req: MappingChangeRequest) => Promise<MappingChangeDecision | null>;

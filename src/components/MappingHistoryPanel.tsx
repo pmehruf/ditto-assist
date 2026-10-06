@@ -91,7 +91,7 @@ export function MappingHistoryPanel({ theme, canManage }: { theme: "light" | "da
               <div className="flex-1 min-w-[14rem]">
                 <div className="text-sm font-semibold">
                   {e.summary}{" "}
-                  {e.impactTier && <span className={`text-[10px] px-1.5 py-0.5 rounded ${tierClass(e.impactTier)}`}>{e.impactTier === "high" ? "High" : e.impactTier === "elevated" ? "Elevated" : e.impactTier === "low" ? "Low" : e.impactTier} impact</span>}{" "}
+                  {e.impactTier && <span className={`text-[10px] px-1.5 py-0.5 rounded ${tierClass(e.impactTier)}`}>{e.impactTier === "high" ? "High" : e.impactTier === "elevated" ? "Elevated" : e.impactTier === "low" ? "Low" : e.impactTier === "none" ? "No" : e.impactTier} impact</span>}{" "}
                   {e.status !== "applied" && <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-500/20">{changeStatusLabel(e.status)}</span>}
                 </div>
                 <div className={`text-xs ${muted}`}>
