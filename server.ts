@@ -89,11 +89,8 @@ import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.
 import { syncAdvisorDirectory } from "./src/server/qaDashboard/advisorDirectorySync.js";
 import { syncGuideMentorRelationships } from "./src/server/qaDashboard/guideMentorRelationshipsSync.js";
 import { resolveQaCallerRole } from "./src/server/qaDashboard/qaRoles.js";
-<<<<<<< HEAD
 import { getQipExceptionScores } from "./src/server/qipException/qipExceptionScores.js";
 import { buildPrompt as buildQipPrompt, parseModelJson as parseQipModelJson, shape as shapeQipDraft, QIP_MAX_FACTS_CHARS } from "./src/server/qipException/qipExceptionWriter.js";
-=======
->>>>>>> feature/announcement-sheet-sync
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
