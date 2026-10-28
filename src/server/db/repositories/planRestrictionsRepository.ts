@@ -30,7 +30,7 @@ export class PlanRestrictionsRepository {
       .orderBy(asc(planRestrictions.categoryKey), asc(planRestrictions.id));
   }
 
-  /** Only active restrictions for one plan — what engine.ts actually reads
+  /** Only active restrictions for one plan — what the routing engine (src/mapping) actually reads
    * at match time (see dbRowToPlanConfig's `restrictions` param). */
   async listActiveForPlan(planName: string): Promise<PlanRestrictionRow[]> {
     return this.db

@@ -9,7 +9,7 @@ import type { PlanOverrideDetailedRow } from "./db/repositories/planOverridesRep
 
 /**
  * Converts a DB-stored plan_configs row (tagged questions array) into the
- * flat PlanConfig shape engine.ts expects — mirrors how the client used to
+ * flat PlanConfig shape the routing engine (src/mapping) expects — mirrors how the client used to
  * derive this in App.tsx's (now-retired) planConfigs merge useMemo.
  *
  * Pulled out of server.ts into its own side-effect-free module (was
@@ -47,7 +47,7 @@ export type PlanOverridesShape = { excludePrediabetes?: boolean; requiresInsulin
 
 /**
  * Converts live `plan_restrictions` rows (Plan-Specific Restrictions,
- * 2026-08) into the plain PlanRestriction[] shape engine.ts's
+ * 2026-08) into the plain PlanRestriction[] shape the routing engine (src/mapping)'s
  * isCategoryRestrictedForPed / hasActiveRestriction expect. Kept separate
  * from dbRowToPlanConfig above (rather than folded into its `row` param)
  * because restrictions live in their own table and apply uniformly whether
@@ -68,7 +68,7 @@ export function toPlanRestrictions(rows: PlanRestrictionRow[]): PlanRestriction[
 
 /**
  * Converts `plan_overrides` rows (joined via PlanOverridesRepository.
- * listDetailed) into the PlanPedOverride[] shape engine.ts's
+ * listDetailed) into the PlanPedOverride[] shape the routing engine (src/mapping)'s
  * applyPlanPedOverride evaluates. Attached onto `config.pedOverrides` at
  * every call site, same as toPlanRestrictions above.
  */

@@ -15,7 +15,7 @@
 import dotenv from "dotenv";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
-import { normalizeDictionaryKey } from "../src/engine.js";
+import { normalizeDictionaryKey } from "../src/mapping/helpers.js";
 
 dotenv.config();
 

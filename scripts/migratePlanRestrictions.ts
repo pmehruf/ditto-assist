@@ -8,7 +8,7 @@
  * requiresInsulinForDiabetes / bypassBenignTumors — types.ts) with
  * equivalent rows in the new `plan_restrictions` table (schema.ts,
  * migration 0045), without changing any plan's current valid declaration
- * behaviour. See engine.ts's hasActiveRestriction/isCategoryRestrictedForPed
+ * behaviour. See the routing engine (src/mapping)'s hasActiveRestriction/isCategoryRestrictedForPed
  * doc comments for how these rows are evaluated at match time, and
  * planRestrictionsRepository.ts for the table's shape.
  *
@@ -23,9 +23,9 @@
  *    hardcoded bootstrap seed) does the hardcoded `overrides` object in
  *    types.ts apply.
  * This script reads BOTH and resolves the effective value per plan exactly
- * the way engine.ts's `config` used to before this refactor.
+ * the way the routing engine (src/mapping)'s `config` used to before this refactor.
  *
- * MAPPING (see engine.ts's hasActiveRestriction doc comment):
+ * MAPPING (see the routing engine (src/mapping)'s hasActiveRestriction doc comment):
  *   requiresInsulinForDiabetes -> ("diabetes", "require_keywords")
  *   excludePrediabetes         -> ("diabetes", "exclude_keywords")
  *                                  (skipped if requiresInsulinForDiabetes is
@@ -37,7 +37,7 @@
  *                                  data minimal and easy to audit)
  *   bypassBenignTumors          -> ("benign_growth", "block_category")
  *
- * Keyword lists mirror the exact regexes engine.ts's own call sites already
+ * Keyword lists mirror the exact regexes the routing engine (src/mapping)'s own call sites already
  * test against the SAME flags (see hasInsulinOrType1/isGestationalOrType2 in
  * the "G. GESTATIONAL & TYPE 2 DIABETES INTERCEPT COUPLING" block and the
  * prediabetes regex in "H. PREDIABETES PLAN-AWARE INTERCEPT") — chosen for
@@ -55,8 +55,8 @@
  *
  * SAFETY: does NOT touch or clear plan_configs.overrides — that column
  * stays in place as a historical record until task #146 (removing the now-
- * dead hardcoded engine.ts blocks + old checkbox UI) explicitly retires it.
- * classifyDeterministic/applyPostGuards no longer read it (see engine.ts) —
+ * dead hardcoded the routing engine (src/mapping) blocks + old checkbox UI) explicitly retires it.
+ * the routing engine/applyPostGuards no longer read it (see the routing engine (src/mapping)) —
  * see task #146 in this task's tracking for that follow-up.
  *
  * USAGE
@@ -128,7 +128,7 @@ async function main() {
 
     // Live source of truth per plan: the DB row's own `overrides` column
     // once a plan_configs row exists at all, else the hardcoded seed's
-    // `overrides` — exactly what engine.ts's `config.overrides` used to
+    // `overrides` — exactly what the routing engine (src/mapping)'s `config.overrides` used to
     // resolve to (see dbRowToPlanConfig: it never merges the two).
     const overrides = dbRow
       ? ((dbRow.overrides as { excludePrediabetes?: boolean; requiresInsulinForDiabetes?: boolean; bypassBenignTumors?: boolean } | null) || {})

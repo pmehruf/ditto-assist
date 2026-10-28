@@ -15,7 +15,7 @@ import { createMappingSnapshotProvider } from "../server/mappingSnapshot";
 import { runDeterministicPipeline } from "../mapping/routingEngine";
 import { LEGACY_RULE_SEED } from "../mapping/legacyRuleSeed";
 import { planSeed, type MappingDump } from "../mapping/seedBuilder";
-import { legacyEffectiveFactory, newEngineOutcome, planConfigsFromDump, primaryKey, strictHash } from "../mapping/equalityHarness";
+import { newEngineOutcome, planConfigsFromDump, primaryKey, strictHash } from "../mapping/equalityHarness";
 import type { MappingSnapshot } from "../mapping/ruleTypes";
 
 /**
@@ -191,29 +191,6 @@ describe("day-one equality against the frozen production baseline (G3 + G4)", ()
       }
     }
     expect(resolvedNew).toBe(resolvedBaseline);
-  }, 120_000);
-});
-
-describe("frozen baseline is the legacy oracle's output (spot check against the live legacy engine)", () => {
-  it("2,000 sampled pairs re-computed with the untouched legacy engine match the fixture", () => {
-    const plans = planConfigsFromDump(dump);
-    const legacy = legacyEffectiveFactory(dump);
-    let x = 987654321;
-    const next = () => (x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 0x100000000;
-    const diffs: string[] = [];
-    for (let n = 0; n < 2000; n++) {
-      const plan = plans[Math.floor(next() * plans.length)];
-      const i = Math.floor(next() * baseline.terms.length);
-      const o = legacy(baseline.terms[i], plan.planName, plan.config);
-      const row = baseline.results[plan.planName][i];
-      let expected = "0|||";
-      if (row !== "0") {
-        const [, mt, qi, qn] = row.split("|");
-        expected = `1|${mt}|${baseline.questionTable[Number(qi)]}|${qn}`;
-      }
-      if (primaryKey(o) !== expected) diffs.push(`${plan.planName} :: ${baseline.terms[i]}`);
-    }
-    expect(diffs).toEqual([]);
   }, 120_000);
 });
 

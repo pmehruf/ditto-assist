@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { normalizeDictionaryKey } from "../engine.js";
+import { normalizeDictionaryKey, questionForCategory } from "../mapping/helpers.js";
+import type { PlanConfig } from "../types.js";
 import type { Repositories } from "./db/repositories/index.js";
 
 /**
  * Authoritative admin mapping mechanism for AI Mapping Review (Phase 3A).
  *
- * With MAPPING_ENGINE=db the live engine reads ped_repository / ped_aliases
+ * With the database-backed engine the live engine reads ped_repository / ped_aliases
  * (and routing_rules, plan_overrides, …) — never ped_mapping_overrides. So
  * approving an AI answer must change THOSE tables, and an admin must only be
  * told it worked once a fresh lookup through the live engine shows it did.
@@ -229,4 +230,16 @@ export async function revertAiApproval(deps: PromotionDeps, aiMemoryId: number, 
   const live = sets.find((s) => s.kind === "ai_approval" && s.status === "applied");
   if (!live) return { reverted: false, verified: false, noMappingApplied: true, reason: "This approval had not changed any live mapping." };
   return undoChangeSet(deps, live.id, performedBy, `Rejected in AI Mapping Review #${aiMemoryId}`);
+}
+
+/**
+ * Given a plan's config and a question STRING (as stored on a cached AI answer), finds the single categoryKey that
+ * resolves to it, if any. Used to infer a plan-agnostic categoryKey from an AI Mapping Review entry's plan-specific
+ * matched_question before promoting it: a PED's category is read by every plan, so promotion only proceeds when exactly
+ * one categoryKey explains the AI's answer (ambiguous or fallback answers are left for manual assignment).
+ */
+export function inferCategoryKeyForQuestion(config: PlanConfig, questionText: string): string | null {
+  if (!config?.categoryMap || !questionText) return null;
+  const matches = Object.keys(config.categoryMap).filter((key) => questionForCategory(config, key) === questionText);
+  return matches.length === 1 ? matches[0] : null;
 }

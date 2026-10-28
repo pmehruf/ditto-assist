@@ -4,7 +4,7 @@
  */
 
 import type { PlanConfig } from "../types.js";
-import { normalizeDictionaryKey } from "../engine.js";
+import { normalizeDictionaryKey } from "./helpers.js";
 import { runDeterministicPipeline } from "./routingEngine.js";
 import type { MappingSnapshot } from "./ruleTypes.js";
 

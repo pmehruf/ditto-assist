@@ -42,7 +42,7 @@ import path from "path";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
 import { bumpMappingVersionAfterApply } from "./_mappingVersion.js";
-import { normalizeDictionaryKey } from "../src/engine.js";
+import { normalizeDictionaryKey } from "../src/mapping/helpers.js";
 
 dotenv.config();
 

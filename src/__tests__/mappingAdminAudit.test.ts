@@ -57,11 +57,10 @@ describe("Phase 3B-ii: rule / category administration", () => {
     }
   });
 
-  it("the shared write wrapper checks access first, refuses rule writes outside db mode, and bumps the version only on success", () => {
+  it("the shared write wrapper checks access first and bumps the version only on success", () => {
     const i = server.indexOf("const adminWrite =");
     const wrapper = server.slice(i, i + 1000);
     expect(wrapper.indexOf("requireFeatureAccess")).toBeLessThan(wrapper.indexOf("run(createRepositories"));
-    expect(wrapper).toContain('MAPPING_ENGINE !== "db"');
     expect(wrapper).toContain("op.status < 400");
   });
 

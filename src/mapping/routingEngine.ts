@@ -14,7 +14,7 @@ import {
   normalizeText,
   questionForCategory,
   sanitizeOutput,
-} from "../engine.js";
+} from "./helpers.js";
 import type {
   Action,
   CategoryChainTrace,
@@ -31,7 +31,7 @@ import type {
 /**
  * Data-driven routing engine (mapping-control Phase 2). Interprets the
  * routing_rules / alias / category data in a MappingSnapshot and reproduces
- * the legacy classifyDeterministic + applyPostGuards pipeline exactly.
+ * the legacy the routing engine + applyPostGuards pipeline exactly.
  *
  * Reuses the legacy engine's PURE helper functions (normalisation, question
  * lookup, plan-override matching, sanitize/finalize) unchanged, so those
@@ -402,7 +402,7 @@ function runStep(step: RoutingRuleRow, ctx: Ctx): Step {
 
 // ── public API ──────────────────────────────────────────────────────────
 
-/** Data-driven equivalent of classifyDeterministic (legacy engine, stage order preserved). */
+/** Data-driven equivalent of the routing engine (legacy engine, stage order preserved). */
 export function classifyFromSnapshot(ped: string, planName: string, config: PlanConfig, snap: MappingSnapshot): SnapshotResult {
   const first = classifyPass(ped, planName, config, snap);
   if (first.output) return first;

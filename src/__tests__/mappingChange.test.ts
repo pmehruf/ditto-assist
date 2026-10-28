@@ -14,8 +14,6 @@ import { getDb } from "../server/db/client";
 import { createRepositories } from "../server/db/repositories";
 import { pedRepository, planConfigs, planOverrides, planRestrictions, pedAliases, pedMappingOverrides, mappingHistory, changeLogs } from "../server/db/schema";
 import { createPedWithPrimaryAlias } from "../server/pedRepositoryLive";
-import { getDbAliasLookup, updateDbPlanOverrideCache } from "../server/pedRuntimeCache";
-import { normalizeDictionaryKey } from "../engine";
 
 /**
  * Phase 3B-i — impact preview, confirmation, change sets and generic undo for admin
@@ -65,14 +63,13 @@ beforeAll(async () => {
     await createRepositories(getDb()).mappingState.bump();
     return res.json({ ok: true });
   });
-  // The REAL create helper (cache + legacy mirror), plus history/change-log writes like the real route.
+  // The REAL create helper, plus history/change-log writes like the real route.
   app.post("/real/ped", gate("Added a PED"), async (req, res) => {
     const repos = createRepositories(getDb());
     const { ped } = await createPedWithPrimaryAlias(repos, { canonicalName: req.body.name, categoryKey: req.body.categoryKey, addedBy: "Tester" });
     await repos.mappingState.bump();
     await repos.mappingHistory.record({ pedId: ped.id, entityType: "ped", action: "created", previousValue: null, newValue: ped, reason: null, performedBy: "Tester" });
     await repos.changeLogs.create({ userName: "Tester", role: "Admin", actionType: "PED Repository Entry Added", planName: "PED Repository", description: "x", snapshot: null });
-    updateDbPlanOverrideCache("Optima Secure", ped.id, req.body.categoryKey, "test");
     return res.json({ ped });
   });
   app.patch("/plain/:id", async (req, res) => {
@@ -248,7 +245,6 @@ describe("mapping change gate", () => {
 describe("preview leaves nothing behind outside the transaction", () => {
   it("no cache, mirror, history, change log, version or change set survives a preview; all appear only after an apply", async () => {
     const name = "zz preview probe condition";
-    const key = normalizeDictionaryKey(name);
     const count = async (t: any) => (await env.db.select().from(t)).length;
     const snap = async () => ({
       version: await env.repos.mappingState.getVersion(),
@@ -258,7 +254,6 @@ describe("preview leaves nothing behind outside the transaction", () => {
       history: await count(mappingHistory),
       logs: await count(changeLogs),
       sets: (await env.repos.mappingChangeSets.listRecent(1000)).length,
-      cached: getDbAliasLookup().has(key),
     });
     const before = await snap();
     const pv = await call("POST", "/real/ped", { body: { name, categoryKey: "heart" }, preview: true, change: null });
@@ -275,9 +270,8 @@ describe("preview leaves nothing behind outside the transaction", () => {
     const ok = await call("POST", "/real/ped", { body: { name, categoryKey: "heart" }, change: control({ confirmHash: pv.body.impactHash }) });
     expect(ok.status).toBe(200);
     const after = await snap();
-    expect(after.cached).toBe(true);
     expect(after.peds).toBe(before.peds + 1);
-    expect(after.mirror).toBe(before.mirror + 1);
+    expect(after.mirror).toBe(before.mirror); // nothing mirrors into the legacy table any more
     expect(after.history).toBe(before.history + 1);
     expect(after.logs).toBe(before.logs + 1);
     expect(after.version).toBeGreaterThan(before.version);

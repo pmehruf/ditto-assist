@@ -9,13 +9,9 @@ import { gunzipSync } from "node:zlib";
 import { LEGACY_RULE_SEED } from "../mapping/legacyRuleSeed";
 import { planSeed, snapshotFromDump, type MappingDump } from "../mapping/seedBuilder";
 import { runDeterministicPipeline } from "../mapping/routingEngine";
-import {
-  legacyEffectiveFactory,
-  newEngineOutcome,
-  planConfigsFromDump,
-  primaryKey,
-} from "../mapping/equalityHarness";
-import { normalizeDictionaryKey } from "../engine";
+import { newEngineOutcome, planConfigsFromDump, primaryKey, strictHash } from "../mapping/equalityHarness";
+import { restrictionSets, diabetesAndGrowthPattern } from "./helpers/auditSets";
+import { normalizeDictionaryKey } from "../mapping/helpers";
 import type { PlanConfig, PlanRestriction } from "../types";
 
 /**
@@ -31,7 +27,19 @@ const baseline = JSON.parse(gunzipSync(readFileSync(new URL("production-day-one.
 
 const snap = snapshotFromDump(dump);
 const plans = planConfigsFromDump(dump);
-const legacy = legacyEffectiveFactory(dump);
+/**
+ * The outcomes the original hard-coded engine gave for these comparisons, frozen at the Phase 2 migration
+ * (audit-legacy-frozen.json.gz). The engine itself was removed in Phase 6; this is the oracle now.
+ */
+const frozen = JSON.parse(gunzipSync(readFileSync(new URL("audit-legacy-frozen.json.gz", FIXTURES))).toString()) as {
+  overrideAliases: Record<string, string>;
+  restrictions: Record<string, string>;
+  pairs: Record<string, string>;
+};
+const frozenPair = (planName: string, ped: string) => {
+  const [resolved, questionNumber, strict] = frozen.pairs[`${planName}||${ped}`].split("|");
+  return { resolved: resolved === "1", questionNumber: questionNumber === "" ? null : Number(questionNumber), strict };
+};
 const sampleTerms = baseline.terms.filter((_, i) => i % 9 === 0);
 
 describe("Audit: plan isolation", () => {
@@ -56,7 +64,7 @@ describe("Audit: plan isolation", () => {
 });
 
 describe("Audit: existing plan overrides still take precedence", () => {
-  it("every plan override alias is decided by the override stage and equals legacy", () => {
+  it("every plan override alias is decided by the override stage and equals the frozen original", () => {
     const aliasesByPed = new Map<number, string[]>();
     for (const a of dump.pedAliases) aliasesByPed.set(a.pedId, [...(aliasesByPed.get(a.pedId) ?? []), a.aliasText]);
     let checked = 0;
@@ -67,7 +75,7 @@ describe("Audit: existing plan overrides still take precedence", () => {
         const { trace, result } = runDeterministicPipeline(aliasText, plan.planName, plan.config, snap);
         expect(trace.decidedBy, `${plan.planName} :: ${aliasText}`).toBe("primitive.plan_override");
         expect(result?.plan_override).toBe(true);
-        expect(primaryKey(newEngineOutcome(aliasText, plan.planName, plan.config, snap))).toBe(primaryKey(legacy(aliasText, plan.planName, plan.config)));
+        expect(primaryKey(newEngineOutcome(aliasText, plan.planName, plan.config, snap))).toBe(frozen.overrideAliases[`${plan.planName}||${aliasText}`]);
         checked++;
       }
     }
@@ -93,21 +101,14 @@ describe("Audit: existing plan overrides still take precedence", () => {
   });
 });
 
-describe("Audit: restriction integrity (data-driven restrictions behave exactly as the legacy engine)", () => {
-  const diabetesAndGrowthTerms = baseline.terms.filter((t) => /diabet|insulin|sugar|glyc|polyp|cyst|tumou?r|growth|lipoma|benign|neoplasm|prediab/i.test(t)).slice(0, 400);
-  const restrictionSets: Array<{ name: string; restrictions: PlanRestriction[]; flags?: PlanConfig["overrides"] }> = [
-    { name: "diabetes requires keywords", restrictions: [{ categoryKey: "diabetes", mode: "require_keywords", keywords: ["type 1", "insulin", "blindness"], explanation: "Diabetes is limited to insulin / type 1 on this plan.", isActive: true }] },
-    { name: "diabetes excludes keywords", restrictions: [{ categoryKey: "diabetes", mode: "exclude_keywords", keywords: ["prediabetes", "borderline"], explanation: "Prediabetes is not covered.", isActive: true }] },
-    { name: "benign growth blocked", restrictions: [{ categoryKey: "benign_growth", mode: "block_category", keywords: [], explanation: "Benign growths go to Others.", isActive: true }] },
-    { name: "legacy plan flags (no restriction rows)", restrictions: [], flags: { requiresInsulinForDiabetes: true, excludePrediabetes: true, bypassBenignTumors: true } },
-    { name: "inactive restriction is ignored", restrictions: [{ categoryKey: "diabetes", mode: "block_category", keywords: [], explanation: "x", isActive: false }] },
-  ];
+describe("Audit: restriction integrity (data-driven restrictions behave exactly as the original engine did)", () => {
+  const diabetesAndGrowthTerms = baseline.terms.filter((t) => diabetesAndGrowthPattern.test(t)).slice(0, 400);
   for (const set of restrictionSets) {
-    it(`${set.name}: identical to the legacy engine on every plan`, () => {
+    it(`${set.name}: identical to the original engine on every plan`, () => {
       for (const { planName, config } of plans) {
         const cfg: PlanConfig = { ...config, restrictions: set.restrictions, overrides: set.flags ?? config.overrides };
         for (const ped of diabetesAndGrowthTerms) {
-          expect(primaryKey(newEngineOutcome(ped, planName, cfg, snap)), `${planName} :: ${ped}`).toBe(primaryKey(legacy(ped, planName, cfg)));
+          expect(primaryKey(newEngineOutcome(ped, planName, cfg, snap)), `${planName} :: ${ped}`).toBe(frozen.restrictions[`${set.name}||${planName}||${ped}`]);
         }
       }
     });
@@ -131,20 +132,19 @@ describe("Audit: question and question-number integrity", () => {
     for (const { planName, config } of plans) {
       for (const ped of sampleTerms) {
         const o = newEngineOutcome(ped, planName, config, snap);
-        const l = legacy(ped, planName, config);
-        expect(o.question_number).toBe(l.question_number);
+        expect(o.question_number).toBe(frozenPair(planName, ped).questionNumber);
       }
     }
   });
 });
 
 describe("Audit: secondary / supporting output integrity", () => {
-  it("umbrella recommendations and supporting flags are identical to the legacy engine", () => {
+  it("umbrella recommendations and supporting flags are identical to the original engine", () => {
     for (const { planName, config } of plans) {
       for (const ped of sampleTerms) {
         const o = newEngineOutcome(ped, planName, config, snap);
-        const l = legacy(ped, planName, config);
-        expect(o.strict, `${planName} :: ${ped}`).toBe(l.strict);
+        const f = frozenPair(planName, ped);
+        expect(o.resolved ? strictHash(o) : "", `${planName} :: ${ped}`).toBe(f.resolved ? f.strict : "");
       }
     }
   });
@@ -191,10 +191,10 @@ describe("Audit: fallback / unresolved behaviour is preserved", () => {
     }
   });
 
-  it("everything legacy leaves unresolved is unresolved, and everything it resolves is resolved", () => {
+  it("everything the original engine left unresolved is unresolved, and everything it resolved is resolved", () => {
     for (const { planName, config } of plans) {
       for (const ped of sampleTerms) {
-        expect(newEngineOutcome(ped, planName, config, snap).resolved).toBe(legacy(ped, planName, config).resolved);
+        expect(newEngineOutcome(ped, planName, config, snap).resolved).toBe(frozenPair(planName, ped).resolved);
       }
     }
   });

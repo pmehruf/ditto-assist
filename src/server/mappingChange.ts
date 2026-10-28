@@ -13,7 +13,7 @@ import { createRepositories, normalizeCondition } from "./db/repositories/index.
 import { categories, mappingChangeSets, mappingState, pedAliases, pedRepository, planConfigs, planOverrides, planRestrictions, routingRules, searchHistory } from "./db/schema.js";
 import { loadMappingSnapshot } from "./mappingSnapshot.js";
 import { dbRowToPlanConfig, toPlanPedOverrides, toPlanRestrictions } from "./planConfigUtils.js";
-import { normalizeDictionaryKey } from "../engine.js";
+import { normalizeDictionaryKey } from "../mapping/helpers.js";
 import { compareWorlds, type ImpactReport, type Usage, type World } from "../mapping/impact.js";
 import type { PlanConfig } from "../types.js";
 
@@ -312,7 +312,7 @@ export async function measureImpact(before: World, after: World, usageSource: { 
 // ── the gate ───────────────────────────────────────────────────────────────
 
 export interface GateDeps {
-  /** True only when MAPPING_ENGINE=db and MAPPING_IMPACT_GATE=on. */
+  /** True only when the database-backed engine and MAPPING_IMPACT_GATE=on. */
   enabled(): boolean;
   /** The root (non-transaction) database. */
   rootDb(): AnyDb;

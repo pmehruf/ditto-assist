@@ -64,7 +64,7 @@ import fs from "fs";
 import path from "path";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
-import { normalizeDictionaryKey } from "../src/engine.js";
+import { normalizeDictionaryKey } from "../src/mapping/helpers.js";
 
 dotenv.config();
 
@@ -198,7 +198,7 @@ async function main() {
       // value. Retire it from the repository by merging into whichever
       // existing "None / Not Applicable / No Pre-Existing Disease"
       // natural_life_stage PED the app already uses for this bucket
-      // (checkNaturalLifeStages in engine.ts), rather than inventing a new
+      // (checkNaturalLifeStages in the routing engine (src/mapping)), rather than inventing a new
       // canonical PED. Priority order favors the most literal match first.
       const retirementCandidates = ["No Pre-Existing Disease", "Not Applicable", "None"];
       let target2: { pedId: number; pedCode: string; canonicalName: string } | null = null;

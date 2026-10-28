@@ -9,14 +9,14 @@
  * of "Liver or Gall Bladder ailment / Jaundice / Hepatitis B or C?".
  * Root cause: these terms were categorized "digestive" instead of
  * "liver" in ped_repository (the live classification source of truth
- * when PED_SOURCE=db — see PED_REPOSITORY_GOVERNANCE.md). Only visibly
+ * when the database-backed engine — see PED_REPOSITORY_GOVERNANCE.md). Only visibly
  * wrong on Optima Secure today (the only plan where "liver" and
  * "digestive" resolve to two DIFFERENT questions — every other plan
  * currently points both category keys at the same combined question
  * text), but this fixes the underlying data for all plans, present and
  * future. Mirrors the same correction already made to the static
  * TOP_PED_DICTIONARY fallback in src/types.ts and to the DIGESTIVE/LIVER
- * regex sections in src/engine.ts.
+ * regex sections in src/mapping/helpers.ts.
  *
  * SAFETY
  *  - Only touches rows whose canonicalName exactly matches (case-

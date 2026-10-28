@@ -10,7 +10,7 @@
  * scripts/data/600_conditions_corrected_database.snapshot.json — the
  * ORIGINAL file, not a re-derived summary) against the LIVE
  * ped_repository/ped_aliases tables, using the exact same
- * normalizeDictionaryKey logic engine.ts uses at match time. Also reports
+ * normalizeDictionaryKey logic the routing engine (src/mapping) uses at match time. Also reports
  * the live status breakdown (approved/draft/deprecated) so the UI's
  * "1,184" figure can be checked against the actual unfiltered row count.
  *
@@ -26,7 +26,7 @@ import fs from "fs";
 import path from "path";
 import { getDb, closeDb } from "../src/server/db/client.js";
 import { createRepositories } from "../src/server/db/repositories/index.js";
-import { normalizeDictionaryKey } from "../src/engine.js";
+import { normalizeDictionaryKey } from "../src/mapping/helpers.js";
 
 dotenv.config();
 

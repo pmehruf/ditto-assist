@@ -19,7 +19,7 @@ export type CreateCollisionEntry = Omit<NewCollisionRepositoryRow, "id" | "creat
  * than mirroring the table name exactly, since `CollisionRepositoryRepository`
  * would be nonsense.
  *
- * Advisory-only for now: nothing in engine.ts reads from this class at
+ * Advisory-only for now: nothing in the routing engine (src/mapping) reads from this class at
  * match time yet. `severity`/`active` already support a later enforcement
  * layer without a schema change — see "Approved Decisions" #1 in
  * PED_REPOSITORY_DB_MIGRATION_DESIGN.md.
