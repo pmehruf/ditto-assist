@@ -449,6 +449,13 @@
       "when": 1792200000000,
       "tag": "0088_ped_category_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1792300000000,
+      "tag": "0089_announcement_qa_id_sync",
+      "breakpoints": true
     }
   ]
 }

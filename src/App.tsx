@@ -97,6 +97,7 @@ import { AdvisorTagCheckboxes, NOT_APPLICABLE_TAG } from "./components/AdvisorTa
 import { TactIdInput } from "./components/TactIdInput";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
+import { ANNOUNCEMENTS_SYNCED_EVENT } from "./components/AnnouncementSyncControl";
 import { SkillDomainPromptModal } from "./components/SkillDomainPromptModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { ProductAssistDailyWarning } from "./components/ProductAssistDailyWarning";
@@ -133,6 +134,9 @@ const QaDashboardPage = lazy(() =>
 );
 const TeamTrackerPage = lazy(() =>
   import("./pages/TeamTrackerPage").then((m) => ({ default: m.TeamTrackerPage }))
+);
+const QipExceptionPage = lazy(() =>
+  import("./pages/QipExceptionPage").then((m) => ({ default: m.QipExceptionPage }))
 );
 const ProfileAccessPage = lazy(() =>
   import("./pages/ProfileAccessPage").then((m) => ({ default: m.ProfileAccessPage }))
@@ -267,12 +271,24 @@ const RAIL_ICON_REST = "#8FADD1"; // every icon at rest — group icons AND page
 const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
+// "Open and sync announcements" link (sent in the QA Google Chat alert):
+//   https://<app>/?syncAnnouncements=1
+// The flag is remembered in sessionStorage because an advisor who is not signed in
+// yet goes through the Google login redirect first, which drops the query string.
+const PENDING_ANNOUNCEMENT_SYNC_KEY = "pendingAnnouncementSync";
+try {
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("syncAnnouncements") === "1") {
+    window.sessionStorage.setItem(PENDING_ANNOUNCEMENT_SYNC_KEY, "1");
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+  }
+} catch (_) { /* storage unavailable — the link still opens the app */ }
+
 export default function App() {
   // Themed confirm()/alert() replacements for window.confirm()/window.alert()
   // (see DialogContext.tsx) — used below by confirmDestructiveAction and
   // handleDeleteResource.
   const { confirm, alertUser } = useDialog();
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "qip_exception" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -357,6 +373,7 @@ export default function App() {
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
     team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
+    qaId: row.qaId ?? undefined,
   });
 
   const fetchPageVisibility = async () => {
@@ -959,7 +976,7 @@ export default function App() {
   type SidebarSectionKey = "advisorWorkspace" | "quality" | "reference" | "appOpsControls" | "administration" | "developer";
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
     advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist"],
-    quality: ["qa_dashboard", "team_tracker"],
+    quality: ["qa_dashboard", "team_tracker", "qip_exception"],
     reference: ["advisory_zone", "announcement_archive", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
     administration: ["profile_access", "audit", "flagged_responses"],
@@ -1098,6 +1115,32 @@ export default function App() {
       fetchRoles();
       fetchUsersList();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email]);
+
+  // QA-sheet announcement sync: (1) reload everything announcement-related whenever a
+  // sync finishes (Sync button, link, or daily auto-sync noticed by a refetch), and
+  // (2) handle the "?syncAnnouncements=1" link — open the Announcements page and sync.
+  useEffect(() => {
+    if (!currentUser) return;
+    const onSynced = () => { fetchAnnouncements(); fetchUnackedAnnouncements(); };
+    window.addEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let pending = false;
+    try {
+      pending = window.sessionStorage.getItem(PENDING_ANNOUNCEMENT_SYNC_KEY) === "1";
+      if (pending) window.sessionStorage.removeItem(PENDING_ANNOUNCEMENT_SYNC_KEY);
+    } catch (_) { /* ignore */ }
+    if (!pending) return;
+    setActiveTab("announcement_archive");
+    fetch("/api/announcements/sync", { method: "POST" })
+      .catch((err) => console.error("Announcement sync from link failed:", err))
+      .finally(() => window.dispatchEvent(new Event(ANNOUNCEMENTS_SYNCED_EVENT)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.email]);
 
@@ -3378,6 +3421,7 @@ export default function App() {
           pages: [
             navPage("qa_dashboard", "QA Dashboard", QaDashboardIcon, "Viewer"),
             navPage("team_tracker", "Team Tracker", Users2, "Viewer", { visibleOverride: qaTeamTrackerAllowed }),
+            navPage("qip_exception", "QIP Exception", FileText, "Viewer", { visibleOverride: qaTeamTrackerAllowed }),
           ],
         },
         {
@@ -5037,6 +5081,27 @@ export default function App() {
               <ErrorBoundary theme={theme} label="Team Tracker">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <TeamTrackerPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
+          {/* QIP EXCEPTION REQUEST — builds the .docx exception request for
+              one or more advisors. Same Admin/Guide/Mentor gate as Team
+              Tracker (the sidebar link uses qaTeamTrackerAllowed; the AI
+              route /api/qip-exception/draft re-checks the role server-side). */}
+          {activeTab === "qip_exception" && (
+            <motion.div
+              key="qip_exception"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              <ErrorBoundary theme={theme} label="QIP Exception Request">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <QipExceptionPage theme={theme} />
               </Suspense>
               </ErrorBoundary>
             </motion.div>

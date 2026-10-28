@@ -94,6 +94,15 @@ CREATE TABLE "announcement_acks" (
 	"acked_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "announcement_sync_state" (
+	"id" integer PRIMARY KEY NOT NULL,
+	"last_attempt_at" timestamp with time zone,
+	"last_success_at" timestamp with time zone,
+	"last_trigger" text,
+	"last_summary" text,
+	"last_error" text
+);
+--> statement-breakpoint
 CREATE TABLE "announcements" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"announcement" text NOT NULL,
@@ -108,7 +117,10 @@ CREATE TABLE "announcements" (
 	"announcement_date" date,
 	"from_team" text,
 	"requires_ack" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"qa_id" text,
+	"source_hash" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "announcements_qa_id_unique" UNIQUE("qa_id")
 );
 --> statement-breakpoint
 CREATE TABLE "categories" (

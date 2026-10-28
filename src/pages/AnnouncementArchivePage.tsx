@@ -15,6 +15,7 @@ import { Pagination } from "../components/Pagination";
 import { ClippedButton } from "../components/ClippedButton";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { downloadCSV } from "../utils/csvExport";
+import { AnnouncementSyncControl, ANNOUNCEMENTS_SYNCED_EVENT } from "../components/AnnouncementSyncControl";
 
 const PAGE_SIZE = 15;
 
@@ -45,6 +46,7 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
     team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
+    qaId: row.qaId ?? undefined,
   };
 }
 
@@ -82,6 +84,13 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
   // Workspace's "Open Today's Announcements" CTA (see initialEffectiveDate).
   const [effectiveDateFilter, setEffectiveDateFilter] = useState(initialEffectiveDate || "");
   const [exporting, setExporting] = useState(false);
+  // Bumped after every QA-sheet sync so the table reloads with the new announcements.
+  const [syncTick, setSyncTick] = useState(0);
+  useEffect(() => {
+    const onSynced = () => setSyncTick((t) => t + 1);
+    window.addEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+  }, []);
 
   // If the CTA is clicked again with a different date while this page is
   // already mounted, pick up the new value instead of staying stuck on the
@@ -134,7 +143,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
     return () => {
       cancelled = true;
     };
-  }, [page, debouncedSearch, dateFrom, dateTo, effectiveDateFilter]);
+  }, [page, debouncedSearch, dateFrom, dateTo, effectiveDateFilter, syncTick]);
 
   // Same filters as the paginated fetch above, minus paging — matches the
   // export=1 pattern already used by search-history/users/change-logs.
@@ -156,6 +165,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
       const rows = (Array.isArray(body.entries) ? body.entries.map(mapAnnouncementRow) : []) as QAAnnouncement[];
       downloadCSV(
         rows.map((item) => ({
+          ID: item.qaId || "",
           Title: item.title || item.category || "",
           Team: teamLabel(item),
           Severity: item.type === "QA Announcement" ? item.rating ?? "" : "",
@@ -316,6 +326,8 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
             <h3 className={`text-sm font-bold uppercase tracking-wider ${dark ? "text-white" : "text-stone-900"}`}>
               {hasFilters ? `Matching Announcements (${total})` : `All Announcements (${total})`}
             </h3>
+            <div className="flex items-center gap-3 shrink-0">
+            <AnnouncementSyncControl theme={theme} />
             <ClippedButton
               onClick={exportCsv}
               disabled={exporting || total === 0}
@@ -326,6 +338,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>Export CSV</span>
             </ClippedButton>
+            </div>
           </div>
 
           <div className={`flex-grow min-h-0 overflow-auto rounded-xl border ${dark ? "border-white/[0.06]" : "border-[var(--border)]"}`}>
@@ -337,6 +350,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
               <table className="w-full border-collapse table-fixed">
                 <colgroup>
                   <col style={{ width: "48px" }} />
+                  <col style={{ width: "92px" }} />
                   <col style={{ width: "14%" }} />
                   <col style={{ width: "10%" }} />
                   <col style={{ width: "8%" }} />
@@ -347,6 +361,7 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
                 <thead>
                   <tr>
                     <th className={thClass}>Sl No</th>
+                    <th className={thClass}>ID</th>
                     <th className={thClass}>Title</th>
                     <th className={thClass}>Team</th>
                     <th className={thClass}>Severity</th>
@@ -368,6 +383,9 @@ export function AnnouncementArchivePage({ theme, initialEffectiveDate }: Announc
                     >
                       <td className={`${tdClass} font-mono font-bold text-center`}>
                         {(page - 1) * PAGE_SIZE + idx + 1}
+                      </td>
+                      <td className={`${tdClass} font-mono font-bold whitespace-nowrap`}>
+                        {item.qaId || "—"}
                       </td>
                       <td className={`${tdClass} font-bold`}>
                         {item.title || item.category || "—"}

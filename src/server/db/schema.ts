@@ -141,8 +141,27 @@ export const announcements = pgTable("announcements", {
   // true so every announcement from then on gates the app per-user until
   // acknowledged.
   requiresAck: boolean("requires_ack").notNull().default(true),
+  // Stable QA ID from the "Bot Alert - QA Announcements" Google Sheet feed (e.g. QAH261009:
+  // QA + H/T/B for Health/Term/Both + YYMM + running number). NULL for announcements
+  // typed in by hand. Used to match sheet rows to app rows on every sync, so a
+  // sync never creates duplicates.
+  qaId: text("qa_id").unique(),
+  // Fingerprint of the sheet row this announcement was last synced from, so a sync
+  // only touches rows whose sheet content actually changed.
+  sourceHash: text("source_hash"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One-row table (id is always 1) remembering the last QA-sheet announcement sync.
+export const announcementSyncState = pgTable("announcement_sync_state", {
+  id: integer("id").primaryKey(),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  lastTrigger: text("last_trigger"),
+  lastSummary: text("last_summary"),
+  lastError: text("last_error"),
+});
+export type AnnouncementSyncStateRow = typeof announcementSyncState.$inferSelect;
 
 // ─────────────────────────────────────────────────────────────────────────
 // announcement_acks — one row per (announcement, user) "I have read this"
