@@ -89,8 +89,11 @@ import { getLastExecutionTime } from "./src/server/qaDashboard/appsScriptClient.
 import { syncAdvisorDirectory } from "./src/server/qaDashboard/advisorDirectorySync.js";
 import { syncGuideMentorRelationships } from "./src/server/qaDashboard/guideMentorRelationshipsSync.js";
 import { resolveQaCallerRole } from "./src/server/qaDashboard/qaRoles.js";
+<<<<<<< HEAD
 import { getQipExceptionScores } from "./src/server/qipException/qipExceptionScores.js";
 import { buildPrompt as buildQipPrompt, parseModelJson as parseQipModelJson, shape as shapeQipDraft, QIP_MAX_FACTS_CHARS } from "./src/server/qipException/qipExceptionWriter.js";
+=======
+>>>>>>> feature/announcement-sheet-sync
 import { ingestPdfResource } from "./src/server/knowledgeBase/pdfIngest.js";
 import { ingestUrlResource } from "./src/server/knowledgeBase/webIngest.js";
 import { kbDocumentTypeEnum, specialInstructionTypeEnum, faqCategoryEnum } from "./src/server/db/schema.js";
@@ -110,6 +113,7 @@ import { encryptFaqRefreshToken } from "./src/server/knowledgeBase/faqTokenCrypt
 import { invalidateFaqSheetsAuthCache, FAQ_SPREADSHEET_ID } from "./src/server/knowledgeBase/faqSheetsClient.js";
 import { encryptTermFaqRefreshToken } from "./src/server/knowledgeBase/termFaqTokenCrypto.js";
 import { invalidateTermFaqSheetsAuthCache, TERM_FAQ_SPREADSHEET_ID } from "./src/server/knowledgeBase/termFaqSheetsClient.js";
+import { syncAnnouncementsFromSheet, isAutoSyncDue } from "./src/server/announcementSheetSync.js";
 import { encryptTermPlaybookRefreshToken } from "./src/server/knowledgeBase/termPlaybookTokenCrypto.js";
 import { invalidateTermPlaybookSheetsAuthCache, TERM_PLAYBOOK_SPREADSHEET_ID } from "./src/server/knowledgeBase/termPlaybookSheetsClient.js";
 import { syncPlaybook, maybeRefreshPlaybookIfStale } from "./src/server/knowledgeBase/playbookIngest.js";
@@ -2630,6 +2634,10 @@ app.post("/api/change-logs", requireAuth, async (req, res) => {
 
 app.get("/api/announcements", requireAuth, async (req, res) => {
   try {
+    // Daily automatic sync from the QA Google Sheet: whichever signed-in user opens
+    // announcements after the last sync is 24h old kicks it off in the background
+    // (never delays or fails this request). See maybeAutoSyncAnnouncements below.
+    void maybeAutoSyncAnnouncements();
     const { announcements, users: usersRepo } = createRepositories(getDb());
     const category = typeof req.query.category === "string" ? req.query.category : undefined;
 
@@ -2684,6 +2692,63 @@ app.get("/api/announcements", requireAuth, async (req, res) => {
     console.error("Failed to list announcements:", err);
     return res.status(500).json({ error: `Failed to load announcements: ${err.message}` });
   }
+});
+
+// --- QA Google Sheet → announcements sync (see src/server/announcementSheetSync.ts) ---
+//
+// Three ways in: (1) the Sync button / ?syncAnnouncements=1 link in the app (any
+// signed-in user — the sheet is public-by-link and read-only, the sync only adds or
+// refreshes QA announcements, and a 30s cooldown stops hammering), (2) the daily
+// automatic check below, (3) an optional external scheduler (Cloud Scheduler) calling
+// the cron route with X-Cron-Secret = ANNOUNCEMENT_SYNC_SECRET.
+
+let announcementAutoSyncRunning = false;
+async function maybeAutoSyncAnnouncements(): Promise<void> {
+  if (announcementAutoSyncRunning) return;
+  announcementAutoSyncRunning = true;
+  try {
+    const db = getDb();
+    if (await isAutoSyncDue(db)) await syncAnnouncementsFromSheet(db, { trigger: "auto" });
+  } catch (err) {
+    console.error("Automatic announcement sync failed (non-fatal):", err);
+  } finally {
+    announcementAutoSyncRunning = false;
+  }
+}
+
+app.post("/api/announcements/sync", requireAuth, async (req, res) => {
+  try {
+    const result = await syncAnnouncementsFromSheet(getDb(), { trigger: `manual:${req.user!.email}` });
+    return res.status(result.ok ? 200 : 502).json(result);
+  } catch (err: any) {
+    console.error("Announcement sync failed:", err);
+    return res.status(500).json({ error: `Sync failed: ${err.message}` });
+  }
+});
+
+app.get("/api/announcements/sync-status", requireAuth, async (_req, res) => {
+  try {
+    const { announcements } = createRepositories(getDb());
+    const state = await announcements.getSyncState();
+    return res.json({
+      lastSuccessAt: state?.lastSuccessAt ?? null,
+      lastAttemptAt: state?.lastAttemptAt ?? null,
+      lastSummary: state?.lastSummary ?? null,
+      lastError: state?.lastError ?? null,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to load sync status: ${err.message}` });
+  }
+});
+
+app.post("/api/announcements/sync-cron", async (req, res) => {
+  const secret = process.env.ANNOUNCEMENT_SYNC_SECRET;
+  const provided = req.header("X-Cron-Secret");
+  if (!secret || !provided || provided !== secret) {
+    return res.status(401).json({ error: "Missing or invalid X-Cron-Secret." });
+  }
+  const result = await syncAnnouncementsFromSheet(getDb(), { trigger: "cron" });
+  return res.status(result.ok ? 200 : 502).json(result);
 });
 
 app.post("/api/announcements", requireAuth, async (req, res) => {

@@ -90,6 +90,7 @@ import { AdvisorTagCheckboxes, NOT_APPLICABLE_TAG } from "./components/AdvisorTa
 import { TactIdInput } from "./components/TactIdInput";
 import { DittoWordmark } from "./components/mascots/DittoWordmark";
 import { AnnouncementAckModal } from "./components/AnnouncementAckModal";
+import { ANNOUNCEMENTS_SYNCED_EVENT } from "./components/AnnouncementSyncControl";
 import { SkillDomainPromptModal } from "./components/SkillDomainPromptModal";
 import { MascotWithFallback } from "./components/mascots/MascotWithFallback";
 import { ProductAssistDailyWarning } from "./components/ProductAssistDailyWarning";
@@ -263,6 +264,18 @@ const RAIL_ICON_REST = "#8FADD1"; // every icon at rest — group icons AND page
 const RAIL_GROUP_ACTIVE = "#58A3FF"; // "this group contains the active page"
 const RAIL_PAGE_ACTIVE = "#00D3F3"; // "this is the active page itself" — kept visibly distinct from RAIL_GROUP_ACTIVE
 
+// "Open and sync announcements" link (sent in the QA Google Chat alert):
+//   https://<app>/?syncAnnouncements=1
+// The flag is remembered in sessionStorage because an advisor who is not signed in
+// yet goes through the Google login redirect first, which drops the query string.
+const PENDING_ANNOUNCEMENT_SYNC_KEY = "pendingAnnouncementSync";
+try {
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("syncAnnouncements") === "1") {
+    window.sessionStorage.setItem(PENDING_ANNOUNCEMENT_SYNC_KEY, "1");
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+  }
+} catch (_) { /* storage unavailable — the link still opens the app */ }
+
 export default function App() {
   // Themed confirm()/alert() replacements for window.confirm()/window.alert()
   // (see DialogContext.tsx) — used below by confirmDestructiveAction and
@@ -353,6 +366,7 @@ export default function App() {
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
     team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
+    qaId: row.qaId ?? undefined,
   });
 
   const fetchPageVisibility = async () => {
@@ -1078,6 +1092,32 @@ export default function App() {
       fetchRoles();
       fetchUsersList();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email]);
+
+  // QA-sheet announcement sync: (1) reload everything announcement-related whenever a
+  // sync finishes (Sync button, link, or daily auto-sync noticed by a refetch), and
+  // (2) handle the "?syncAnnouncements=1" link — open the Announcements page and sync.
+  useEffect(() => {
+    if (!currentUser) return;
+    const onSynced = () => { fetchAnnouncements(); fetchUnackedAnnouncements(); };
+    window.addEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.email]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let pending = false;
+    try {
+      pending = window.sessionStorage.getItem(PENDING_ANNOUNCEMENT_SYNC_KEY) === "1";
+      if (pending) window.sessionStorage.removeItem(PENDING_ANNOUNCEMENT_SYNC_KEY);
+    } catch (_) { /* ignore */ }
+    if (!pending) return;
+    setActiveTab("announcement_archive");
+    fetch("/api/announcements/sync", { method: "POST" })
+      .catch((err) => console.error("Announcement sync from link failed:", err))
+      .finally(() => window.dispatchEvent(new Event(ANNOUNCEMENTS_SYNCED_EVENT)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.email]);
 

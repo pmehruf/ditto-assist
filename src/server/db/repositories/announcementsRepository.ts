@@ -5,7 +5,7 @@
 
 import { and, asc, count, desc, eq, gte, ilike, inArray, lte, ne, or } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
-import { announcements, type AnnouncementRow, type NewAnnouncementRow } from "../schema.js";
+import { announcements, announcementSyncState, type AnnouncementRow, type AnnouncementSyncStateRow, type NewAnnouncementRow } from "../schema.js";
 import { containsPattern, type PaginatedResult, buildPaginatedResult, clampPage } from "../../pagination.js";
 
 export interface AnnouncementListOptions {
@@ -57,7 +57,10 @@ export const ANNOUNCEMENT_RETENTION_LIMIT: Record<
   "QA Announcement" | "General Announcement" | "Product Announcement" | "Insurance Operations" | "Insight",
   number
 > = {
-  "QA Announcement": 100,
+  // Raised from 100 (2026-10) when announcements started syncing from the QA Google
+  // Sheet feed: the feed holds the full QA history (200+ rows) and the sync must
+  // never have older sheet-synced rows silently pruned by a later manual publish.
+  "QA Announcement": 2000,
   // Legacy-only (see schema.ts's announcementTypeEnum) — kept here so any
   // unreclassified row still has a retention limit to enforce against.
   "General Announcement": 100,
@@ -153,7 +156,7 @@ export class AnnouncementsRepository {
     if (options.type) conditions.push(eq(announcements.type, options.type));
     if (options.search) {
       const pattern = containsPattern(options.search);
-      conditions.push(or(ilike(announcements.announcement, pattern), ilike(announcements.title, pattern), ilike(announcements.fromTeam, pattern)));
+      conditions.push(or(ilike(announcements.announcement, pattern), ilike(announcements.title, pattern), ilike(announcements.fromTeam, pattern), ilike(announcements.qaId, pattern)));
     }
     if (options.dateFrom) conditions.push(gte(announcements.announcementDate, options.dateFrom));
     if (options.dateTo) conditions.push(lte(announcements.announcementDate, options.dateTo));
@@ -238,5 +241,25 @@ export class AnnouncementsRepository {
     const excess = rows.slice(0, rows.length - limit).map((r) => r.id);
     await this.db.delete(announcements).where(inArray(announcements.id, excess));
     return excess;
+  }
+
+  // ── QA-sheet sync support ──────────────────────────────────────────────
+
+  /** Every announcement row (all types) — the sync matches sheet rows against these. */
+  async listAllForSync(): Promise<AnnouncementRow[]> {
+    return this.db.select().from(announcements).orderBy(asc(announcements.id));
+  }
+
+  async getSyncState(): Promise<AnnouncementSyncStateRow | undefined> {
+    const [row] = await this.db.select().from(announcementSyncState).where(eq(announcementSyncState.id, 1));
+    return row;
+  }
+
+  /** Upserts the single sync-state row (id = 1). */
+  async saveSyncState(patch: Partial<Omit<AnnouncementSyncStateRow, "id">>): Promise<void> {
+    await this.db
+      .insert(announcementSyncState)
+      .values({ id: 1, ...patch })
+      .onConflictDoUpdate({ target: announcementSyncState.id, set: patch });
   }
 }

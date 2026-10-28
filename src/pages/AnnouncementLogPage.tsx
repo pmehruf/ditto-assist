@@ -19,6 +19,7 @@ import { isoDateToDMY } from "../utils/dateFormat";
 import { ratingColorClasses, teamLabel } from "../utils/announcementDisplay";
 import { AnnouncementReadModal } from "../components/AnnouncementReadModal";
 import { downloadCSV } from "../utils/csvExport";
+import { AnnouncementSyncControl, ANNOUNCEMENTS_SYNCED_EVENT } from "../components/AnnouncementSyncControl";
 
 const PAGE_SIZE = 25;
 
@@ -47,6 +48,7 @@ function mapAnnouncementRow(row: any): QAAnnouncement {
     from: row.fromTeam ?? undefined,
     announcementDate: row.announcementDate ?? undefined,
     team: row.team === "Term" ? "Term" : row.team === "Both" ? "Both" : "Health",
+    qaId: row.qaId ?? undefined,
   };
 }
 
@@ -191,6 +193,12 @@ export function AnnouncementLogPage({
   // refetch, decoupled from App.tsx's own one-time mount fetch of the full
   // array so we don't double-fetch on load.
   const [refreshTick, setRefreshTick] = useState(0);
+  // Reload this table after a QA-sheet sync (button, deep link or another tab's sync).
+  useEffect(() => {
+    const onSynced = () => setRefreshTick((t) => t + 1);
+    window.addEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(ANNOUNCEMENTS_SYNCED_EVENT, onSynced);
+  }, []);
 
   useEffect(() => {
     setPage(1);
@@ -253,6 +261,7 @@ export function AnnouncementLogPage({
       const rows = (Array.isArray(body.entries) ? body.entries.map(mapAnnouncementRow) : []) as QAAnnouncement[];
       downloadCSV(
         rows.map((item) => ({
+          ID: item.qaId || "",
           Title: item.title || item.category || "",
           Audience: audienceLabel(item),
           "From Team": teamLabel(item),
@@ -413,6 +422,7 @@ export function AnnouncementLogPage({
                   <span className="text-[10px] font-mono text-content-muted">
                     Newest First
                   </span>
+                  <AnnouncementSyncControl theme={theme} />
                   <ClippedButton
                     onClick={exportCsv}
                     disabled={exporting || total === 0}
@@ -500,6 +510,7 @@ export function AnnouncementLogPage({
                   <table className="w-full border-collapse table-fixed">
                     <colgroup>
                       <col style={{ width: "36px" }} />
+                      <col style={{ width: "92px" }} />
                       <col style={{ width: "17%" }} />
                       <col style={{ width: "8%" }} />
                       <col />
@@ -511,6 +522,7 @@ export function AnnouncementLogPage({
                     <thead>
                       <tr>
                         <th className={thClass}>#</th>
+                        <th className={thClass}>ID</th>
                         <th className={thClass}>Title</th>
                         <th className={thClass}>Severity</th>
                         <th className={thClass}>Announcement</th>
@@ -534,6 +546,9 @@ export function AnnouncementLogPage({
                           >
                             <td className={`${tdClass} font-mono font-bold text-center`}>
                               {(page - 1) * PAGE_SIZE + idx + 1}
+                            </td>
+                            <td className={`${tdClass} font-mono font-bold whitespace-nowrap`}>
+                              {item.qaId || "—"}
                             </td>
 
                             {/* Title — the category/type pill row lives here
