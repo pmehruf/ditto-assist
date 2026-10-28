@@ -159,6 +159,48 @@ export function parseFeed(csvText: string): { items: FeedItem[]; skipped: number
   return { items, skipped };
 }
 
+/** The QA-Feed sheet. Used with the app's stored "Connect Google Sheets" login, because the
+ * company blocks public "Publish to web" links (they only open for signed-in company accounts). */
+export const QA_FEED_SPREADSHEET_ID = process.env.QA_FEED_SPREADSHEET_ID || "1zWMGBUWJHtXiHz_MJAPDN2Xjqoj9PMA4BAsszYPYJew";
+export const QA_FEED_TAB = process.env.QA_FEED_TAB || "QA-Feed";
+
+function csvCell(v: unknown): string {
+  return '"' + String(v ?? "").replace(/"/g, '""') + '"';
+}
+
+/** Reads the feed through the stored Google login (read-only) and returns it in the same CSV shape as the published link. */
+export async function fetchFeedViaSheetsApi(): Promise<string | null> {
+  const { getStoredUserGrantClient } = await import("./qaDashboard/sheetsClient.js");
+  const client = await getStoredUserGrantClient();
+  if (!client) return null;
+  const range = encodeURIComponent(`'${QA_FEED_TAB}'`);
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${QA_FEED_SPREADSHEET_ID}/values/${range}` +
+    `?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+  const res = await client.request<{ values?: unknown[][] }>({ url, timeout: 20_000 });
+  const values = res.data.values || [];
+  if (!values.length) throw new Error("The QA-Feed tab came back empty.");
+  const width = Math.max(...values.map((r) => r.length));
+  return values.map((r) => Array.from({ length: width }, (_, i) => csvCell(r[i])).join(",")).join("\r\n");
+}
+
+/** Tries the stored Google login first, then the published link. */
+export async function fetchFeedAuto(url: string): Promise<string> {
+  let apiError = "";
+  try {
+    const viaApi = await fetchFeedViaSheetsApi();
+    if (viaApi) return viaApi;
+    apiError = "Google Sheets is not connected in this app (Connections page).";
+  } catch (e: any) {
+    apiError = `Google Sheets read failed: ${String(e?.message || e).slice(0, 160)}`;
+  }
+  try {
+    return await fetchFeedCsv(url);
+  } catch (e: any) {
+    throw new Error(`${apiError} Published link: ${e?.message || e}`);
+  }
+}
+
 export async function fetchFeedCsv(url: string): Promise<string> {
   const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`Could not read the QA feed (HTTP ${res.status}).`);
@@ -240,7 +282,7 @@ export async function syncAnnouncementsFromSheet(
   running = true;
   try {
     await announcements.saveSyncState({ lastAttemptAt: now, lastTrigger: opts.trigger });
-    const csv = opts.csvText ?? (await fetchFeedCsv(process.env.QA_FEED_CSV_URL || DEFAULT_QA_FEED_CSV_URL));
+    const csv = opts.csvText ?? (await fetchFeedAuto(process.env.QA_FEED_CSV_URL || DEFAULT_QA_FEED_CSV_URL));
     const { items, skipped } = parseFeed(csv);
     if (items.length === 0) throw new Error("The QA feed has no usable announcements — nothing was changed.");
 
