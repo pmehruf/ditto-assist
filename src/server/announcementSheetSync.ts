@@ -115,6 +115,46 @@ export function toIsoDate(raw: string): string | null {
 
 const REQUIRED_HEADERS = ["ID", "Applies To", "Title", "Announcement Date", "Effective Date", "Severity", "Summary (HTML)"];
 
+/** Prefix the app uses to know a body is formatted HTML (see src/utils/announcementHtml.ts). Without it the body is shown as plain text. */
+export const APP_HTML_SENTINEL = "<!--fmt:html-->";
+/** Bump the number when the layout rules below change: synced rows saved with an older layout are rewritten on the next sync. */
+export const APP_HTML_PREFIX = APP_HTML_SENTINEL + "<!--qa-layout:2-->";
+
+/**
+ * Turns the sheet's summary HTML into the shape the announcement editor itself saves
+ * (divs, bold, named palette colours, the format prefix), so synced announcements look like hand-typed ones.
+ * Layout rules: spacing between paragraphs, a bold opening line, bold "Example:" / "Note:" labels.
+ */
+export function toAppHtml(html: string): string {
+  let h = String(html ?? "").trim();
+  if (h.startsWith(APP_HTML_SENTINEL)) return h;
+  h = h
+    .replace(/<strong>/gi, "<b>").replace(/<\/strong>/gi, "</b>")
+    .replace(/<em>/gi, "<i>").replace(/<\/em>/gi, "</i>")
+    .replace(/<span style="color:\s*#1565c0;?">/gi, '<span data-color="blue" style="color:#0754B7">')
+    .replace(/<span style="color:\s*#d32f2f;?">/gi, '<span data-color="red" style="color:#ef4444">')
+    .replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, "<p>$1</p>");
+  const paras = [...h.matchAll(/<p>([\s\S]*?)<\/p>/gi)].map((m) => m[1]);
+  if (!paras.length) return APP_HTML_PREFIX + `<div>${h}</div>`;
+  const textLen = (x: string) => x.replace(/<[^>]*>/g, "").length;
+  const out: string[] = [];
+  let prevWasHeading = false;
+  paras.forEach((raw, i) => {
+    let p = raw;
+    const isHeading = /^<b><span data-color="blue"/.test(p) || (/^<b>[^<]{1,80}<\/b>$/.test(p) && textLen(p) < 90);
+    const isLabelled = /^(<i>)?(Example|Ex|Eg|Note|Important)\b/i.test(p);
+    const isEffective = p.includes('data-color="red"') && /effective/i.test(p);
+    if (isLabelled) p = p.replace(/^(<i>)?((?:Example|Ex|Eg|Note|Important)\b[\s:\-\u2013]*)/i, (_m, i1, lab) => `${i1 ?? ""}<b>${lab}</b>`);
+    // opening line of a plain-text announcement: bold when it is a short statement
+    if (i === 0 && !/[<]/.test(p) && p.length <= 220 && paras.length > 1) p = `<b>${p}</b>`;
+    const needGap = i > 0 && !prevWasHeading && (i === 1 || isHeading || isLabelled || isEffective || textLen(paras[i - 1]) > 100);
+    if (needGap) out.push("<div><br></div>");
+    out.push(`<div>${p}</div>`);
+    prevWasHeading = isHeading;
+  });
+  return APP_HTML_PREFIX + out.join("");
+}
+
 export function parseFeed(csvText: string): { items: FeedItem[]; skipped: number } {
   const rows = parseCsv(csvText);
   if (rows.length < 1) throw new Error("The QA feed is empty.");
@@ -300,9 +340,10 @@ export async function syncAnnouncementsFromSheet(
     for (const item of ordered) {
       const existing = byQaId.get(item.qaId);
       if (existing) {
-        if (existing.sourceHash === item.hash) { result.unchanged++; continue; }
+        const needsReformat = existing.addedBy === SYNC_ADDED_BY && !existing.announcement.startsWith(APP_HTML_PREFIX);
+        if (existing.sourceHash === item.hash && !needsReformat) { result.unchanged++; continue; }
         await announcements.update(existing.id, {
-          announcement: item.html, category: item.title, title: item.title, rating: item.rating, team: item.team,
+          announcement: toAppHtml(item.html), category: item.title, title: item.title, rating: item.rating, team: item.team,
           announcementDate: item.announcementDate, effectiveDate: item.effectiveDate, sourceHash: item.hash,
         });
         result.updated++;
@@ -322,7 +363,7 @@ export async function syncAnnouncementsFromSheet(
 
       const historic = isFirstEverSync || daysBetween(item.announcementDate, now) > HISTORIC_AFTER_DAYS;
       const row: Omit<NewAnnouncementRow, "id"> = {
-        announcement: item.html,
+        announcement: toAppHtml(item.html),
         category: item.title,
         title: item.title,
         addedBy: SYNC_ADDED_BY,

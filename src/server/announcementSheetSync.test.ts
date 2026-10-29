@@ -138,3 +138,30 @@ describe("syncAnnouncementsFromSheet", () => {
     expect(await isAutoSyncDue(db, new Date(now.getTime() + 25 * 3600_000))).toBe(true);
   });
 });
+
+describe("toAppHtml", () => {
+  it("adds the format prefix, uses divs/bold and the app's named colours", async () => {
+    const { toAppHtml, APP_HTML_PREFIX } = await import("./announcementSheetSync");
+    const out = toAppHtml(
+      '<p>Intro line</p><p><strong><span style="color:#1565c0">Chats/Calls:</span></strong></p><p>Do this <strong><span style="color:#d32f2f">Effective Date:</span></strong> <strong>29 October 2026</strong></p><blockquote style="margin:4px 0"><em>Buffer time</em></blockquote>'
+    );
+    expect(out.startsWith("<!--fmt:html-->")).toBe(true);
+    expect(out.startsWith(APP_HTML_PREFIX)).toBe(true);
+    expect(out).not.toContain("<p>");
+    expect(out).toContain('<div><br></div><div><b><span data-color="blue" style="color:#0754B7">Chats/Calls:</span></b></div>');
+    expect(out).toContain('data-color="red"');
+    expect(out).toContain("<div><i>Buffer time</i></div>");
+    expect(toAppHtml(out)).toBe(out);
+  });
+});
+
+describe("toAppHtml layout", () => {
+  it("bolds the opening line, spaces paragraphs, bolds Example/Note labels", async () => {
+    const { toAppHtml } = await import("./announcementSheetSync");
+    const long = "Not recommending plans that we do not sell though mentioned in the disease-wise tool, and not explaining why we do not sell that particular plan. Else it would be rated 3";
+    const out = toAppHtml(`<p>Overpromising about applicability of the plan.</p><p>${long}</p><p>Example: Star Cancer Care</p><blockquote><em>Note: only when a new PED is disclosed.</em></blockquote>`);
+    expect(out).toContain("<div><b>Overpromising about applicability of the plan.</b></div><div><br></div><div>Not recommending");
+    expect(out).toContain("<div><br></div><div><b>Example: </b>Star Cancer Care</div>");
+    expect(out).toContain("<div><i><b>Note: </b>only when a new PED is disclosed.</i></div>");
+  });
+});
