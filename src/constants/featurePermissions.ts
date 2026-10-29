@@ -201,6 +201,20 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     zone: "advisor"
   },
   {
+    // QIP EXCEPTION REQUEST — builds the Word (.docx) QIP exception request.
+    // Same posture as team_tracker above: Viewer for every tier here, the
+    // real gate is the QA Dashboard Admin/Guide/Mentor role (sidebar link via
+    // App.tsx's qaTeamTrackerAllowed probe; /api/qip-exception/draft checks
+    // the role again server-side).
+    id: "qip_exception",
+    name: "QIP Exception Request",
+    description: "Helps you create a QIP exception request document for your advisors, based on the details you enter",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer",
+    zone: "advisor"
+  },
+  {
     id: "smoke_test",
     name: "Smoke Test",
     description: "Run the deterministic mapping engine against a curated list of common PEDs, per plan, to catch classification regressions",

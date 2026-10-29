@@ -63,6 +63,8 @@ export interface QAAnnouncement {
    * set server-side (column defaults to "Health"); optional here only so
    * existing fixtures/constructors elsewhere in the app don't need updating. */
   team?: "Health" | "Term" | "Both";
+  /** Stable QA ID (e.g. QAH261009) when the announcement came from the QA Google Sheet feed. */
+  qaId?: string;
 }
 
 /** External link (SOP, QA Dashboard, etc.) surfaced in the Workspace Controls
