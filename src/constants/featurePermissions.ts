@@ -72,7 +72,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // generalAccess: "None"). Viewer-only on purpose: there is nothing to
     // edit on this page for any tier.
     id: "advisory_zone",
-    name: "Plan Reference",
+    name: "Payment Journey",
     description: "Read-only reference of every plan's payment journey questions and specific illness list",
     defaultTier: "General",
     generalAccess: "Viewer",
@@ -513,6 +513,34 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     generalAccess: "None",
     adminAccess: "None",
     zone: "admin"
+  },
+  {
+    // PRODUCT PLAYBOOK MIRROR — CONTROL TOOLS (2026-10): connecting the
+    // read-only Google access, fetching, verifying, rejecting and rolling back
+    // snapshots, accepting structure changes, and the admin review screen.
+    // Platform Admin (and Developer) only for now (decision 2026-10-30):
+    // general and Admin tiers have no access by default. Enforced server-side
+    // through requireFeatureAccess on every control route.
+    id: "product_playbook_admin",
+    name: "Playbook Sync",
+    description: "Keep the Product Playbook page up to date with the Google Sheet, or bring back an earlier version",
+    defaultTier: "Platform Admin",
+    generalAccess: "None",
+    adminAccess: "None",
+    zone: "admin"
+  },
+  {
+    // PRODUCT PLAYBOOK — the advisor tool (2026-10): read-only view of the
+    // Product Playbook sheet's visible content (latest verified snapshot), like
+    // any other general advisor tool. Every tier can view it; there is nothing
+    // to edit, so Viewer is the whole feature.
+    id: "product_playbook",
+    name: "Product Playbook",
+    description: "Read-only view of the Product Playbook: compare plans by feature and see recommendation specifics",
+    defaultTier: "General",
+    generalAccess: "Viewer",
+    adminAccess: "Viewer",
+    zone: "advisor"
   }
 ];
 

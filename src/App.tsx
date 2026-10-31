@@ -51,6 +51,7 @@ import {
   Terminal,
   Settings2,
   Waypoints,
+  Milestone,
   Users2,
   Check,
   Rocket,
@@ -151,6 +152,12 @@ const OwnerControlsPage = lazy(() =>
 );
 const ConnectionsPage = lazy(() =>
   import("./pages/ConnectionsPage").then((m) => ({ default: m.ConnectionsPage }))
+);
+const PlaybookMirrorAdminPage = lazy(() =>
+  import("./pages/PlaybookMirrorAdminPage").then((m) => ({ default: m.PlaybookMirrorAdminPage }))
+);
+const PlaybookPage = lazy(() =>
+  import("./pages/PlaybookPage").then((m) => ({ default: m.PlaybookPage }))
 );
 const ProductAssistQuotaPage = lazy(() =>
   import("./pages/ProductAssistQuotaPage").then((m) => ({ default: m.ProductAssistQuotaPage }))
@@ -281,7 +288,7 @@ export default function App() {
   // (see DialogContext.tsx) — used below by confirmDestructiveAction and
   // handleDeleteResource.
   const { confirm, alertUser } = useDialog();
-  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "qip_exception" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota">("lookup");
+  const [activeTab, setActiveTab] = useState<"lookup" | "audit" | "profile_access" | "master_advisors" | "active_questions" | "my_activity" | "qa_announcement_log" | "flagged_responses" | "plan_scope" | "ped_suggestions" | "smoke_test" | "advisory_zone" | "announcement_archive" | "coverage_projection" | "specific_illness_check" | "product_assist" | "porting_assist" | "qa_dashboard" | "team_tracker" | "qip_exception" | "owner_controls" | "knowledge_base" | "connections" | "product_assist_quota" | "product_playbook_admin" | "product_playbook">("lookup");
   // NOTE (audit fix, see Production_Readiness_Audit.md Finding 3): this used
   // to be a hardcoded 4-item seed, persisted to (and re-read from) this
   // browser's own localStorage — so an Admin publishing a new announcement
@@ -953,11 +960,11 @@ export default function App() {
   // Management always lands with that section visibly open.
   type SidebarSectionKey = "advisorWorkspace" | "quality" | "reference" | "appOpsControls" | "administration" | "developer";
   const SIDEBAR_SECTION_TABS: Record<SidebarSectionKey, typeof activeTab[]> = {
-    advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist"],
+    advisorWorkspace: ["lookup", "coverage_projection", "specific_illness_check", "product_assist", "product_playbook"],
     quality: ["qa_dashboard", "team_tracker", "qip_exception"],
     reference: ["advisory_zone", "announcement_archive", "my_activity"],
     appOpsControls: ["qa_announcement_log", "ped_suggestions", "knowledge_base", "plan_scope"],
-    administration: ["profile_access", "audit", "flagged_responses"],
+    administration: ["profile_access", "audit", "flagged_responses", "product_playbook_admin"],
     developer: ["owner_controls", "connections", "smoke_test"],
   };
   const [openSections, setOpenSections] = useState<Record<SidebarSectionKey, boolean>>({
@@ -3370,6 +3377,8 @@ export default function App() {
             navPage("porting_assist", "Porting Assist", Route, "Viewer"),
             navPage("coverage_projection", "Cover Projection Assist", FileSpreadsheet, "Viewer"),
             navPage("specific_illness_check", "Specific Illness Assist", ClipboardCheck, "Viewer"),
+            // Product Playbook (2026-10) — read-only copy of the Playbook sheet; all tiers (product_playbook).
+            navPage("product_playbook", "Product Playbook", BookOpen, "Viewer"),
           ],
         },
         {
@@ -3387,7 +3396,7 @@ export default function App() {
           label: "Library",
           GroupIcon: Library,
           pages: [
-            navPage("advisory_zone", "Plan Reference", BookOpen, "Viewer"),
+            navPage("advisory_zone", "Payment Journey", Milestone, "Viewer"),
             navPage("announcement_archive", "Announcements", Newspaper, "Viewer"),
             navPage("my_activity", "My Activity", History, "Viewer"),
           ],
@@ -3446,6 +3455,8 @@ export default function App() {
             // gate, so there's no reason they can't sit under Administration.
             navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
             navPage("connections", "Connections", Link2, "Viewer"),
+            // Product Playbook mirror admin review (2026-10, Phase 1 Step 6) — admin-only; server enforces product_playbook_admin.
+            navPage("product_playbook_admin", "Playbook Sync", RefreshCw, "Viewer"),
           ],
         },
       ],
@@ -4914,6 +4925,21 @@ export default function App() {
               Advisor Zone visibility as Plan Reference; see
               featurePermissions.ts). Gated by the app's own login like every
               other tab here — no separate auth of its own. */}
+          {activeTab === "product_playbook" && hasAccess("product_playbook", "Viewer") && (
+            <motion.div
+              key="product_playbook"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+            >
+              <ErrorBoundary theme={theme} label="Product Playbook">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <PlaybookPage theme={theme} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
+
           {activeTab === "coverage_projection" && (
             <motion.div
               key="coverage_projection"
@@ -5112,6 +5138,20 @@ export default function App() {
             </motion.div>
           )}
 
+          {activeTab === "product_playbook_admin" && hasAccess("product_playbook_admin", "Viewer") && (
+            <motion.div
+              key="product_playbook_admin"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+            >
+              <ErrorBoundary theme={theme} label="Playbook Sync">
+              <Suspense fallback={<TabLoadingFallback theme={theme} />}>
+              <PlaybookMirrorAdminPage theme={theme} hasAccess={hasAccess} />
+              </Suspense>
+              </ErrorBoundary>
+            </motion.div>
+          )}
           {/* AI USAGE & LIMITS — Product Assist Credit & Usage Management
               (2026-08). Shipped default is Developer/Platform Admin only
               (see "product_assist_quota" in featurePermissions.ts) — no
