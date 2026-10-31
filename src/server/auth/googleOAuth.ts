@@ -562,3 +562,71 @@ export async function exchangeCodeForProductAssistLogExportGrant(code: string): 
 
   return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token };
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// PRODUCT PLAYBOOK MIRROR — dedicated READ-ONLY grant (2026-10, Phase 1
+// Step 3a). Separate from the Product Playbook grant above (which stays
+// exactly as it is): that one uses include_granted_scopes: true, so Google
+// merges in every scope the same person granted to this app elsewhere — in
+// practice it carries full `spreadsheets` write access (see
+// docs/playbook_mirror_step2/STEP2_MIGRATION_REVIEW.md §1). This grant asks
+// for read-only Sheets access only and does NOT merge earlier grants
+// (include_granted_scopes: false). The scopes Google actually granted are
+// then checked by src/server/playbookMirror/mirrorGrant.ts and by a database
+// CHECK constraint on playbook_mirror_connection; a broader grant is refused.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const PLAYBOOK_MIRROR_SHEETS_READONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
+
+export function getPlaybookMirrorAuthUrl(state: string, loginHint?: string): string {
+  const client = getOAuthClient();
+  return client.generateAuthUrl({
+    access_type: "offline",
+    scope: ["openid", "email", PLAYBOOK_MIRROR_SHEETS_READONLY_SCOPE],
+    hd: ALLOWED_DOMAIN,
+    prompt: "consent",
+    include_granted_scopes: false,
+    state,
+    login_hint: loginHint,
+  });
+}
+
+export interface PlaybookMirrorGrant {
+  email: string;
+  refreshToken: string;
+  /** Short-lived access token from the same exchange — used once, right away, to ask Google which scopes were actually granted. Never stored. */
+  accessToken: string;
+}
+
+/** Exchanges the mirror's authorization code. Same identity checks as the
+ * other Sheets grants (signature-verified ID token, verified email,
+ * @joinditto.in domain). Scope checking happens in mirrorGrant.ts. */
+export async function exchangeCodeForPlaybookMirrorGrant(code: string): Promise<PlaybookMirrorGrant> {
+  const client = getOAuthClient();
+  const { tokens } = await client.getToken(code);
+
+  if (!tokens.refresh_token) {
+    throw new Error(
+      "Google did not return a refresh token for this connection. Revoke this app's access at " +
+        "https://myaccount.google.com/permissions and try connecting again."
+    );
+  }
+  if (!tokens.access_token) {
+    throw new Error("Google did not return an access token for this authorization code.");
+  }
+  if (!tokens.id_token) {
+    throw new Error("Google did not return an id_token for this authorization code.");
+  }
+
+  const ticket = await client.verifyIdToken({ idToken: tokens.id_token, audience: requireEnv("GOOGLE_CLIENT_ID") });
+  const payload = ticket.getPayload();
+  if (!payload || !payload.email) throw new Error("Could not read an identity from the Google ID token.");
+  if (!payload.email_verified) throw new Error("Google account email is not verified.");
+  const emailDomain = payload.email.split("@")[1]?.toLowerCase();
+  const hdClaim = payload.hd?.toLowerCase();
+  if (emailDomain !== ALLOWED_DOMAIN || hdClaim !== ALLOWED_DOMAIN) {
+    throw new Error(`Access restricted to @${ALLOWED_DOMAIN} Google Workspace accounts.`);
+  }
+
+  return { email: payload.email.toLowerCase(), refreshToken: tokens.refresh_token, accessToken: tokens.access_token };
+}

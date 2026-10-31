@@ -3,6 +3,12 @@
 
 ---
 
+## ⚠️ Folder Restriction Rule (applies to every task, human or AI)
+
+**All read, write, create, modify, rename, move and delete operations are limited to the assigned folder: `D:\Ditto Assist WebApp`. Never create folders or files directly on the D: drive root or anywhere outside that folder. Everything (code, docs, scratch files, exports, temporary files, reports) must live inside `D:\Ditto Assist WebApp`.**
+
+---
+
 ## Quick Start (read this before changing any mapping)
 
 Most changes are small. You do **not** need to read all 17 parts first. Do this:

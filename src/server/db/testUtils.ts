@@ -121,5 +121,24 @@ export async function createTestDb(): Promise<TestDb> {
     INSERT INTO departments (name, description, created_by) VALUES
       ('Advisory', 'Advisors who handle customer-facing declaration and product questions.', 'system (migration 0049)')
   `);
+  // Migration 0090 (Product Playbook mirror) adds database-level guards
+  // (functions + triggers) and two seeded playbook_source_issues rows that
+  // drizzle-kit can't express, so the generated baseline above doesn't have
+  // them. Run exactly those statements from the real migration file, so the
+  // tests exercise the same guards as staging/production.
+  for (const statement of readPlaybookMirrorExtrasSql()) {
+    await db.execute(sql.raw(statement));
+  }
   return db;
+}
+
+/** The statements of drizzle/0090_playbook_mirror.sql that the generated
+ * baseline can't contain: CREATE FUNCTION, CREATE TRIGGER and the seed INSERT. */
+function readPlaybookMirrorExtrasSql(): string[] {
+  const file = path.join(__dirname, "../../../drizzle/0090_playbook_mirror.sql");
+  return fs
+    .readFileSync(file, "utf8")
+    .split("--> statement-breakpoint")
+    .map((s) => s.replace(/^(\s*--[^\n]*\n)+/, "").trim())
+    .filter((s) => /^(CREATE FUNCTION|CREATE TRIGGER|INSERT INTO "playbook_source_issues")/.test(s));
 }
