@@ -3456,7 +3456,7 @@ export default function App() {
             navPage("product_assist_quota", "AI Usage & Limits", CreditCard, "Viewer"),
             navPage("connections", "Connections", Link2, "Viewer"),
             // Product Playbook mirror admin review (2026-10, Phase 1 Step 6) — admin-only; server enforces product_playbook_admin.
-            navPage("product_playbook_admin", "Playbook Mirror", BookOpen, "Viewer"),
+            navPage("product_playbook_admin", "Playbook Sync", RefreshCw, "Viewer"),
           ],
         },
       ],
@@ -5145,7 +5145,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
             >
-              <ErrorBoundary theme={theme} label="Playbook Mirror">
+              <ErrorBoundary theme={theme} label="Playbook Sync">
               <Suspense fallback={<TabLoadingFallback theme={theme} />}>
               <PlaybookMirrorAdminPage theme={theme} hasAccess={hasAccess} />
               </Suspense>

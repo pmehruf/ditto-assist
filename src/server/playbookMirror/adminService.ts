@@ -14,17 +14,21 @@ import { playbookMirrorConnection, playbookPublished, playbookSnapshots, playboo
 import { createRepositories } from "../db/repositories/index.js";
 import { MIRROR_TABS } from "./config.js";
 import { CHECK_PLAYBOOK_DIRECTLY, readCells, visiblePlans, type PublishedContext } from "./readService.js";
-import { displayableCells, hiddenOf } from "./visibility.js";
+import { displayableCells } from "./visibility.js";
 
 export const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // D9
 
+/**
+ * Summary for the admin "Playbook Sync" page: only what that page shows.
+ * Hidden sheet content is never included (layout problems already withhold it).
+ */
 export async function overview(db: AnyDb, now: Date = new Date()) {
   const repos = createRepositories(db);
   const [connection] = await db
-    .select({ email: playbookMirrorConnection.connectedEmail, scopes: playbookMirrorConnection.grantedScopes, connectedAt: playbookMirrorConnection.connectedAt, connectedBy: playbookMirrorConnection.connectedBy })
+    .select({ email: playbookMirrorConnection.connectedEmail })
     .from(playbookMirrorConnection)
     .where(eq(playbookMirrorConnection.domain, "Health"));
-  const [syncState, snapshots, structure, issues, [published]] = await Promise.all([
+  const [syncState, snapshots, issues, [published]] = await Promise.all([
     repos.playbookMirrorSnapshots.getSyncState("Health"),
     db
       .select({
@@ -32,62 +36,41 @@ export async function overview(db: AnyDb, now: Date = new Date()) {
         fetchedAt: playbookSnapshots.fetchedAt,
         trigger: playbookSnapshots.trigger,
         status: playbookSnapshots.status,
-        parserVersion: playbookSnapshots.parserVersion,
-        rawSha256: playbookSnapshots.rawSha256,
         rejectedReason: playbookSnapshots.rejectedReason,
-        publishedAt: playbookSnapshots.publishedAt,
-        publishedBy: playbookSnapshots.publishedBy,
         structureReport: playbookSnapshots.structureReport,
-        reconciliationReport: playbookSnapshots.reconciliationReport,
       })
       .from(playbookSnapshots)
       .where(eq(playbookSnapshots.domain, "Health"))
       .orderBy(desc(playbookSnapshots.fetchedAt), desc(playbookSnapshots.id))
-      .limit(30),
-    repos.playbookMirrorStructure.accepted("Health"),
-    db.select().from(playbookSourceIssues).where(eq(playbookSourceIssues.domain, "Health")).orderBy(playbookSourceIssues.id),
+      .limit(10),
+    db
+      .select({ id: playbookSourceIssues.id, tabTitle: playbookSourceIssues.tabTitle, a1: playbookSourceIssues.a1, description: playbookSourceIssues.description, showWarning: playbookSourceIssues.showWarning })
+      .from(playbookSourceIssues)
+      .where(eq(playbookSourceIssues.domain, "Health"))
+      .orderBy(playbookSourceIssues.id),
     db.select().from(playbookPublished).where(eq(playbookPublished.domain, "Health")),
   ]);
-
-  const warnings: { level: "error" | "warning" | "info"; text: string }[] = [];
-  if (!connection) warnings.push({ level: "error", text: "The read-only Google access is not connected." });
-  if (syncState?.lastError) warnings.push({ level: "error", text: syncState.lastError });
-  const lastSuccess = syncState?.lastSuccessAt ? new Date(syncState.lastSuccessAt) : null;
-  if (!lastSuccess) warnings.push({ level: "warning", text: "No successful fetch yet." });
-  else if (now.getTime() - lastSuccess.getTime() > STALE_AFTER_MS) warnings.push({ level: "warning", text: `Last successful fetch was more than 24 hours ago (${lastSuccess.toISOString()}).` });
-  if (snapshots[0]?.status === "rejected") warnings.push({ level: "error", text: `The latest snapshot (#${snapshots[0].id}) was rejected: ${snapshots[0].rejectedReason}` });
-  for (const i of issues) if (i.showWarning) warnings.push({ level: "info", text: `Not mirrored: ${i.a1} — ${i.description}` });
-  const hiddenPlanKeys = new Set<string>();
-  const lastPassed = snapshots.find((s) => (s.structureReport as { state?: string } | null)?.state === "passed");
-  if (lastPassed) {
-    const mainTab = (await repos.playbookMirrorSnapshots.tabs(lastPassed.id)).find((t) => t.title === MIRROR_TABS[0].title);
-    const h = hiddenOf(mainTab);
-    const cols = (lastPassed.structureReport as { planColumns?: Record<string, string> }).planColumns ?? {};
-    for (const [key, col] of Object.entries(cols)) if (h.isHiddenA1(`${col}1`)) hiddenPlanKeys.add(key);
-  }
-  if (!published) warnings.push({ level: "warning", text: "No verified snapshot is published yet, so users see nothing." });
+  const live = published ? await repos.playbookMirrorSnapshots.get(published.snapshotId) : null;
+  const lastCheckedAt = syncState?.lastSuccessAt ?? null;
 
   return {
-    connection: connection ? { email: connection.email, scopes: connection.scopes, connectedAt: connection.connectedAt, connectedBy: connection.connectedBy } : null,
-    syncState: syncState ?? null,
-    published: published ? { snapshotId: published.snapshotId, updatedBy: published.updatedBy, updatedAt: published.updatedAt } : null,
-    snapshots: snapshots.map((s) => {
-      const st = s.structureReport as { state?: string; problems?: string[]; needsReview?: string[] } | null;
-      const rc = s.reconciliationReport as { ok?: boolean; differenceCount?: number } | null;
+    connectedEmail: connection?.email ?? null,
+    lastCheckedAt,
+    stale: lastCheckedAt ? now.getTime() - new Date(lastCheckedAt).getTime() > STALE_AFTER_MS : null,
+    live: published ? { snapshotId: published.snapshotId, sheetAsOf: live?.fetchedAt ?? null, since: published.updatedAt } : null,
+    updates: snapshots.map((s) => {
+      const st = s.structureReport as { state?: string; problems?: string[] } | null;
       return {
-        id: s.id, fetchedAt: s.fetchedAt, trigger: s.trigger, status: s.status, parserVersion: s.parserVersion, rawSha256: s.rawSha256,
-        rejectedReason: s.rejectedReason, publishedAt: s.publishedAt, publishedBy: s.publishedBy,
-        structure: st ? { state: st.state ?? null, problems: st.problems ?? [], needsReview: st.needsReview ?? [] } : null,
-        reconciliation: rc ? { ok: !!rc.ok, differenceCount: rc.differenceCount ?? null } : null,
+        id: s.id,
+        at: s.fetchedAt,
+        trigger: s.trigger,
+        status: s.status,
+        layoutChanged: st?.state === "failed",
+        layoutChanges: st?.state === "failed" ? st.problems ?? [] : [],
+        reason: s.rejectedReason,
       };
     }),
-    // A plan in a column hidden in the sheet: its header text is hidden content, so it is not sent for display.
-    plans: structure.plans.map((p) =>
-      hiddenPlanKeys.has(p.planKey) ? { ...p, expectedHeader: null, displayName: null, hiddenInSource: true } : { ...p, hiddenInSource: false }
-    ),
-    featureCount: structure.features.length,
-    issues,
-    warnings,
+    notes: issues.filter((i) => i.showWarning),
   };
 }
 

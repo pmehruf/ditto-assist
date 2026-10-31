@@ -55,7 +55,7 @@ describe("manual publishing, roll back, reject, status confirmation, read API (s
   it("without the publish step a verified snapshot stays unpublished; unverified ones can't be published", async () => {
     const a = await fetchVariant();
     expect(a.status).toBe("verified");
-    expect((await overview(db)).published).toBeNull();
+    expect((await overview(db)).live).toBeNull();
     const fetchedOnly = await syncPlaybookMirror({ tabs: SYNTHETIC_TABS, snapshots, trigger: "no-structure", getClient: async () => client(syntheticGrid(), syntheticScan({ tab: 0, row: 3, col: 1 })) });
     const refused = await publishSnapshot(db, fetchedOnly.snapshotId!, "admin@joinditto.in");
     expect(refused).toMatchObject({ ok: false });
@@ -97,7 +97,7 @@ describe("manual publishing, roll back, reject, status confirmation, read API (s
       publish: (id) => publishSnapshot(db, id, "auto (verified)"),
     });
     expect(r).toMatchObject({ ok: true, status: "published", published: true });
-    expect((await overview(db)).published?.snapshotId).toBe(r.snapshotId);
+    expect((await overview(db)).live?.snapshotId).toBe(r.snapshotId);
   });
 
   it("read API: nothing before publishing; then every plan visible in the sheet, exact cells, no hidden rows/columns", async () => {

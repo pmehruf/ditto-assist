@@ -130,10 +130,8 @@ describe("end to end with a hidden PLAN column (synthetic, local database)", () 
     expect(JSON.stringify(gridView)).not.toContain("Plan Beta");
     expect(JSON.stringify(gridView)).not.toContain("Header note");
 
-    // Overview plans list: the hidden plan keeps its key, but its header isn't sent.
+    // The admin summary never carries hidden content (e.g. the hidden plan's header).
     const o = await overview(db);
-    const hiddenPlan = o.plans.find((x) => x.planKey === "plan_E")!;
-    expect(hiddenPlan).toMatchObject({ expectedHeader: null, displayName: null, hiddenInSource: true });
     expect(JSON.stringify(o)).not.toContain("Plan Beta");
 
     // Proposal view withholds it too.

@@ -4,74 +4,78 @@
  */
 
 /**
- * PRODUCT PLAYBOOK MIRROR — admin review screen (Phase 1, Step 6).
- * Admin-only (product_playbook_admin; every action is ALSO checked on the
- * server). Shows sync health and warnings, snapshots and their checks, a
- * faithful grid view of a snapshot, difference reports, plan statuses
- * (provisional until the product team confirms them), source issues, and a
- * preview of exactly what the read API would give advisors right now.
- * Publishing is manual and needs the snapshot number typed as confirmation.
+ * PLAYBOOK SYNC (admin) — keeps the advisor "Product Playbook" page in step
+ * with the Google Sheet. Platform Admins only (product_playbook_admin; every
+ * action is also checked on the server). The page answers three questions in
+ * plain words: what advisors see now, whether anything needs attention, and
+ * what happened in recent updates. Updates that pass the automatic checks go
+ * live on their own; an earlier version can be brought back if needed.
  */
 
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangle, BookOpen, CheckCircle2, Eye, FileDiff, Info, RefreshCw, RotateCcw, ShieldCheck, Upload, XCircle } from "lucide-react";
-import { PlaybookGrid as GridView, type PlaybookGridData as Grid } from "../components/PlaybookGrid";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Info, Link2, RefreshCw, RotateCcw } from "lucide-react";
 
 interface Props {
   theme: "light" | "dark";
   hasAccess: (featureId: string, actionType: "Viewer" | "Editor") => boolean;
 }
 
-interface SnapshotRow {
-  id: number; fetchedAt: string; trigger: string; status: string; parserVersion: string; rawSha256: string;
-  rejectedReason: string | null; publishedAt: string | null; publishedBy: string | null;
-  structure: { state: string | null; problems: string[]; needsReview: string[] } | null;
-  reconciliation: { ok: boolean; differenceCount: number | null } | null;
+interface Update {
+  id: number;
+  at: string;
+  trigger: string;
+  status: string;
+  layoutChanged: boolean;
+  layoutChanges: string[];
+  reason: string | null;
 }
-interface Plan {
-  planKey: string; insurer: string; displayName: string | null; expectedHeader: string | null; status: string;
-  statusConfirmedBy: string | null; statusConfirmedAt: string | null; showToAdvisors: boolean; sortOrder: number;
-  /** True when the plan's column is hidden in the source sheet: its header is not sent or shown. */
-  hiddenInSource: boolean;
+interface Summary {
+  connectedEmail: string | null;
+  lastCheckedAt: string | null;
+  stale: boolean | null;
+  live: { snapshotId: number; sheetAsOf: string | null; since: string } | null;
+  updates: Update[];
+  notes: { id: number; tabTitle: string; a1: string; description: string }[];
 }
-interface Overview {
-  connection: { email: string; scopes: string[]; connectedAt: string; connectedBy: string } | null;
-  syncState: { lastAttemptAt: string | null; lastSuccessAt: string | null; lastTrigger: string | null; lastError: string | null; lastSnapshotId: number | null } | null;
-  published: { snapshotId: number; updatedBy: string; updatedAt: string } | null;
-  snapshots: SnapshotRow[];
-  plans: Plan[];
-  featureCount: number;
-  issues: { id: number; issueKey: string; kind: string; status: string; tabTitle: string; a1: string; description: string; showWarning: boolean }[];
-  warnings: { level: "error" | "warning" | "info"; text: string }[];
+interface FetchResult {
+  ok: boolean;
+  skipped?: boolean;
+  status?: string;
+  published?: boolean;
+  error?: string;
 }
 
-const fmt = (d: string | null | undefined) => (d ? new Date(d).toLocaleString() : "—");
+// "9:28 PM, 30 Oct 2026"
+const when = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return `${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}, ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+};
+// "manual:name@x.in (any note)" → "name@x.in"; anything else was automatic.
+const who = (trigger: string) => (trigger.startsWith("manual:") ? trigger.slice("manual:".length).trim().split(/\s/)[0] : "Automatic");
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init ? { ...init, headers: { "Content-Type": "application/json", ...(init.headers ?? {}) } } : undefined);
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Request failed (HTTP ${res.status}).`);
+  if (!res.ok) throw new Error(body.error || `Something went wrong (code ${res.status}).`);
   return body as T;
 }
 
-const statusTone: Record<string, string> = {
-  verified: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-  published: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
-  fetched: "bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300",
-  rejected: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-  superseded: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-};
-
-function Pill({ text, tone }: { text: string; tone?: string }) {
-  return <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${tone ?? "bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300"}`}>{text}</span>;
+/** What happened to an update, in plain words. */
+function outcome(u: Update, liveId: number | null): { label: string; tone: "good" | "muted" | "warn" } {
+  if (u.id === liveId) return { label: "Live now", tone: "good" };
+  if (u.status === "published" || u.status === "superseded") return { label: "Shown earlier", tone: "muted" };
+  if (u.status === "verified") return { label: "Checked, not shown", tone: "muted" };
+  if (u.status === "rejected" && u.reason?.startsWith("Rejected by")) return { label: "Withdrawn", tone: "muted" };
+  if (u.layoutChanged) return { label: "Held back: sheet layout changed", tone: "warn" };
+  if (u.status === "rejected") return { label: "Held back: didn't match the sheet", tone: "warn" };
+  return { label: "Not shown", tone: "muted" };
 }
 
-function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
+function Card({ title, dark, children }: { title: string; dark: boolean; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white/70 dark:bg-stone-900/50 p-4 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-bold text-content">{title}</h2>
-        {right}
-      </div>
+    <section className={`rounded-xl border p-4 space-y-3 ${dark ? "bg-[#102236] border-[#1e3e5c]" : "bg-white border-[#D3DAE5]"}`}>
+      <h2 className={`text-sm font-bold ${dark ? "text-[#F5F7FA]" : "text-[#1E293B]"}`}>{title}</h2>
       {children}
     </section>
   );
@@ -80,17 +84,15 @@ function Section({ title, children, right }: { title: string; children: ReactNod
 export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
   const dark = theme === "dark";
   const canEdit = hasAccess("product_playbook_admin", "Editor");
-  const [data, setData] = useState<Overview | null>(null);
+  const [data, setData] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [grid, setGrid] = useState<Grid | null>(null);
-  const [diff, setDiff] = useState<any | null>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [message, setMessage] = useState<{ tone: "good" | "warn"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
+      setData(await api<Summary>("/api/playbook-mirror/overview"));
       setError(null);
-      setData(await api<Overview>("/api/playbook-mirror/overview"));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -99,173 +101,188 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
 
-  const act = async (label: string, fn: () => Promise<unknown>) => {
-    setBusy(label);
+  const run = async (fn: () => Promise<{ tone: "good" | "warn"; text: string }>) => {
+    setBusy(true);
     setMessage(null);
     try {
-      const r = await fn();
-      setMessage(`${label}: done.${(r as { warnings?: string[] })?.warnings?.length ? " Warnings: " + (r as { warnings: string[] }).warnings.join(" ") : ""}`);
-      await load();
+      setMessage(await fn());
     } catch (e) {
-      setMessage(`${label} failed: ${e instanceof Error ? e.message : String(e)}`);
+      setMessage({ tone: "warn", text: e instanceof Error ? e.message : String(e) });
     } finally {
-      setBusy(null);
+      setBusy(false);
+      await load();
     }
   };
 
-  const openGrid = async (id: number, gid = 0) => { setDiff(null); setGrid(await api<Grid>(`/api/playbook-mirror/snapshots/${id}/grid?gid=${gid}`)); };
-  const openDiff = async (id: number) => { setGrid(null); setDiff(await api(`/api/playbook-mirror/snapshots/${id}/diff`)); };
+  const updateNow = () =>
+    run(async () => {
+      const r = await api<FetchResult>("/api/playbook-mirror/fetch", { method: "POST" }).catch((e: Error) => ({ ok: false, error: e.message }) as FetchResult);
+      if (!r.ok) return { tone: "warn", text: `Couldn't read the Google Sheet. Please try again in a few minutes. (${r.error ?? "no details"})` };
+      if (r.skipped) return { tone: "good", text: "Nothing has changed in the sheet since the last update." };
+      if (r.published) return { tone: "good", text: "Done. Advisors now see the latest Playbook." };
+      return { tone: "warn", text: "This update was held back, so advisors still see the previous version. See \"Needs attention\" below." };
+    });
 
-  const typed = (verb: string, id: number) => {
-    const v = window.prompt(`${verb} snapshot #${id}? This changes what advisors could be shown once advisor access exists. Type ${id} to confirm.`);
-    return v !== null && Number(v.trim()) === id;
+  const showAgain = (u: Update) => {
+    if (!window.confirm(`Show advisors the Playbook as it was at ${when(u.at)}?`)) return;
+    const url = u.status === "verified" ? `/api/playbook-mirror/snapshots/${u.id}/publish` : `/api/playbook-mirror/snapshots/${u.id}/rollback`;
+    void run(async () => {
+      await api(url, { method: "POST", body: JSON.stringify({ confirmSnapshotId: u.id }) });
+      return { tone: "good", text: `Advisors now see the Playbook as it was at ${when(u.at)}.` };
+    });
   };
 
+  // Colours set per theme (the app's global theme rules restyle stone-* utilities).
+  const c = dark
+    ? { card: "bg-[#102236] border-[#1e3e5c]", text: "text-[#F5F7FA]", muted: "text-[#A9C0DC]", line: "border-[#1e3e5c]", primary: "bg-[#0891B2] hover:bg-[#0E7490] text-white", secondary: "border-[#1e3e5c] text-[#DCEAFB] hover:bg-[#143B61]" }
+    : { card: "bg-white border-[#D3DAE5]", text: "text-[#1E293B]", muted: "text-[#4C5A72]", line: "border-[#D3DAE5]", primary: "bg-[#0754B7] hover:bg-[#06469A] text-white", secondary: "border-[#8A9BB0] text-[#1E293B] bg-white hover:bg-[#E1EAF7]" };
+  const toneClass = {
+    good: dark ? "bg-emerald-900/40 text-emerald-200" : "bg-emerald-50 text-emerald-800",
+    muted: dark ? "bg-[#0B2A44] text-[#A9C0DC]" : "bg-[#EEF1F5] text-[#4C5A72]",
+    warn: dark ? "bg-amber-900/40 text-amber-200" : "bg-amber-50 text-amber-900",
+  };
+
+  // Things an admin should act on, most important first.
+  const attention: { text: string; details?: string[]; action?: ReactNode }[] = [];
+  const latest = data?.updates[0];
+  const sinceText = data?.live?.sheetAsOf ? ` Advisors still see the version from ${when(data.live.sheetAsOf)}.` : "";
+  if (data) {
+    if (!data.connectedEmail) {
+      attention.push({
+        text: "The Google Sheet isn't connected, so the Playbook can't be updated.",
+        action: canEdit ? (
+          <a href="/api/playbook-mirror/connect-google" className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${c.primary}`}>
+            <Link2 className="w-3.5 h-3.5" /> Connect Google Sheet
+          </a>
+        ) : undefined,
+      });
+    }
+    if (!data.live) attention.push({ text: "Advisors can't see the Playbook yet. Click \"Update now\" to load it." });
+    if (latest && latest.id !== data.live?.snapshotId && latest.status === "rejected" && !latest.reason?.startsWith("Rejected by")) {
+      attention.push(
+        latest.layoutChanged
+          ? {
+              text: `The Playbook sheet's layout has changed (for example, a plan was added, renamed or moved), so the latest update was held back.${sinceText} Ask the tech team to update the Playbook setup.`,
+              details: latest.layoutChanges,
+            }
+          : { text: `The latest update was held back because the copy didn't match the sheet exactly.${sinceText} Try "Update now" again. If it keeps happening, tell the tech team.` }
+      );
+    }
+    if (data.stale) attention.push({ text: "The Playbook hasn't been updated in the last 24 hours. Click \"Update now\" to bring it up to date." });
+  }
+  const healthy = data && attention.length === 0;
 
   return (
-    <div className="space-y-5 text-left">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-3 border-b border-stone-200 dark:border-stone-800">
+    <div className="space-y-4 text-left max-w-4xl">
+      <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b ${c.line}`}>
         <div>
           <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5" style={{ color: dark ? "#00D3F3" : "#4673a9" }} />
-            <h1 className="text-lg font-bold text-content">Playbook Mirror (Admin)</h1>
-            <Pill text="Staging review" tone="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" />
+            <RefreshCw className="w-5 h-5" style={{ color: dark ? "#00D3F3" : "#0754B7" }} />
+            <h1 className={`text-lg font-bold ${c.text}`}>Playbook Sync</h1>
           </div>
-          <p className="text-xs mt-1 font-semibold text-content-muted">Exact, read-only copy of the Product Playbook sheet. Nothing here changes the sheet or Product Assist.</p>
+          <p className={`text-xs mt-1 font-semibold ${c.muted}`}>Keeps the Product Playbook page in step with the Google Sheet. The sheet itself is never changed.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => void load()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-stone-300 dark:border-stone-700">
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        {canEdit && (
+          <button disabled={busy || !data?.connectedEmail} onClick={() => void updateNow()}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 ${c.primary}`}>
+            <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} /> {busy ? "Updating…" : "Update now"}
           </button>
-          {canEdit && (
-            <button disabled={!!busy} onClick={() => void act("Fetch now", () => api("/api/playbook-mirror/fetch", { method: "POST" }))}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 text-white dark:bg-white dark:text-stone-900 disabled:opacity-50">
-              <Upload className="w-3.5 h-3.5 rotate-180" /> {busy === "Fetch now" ? "Fetching…" : "Fetch now"}
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
-      {error && <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/30 p-3 text-xs text-red-800 dark:text-red-200">{error}</div>}
-      {message && <div className="rounded-lg border border-stone-300 bg-stone-50 dark:bg-stone-800 p-3 text-xs">{message}</div>}
+      {error && <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/30 p-3 text-xs text-red-800 dark:text-red-200">Couldn't load this page. {error}</div>}
+      {message && (
+        <div className={`flex items-start gap-2 rounded-lg p-3 text-xs font-semibold ${toneClass[message.tone]}`}>
+          {message.tone === "good" ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+          {message.text}
+        </div>
+      )}
 
       {data && (
         <>
-          <Section title="Health and warnings">
-            <ul className="space-y-1.5">
-              {data.warnings.map((w, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs">
-                  {w.level === "error" ? <XCircle className="w-4 h-4 text-red-600 shrink-0" /> : w.level === "warning" ? <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" /> : <Info className="w-4 h-4 text-sky-600 shrink-0" />}
-                  <span>{w.text}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-              <div><div className="text-content-muted font-semibold">Google access</div>{data.connection ? <>{data.connection.email}<br /><Pill text="read-only" tone={statusTone.verified} /></> : "Not connected"}</div>
-              <div><div className="text-content-muted font-semibold">Last successful fetch</div>{fmt(data.syncState?.lastSuccessAt)}</div>
-              <div><div className="text-content-muted font-semibold">Published</div>{data.published ? `Snapshot #${data.published.snapshotId} (${fmt(data.published.updatedAt)})` : "Nothing published"}</div>
-              <div><div className="text-content-muted font-semibold">Structure</div>{data.plans.length} plans · {data.featureCount} categories</div>
+          <Card title="What advisors see" dark={dark}>
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${healthy ? toneClass.good : toneClass.warn}`}>
+                {healthy ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                {healthy ? "Up to date" : "Needs attention"}
+              </span>
             </div>
-          </Section>
-
-          <Section title="Snapshots">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="text-left text-content-muted">
-                  <th className="py-1 pr-3">#</th><th className="pr-3">Fetched</th><th className="pr-3">Status</th><th className="pr-3">Structure</th><th className="pr-3">Reconciliation</th><th className="pr-3">Actions</th>
-                </tr></thead>
-                <tbody>
-                  {data.snapshots.map((s) => (
-                    <Fragment key={s.id}>
-                      <tr className="border-t border-stone-200 dark:border-stone-800 align-top">
-                        <td className="py-1.5 pr-3 font-bold">{s.id}</td>
-                        <td className="pr-3">{fmt(s.fetchedAt)}<div className="text-[10px] text-content-muted">{s.trigger}</div></td>
-                        <td className="pr-3"><Pill text={s.status} tone={statusTone[s.status]} /></td>
-                        <td className="pr-3">{s.structure?.state ?? "not checked"}{s.structure?.needsReview.length ? <div className="text-amber-700">{s.structure.needsReview.join(" ")}</div> : null}</td>
-                        <td className="pr-3">{s.reconciliation ? (s.reconciliation.ok ? "0 differences" : `${s.reconciliation.differenceCount} differences`) : "—"}</td>
-                        <td className="pr-3">
-                          <div className="flex flex-wrap gap-1.5">
-                            <button className="inline-flex items-center gap-1 underline" onClick={() => void openGrid(s.id)}><Eye className="w-3 h-3" />View</button>
-                            <button className="inline-flex items-center gap-1 underline" onClick={() => void openDiff(s.id)}><FileDiff className="w-3 h-3" />Differences</button>
-                            {canEdit && s.status === "fetched" && s.structure?.state === "passed" && (
-                              <button className="inline-flex items-center gap-1 underline" onClick={() => void act(`Verify #${s.id}`, () => api(`/api/playbook-mirror/snapshots/${s.id}/verify`, { method: "POST" }))}><ShieldCheck className="w-3 h-3" />Verify</button>
-                            )}
-                            {canEdit && s.status === "verified" && (
-                              <button className="inline-flex items-center gap-1 underline text-sky-700 dark:text-sky-400" onClick={() => { if (typed("Publish", s.id)) void act(`Publish #${s.id}`, () => api(`/api/playbook-mirror/snapshots/${s.id}/publish`, { method: "POST", body: JSON.stringify({ confirmSnapshotId: s.id }) })); }}><CheckCircle2 className="w-3 h-3" />Publish…</button>
-                            )}
-                            {canEdit && s.status === "superseded" && (
-                              <button className="inline-flex items-center gap-1 underline" onClick={() => { if (typed("Roll back to", s.id)) void act(`Roll back to #${s.id}`, () => api(`/api/playbook-mirror/snapshots/${s.id}/rollback`, { method: "POST", body: JSON.stringify({ confirmSnapshotId: s.id }) })); }}><RotateCcw className="w-3 h-3" />Roll back…</button>
-                            )}
-                            {canEdit && (s.status === "fetched" || s.status === "verified") && (
-                              <button className="inline-flex items-center gap-1 underline text-red-700 dark:text-red-400" onClick={() => { const reason = window.prompt(`Reason for rejecting snapshot #${s.id}?`); if (reason) void act(`Reject #${s.id}`, () => api(`/api/playbook-mirror/snapshots/${s.id}/reject`, { method: "POST", body: JSON.stringify({ reason }) })); }}><XCircle className="w-3 h-3" />Reject…</button>
-                            )}
-                          </div>
-                          {s.rejectedReason && <div className="text-red-700 dark:text-red-300 mt-1">{s.rejectedReason}</div>}
-                        </td>
-                      </tr>
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-
-          {grid && (
-            <Section title={`Snapshot #${grid.snapshotId} — ${grid.tab.title}`} right={
-              <div className="flex gap-1.5">
-                {grid.tabs.map((t) => (
-                  <button key={t.sheetGid} onClick={() => void openGrid(grid.snapshotId, t.sheetGid)} className={`px-2 py-1 rounded text-[11px] font-semibold border ${t.sheetGid === grid.tab.sheetGid ? "bg-stone-900 text-white dark:bg-white dark:text-stone-900" : "border-stone-300 dark:border-stone-700"}`}>{t.title}</button>
-                ))}
+            <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <dt className={`font-semibold ${c.muted}`}>Playbook shown to advisors</dt>
+                <dd className={`mt-0.5 font-semibold ${c.text}`}>{data.live ? `As of ${when(data.live.sheetAsOf)}` : "Nothing yet"}</dd>
               </div>
-            }>
-              <p className="text-[11px] text-content-muted">Admin view of the configured range. Rows and columns hidden in the source sheet are not displayed. Text, formatting, links and notes are shown exactly as stored; notes are always visible.</p>
-              <GridView grid={grid} />
-            </Section>
+              <div>
+                <dt className={`font-semibold ${c.muted}`}>Last checked against the sheet</dt>
+                <dd className={`mt-0.5 font-semibold ${c.text}`}>{when(data.lastCheckedAt)}</dd>
+              </div>
+              <div>
+                <dt className={`font-semibold ${c.muted}`}>Reads the sheet as</dt>
+                <dd className={`mt-0.5 font-semibold break-all ${c.text}`}>{data.connectedEmail ? `${data.connectedEmail} (view only)` : "Not connected"}</dd>
+              </div>
+            </dl>
+          </Card>
+
+          {attention.length > 0 && (
+            <Card title="Needs attention" dark={dark}>
+              <ul className="space-y-3">
+                {attention.map((a, i) => (
+                  <li key={i} className={`rounded-lg p-3 text-xs space-y-2 ${toneClass.warn}`}>
+                    <div className="flex items-start gap-2 font-semibold"><AlertTriangle className="w-4 h-4 shrink-0" /><span>{a.text}</span></div>
+                    {a.details && a.details.length > 0 && (
+                      <details className="pl-6">
+                        <summary className="cursor-pointer font-semibold">What changed in the sheet</summary>
+                        <ul className="list-disc pl-4 mt-1 space-y-0.5 font-normal">{a.details.map((d, j) => <li key={j}>{d}</li>)}</ul>
+                      </details>
+                    )}
+                    {a.action && <div className="pl-6">{a.action}</div>}
+                  </li>
+                ))}
+              </ul>
+            </Card>
           )}
 
-          {diff && (
-            <Section title={`Differences — snapshot #${diff.targetSnapshotId} vs ${diff.baseSnapshotId ? `#${diff.baseSnapshotId} (${diff.baseline})` : "nothing (no published snapshot)"}`}>
-              {diff.notes?.map((n: string, i: number) => <p key={i} className="text-xs text-amber-800 dark:text-amber-300">{n}</p>)}
-              <p className="text-xs">{diff.baseline === "none" ? "Nothing is published yet, so there is no baseline to compare against." : diff.identical ? "Identical." : `Changes: ${JSON.stringify(diff.counts)}`}</p>
-              {[...(diff.merges ?? []), ...(diff.hidden ?? [])].map((m: string, i: number) => <p key={i} className="text-xs">{m}</p>)}
-              {diff.cells?.length > 0 && (
-                <table className="w-full text-xs">
-                  <thead><tr className="text-left text-content-muted"><th>Cell</th><th>Plan</th><th>Category</th><th>Change</th><th>Before</th><th>After</th></tr></thead>
-                  <tbody>{diff.cells.map((c: any, i: number) => ( // eslint-disable-line @typescript-eslint/no-explicit-any
-                    <tr key={i} className="border-t border-stone-200 dark:border-stone-800 align-top"><td>{c.a1}</td><td>{c.plan ?? "—"}</td><td>{c.feature ?? "—"}</td><td>{c.kind}</td><td className="whitespace-pre-wrap">{c.before ?? "∅"}</td><td className="whitespace-pre-wrap">{c.after ?? "∅"}</td></tr>
-                  ))}</tbody>
-                </table>
-              )}
-            </Section>
+          {data.notes.length > 0 && (
+            <Card title="Good to know" dark={dark}>
+              <ul className="space-y-1.5 text-xs">
+                {data.notes.map((n) => (
+                  <li key={n.id} className={`flex items-start gap-2 ${c.text}`}>
+                    <Info className={`w-4 h-4 shrink-0 ${c.muted}`} />
+                    <span>Cell {n.a1} on "{n.tabTitle}" has a picture that can't be copied. Advisors see a note there asking them to check the Playbook directly.</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
           )}
 
-          <Section title={`Plans (${data.plans.length})`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead><tr className="text-left text-content-muted"><th className="py-1 pr-3">Key</th><th className="pr-3">Header (exactly as in the sheet)</th></tr></thead>
-                <tbody>
-                  {data.plans.map((p) => (
-                    <tr key={p.planKey} className="border-t border-stone-200 dark:border-stone-800 align-top">
-                      <td className="py-1.5 pr-3 font-mono">{p.planKey}</td>
-                      <td className="pr-3 whitespace-pre-wrap">{p.hiddenInSource || p.expectedHeader === null ? <span className="italic text-content-muted">Column hidden in the source sheet — not displayed</span> : JSON.stringify(p.expectedHeader).slice(1, -1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-
-          <Section title="Source issues">
-            <ul className="space-y-1.5 text-xs">
-              {data.issues.map((i) => (
-                <li key={i.id} className="flex items-start gap-2">
-                  {i.showWarning ? <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" /> : <Info className="w-4 h-4 text-sky-600 shrink-0" />}
-                  <span><b>{i.a1}</b> ({i.kind}, {i.status}): {i.description}</span>
-                </li>
-              ))}
-            </ul>
-          </Section>
-
+          <Card title="Recent updates" dark={dark}>
+            {data.updates.length === 0 ? (
+              <p className={`text-xs ${c.muted}`}>No updates yet.</p>
+            ) : (
+              <ul className={`divide-y text-xs ${dark ? "divide-[#1e3e5c]" : "divide-[#D3DAE5]"}`}>
+                {data.updates.map((u) => {
+                  const o = outcome(u, data.live?.snapshotId ?? null);
+                  const canShow = canEdit && u.id !== data.live?.snapshotId && (u.status === "superseded" || u.status === "verified");
+                  return (
+                    <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                      <div>
+                        <div className={`font-semibold ${c.text}`}>{when(u.at)}</div>
+                        <div className={c.muted}>{who(u.trigger) === "Automatic" ? "Automatic update" : `Updated by ${who(u.trigger)}`}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-full font-semibold ${toneClass[o.tone]}`}>{o.label}</span>
+                        {canShow && (
+                          <button disabled={busy} onClick={() => showAgain(u)} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-semibold disabled:opacity-50 ${c.secondary}`}>
+                            <RotateCcw className="w-3 h-3" /> Show this version
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
         </>
       )}
     </div>

@@ -4,8 +4,8 @@
  */
 
 /**
- * PRODUCT PLAYBOOK — faithful rendering of mirrored cells, shared by the advisor
- * page and the admin review screen. Text, bold/italic/underline/strikethrough,
+ * PRODUCT PLAYBOOK — faithful rendering of mirrored cells on the advisor
+ * page. Text, bold/italic/underline/strikethrough,
  * colours, links, line breaks and notes are shown exactly as stored (line breaks
  * are only normalised for display). Rows and columns hidden in the source sheet
  * are never rendered — the server doesn't send them either.
@@ -85,15 +85,13 @@ export function Runs({ cell }: { cell: GridCell }) {
  * their numbers are listed above the grid. There is no option to show them.
  */
 // Explicit colours per theme for the advisor page (the app's global theme rules restyle stone-* utilities).
-// Without a theme (admin review screen) the original styling is kept.
 const THEMES = {
   light: { wrap: "border-[#B8C4D4] bg-white", gutter: "bg-[#D5DEEA] text-[#1E293B] border-[#B8C4D4]", cell: "border-[#B8C4D4] bg-white text-[#1E293B]" },
   dark: { wrap: "border-[#1e3e5c] bg-[#102236]", gutter: "bg-[#0B2A44] text-[#F5F7FA] border-[#1e3e5c]", cell: "border-[#1e3e5c] bg-[#102236] text-[#F5F7FA]" },
 };
-const PLAIN = { wrap: "border-stone-200 dark:border-stone-800", gutter: "bg-stone-100 dark:bg-stone-800 border-stone-300 dark:border-stone-700", cell: "border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900" };
 
-export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme?: "light" | "dark" }) {
-  const t = theme ? THEMES[theme] : PLAIN;
+export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme: "light" | "dark" }) {
+  const t = THEMES[theme];
   const byA1 = useMemo(() => new Map(grid.cells.map((c) => [c.a1, c])), [grid]);
   // Columns whose values are all short (e.g. "Sl.no.") get a narrow width instead of the default.
   const narrowCols = useMemo(() => {
@@ -141,7 +139,7 @@ export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme?: 
         return (
           <td key={a1} rowSpan={rowSpan} colSpan={colSpan} title={a1}
             className={`align-top text-left font-normal border px-1.5 py-1 ${narrowCols.has(c) && colSpan === 1 ? "w-[56px] min-w-[48px]" : "min-w-[140px] max-w-[320px]"} ${t.cell}`}
-            style={{ backgroundColor: theme ? advisorBg(cell) : rgb(cell?.background ?? null) }}>
+            style={{ backgroundColor: advisorBg(cell) }}>
             {cell?.warning && <CheckPlaybook text={cell.warning} />}
             <div className="whitespace-pre-wrap break-words max-h-64 overflow-auto">{cell && <Runs cell={cell} />}</div>
             {cell?.note && (

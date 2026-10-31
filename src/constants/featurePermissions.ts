@@ -522,8 +522,8 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // general and Admin tiers have no access by default. Enforced server-side
     // through requireFeatureAccess on every control route.
     id: "product_playbook_admin",
-    name: "Product Playbook Mirror (Controls)",
-    description: "Connect, fetch, verify, reject or roll back the Product Playbook mirror's snapshots",
+    name: "Playbook Sync",
+    description: "Keep the Product Playbook page up to date with the Google Sheet, or bring back an earlier version",
     defaultTier: "Platform Admin",
     generalAccess: "None",
     adminAccess: "None",
