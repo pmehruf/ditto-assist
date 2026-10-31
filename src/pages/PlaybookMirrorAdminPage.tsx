@@ -31,6 +31,8 @@ interface Update {
 }
 interface Summary {
   connectedEmail: string | null;
+  /** False on a new environment until the sheet's layout is set up once. */
+  layoutReady: boolean;
   lastCheckedAt: string | null;
   stale: boolean | null;
   live: { snapshotId: number; sheetAsOf: string | null; since: string } | null;
@@ -40,6 +42,7 @@ interface Summary {
 interface FetchResult {
   ok: boolean;
   skipped?: boolean;
+  snapshotId?: number;
   status?: string;
   published?: boolean;
   error?: string;
@@ -62,8 +65,9 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** What happened to an update, in plain words. */
-function outcome(u: Update, liveId: number | null): { label: string; tone: "good" | "muted" | "warn" } {
+function outcome(u: Update, liveId: number | null, layoutReady: boolean): { label: string; tone: "good" | "muted" | "warn" } {
   if (u.id === liveId) return { label: "Live now", tone: "good" };
+  if (!layoutReady && u.status === "fetched") return { label: "Waiting for setup", tone: "warn" };
   if (u.status === "published" || u.status === "superseded") return { label: "Shown earlier", tone: "muted" };
   if (u.status === "verified") return { label: "Checked, not shown", tone: "muted" };
   if (u.status === "rejected" && u.reason?.startsWith("Rejected by")) return { label: "Withdrawn", tone: "muted" };
@@ -123,6 +127,29 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
       return { tone: "warn", text: "This update was held back, so advisors still see the previous version. See \"Needs attention\" below." };
     });
 
+  // One-time setup on a new environment: learn the sheet's layout from the latest copy
+  // (reading the sheet first if there's none), run the usual checks, then show it.
+  const setUp = () => {
+    if (!window.confirm("Set up the Playbook from the Google Sheet now? The app learns which column is which plan and which row is which feature, checks the copy, and then shows the Playbook to advisors.")) return;
+    void run(async () => {
+      const latest = data?.updates[0];
+      let id = latest?.status === "fetched" ? latest.id : null;
+      if (!id) {
+        const r = await api<FetchResult>("/api/playbook-mirror/fetch", { method: "POST" });
+        if (!r.ok || !r.snapshotId) return { tone: "warn", text: `Couldn't read the Google Sheet. Please try again in a few minutes. (${r.error ?? "no details"})` };
+        if (r.status !== "fetched") return { tone: "warn", text: "The sheet couldn't be read cleanly, so setup didn't finish. Please try again. If it keeps happening, tell the tech team." };
+        id = r.snapshotId;
+      }
+      await api("/api/playbook-mirror/structure/accept", { method: "POST", body: JSON.stringify({ snapshotId: id }) });
+      const check = await api<{ state: string }>(`/api/playbook-mirror/snapshots/${id}/check-structure`, { method: "POST" });
+      if (check.state !== "passed") return { tone: "warn", text: "The layout was saved, but the copy didn't pass the checks, so nothing was shown to advisors. Please tell the tech team." };
+      const v = await api<{ outcome: string }>(`/api/playbook-mirror/snapshots/${id}/verify`, { method: "POST" });
+      if (v.outcome !== "verified") return { tone: "warn", text: "The layout was saved, but the copy didn't match the sheet exactly, so nothing was shown to advisors. Click \"Update now\" to try again." };
+      await api(`/api/playbook-mirror/snapshots/${id}/publish`, { method: "POST", body: JSON.stringify({ confirmSnapshotId: id }) });
+      return { tone: "good", text: "All set. Advisors now see the Playbook, and \"Update now\" will keep it current." };
+    });
+  };
+
   const showAgain = (u: Update) => {
     if (!window.confirm(`Show advisors the Playbook as it was at ${when(u.at)}?`)) return;
     const url = u.status === "verified" ? `/api/playbook-mirror/snapshots/${u.id}/publish` : `/api/playbook-mirror/snapshots/${u.id}/rollback`;
@@ -157,7 +184,16 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
         ) : undefined,
       });
     }
-    if (!data.live) attention.push({ text: "Advisors can't see the Playbook yet. Click \"Update now\" to load it." });
+    if (data.connectedEmail && !data.layoutReady) {
+      attention.push({
+        text: "The Playbook hasn't been set up here yet. This is a one-time step: the app learns the sheet's layout (which column is which plan, which row is which feature), and then advisors can see the Playbook.",
+        action: canEdit ? (
+          <button disabled={busy} onClick={setUp} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 ${c.primary}`}>
+            <CheckCircle2 className="w-3.5 h-3.5" /> {busy ? "Setting up…" : "Set up from the Google Sheet"}
+          </button>
+        ) : undefined,
+      });
+    } else if (!data.live) attention.push({ text: "Advisors can't see the Playbook yet. Click \"Update now\" to load it." });
     if (latest && latest.id !== data.live?.snapshotId && latest.status === "rejected" && !latest.reason?.startsWith("Rejected by")) {
       attention.push(
         latest.layoutChanged
@@ -261,7 +297,7 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
             ) : (
               <ul className={`divide-y text-xs ${dark ? "divide-[#1e3e5c]" : "divide-[#D3DAE5]"}`}>
                 {data.updates.map((u) => {
-                  const o = outcome(u, data.live?.snapshotId ?? null);
+                  const o = outcome(u, data.live?.snapshotId ?? null, data.layoutReady);
                   const canShow = canEdit && u.id !== data.live?.snapshotId && (u.status === "superseded" || u.status === "verified");
                   return (
                     <li key={u.id} className="flex flex-wrap items-center justify-between gap-2 py-2">

@@ -283,6 +283,20 @@ try {
   }
 } catch (_) { /* storage unavailable — the link still opens the app */ }
 
+// Direct page links, e.g. https://<app>/?page=product_assist (works for every page).
+const DIRECT_PAGE_IDS = ["lookup", "audit", "profile_access", "master_advisors", "active_questions", "my_activity", "qa_announcement_log", "flagged_responses", "plan_scope", "ped_suggestions", "smoke_test", "advisory_zone", "announcement_archive", "coverage_projection", "specific_illness_check", "product_assist", "porting_assist", "qa_dashboard", "team_tracker", "qip_exception", "owner_controls", "knowledge_base", "connections", "product_assist_quota", "product_playbook", "product_playbook_admin"] as const;
+// Remembered in sessionStorage so the link survives the Google login redirect.
+const PENDING_PAGE_KEY = "pendingDirectPage";
+try {
+  if (typeof window !== "undefined") {
+    const directPage = new URLSearchParams(window.location.search).get("page");
+    if (directPage && (DIRECT_PAGE_IDS as readonly string[]).includes(directPage)) {
+      window.sessionStorage.setItem(PENDING_PAGE_KEY, directPage);
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }
+  }
+} catch (_) { /* storage unavailable — the link still opens the app */ }
+
 export default function App() {
   // Themed confirm()/alert() replacements for window.confirm()/window.alert()
   // (see DialogContext.tsx) — used below by confirmDestructiveAction and
@@ -1794,6 +1808,31 @@ export default function App() {
       }
     }
   }, [currentUser, activeTab, featurePermissions, effectiveTier]);
+
+  // Open a page requested through a direct link (?page=product_assist) once signed in.
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      const pending = window.sessionStorage.getItem(PENDING_PAGE_KEY);
+      if (pending && (DIRECT_PAGE_IDS as readonly string[]).includes(pending)) {
+        window.sessionStorage.removeItem(PENDING_PAGE_KEY);
+        setActiveTab(pending as typeof activeTab);
+        setShowIntro(false);
+      }
+    } catch (_) { /* ignore */ }
+  }, [currentUser]);
+
+  // Keep the address bar in sync with the open page so the URL can be copied and shared.
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      if (window.sessionStorage.getItem(PENDING_PAGE_KEY)) return; // a direct link is still being applied
+      const url = new URL(window.location.href);
+      if (activeTab === "lookup") url.searchParams.delete("page");
+      else url.searchParams.set("page", activeTab);
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    } catch (_) { /* ignore */ }
+  }, [currentUser, activeTab]);
 
   // Authentication State
   const [loginError, setLoginError] = useState<string | null>(null);
