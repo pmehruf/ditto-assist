@@ -16,6 +16,11 @@ CREATE TYPE "public"."kb_resource_type" AS ENUM('pdf', 'web', 'sheet');--> state
 CREATE TYPE "public"."mapping_history_entity_type" AS ENUM('ped', 'alias', 'category', 'plan_override', 'plan_config');--> statement-breakpoint
 CREATE TYPE "public"."ped_status" AS ENUM('draft', 'approved', 'deprecated');--> statement-breakpoint
 CREATE TYPE "public"."plan_restriction_mode" AS ENUM('require_keywords', 'exclude_keywords', 'block_category');--> statement-breakpoint
+CREATE TYPE "public"."playbook_issue_kind" AS ENUM('source_gap', 'excel_copy_discrepancy');--> statement-breakpoint
+CREATE TYPE "public"."playbook_issue_status" AS ENUM('open', 'resolved_pending_verification', 'verified', 'recorded');--> statement-breakpoint
+CREATE TYPE "public"."playbook_plan_status" AS ENUM('active', 'discontinued_fresh_porting', 'brochure_only', 'hidden');--> statement-breakpoint
+CREATE TYPE "public"."playbook_snapshot_status" AS ENUM('fetched', 'rejected', 'verified', 'published', 'superseded');--> statement-breakpoint
+CREATE TYPE "public"."playbook_value_kind" AS ENUM('empty', 'text', 'number', 'boolean', 'formula', 'error');--> statement-breakpoint
 CREATE TYPE "public"."qa_dashboard_role" AS ENUM('admin', 'guide', 'mentor');--> statement-breakpoint
 CREATE TYPE "public"."special_instruction_type" AS ENUM('override_rule', 'additional_information', 'general_instruction');--> statement-breakpoint
 CREATE TYPE "public"."unresolved_query_status" AS ENUM('unresolved', 'resolved', 'skipped');--> statement-breakpoint
@@ -549,6 +554,152 @@ CREATE TABLE "plan_restrictions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "playbook_cells" (
+	"snapshot_id" integer NOT NULL,
+	"sheet_gid" bigint NOT NULL,
+	"row_num" integer NOT NULL,
+	"col_num" integer NOT NULL,
+	"a1" text NOT NULL,
+	"value_kind" "playbook_value_kind" NOT NULL,
+	"raw_text" text,
+	"number_raw" text,
+	"number_value" numeric,
+	"formatted_value" text,
+	"formula" text,
+	"user_entered_value" jsonb,
+	"effective_value" jsonb,
+	"text_format_runs" jsonb,
+	"resolved_runs" jsonb,
+	"user_entered_format" jsonb,
+	"effective_format" jsonb,
+	"chip_runs" jsonb,
+	"note" text,
+	"hyperlink" text,
+	"merge_range" text,
+	"covered_by" text,
+	CONSTRAINT "playbook_cells_pk" PRIMARY KEY("snapshot_id","sheet_gid","row_num","col_num"),
+	CONSTRAINT "playbook_cells_positive" CHECK ("playbook_cells"."row_num" >= 1 AND "playbook_cells"."col_num" >= 1),
+	CONSTRAINT "playbook_cells_empty_has_no_text" CHECK ("playbook_cells"."value_kind" <> 'empty' OR "playbook_cells"."raw_text" IS NULL),
+	CONSTRAINT "playbook_cells_merge_xor" CHECK ("playbook_cells"."merge_range" IS NULL OR "playbook_cells"."covered_by" IS NULL)
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_features" (
+	"domain" "announcement_team" DEFAULT 'Health' NOT NULL,
+	"feature_key" text NOT NULL,
+	"sub_key" text DEFAULT '' NOT NULL,
+	"expected_label" text NOT NULL,
+	"expected_sub_label" text,
+	"sort_order" integer NOT NULL,
+	"updated_by" text NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "playbook_features_pk" PRIMARY KEY("domain","feature_key","sub_key")
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_mirror_connection" (
+	"domain" "announcement_team" PRIMARY KEY NOT NULL,
+	"connected_email" text NOT NULL,
+	"encrypted_refresh_token" text NOT NULL,
+	"granted_scopes" text[] NOT NULL,
+	"connected_by" text NOT NULL,
+	"connected_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "playbook_mirror_connection_readonly_scopes" CHECK ('https://www.googleapis.com/auth/spreadsheets.readonly' = ANY ("playbook_mirror_connection"."granted_scopes") AND NOT ("playbook_mirror_connection"."granted_scopes" && ARRAY['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/drive.file','https://www.googleapis.com/auth/script.processes']::text[]))
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_plans" (
+	"plan_key" text PRIMARY KEY NOT NULL,
+	"domain" "announcement_team" DEFAULT 'Health' NOT NULL,
+	"insurer" text NOT NULL,
+	"display_name" text NOT NULL,
+	"expected_header" text NOT NULL,
+	"status" "playbook_plan_status" NOT NULL,
+	"status_confirmed_by" text,
+	"status_confirmed_at" timestamp with time zone,
+	"show_to_advisors" boolean DEFAULT false NOT NULL,
+	"kb_plan_name" text,
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"updated_by" text NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "playbook_plans_header_unique" UNIQUE("domain","expected_header"),
+	CONSTRAINT "playbook_plans_visible_needs_confirmation" CHECK (NOT "playbook_plans"."show_to_advisors" OR ("playbook_plans"."status_confirmed_by" IS NOT NULL AND "playbook_plans"."status_confirmed_at" IS NOT NULL))
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_published" (
+	"domain" "announcement_team" PRIMARY KEY NOT NULL,
+	"snapshot_id" integer NOT NULL,
+	"updated_by" text NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_snapshot_tabs" (
+	"snapshot_id" integer NOT NULL,
+	"sheet_gid" bigint NOT NULL,
+	"title" text NOT NULL,
+	"tab_index" integer,
+	"frozen_rows" integer,
+	"frozen_cols" integer,
+	"grid_rows" integer,
+	"grid_cols" integer,
+	"hidden_rows" integer[] DEFAULT '{}' NOT NULL,
+	"hidden_cols" integer[] DEFAULT '{}' NOT NULL,
+	"rows_hidden_by_filter" integer[] DEFAULT '{}' NOT NULL,
+	"merges_raw" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	CONSTRAINT "playbook_snapshot_tabs_pk" PRIMARY KEY("snapshot_id","sheet_gid")
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_snapshots" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"domain" "announcement_team" DEFAULT 'Health' NOT NULL,
+	"spreadsheet_id" text NOT NULL,
+	"fetched_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"fetched_via" text NOT NULL,
+	"trigger" text NOT NULL,
+	"request_ranges" text[] NOT NULL,
+	"request_fields" text NOT NULL,
+	"raw_response_gzip" "bytea" NOT NULL,
+	"raw_response_bytes" integer NOT NULL,
+	"raw_sha256" text NOT NULL,
+	"parser_version" text NOT NULL,
+	"status" "playbook_snapshot_status" DEFAULT 'fetched' NOT NULL,
+	"structure_report" jsonb,
+	"reconciliation_report" jsonb,
+	"diff_vs_published" jsonb,
+	"rejected_reason" text,
+	"published_by" text,
+	"published_at" timestamp with time zone,
+	CONSTRAINT "playbook_snapshots_sha256_format" CHECK ("playbook_snapshots"."raw_sha256" ~ '^[0-9a-f]{64}$'),
+	CONSTRAINT "playbook_snapshots_rejected_has_reason" CHECK ("playbook_snapshots"."status" <> 'rejected' OR "playbook_snapshots"."rejected_reason" IS NOT NULL),
+	CONSTRAINT "playbook_snapshots_published_has_who" CHECK ("playbook_snapshots"."published_at" IS NULL OR "playbook_snapshots"."published_by" IS NOT NULL)
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_source_issues" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"domain" "announcement_team" DEFAULT 'Health' NOT NULL,
+	"issue_key" text NOT NULL,
+	"kind" "playbook_issue_kind" NOT NULL,
+	"status" "playbook_issue_status" NOT NULL,
+	"tab_title" text NOT NULL,
+	"a1" text NOT NULL,
+	"description" text NOT NULL,
+	"show_warning" boolean NOT NULL,
+	"resolved_by" text,
+	"resolved_at" timestamp with time zone,
+	"verified_by" text,
+	"verified_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "playbook_source_issues_key_unique" UNIQUE("domain","issue_key"),
+	CONSTRAINT "playbook_source_issues_verified_by_other" CHECK ("playbook_source_issues"."status" <> 'verified' OR ("playbook_source_issues"."verified_by" IS NOT NULL AND "playbook_source_issues"."verified_at" IS NOT NULL AND "playbook_source_issues"."verified_by" IS DISTINCT FROM "playbook_source_issues"."resolved_by")),
+	CONSTRAINT "playbook_source_issues_warning_until_verified" CHECK ("playbook_source_issues"."kind" <> 'source_gap' OR "playbook_source_issues"."status" = 'verified' OR "playbook_source_issues"."show_warning")
+);
+--> statement-breakpoint
+CREATE TABLE "playbook_sync_state" (
+	"domain" "announcement_team" PRIMARY KEY NOT NULL,
+	"last_attempt_at" timestamp with time zone,
+	"last_success_at" timestamp with time zone,
+	"last_trigger" text,
+	"last_error" text,
+	"last_snapshot_id" integer
+);
+--> statement-breakpoint
 CREATE TABLE "product_assist_acks" (
 	"user_email" varchar(320) PRIMARY KEY NOT NULL,
 	"acked_at" timestamp with time zone,
@@ -843,6 +994,10 @@ ALTER TABLE "kb_chat_sessions" ADD CONSTRAINT "kb_chat_sessions_category_id_kb_c
 ALTER TABLE "kb_chunks" ADD CONSTRAINT "kb_chunks_resource_id_kb_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."kb_resources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kb_playbook_plan_facts" ADD CONSTRAINT "kb_playbook_plan_facts_resource_id_kb_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."kb_resources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kb_resources" ADD CONSTRAINT "kb_resources_category_id_kb_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "public"."kb_categories"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "playbook_cells" ADD CONSTRAINT "playbook_cells_tab_fk" FOREIGN KEY ("snapshot_id","sheet_gid") REFERENCES "public"."playbook_snapshot_tabs"("snapshot_id","sheet_gid") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "playbook_published" ADD CONSTRAINT "playbook_published_snapshot_id_playbook_snapshots_id_fk" FOREIGN KEY ("snapshot_id") REFERENCES "public"."playbook_snapshots"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "playbook_snapshot_tabs" ADD CONSTRAINT "playbook_snapshot_tabs_snapshot_id_playbook_snapshots_id_fk" FOREIGN KEY ("snapshot_id") REFERENCES "public"."playbook_snapshots"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "playbook_sync_state" ADD CONSTRAINT "playbook_sync_state_last_snapshot_id_playbook_snapshots_id_fk" FOREIGN KEY ("last_snapshot_id") REFERENCES "public"."playbook_snapshots"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product_assist_eligibility_groups" ADD CONSTRAINT "product_assist_eligibility_groups_department_id_departments_id_fk" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product_assist_eligibility_groups" ADD CONSTRAINT "product_assist_eligibility_groups_org_team_id_org_teams_id_fk" FOREIGN KEY ("org_team_id") REFERENCES "public"."org_teams"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "product_assist_eligibility_groups" ADD CONSTRAINT "product_assist_eligibility_groups_role_id_roles_id_fk" FOREIGN KEY ("role_id") REFERENCES "public"."roles"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -888,6 +1043,8 @@ CREATE UNIQUE INDEX "org_teams_name_unique" ON "org_teams" USING btree ("name");
 CREATE UNIQUE INDEX "plan_overrides_plan_ped_idx" ON "plan_overrides" USING btree ("plan_name","ped_id");--> statement-breakpoint
 CREATE INDEX "plan_restrictions_plan_name_idx" ON "plan_restrictions" USING btree ("plan_name");--> statement-breakpoint
 CREATE INDEX "plan_restrictions_is_active_idx" ON "plan_restrictions" USING btree ("is_active");--> statement-breakpoint
+CREATE UNIQUE INDEX "playbook_cells_a1_idx" ON "playbook_cells" USING btree ("snapshot_id","sheet_gid","a1");--> statement-breakpoint
+CREATE INDEX "playbook_snapshots_domain_fetched_idx" ON "playbook_snapshots" USING btree ("domain","fetched_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "product_assist_extra_credit_grants_user_email_idx" ON "product_assist_extra_credit_grants" USING btree ("user_email");--> statement-breakpoint
 CREATE INDEX "product_assist_logs_created_at_idx" ON "product_assist_logs" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX "product_assist_logs_exported_at_idx" ON "product_assist_logs" USING btree ("exported_at");--> statement-breakpoint

@@ -35,6 +35,9 @@ import { KbChunksRepository } from "./kbChunksRepository.js";
 import { KbChatSessionsRepository } from "./kbChatSessionsRepository.js";
 import { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 import { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
+import { PlaybookMirrorConnectionRepository } from "./playbookMirrorConnectionRepository.js";
+import { PlaybookMirrorSnapshotsRepository } from "./playbookMirrorSnapshotsRepository.js";
+import { PlaybookMirrorStructureRepository } from "./playbookMirrorStructureRepository.js";
 import { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
 import { TermPlaybookConnectionRepository } from "./termPlaybookConnectionRepository.js";
 import { ProductAssistAcksRepository } from "./productAssistAcksRepository.js";
@@ -170,6 +173,9 @@ export { KbChatMessagesRepository } from "./kbChatMessagesRepository.js";
 export type { CreateKbChatMessageEntry } from "./kbChatMessagesRepository.js";
 
 export { KbPlaybookConnectionRepository } from "./kbPlaybookConnectionRepository.js";
+export { PlaybookMirrorConnectionRepository } from "./playbookMirrorConnectionRepository.js";
+export { PlaybookMirrorSnapshotsRepository } from "./playbookMirrorSnapshotsRepository.js";
+export { PlaybookMirrorStructureRepository } from "./playbookMirrorStructureRepository.js";
 export { TermPlaybookConnectionRepository } from "./termPlaybookConnectionRepository.js";
 
 export { KbPlaybookPlanFactsRepository } from "./kbPlaybookPlanFactsRepository.js";
@@ -299,6 +305,9 @@ export interface Repositories {
   kbChatSessions: KbChatSessionsRepository;
   kbChatMessages: KbChatMessagesRepository;
   kbPlaybookConnection: KbPlaybookConnectionRepository;
+  playbookMirrorConnection: PlaybookMirrorConnectionRepository;
+  playbookMirrorSnapshots: PlaybookMirrorSnapshotsRepository;
+  playbookMirrorStructure: PlaybookMirrorStructureRepository;
   kbPlaybookPlanFacts: KbPlaybookPlanFactsRepository;
   termPlaybookConnection: TermPlaybookConnectionRepository;
   productAssistAcks: ProductAssistAcksRepository;
@@ -368,6 +377,9 @@ export function createRepositories(db: AnyDb): Repositories {
     kbChatSessions: new KbChatSessionsRepository(db),
     kbChatMessages: new KbChatMessagesRepository(db),
     kbPlaybookConnection: new KbPlaybookConnectionRepository(db),
+    playbookMirrorConnection: new PlaybookMirrorConnectionRepository(db),
+    playbookMirrorSnapshots: new PlaybookMirrorSnapshotsRepository(db),
+    playbookMirrorStructure: new PlaybookMirrorStructureRepository(db),
     kbPlaybookPlanFacts: new KbPlaybookPlanFactsRepository(db),
     termPlaybookConnection: new TermPlaybookConnectionRepository(db),
     productAssistAcks: new ProductAssistAcksRepository(db),

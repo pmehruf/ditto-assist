@@ -40,7 +40,13 @@ import {
   uniqueIndex,
   index,
   vector,
+  customType,
+  primaryKey,
+  foreignKey,
+  check,
+  unique,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ─────────────────────────────────────────────────────────────────────────
 // search_history — one row per PED lookup performed. Append-only audit
@@ -2935,3 +2941,208 @@ export const guideMentorRelationshipHistory = pgTable(
 
 export type GuideMentorRelationshipHistoryRow = typeof guideMentorRelationshipHistory.$inferSelect;
 export type NewGuideMentorRelationshipHistoryRow = typeof guideMentorRelationshipHistory.$inferInsert;
+
+// bytea (drizzle-orm 0.45 has no built-in bytea column type).
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+// ─────────────────────────────────────────────────────────────────────────
+// PRODUCT PLAYBOOK MIRROR (2026-10, Phase 1) — exact, versioned, read-only copy of the
+// Playbook sheet's "Ditto's Recommended Policies" and "Recommendation specifics" tabs.
+// Entirely separate from kb_playbook_connection / kb_resources / kb_playbook_plan_facts /
+// kb_chunks (the existing Product Assist sync), which this never reads or writes.
+// See docs/PRODUCT_PLAYBOOK_PHASE1_DESIGN.md. Snapshots and cells are immutable (DB
+// triggers in drizzle/0090_playbook_mirror.sql).
+// ─────────────────────────────────────────────────────────────────────────
+export const playbookSnapshotStatusEnum = pgEnum("playbook_snapshot_status", ["fetched", "rejected", "verified", "published", "superseded"]);
+export const playbookValueKindEnum = pgEnum("playbook_value_kind", ["empty", "text", "number", "boolean", "formula", "error"]);
+export const playbookPlanStatusEnum = pgEnum("playbook_plan_status", ["active", "discontinued_fresh_porting", "brochure_only", "hidden"]);
+export const playbookIssueKindEnum = pgEnum("playbook_issue_kind", ["source_gap", "excel_copy_discrepancy"]);
+export const playbookIssueStatusEnum = pgEnum("playbook_issue_status", ["open", "resolved_pending_verification", "verified", "recorded"]);
+
+export const playbookMirrorConnection = pgTable(
+  "playbook_mirror_connection",
+  {
+    domain: announcementTeamEnum("domain").primaryKey(),
+    connectedEmail: text("connected_email").notNull(),
+    encryptedRefreshToken: text("encrypted_refresh_token").notNull(),
+    grantedScopes: text("granted_scopes").array().notNull(),
+    connectedBy: text("connected_by").notNull(),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      "playbook_mirror_connection_readonly_scopes",
+      sql`'https://www.googleapis.com/auth/spreadsheets.readonly' = ANY (${t.grantedScopes}) AND NOT (${t.grantedScopes} && ARRAY['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/drive.file','https://www.googleapis.com/auth/script.processes']::text[])`
+    ),
+  ]
+);
+
+export const playbookSnapshots = pgTable(
+  "playbook_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
+    spreadsheetId: text("spreadsheet_id").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    fetchedVia: text("fetched_via").notNull(),
+    trigger: text("trigger").notNull(),
+    requestRanges: text("request_ranges").array().notNull(),
+    requestFields: text("request_fields").notNull(),
+    rawResponseGzip: bytea("raw_response_gzip").notNull(),
+    rawResponseBytes: integer("raw_response_bytes").notNull(),
+    rawSha256: text("raw_sha256").notNull(),
+    parserVersion: text("parser_version").notNull(),
+    status: playbookSnapshotStatusEnum("status").notNull().default("fetched"),
+    structureReport: jsonb("structure_report"),
+    reconciliationReport: jsonb("reconciliation_report"),
+    diffVsPublished: jsonb("diff_vs_published"),
+    rejectedReason: text("rejected_reason"),
+    publishedBy: text("published_by"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("playbook_snapshots_domain_fetched_idx").on(t.domain, t.fetchedAt.desc()),
+    check("playbook_snapshots_sha256_format", sql`${t.rawSha256} ~ '^[0-9a-f]{64}$'`),
+    check("playbook_snapshots_rejected_has_reason", sql`${t.status} <> 'rejected' OR ${t.rejectedReason} IS NOT NULL`),
+    check("playbook_snapshots_published_has_who", sql`${t.publishedAt} IS NULL OR ${t.publishedBy} IS NOT NULL`),
+  ]
+);
+
+export const playbookSnapshotTabs = pgTable(
+  "playbook_snapshot_tabs",
+  {
+    snapshotId: integer("snapshot_id").notNull().references(() => playbookSnapshots.id, { onDelete: "cascade" }),
+    sheetGid: bigint("sheet_gid", { mode: "number" }).notNull(),
+    title: text("title").notNull(),
+    tabIndex: integer("tab_index"),
+    frozenRows: integer("frozen_rows"),
+    frozenCols: integer("frozen_cols"),
+    gridRows: integer("grid_rows"),
+    gridCols: integer("grid_cols"),
+    hiddenRows: integer("hidden_rows").array().notNull().default(sql`'{}'`),
+    hiddenCols: integer("hidden_cols").array().notNull().default(sql`'{}'`),
+    rowsHiddenByFilter: integer("rows_hidden_by_filter").array().notNull().default(sql`'{}'`),
+    mergesRaw: jsonb("merges_raw").notNull().default(sql`'[]'::jsonb`),
+  },
+  (t) => [primaryKey({ name: "playbook_snapshot_tabs_pk", columns: [t.snapshotId, t.sheetGid] })]
+);
+
+export const playbookCells = pgTable(
+  "playbook_cells",
+  {
+    snapshotId: integer("snapshot_id").notNull(),
+    sheetGid: bigint("sheet_gid", { mode: "number" }).notNull(),
+    rowNum: integer("row_num").notNull(),
+    colNum: integer("col_num").notNull(),
+    a1: text("a1").notNull(),
+    valueKind: playbookValueKindEnum("value_kind").notNull(),
+    rawText: text("raw_text"),
+    numberRaw: text("number_raw"),
+    numberValue: numeric("number_value"),
+    formattedValue: text("formatted_value"),
+    formula: text("formula"),
+    userEnteredValue: jsonb("user_entered_value"),
+    effectiveValue: jsonb("effective_value"),
+    textFormatRuns: jsonb("text_format_runs"),
+    resolvedRuns: jsonb("resolved_runs"),
+    userEnteredFormat: jsonb("user_entered_format"),
+    effectiveFormat: jsonb("effective_format"),
+    chipRuns: jsonb("chip_runs"),
+    note: text("note"),
+    hyperlink: text("hyperlink"),
+    mergeRange: text("merge_range"),
+    coveredBy: text("covered_by"),
+  },
+  (t) => [
+    primaryKey({ name: "playbook_cells_pk", columns: [t.snapshotId, t.sheetGid, t.rowNum, t.colNum] }),
+    foreignKey({ name: "playbook_cells_tab_fk", columns: [t.snapshotId, t.sheetGid], foreignColumns: [playbookSnapshotTabs.snapshotId, playbookSnapshotTabs.sheetGid] }).onDelete("cascade"),
+    uniqueIndex("playbook_cells_a1_idx").on(t.snapshotId, t.sheetGid, t.a1),
+    check("playbook_cells_positive", sql`${t.rowNum} >= 1 AND ${t.colNum} >= 1`),
+    check("playbook_cells_empty_has_no_text", sql`${t.valueKind} <> 'empty' OR ${t.rawText} IS NULL`),
+    check("playbook_cells_merge_xor", sql`${t.mergeRange} IS NULL OR ${t.coveredBy} IS NULL`),
+  ]
+);
+
+export const playbookPlans = pgTable(
+  "playbook_plans",
+  {
+    planKey: text("plan_key").primaryKey(),
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
+    insurer: text("insurer").notNull(),
+    displayName: text("display_name").notNull(),
+    expectedHeader: text("expected_header").notNull(),
+    status: playbookPlanStatusEnum("status").notNull(),
+    statusConfirmedBy: text("status_confirmed_by"),
+    statusConfirmedAt: timestamp("status_confirmed_at", { withTimezone: true }),
+    showToAdvisors: boolean("show_to_advisors").notNull().default(false),
+    kbPlanName: text("kb_plan_name"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    updatedBy: text("updated_by").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("playbook_plans_header_unique").on(t.domain, t.expectedHeader),
+    check("playbook_plans_visible_needs_confirmation", sql`NOT ${t.showToAdvisors} OR (${t.statusConfirmedBy} IS NOT NULL AND ${t.statusConfirmedAt} IS NOT NULL)`),
+  ]
+);
+
+export const playbookFeatures = pgTable(
+  "playbook_features",
+  {
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
+    featureKey: text("feature_key").notNull(),
+    subKey: text("sub_key").notNull().default(""),
+    expectedLabel: text("expected_label").notNull(),
+    expectedSubLabel: text("expected_sub_label"),
+    sortOrder: integer("sort_order").notNull(),
+    updatedBy: text("updated_by").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: "playbook_features_pk", columns: [t.domain, t.featureKey, t.subKey] })]
+);
+
+export const playbookPublished = pgTable("playbook_published", {
+  domain: announcementTeamEnum("domain").primaryKey(),
+  snapshotId: integer("snapshot_id").notNull().references(() => playbookSnapshots.id, { onDelete: "restrict" }),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const playbookSyncState = pgTable("playbook_sync_state", {
+  domain: announcementTeamEnum("domain").primaryKey(),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+  lastTrigger: text("last_trigger"),
+  lastError: text("last_error"),
+  lastSnapshotId: integer("last_snapshot_id").references(() => playbookSnapshots.id, { onDelete: "set null" }),
+});
+
+export const playbookSourceIssues = pgTable(
+  "playbook_source_issues",
+  {
+    id: serial("id").primaryKey(),
+    domain: announcementTeamEnum("domain").notNull().default("Health"),
+    issueKey: text("issue_key").notNull(),
+    kind: playbookIssueKindEnum("kind").notNull(),
+    status: playbookIssueStatusEnum("status").notNull(),
+    tabTitle: text("tab_title").notNull(),
+    a1: text("a1").notNull(),
+    description: text("description").notNull(),
+    showWarning: boolean("show_warning").notNull(),
+    resolvedBy: text("resolved_by"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    verifiedBy: text("verified_by"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("playbook_source_issues_key_unique").on(t.domain, t.issueKey),
+    check("playbook_source_issues_verified_by_other", sql`${t.status} <> 'verified' OR (${t.verifiedBy} IS NOT NULL AND ${t.verifiedAt} IS NOT NULL AND ${t.verifiedBy} IS DISTINCT FROM ${t.resolvedBy})`),
+    check("playbook_source_issues_warning_until_verified", sql`${t.kind} <> 'source_gap' OR ${t.status} = 'verified' OR ${t.showWarning}`),
+  ]
+);
+
+export type PlaybookSnapshotRow = typeof playbookSnapshots.$inferSelect;
+export type PlaybookCellRow = typeof playbookCells.$inferSelect;
+export type PlaybookPlanRow = typeof playbookPlans.$inferSelect;
+export type PlaybookFeatureRow = typeof playbookFeatures.$inferSelect;

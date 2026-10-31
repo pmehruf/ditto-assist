@@ -125,7 +125,7 @@ export function AdvisoryZonePage({
             dark ? "text-white" : "text-[#111827]"
           }`}>
             <div className="w-8 h-0.5 flex-shrink-0" style={{ backgroundColor: dark ? "#00D3F3" : "#4673a9" }} />
-            <span>Plan Reference</span>
+            <span>Payment Journey</span>
           </h1>
           <p className="text-xs mt-1 font-semibold text-content-muted">
             Read-only reference for every plan's payment journey questions and specific illness list. Available to all advisors.

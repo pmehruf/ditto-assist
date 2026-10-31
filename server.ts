@@ -39,6 +39,8 @@ import {
   exchangeCodeForQaDashboardSheetsGrant,
   getKbPlaybookSheetsAuthUrl,
   exchangeCodeForKbPlaybookSheetsGrant,
+  getPlaybookMirrorAuthUrl,
+  exchangeCodeForPlaybookMirrorGrant,
   getKbFaqSheetsAuthUrl,
   exchangeCodeForKbFaqSheetsGrant,
   getTermFaqSheetsAuthUrl,
@@ -105,6 +107,15 @@ const SPECIAL_INSTRUCTION_TYPES: string[] = [...specialInstructionTypeEnum.enumV
 const FAQ_CATEGORIES: string[] = [...faqCategoryEnum.enumValues];
 import { answerQuery } from "./src/server/knowledgeBase/productAssist.js";
 import { encryptPlaybookRefreshToken } from "./src/server/knowledgeBase/playbookTokenCrypto.js";
+import { encryptMirrorRefreshToken, decryptMirrorRefreshToken } from "./src/server/playbookMirror/mirrorTokenCrypto.js";
+import { assertReadOnlyScopes, fetchTokenInfo, getVerifiedMirrorClient, MirrorGrantScopeError } from "./src/server/playbookMirror/mirrorGrant.js";
+import { syncPlaybookMirror } from "./src/server/playbookMirror/sync.js";
+import { MIRROR_TABS } from "./src/server/playbookMirror/config.js";
+import { createVerifiedMirrorTextClient } from "./src/server/playbookMirror/client.js";
+import { proposalForDisplay, runStructureCheck, acceptProposalFromSnapshot } from "./src/server/playbookMirror/structureService.js";
+import { verifySnapshot, diffFor } from "./src/server/playbookMirror/verifyService.js";
+import { publishSnapshot, rollBackTo, rejectSnapshot } from "./src/server/playbookMirror/publishService.js";
+import { overview as playbookMirrorOverview, snapshotGrid, readMeta, readCellsFor, readGrid } from "./src/server/playbookMirror/adminService.js";
 import { invalidatePlaybookSheetsAuthCache, PLAYBOOK_SPREADSHEET_ID } from "./src/server/knowledgeBase/playbookSheetsClient.js";
 import { encryptFaqRefreshToken } from "./src/server/knowledgeBase/faqTokenCrypto.js";
 import { invalidateFaqSheetsAuthCache, FAQ_SPREADSHEET_ID } from "./src/server/knowledgeBase/faqSheetsClient.js";
@@ -1139,6 +1150,9 @@ const TERM_PLAYBOOK_OAUTH_STATE_COOKIE = "ditto_term_playbook_oauth_state";
 // Product Assist Log Export section. This is the only one of the three
 // "Connect Google Sheets" grants that requests a WRITE scope.
 const PRODUCT_ASSIST_LOG_OAUTH_STATE_COOKIE = "ditto_product_assist_log_oauth_state";
+// Product Playbook MIRROR (2026-10): its own dedicated READ-ONLY grant, kept
+// apart from KB_PLAYBOOK_OAUTH_STATE_COOKIE above (see googleOAuth.ts).
+const PLAYBOOK_MIRROR_OAUTH_STATE_COOKIE = "ditto_playbook_mirror_oauth_state";
 const isProdEnv = () => process.env.NODE_ENV === "production";
 
 app.get("/api/auth/google/login", (req, res) => {
@@ -1167,6 +1181,50 @@ app.get("/api/auth/google/callback", async (req, res) => {
   // comment for why) — tell them apart by which distinctly-named state
   // cookie is present, checking the QA Dashboard one first since it's the
   // less common case.
+
+  // Product Playbook MIRROR (2026-10): dedicated read-only grant. Only acts
+  // when its own state cookie is present (set by /api/playbook-mirror/
+  // connect-google), so every other flow below is unaffected. The grant is
+  // stored ONLY if Google confirms it is read-only; otherwise it is
+  // discarded (deliberately NOT revoked: revoking would also revoke this
+  // app's other Google grants for the same account, which share the client).
+  const playbookMirrorExpectedState = req.cookies?.[PLAYBOOK_MIRROR_OAUTH_STATE_COOKIE];
+  if (playbookMirrorExpectedState) {
+    res.clearCookie(PLAYBOOK_MIRROR_OAUTH_STATE_COOKIE);
+    try {
+      const { code, state } = req.query;
+      if (!code || typeof code !== "string" || !state || state !== playbookMirrorExpectedState) {
+        res.status(400).send("Invalid or expired connection attempt. Please try connecting the Playbook mirror again.");
+        return;
+      }
+      if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Connecting the Playbook mirror"))) return;
+      const grant = await exchangeCodeForPlaybookMirrorGrant(code);
+      const info = await fetchTokenInfo(grant.accessToken);
+      assertReadOnlyScopes(info.scopes);
+      if (info.email && info.email !== grant.email) {
+        throw new Error("The access token belongs to a different account than the signed-in identity.");
+      }
+      const { playbookMirrorConnection } = createRepositories(getDb());
+      await playbookMirrorConnection.upsert({
+        connectedEmail: grant.email,
+        encryptedRefreshToken: encryptMirrorRefreshToken(grant.refreshToken),
+        grantedScopes: info.scopes,
+        connectedBy: req.user?.email || grant.email,
+      });
+      res.redirect("/?playbook_mirror_connected=1");
+    } catch (err: any) {
+      const scopeProblem = err instanceof MirrorGrantScopeError;
+      console.error("Playbook mirror Google connection refused/failed:", scopeProblem ? `${err.message} [scopes: ${err.scopes.join(" ")}]` : err);
+      res
+        .status(scopeProblem ? 400 : 401)
+        .send(
+          `Connecting the Playbook mirror failed: ${err.message || "unknown error"}` +
+            (scopeProblem ? " Nothing was stored." : " Please try again.")
+        );
+    }
+    return;
+  }
+
   const qaSheetsExpectedState = req.cookies?.[QA_SHEETS_OAUTH_STATE_COOKIE];
   if (qaSheetsExpectedState) {
     res.clearCookie(QA_SHEETS_OAUTH_STATE_COOKIE);
@@ -7658,6 +7716,301 @@ app.post("/api/kb/playbook/resync", requireAuth, expensiveActionLimiter, async (
   } catch (err: any) {
     console.error("Product Playbook: resync failed:", err);
     return res.status(500).json({ error: `Resync failed: ${err.message}` });
+  }
+});
+
+// --- Product Playbook MIRROR: dedicated read-only Google grant (2026-10,
+// Phase 1 Step 3a). Separate from the /api/kb/playbook/* routes above, which
+// are untouched. Every route is gated server-side on product_playbook_admin
+// (D3). No route here reads or writes the Google Sheet itself. ---
+
+app.get("/api/playbook-mirror/connect-google", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Connecting the Playbook mirror"))) return;
+    const state = crypto.randomBytes(16).toString("hex");
+    res.cookie(PLAYBOOK_MIRROR_OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: isProdEnv(),
+      sameSite: "lax",
+      maxAge: 5 * 60 * 1000,
+    });
+    res.redirect(getPlaybookMirrorAuthUrl(state, req.user!.email));
+  } catch (err: any) {
+    console.error("Failed to start Playbook mirror Google connection:", err);
+    res.status(500).send("Could not start the connection. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET must be set — see .env.example.");
+  }
+});
+
+// ?verify=1 additionally asks Google, right now, whether the stored grant is
+// still read-only and still belongs to the same account (token metadata only).
+app.get("/api/playbook-mirror/connection-status", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing the Playbook mirror connection"))) return;
+    const { playbookMirrorConnection } = createRepositories(getDb());
+    const row = await playbookMirrorConnection.get("Health");
+    if (!row) return res.json({ connected: false });
+    const status: Record<string, unknown> = {
+      connected: true,
+      connectedEmail: row.connectedEmail,
+      connectedBy: row.connectedBy,
+      connectedAt: row.connectedAt,
+      grantedScopes: row.grantedScopes,
+    };
+    if (req.query.verify === "1") {
+      try {
+        const verified = await getVerifiedMirrorClient(
+          { connectedEmail: row.connectedEmail, refreshToken: decryptMirrorRefreshToken(row.encryptedRefreshToken), grantedScopes: row.grantedScopes },
+          { clientId: process.env.GOOGLE_CLIENT_ID || "", clientSecret: process.env.GOOGLE_CLIENT_SECRET || "" }
+        );
+        status.verification = { ok: true, liveScopes: verified.scopes, checkedAt: new Date().toISOString() };
+      } catch (err: any) {
+        status.verification = { ok: false, error: err.message, checkedAt: new Date().toISOString() };
+      }
+    }
+    return res.json(status);
+  } catch (err: any) {
+    console.error("Playbook mirror: connection-status failed:", err);
+    return res.status(500).json({ error: `Failed to load the Playbook mirror connection: ${err.message}` });
+  }
+});
+
+app.delete("/api/playbook-mirror/connection", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Disconnecting the Playbook mirror"))) return;
+    const { playbookMirrorConnection } = createRepositories(getDb());
+    await playbookMirrorConnection.clear("Health");
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("Playbook mirror: disconnect failed:", err);
+    return res.status(500).json({ error: `Failed to disconnect the Playbook mirror: ${err.message}` });
+  }
+});
+
+// Step 3b: manual "fetch now". Stores a raw, exact snapshot (never published
+// here). Reads only through the verified read-only grant.
+app.post("/api/playbook-mirror/fetch", requireAuth, expensiveActionLimiter, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Fetching a Playbook mirror snapshot"))) return;
+    const repos = createRepositories(getDb());
+    const result = await syncPlaybookMirror({
+      snapshots: repos.playbookMirrorSnapshots,
+      structure: repos.playbookMirrorStructure,
+      publish: (id) => publishSnapshot(getDb(), id, `auto (verified; fetch by ${req.user!.email})`),
+      trigger: `manual:${req.user!.email}`,
+      getClient: () => createVerifiedMirrorTextClient(repos.playbookMirrorConnection),
+    });
+    return res.status(result.ok ? 200 : 502).json(result);
+  } catch (err: any) {
+    console.error("Playbook mirror: fetch failed:", err);
+    return res.status(500).json({ error: `Fetching a Playbook mirror snapshot failed: ${err.message}` });
+  }
+});
+
+app.get("/api/playbook-mirror/snapshots", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing Playbook mirror snapshots"))) return;
+    const { playbookMirrorSnapshots } = createRepositories(getDb());
+    const [syncState, snapshots] = await Promise.all([playbookMirrorSnapshots.getSyncState("Health"), playbookMirrorSnapshots.list("Health", 30)]);
+    return res.json({ syncState: syncState ?? null, snapshots });
+  } catch (err: any) {
+    console.error("Playbook mirror: snapshot list failed:", err);
+    return res.status(500).json({ error: `Failed to load Playbook mirror snapshots: ${err.message}` });
+  }
+});
+
+// Step 4: structure. The proposal is computed from a stored snapshot and writes
+// nothing. Acceptance is a separate Editor action (first acceptance only) and
+// keeps every plan's status provisional and hidden from advisors (D4).
+const parseSnapshotId = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+app.get("/api/playbook-mirror/snapshots/:id/structure-proposal", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing the Playbook mirror structure proposal"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    const repos = createRepositories(getDb());
+    return res.json(await proposalForDisplay({ snapshots: repos.playbookMirrorSnapshots, structure: repos.playbookMirrorStructure }, id));
+  } catch (err: any) {
+    console.error("Playbook mirror: structure proposal failed:", err);
+    return res.status(500).json({ error: `Failed to build the structure proposal: ${err.message}` });
+  }
+});
+
+app.get("/api/playbook-mirror/structure", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing the Playbook mirror structure"))) return;
+    const { playbookMirrorStructure } = createRepositories(getDb());
+    return res.json(await playbookMirrorStructure.accepted("Health"));
+  } catch (err: any) {
+    console.error("Playbook mirror: structure read failed:", err);
+    return res.status(500).json({ error: `Failed to load the Playbook mirror structure: ${err.message}` });
+  }
+});
+
+app.post("/api/playbook-mirror/structure/accept", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Accepting the Playbook mirror structure"))) return;
+    const id = parseSnapshotId(req.body?.snapshotId);
+    if (!id) return res.status(400).json({ error: "snapshotId is required." });
+    const repos = createRepositories(getDb());
+    const report = await acceptProposalFromSnapshot({ snapshots: repos.playbookMirrorSnapshots, structure: repos.playbookMirrorStructure }, id, req.user!.email);
+    return res.json({ ok: true, structure: report });
+  } catch (err: any) {
+    console.error("Playbook mirror: structure acceptance failed:", err);
+    return res.status(400).json({ error: `Accepting the structure failed: ${err.message}` });
+  }
+});
+
+app.post("/api/playbook-mirror/snapshots/:id/check-structure", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Checking a Playbook mirror snapshot"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    const repos = createRepositories(getDb());
+    return res.json(await runStructureCheck({ snapshots: repos.playbookMirrorSnapshots, structure: repos.playbookMirrorStructure }, id));
+  } catch (err: any) {
+    console.error("Playbook mirror: structure check failed:", err);
+    return res.status(500).json({ error: `Structure check failed to run: ${err.message}` });
+  }
+});
+
+// Step 5: independent reconciliation + difference report. Verifying never publishes.
+app.post("/api/playbook-mirror/snapshots/:id/verify", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Verifying a Playbook mirror snapshot"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    const { playbookMirrorSnapshots } = createRepositories(getDb());
+    return res.json(await verifySnapshot(playbookMirrorSnapshots, id));
+  } catch (err: any) {
+    console.error("Playbook mirror: verification failed:", err);
+    return res.status(500).json({ error: `Verification failed to run: ${err.message}` });
+  }
+});
+
+// ?base=<snapshot id> compares with a chosen snapshot; without it, with the published one (if any).
+app.get("/api/playbook-mirror/snapshots/:id/diff", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing a Playbook mirror difference report"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    const base = req.query.base === undefined ? undefined : parseSnapshotId(req.query.base);
+    if (base === null) return res.status(400).json({ error: "Invalid base snapshot id." });
+    const { playbookMirrorSnapshots } = createRepositories(getDb());
+    return res.json(await diffFor(playbookMirrorSnapshots, id, base));
+  } catch (err: any) {
+    console.error("Playbook mirror: diff failed:", err);
+    return res.status(500).json({ error: `Failed to build the difference report: ${err.message}` });
+  }
+});
+
+// Step 6: admin review screen data + manual actions. All gated server-side on
+// product_playbook_admin (Viewer = look, Editor = act). Publishing is manual only.
+app.get("/api/playbook-mirror/overview", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing the Playbook mirror"))) return;
+    return res.json(await playbookMirrorOverview(getDb()));
+  } catch (err: any) {
+    console.error("Playbook mirror: overview failed:", err);
+    return res.status(500).json({ error: `Failed to load the Playbook mirror: ${err.message}` });
+  }
+});
+
+app.get("/api/playbook-mirror/snapshots/:id/grid", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Viewer", "Viewing a Playbook mirror snapshot"))) return;
+    const id = parseSnapshotId(req.params.id);
+    const gid = Number(req.query.gid ?? 0);
+    if (!id || !Number.isInteger(gid) || gid < 0) return res.status(400).json({ error: "Invalid snapshot or tab." });
+    const grid = await snapshotGrid(getDb(), id, gid);
+    if (!grid) return res.status(404).json({ error: "Snapshot or tab not found." });
+    return res.json(grid);
+  } catch (err: any) {
+    console.error("Playbook mirror: grid failed:", err);
+    return res.status(500).json({ error: `Failed to load the snapshot: ${err.message}` });
+  }
+});
+
+// Publishing and rolling back require the snapshot number to be sent again as an explicit confirmation.
+app.post("/api/playbook-mirror/snapshots/:id/publish", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Publishing a Playbook mirror snapshot"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    if (Number(req.body?.confirmSnapshotId) !== id) return res.status(400).json({ error: "Type the snapshot number to confirm publishing." });
+    const result = await publishSnapshot(getDb(), id, req.user!.email);
+    return res.status(result.ok ? 200 : 409).json(result);
+  } catch (err: any) {
+    console.error("Playbook mirror: publish failed:", err);
+    return res.status(500).json({ error: `Publishing failed: ${err.message}` });
+  }
+});
+
+app.post("/api/playbook-mirror/snapshots/:id/rollback", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Rolling back the Playbook mirror"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    if (Number(req.body?.confirmSnapshotId) !== id) return res.status(400).json({ error: "Type the snapshot number to confirm the roll back." });
+    const result = await rollBackTo(getDb(), id, req.user!.email);
+    return res.status(result.ok ? 200 : 409).json(result);
+  } catch (err: any) {
+    console.error("Playbook mirror: rollback failed:", err);
+    return res.status(500).json({ error: `Roll back failed: ${err.message}` });
+  }
+});
+
+app.post("/api/playbook-mirror/snapshots/:id/reject", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Rejecting a Playbook mirror snapshot"))) return;
+    const id = parseSnapshotId(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid snapshot id." });
+    const result = await rejectSnapshot(getDb(), id, req.user!.email, String(req.body?.reason ?? ""));
+    return res.status(result.ok ? 200 : 409).json(result);
+  } catch (err: any) {
+    console.error("Playbook mirror: reject failed:", err);
+    return res.status(500).json({ error: `Rejecting failed: ${err.message}` });
+  }
+});
+
+// Read API for the all-user Product Playbook tool (product_playbook, Viewer). Serves only the
+// published (verified) snapshot's VISIBLE content. Safety filters live in readService.ts / visibility.ts.
+app.get("/api/playbook-mirror/read/meta", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook", "Viewer", "Viewing the Product Playbook"))) return;
+    return res.json(await readMeta(getDb()));
+  } catch (err: any) {
+    console.error("Playbook mirror: read meta failed:", err);
+    return res.status(500).json({ error: `Failed to read the Playbook mirror: ${err.message}` });
+  }
+});
+
+app.get("/api/playbook-mirror/read/cells", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook", "Viewer", "Viewing the Product Playbook"))) return;
+    const list = (v: unknown) => String(v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    const result = await readCellsFor(getDb(), list(req.query.plans), list(req.query.features));
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: any) {
+    console.error("Playbook mirror: read cells failed:", err);
+    return res.status(500).json({ error: `Failed to read the Playbook mirror: ${err.message}` });
+  }
+});
+
+// One tab of the published snapshot as users see it (hidden rows/columns never sent).
+app.get("/api/playbook-mirror/read/grid", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook", "Viewer", "Viewing the Product Playbook"))) return;
+    const tab = String(req.query.tab ?? "");
+    if (!MIRROR_TABS.some((t) => t.title === tab)) return res.status(400).json({ error: "Unknown tab." });
+    const result = await readGrid(getDb(), tab);
+    return res.status(result.ok ? 200 : 400).json(result);
+  } catch (err: any) {
+    console.error("Playbook mirror: read grid failed:", err);
+    return res.status(500).json({ error: `Failed to read the Playbook mirror: ${err.message}` });
   }
 });
 

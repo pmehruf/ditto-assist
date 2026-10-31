@@ -7,7 +7,6 @@ import { useState, type ReactNode } from "react";
 import {
   Sparkles,
   FileSpreadsheet,
-  BookOpen,
   ClipboardCheck,
   Briefcase,
   Newspaper,
@@ -15,6 +14,7 @@ import {
   ArrowUpRight,
   Gift,
   FolderOpen,
+  Milestone,
 } from "lucide-react";
 import { ProductAssistIcon } from "../components/icons";
 import { QaPerformancePeek } from "../components/QaPerformancePeek";
@@ -314,9 +314,9 @@ function LookupIntroPageContent({
     {
       id: "advisory_zone",
       featureId: "advisory_zone",
-      title: "Plan References",
-      tag: "Payment-journey & illness lists",
-      icon: <BookOpen className="w-4 h-4" />,
+      title: "Payment Journey",
+      tag: "Plan questions & illness lists",
+      icon: <Milestone className="w-4 h-4" />,
       hex: "#F59E0B",
       onOpen: () => setActiveTab("advisory_zone"),
     },

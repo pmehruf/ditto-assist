@@ -1,5 +1,5 @@
 {
-  "id": "5deddb4e-2e4d-474b-87d9-7e3409e13c9f",
+  "id": "99a51050-3cc5-4e1f-975a-4fdb051dd024",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -621,6 +621,55 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.announcement_sync_state": {
+      "name": "announcement_sync_state",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_success_at": {
+          "name": "last_success_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_trigger": {
+          "name": "last_trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_summary": {
+          "name": "last_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.announcements": {
       "name": "announcements",
       "schema": "",
@@ -708,6 +757,18 @@
           "notNull": true,
           "default": true
         },
+        "qa_id": {
+          "name": "qa_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_hash": {
+          "name": "source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -719,7 +780,15 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "announcements_qa_id_unique": {
+          "name": "announcements_qa_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "qa_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -3778,6 +3847,975 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.playbook_cells": {
+      "name": "playbook_cells",
+      "schema": "",
+      "columns": {
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sheet_gid": {
+          "name": "sheet_gid",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "row_num": {
+          "name": "row_num",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "col_num": {
+          "name": "col_num",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "a1": {
+          "name": "a1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value_kind": {
+          "name": "value_kind",
+          "type": "playbook_value_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw_text": {
+          "name": "raw_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "number_raw": {
+          "name": "number_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "number_value": {
+          "name": "number_value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "formatted_value": {
+          "name": "formatted_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "formula": {
+          "name": "formula",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_entered_value": {
+          "name": "user_entered_value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "effective_value": {
+          "name": "effective_value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text_format_runs": {
+          "name": "text_format_runs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_runs": {
+          "name": "resolved_runs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_entered_format": {
+          "name": "user_entered_format",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "effective_format": {
+          "name": "effective_format",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chip_runs": {
+          "name": "chip_runs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hyperlink": {
+          "name": "hyperlink",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "merge_range": {
+          "name": "merge_range",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "covered_by": {
+          "name": "covered_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "playbook_cells_a1_idx": {
+          "name": "playbook_cells_a1_idx",
+          "columns": [
+            {
+              "expression": "snapshot_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sheet_gid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "a1",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "playbook_cells_tab_fk": {
+          "name": "playbook_cells_tab_fk",
+          "tableFrom": "playbook_cells",
+          "tableTo": "playbook_snapshot_tabs",
+          "columnsFrom": [
+            "snapshot_id",
+            "sheet_gid"
+          ],
+          "columnsTo": [
+            "snapshot_id",
+            "sheet_gid"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "playbook_cells_pk": {
+          "name": "playbook_cells_pk",
+          "columns": [
+            "snapshot_id",
+            "sheet_gid",
+            "row_num",
+            "col_num"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "playbook_cells_positive": {
+          "name": "playbook_cells_positive",
+          "value": "\"playbook_cells\".\"row_num\" >= 1 AND \"playbook_cells\".\"col_num\" >= 1"
+        },
+        "playbook_cells_empty_has_no_text": {
+          "name": "playbook_cells_empty_has_no_text",
+          "value": "\"playbook_cells\".\"value_kind\" <> 'empty' OR \"playbook_cells\".\"raw_text\" IS NULL"
+        },
+        "playbook_cells_merge_xor": {
+          "name": "playbook_cells_merge_xor",
+          "value": "\"playbook_cells\".\"merge_range\" IS NULL OR \"playbook_cells\".\"covered_by\" IS NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.playbook_features": {
+      "name": "playbook_features",
+      "schema": "",
+      "columns": {
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Health'"
+        },
+        "feature_key": {
+          "name": "feature_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sub_key": {
+          "name": "sub_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "expected_label": {
+          "name": "expected_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_sub_label": {
+          "name": "expected_sub_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "playbook_features_pk": {
+          "name": "playbook_features_pk",
+          "columns": [
+            "domain",
+            "feature_key",
+            "sub_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.playbook_mirror_connection": {
+      "name": "playbook_mirror_connection",
+      "schema": "",
+      "columns": {
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "connected_email": {
+          "name": "connected_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_refresh_token": {
+          "name": "encrypted_refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_scopes": {
+          "name": "granted_scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connected_by": {
+          "name": "connected_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connected_at": {
+          "name": "connected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "playbook_mirror_connection_readonly_scopes": {
+          "name": "playbook_mirror_connection_readonly_scopes",
+          "value": "'https://www.googleapis.com/auth/spreadsheets.readonly' = ANY (\"playbook_mirror_connection\".\"granted_scopes\") AND NOT (\"playbook_mirror_connection\".\"granted_scopes\" && ARRAY['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/drive.file','https://www.googleapis.com/auth/script.processes']::text[])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.playbook_plans": {
+      "name": "playbook_plans",
+      "schema": "",
+      "columns": {
+        "plan_key": {
+          "name": "plan_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Health'"
+        },
+        "insurer": {
+          "name": "insurer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_header": {
+          "name": "expected_header",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "playbook_plan_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status_confirmed_by": {
+          "name": "status_confirmed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_confirmed_at": {
+          "name": "status_confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "show_to_advisors": {
+          "name": "show_to_advisors",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "kb_plan_name": {
+          "name": "kb_plan_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "playbook_plans_header_unique": {
+          "name": "playbook_plans_header_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "domain",
+            "expected_header"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "playbook_plans_visible_needs_confirmation": {
+          "name": "playbook_plans_visible_needs_confirmation",
+          "value": "NOT \"playbook_plans\".\"show_to_advisors\" OR (\"playbook_plans\".\"status_confirmed_by\" IS NOT NULL AND \"playbook_plans\".\"status_confirmed_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.playbook_published": {
+      "name": "playbook_published",
+      "schema": "",
+      "columns": {
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "playbook_published_snapshot_id_playbook_snapshots_id_fk": {
+          "name": "playbook_published_snapshot_id_playbook_snapshots_id_fk",
+          "tableFrom": "playbook_published",
+          "tableTo": "playbook_snapshots",
+          "columnsFrom": [
+            "snapshot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.playbook_snapshot_tabs": {
+      "name": "playbook_snapshot_tabs",
+      "schema": "",
+      "columns": {
+        "snapshot_id": {
+          "name": "snapshot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sheet_gid": {
+          "name": "sheet_gid",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tab_index": {
+          "name": "tab_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "frozen_rows": {
+          "name": "frozen_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "frozen_cols": {
+          "name": "frozen_cols",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grid_rows": {
+          "name": "grid_rows",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grid_cols": {
+          "name": "grid_cols",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hidden_rows": {
+          "name": "hidden_rows",
+          "type": "integer[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "hidden_cols": {
+          "name": "hidden_cols",
+          "type": "integer[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "rows_hidden_by_filter": {
+          "name": "rows_hidden_by_filter",
+          "type": "integer[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "merges_raw": {
+          "name": "merges_raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "playbook_snapshot_tabs_snapshot_id_playbook_snapshots_id_fk": {
+          "name": "playbook_snapshot_tabs_snapshot_id_playbook_snapshots_id_fk",
+          "tableFrom": "playbook_snapshot_tabs",
+          "tableTo": "playbook_snapshots",
+          "columnsFrom": [
+            "snapshot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "playbook_snapshot_tabs_pk": {
+          "name": "playbook_snapshot_tabs_pk",
+          "columns": [
+            "snapshot_id",
+            "sheet_gid"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.playbook_snapshots": {
+      "name": "playbook_snapshots",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Health'"
+        },
+        "spreadsheet_id": {
+          "name": "spreadsheet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "fetched_via": {
+          "name": "fetched_via",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_ranges": {
+          "name": "request_ranges",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_fields": {
+          "name": "request_fields",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw_response_gzip": {
+          "name": "raw_response_gzip",
+          "type": "bytea",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw_response_bytes": {
+          "name": "raw_response_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw_sha256": {
+          "name": "raw_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parser_version": {
+          "name": "parser_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "playbook_snapshot_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'fetched'"
+        },
+        "structure_report": {
+          "name": "structure_report",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reconciliation_report": {
+          "name": "reconciliation_report",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diff_vs_published": {
+          "name": "diff_vs_published",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejected_reason": {
+          "name": "rejected_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_by": {
+          "name": "published_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "playbook_snapshots_domain_fetched_idx": {
+          "name": "playbook_snapshots_domain_fetched_idx",
+          "columns": [
+            {
+              "expression": "domain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "fetched_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "playbook_snapshots_sha256_format": {
+          "name": "playbook_snapshots_sha256_format",
+          "value": "\"playbook_snapshots\".\"raw_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "playbook_snapshots_rejected_has_reason": {
+          "name": "playbook_snapshots_rejected_has_reason",
+          "value": "\"playbook_snapshots\".\"status\" <> 'rejected' OR \"playbook_snapshots\".\"rejected_reason\" IS NOT NULL"
+        },
+        "playbook_snapshots_published_has_who": {
+          "name": "playbook_snapshots_published_has_who",
+          "value": "\"playbook_snapshots\".\"published_at\" IS NULL OR \"playbook_snapshots\".\"published_by\" IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.playbook_source_issues": {
+      "name": "playbook_source_issues",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Health'"
+        },
+        "issue_key": {
+          "name": "issue_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "playbook_issue_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "playbook_issue_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tab_title": {
+          "name": "tab_title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "a1": {
+          "name": "a1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "show_warning": {
+          "name": "show_warning",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_by": {
+          "name": "verified_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "playbook_source_issues_key_unique": {
+          "name": "playbook_source_issues_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "domain",
+            "issue_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "playbook_source_issues_verified_by_other": {
+          "name": "playbook_source_issues_verified_by_other",
+          "value": "\"playbook_source_issues\".\"status\" <> 'verified' OR (\"playbook_source_issues\".\"verified_by\" IS NOT NULL AND \"playbook_source_issues\".\"verified_at\" IS NOT NULL AND \"playbook_source_issues\".\"verified_by\" IS DISTINCT FROM \"playbook_source_issues\".\"resolved_by\")"
+        },
+        "playbook_source_issues_warning_until_verified": {
+          "name": "playbook_source_issues_warning_until_verified",
+          "value": "\"playbook_source_issues\".\"kind\" <> 'source_gap' OR \"playbook_source_issues\".\"status\" = 'verified' OR \"playbook_source_issues\".\"show_warning\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.playbook_sync_state": {
+      "name": "playbook_sync_state",
+      "schema": "",
+      "columns": {
+        "domain": {
+          "name": "domain",
+          "type": "announcement_team",
+          "typeSchema": "public",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_attempt_at": {
+          "name": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_success_at": {
+          "name": "last_success_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_trigger": {
+          "name": "last_trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_snapshot_id": {
+          "name": "last_snapshot_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "playbook_sync_state_last_snapshot_id_playbook_snapshots_id_fk": {
+          "name": "playbook_sync_state_last_snapshot_id_playbook_snapshots_id_fk",
+          "tableFrom": "playbook_sync_state",
+          "tableTo": "playbook_snapshots",
+          "columnsFrom": [
+            "last_snapshot_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.product_assist_acks": {
       "name": "product_assist_acks",
       "schema": "",
@@ -6141,6 +7179,57 @@
         "require_keywords",
         "exclude_keywords",
         "block_category"
+      ]
+    },
+    "public.playbook_issue_kind": {
+      "name": "playbook_issue_kind",
+      "schema": "public",
+      "values": [
+        "source_gap",
+        "excel_copy_discrepancy"
+      ]
+    },
+    "public.playbook_issue_status": {
+      "name": "playbook_issue_status",
+      "schema": "public",
+      "values": [
+        "open",
+        "resolved_pending_verification",
+        "verified",
+        "recorded"
+      ]
+    },
+    "public.playbook_plan_status": {
+      "name": "playbook_plan_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "discontinued_fresh_porting",
+        "brochure_only",
+        "hidden"
+      ]
+    },
+    "public.playbook_snapshot_status": {
+      "name": "playbook_snapshot_status",
+      "schema": "public",
+      "values": [
+        "fetched",
+        "rejected",
+        "verified",
+        "published",
+        "superseded"
+      ]
+    },
+    "public.playbook_value_kind": {
+      "name": "playbook_value_kind",
+      "schema": "public",
+      "values": [
+        "empty",
+        "text",
+        "number",
+        "boolean",
+        "formula",
+        "error"
       ]
     },
     "public.qa_dashboard_role": {
