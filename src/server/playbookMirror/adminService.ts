@@ -51,10 +51,13 @@ export async function overview(db: AnyDb, now: Date = new Date()) {
     db.select().from(playbookPublished).where(eq(playbookPublished.domain, "Health")),
   ]);
   const live = published ? await repos.playbookMirrorSnapshots.get(published.snapshotId) : null;
+  // A new environment has no layout (which column is which plan, which row is which feature) until it's set up once.
+  const layoutReady = (await repos.playbookMirrorStructure.accepted("Health")).plans.length > 0;
   const lastCheckedAt = syncState?.lastSuccessAt ?? null;
 
   return {
     connectedEmail: connection?.email ?? null,
+    layoutReady,
     lastCheckedAt,
     stale: lastCheckedAt ? now.getTime() - new Date(lastCheckedAt).getTime() > STALE_AFTER_MS : null,
     live: published ? { snapshotId: published.snapshotId, sheetAsOf: live?.fetchedAt ?? null, since: published.updatedAt } : null,

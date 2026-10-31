@@ -52,6 +52,11 @@ describe("manual publishing, roll back, reject, status confirmation, read API (s
     );
   });
 
+  it("tells the admin page whether the sheet's layout has been set up (new environments start without one)", async () => {
+    expect((await overview(db)).layoutReady).toBe(true);
+    expect((await overview(await createTestDb())).layoutReady).toBe(false);
+  });
+
   it("without the publish step a verified snapshot stays unpublished; unverified ones can't be published", async () => {
     const a = await fetchVariant();
     expect(a.status).toBe("verified");
