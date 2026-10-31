@@ -80,7 +80,12 @@ export interface ReadCell {
   formattedValue: string | null;
   resolvedRuns: unknown;
   note: string | null;
+  /** Set when the sheet has something here the mirror can't show (e.g. a picture). */
+  warning: string | null;
 }
+
+/** What advisors see on a cell with a recorded source gap (e.g. a picture over AD46). */
+export const CHECK_PLAYBOOK_DIRECTLY = "This part of the Playbook can't be shown here (it's a picture in the sheet). Please check the Playbook directly.";
 
 const colToNum = (col: string) => [...col].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
 const FIRST_PLAN_COLUMN = 4; // D. Columns A–C (rating guide, category labels) are never plan data.
@@ -105,7 +110,10 @@ export function readCells(input: {
   cells: ReadCellRow[];
   planKeys: string[];
   featureKeys: string[];
+  /** A1 addresses on the main tab with an open source gap (see playbook_source_issues). */
+  gapCells?: string[];
 }): { ok: true; cells: ReadCell[] } | { ok: false; error: string } {
+  const gaps = new Set(input.gapCells ?? []);
   const { ctx } = input;
   if (!ctx) return { ok: false, error: "Nothing has been published yet." };
   const planKeys = [...new Set(input.planKeys)];
@@ -146,6 +154,7 @@ export function readCells(input: {
           formattedValue: src?.formattedValue ?? null,
           resolvedRuns: src?.resolvedRuns ?? null,
           note: src?.note ?? null,
+          warning: gaps.has(a1) || gaps.has(src?.a1 ?? a1) ? CHECK_PLAYBOOK_DIRECTLY : null,
         });
       }
     }

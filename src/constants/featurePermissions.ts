@@ -72,7 +72,7 @@ export const DEFAULT_FEATURE_PERMISSIONS: FeaturePermission[] = [
     // generalAccess: "None"). Viewer-only on purpose: there is nothing to
     // edit on this page for any tier.
     id: "advisory_zone",
-    name: "Plan Reference",
+    name: "Payment Journey",
     description: "Read-only reference of every plan's payment journey questions and specific illness list",
     defaultTier: "General",
     generalAccess: "Viewer",

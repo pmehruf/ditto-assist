@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, X } from "lucide-react";
-import { PlaybookGrid, Runs, type GridCell, type PlaybookGridData } from "../components/PlaybookGrid";
+import { CheckPlaybook, PlaybookGrid, Runs, type GridCell, type PlaybookGridData } from "../components/PlaybookGrid";
 import { CustomSelect } from "../components/CustomSelect";
 import { PlaybookSearch } from "../components/PlaybookSearch";
 
@@ -43,6 +43,7 @@ interface ReadCell {
   formattedValue: string | null;
   resolvedRuns: GridCell["resolvedRuns"];
   note: string | null;
+  warning: string | null;
 }
 
 const MAX_PLANS = 4;
@@ -293,7 +294,8 @@ export function PlaybookPage({ theme }: Props) {
                       </th>
                       {byPlan.map((list, i) => (
                         <td key={selectedPlans[i]} className={`border-b border-r px-2 py-1.5 ${c.cell}`}>
-                          {list.length === 0 || list.every((x) => x.isEmpty) ? (
+                          {list.find((x) => x.warning) && <CheckPlaybook text={list.find((x) => x.warning)!.warning!} />}
+                          {list.some((x) => x.warning) && list.every((x) => x.isEmpty) ? null : list.length === 0 || list.every((x) => x.isEmpty) ? (
                             <span className={`italic ${c.muted}`}>Blank in the Playbook</span>
                           ) : (
                             list.map((x) => (

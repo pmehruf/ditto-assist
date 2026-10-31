@@ -51,6 +51,7 @@ import {
   Terminal,
   Settings2,
   Waypoints,
+  Milestone,
   Users2,
   Check,
   Rocket,
@@ -3395,7 +3396,7 @@ export default function App() {
           label: "Library",
           GroupIcon: Library,
           pages: [
-            navPage("advisory_zone", "Plan Reference", BookOpen, "Viewer"),
+            navPage("advisory_zone", "Payment Journey", Milestone, "Viewer"),
             navPage("announcement_archive", "Announcements", Newspaper, "Viewer"),
             navPage("my_activity", "My Activity", History, "Viewer"),
           ],

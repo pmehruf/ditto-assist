@@ -13,7 +13,7 @@ import type { AnyDb } from "../db/client.js";
 import { playbookMirrorConnection, playbookPublished, playbookSnapshots, playbookSourceIssues } from "../db/schema.js";
 import { createRepositories } from "../db/repositories/index.js";
 import { MIRROR_TABS } from "./config.js";
-import { readCells, visiblePlans, type PublishedContext } from "./readService.js";
+import { CHECK_PLAYBOOK_DIRECTLY, readCells, visiblePlans, type PublishedContext } from "./readService.js";
 import { displayableCells, hiddenOf } from "./visibility.js";
 
 export const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // D9
@@ -154,12 +154,21 @@ export async function readMeta(db: AnyDb, now: Date = new Date()) {
   };
 }
 
+/** Cells on a tab where the sheet has something the mirror can't show and the warning is on. */
+async function openGapCells(db: AnyDb, tabTitle: string): Promise<string[]> {
+  const rows = await db.select({ a1: playbookSourceIssues.a1, tabTitle: playbookSourceIssues.tabTitle, kind: playbookSourceIssues.kind, showWarning: playbookSourceIssues.showWarning })
+    .from(playbookSourceIssues).where(eq(playbookSourceIssues.domain, "Health"));
+  return rows.filter((r) => r.tabTitle === tabTitle && r.kind === "source_gap" && r.showWarning).map((r) => r.a1);
+}
+
 export async function readCellsFor(db: AnyDb, planKeys: string[], featureKeys: string[]) {
   const ctx = await publishedContext(db);
   const repos = createRepositories(db);
   const structure = await repos.playbookMirrorStructure.accepted("Health");
   const cells = ctx ? await repos.playbookMirrorSnapshots.cells(ctx.snapshotId, ctx.mainSheetGid) : [];
+  const gapCells = await openGapCells(db, MIRROR_TABS[0].title);
   const result = readCells({
+    gapCells,
     ctx,
     plans: structure.plans,
     features: structure.features,
@@ -183,6 +192,7 @@ export async function readGrid(db: AnyDb, tabTitle: string) {
   const tab = (await repos.playbookMirrorSnapshots.tabs(pub.snapshotId)).find((t) => t.title === tabTitle);
   if (!tab) return { ok: false as const, error: "Unknown tab." };
   const cells = displayableCells(await repos.playbookMirrorSnapshots.cells(pub.snapshotId, Number(tab.sheetGid)), tab);
+  const gaps = new Set(await openGapCells(db, tab.title));
   return {
     ok: true as const,
     snapshotId: pub.snapshotId,
@@ -192,6 +202,7 @@ export async function readGrid(db: AnyDb, tabTitle: string) {
       a1: c.a1, rowNum: c.rowNum, colNum: c.colNum, valueKind: c.valueKind, rawText: c.rawText, numberRaw: c.numberRaw,
       formattedValue: c.formattedValue, resolvedRuns: c.resolvedRuns, note: c.note, mergeRange: c.mergeRange, coveredBy: c.coveredBy,
       background: (c.effectiveFormat as any)?.backgroundColorStyle ?? (c.userEnteredFormat as any)?.backgroundColorStyle ?? null, // eslint-disable-line @typescript-eslint/no-explicit-any
+      warning: gaps.has(c.a1) ? CHECK_PLAYBOOK_DIRECTLY : null,
     })),
   };
 }

@@ -18,6 +18,17 @@ export interface GridCell {
   a1: string; rowNum: number; colNum: number; valueKind: string; rawText: string | null; numberRaw: string | null;
   formattedValue: string | null; resolvedRuns: Run[] | null; note: string | null; mergeRange: string | null; coveredBy: string | null;
   background: { rgbColor?: { red?: number; green?: number; blue?: number } } | null;
+  /** Set when the sheet has something here the mirror can't show (e.g. a picture). */
+  warning?: string | null;
+}
+
+/** Shown on a cell the mirror can't reproduce: points the reader to the Playbook itself. */
+export function CheckPlaybook({ text }: { text: string }) {
+  return (
+    <div className="my-0.5 rounded border border-amber-400 bg-amber-50 px-1.5 py-1 text-[11px] font-semibold text-amber-900 dark:border-amber-500/60 dark:bg-amber-900/30 dark:text-amber-200 whitespace-pre-wrap">
+      {text}
+    </div>
+  );
 }
 
 export interface PlaybookGridData {
@@ -131,6 +142,7 @@ export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme?: 
           <td key={a1} rowSpan={rowSpan} colSpan={colSpan} title={a1}
             className={`align-top text-left font-normal border px-1.5 py-1 ${narrowCols.has(c) && colSpan === 1 ? "w-[56px] min-w-[48px]" : "min-w-[140px] max-w-[320px]"} ${t.cell}`}
             style={{ backgroundColor: theme ? advisorBg(cell) : rgb(cell?.background ?? null) }}>
+            {cell?.warning && <CheckPlaybook text={cell.warning} />}
             <div className="whitespace-pre-wrap break-words max-h-64 overflow-auto">{cell && <Runs cell={cell} />}</div>
             {cell?.note && (
               <div className="mt-1 border-l-2 border-amber-500 pl-1.5 text-[10px] text-amber-900 dark:text-amber-200 whitespace-pre-wrap">

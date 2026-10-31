@@ -206,7 +206,7 @@ CREATE TABLE "playbook_source_issues" (
 --> statement-breakpoint
 INSERT INTO "playbook_source_issues" ("issue_key", "kind", "status", "tab_title", "a1", "description", "show_warning") VALUES
   ('ad46_picture', 'source_gap', 'open', 'Ditto''s Recommended Policies', 'AD46',
-   'Cover for Care Supreme Enhance: a picture floats over this cell and the cell itself is empty. The Google Sheets API cannot read pictures, so this information is not mirrored. Resolution agreed (D5): the product team retypes the picture''s information into the sheet; the warning stays until that is mirrored and verified by a second person.',
+   'Cover for Care Supreme Enhance: a picture floats over this cell and the cell itself is empty. The Google Sheets API cannot read pictures, so this information is not mirrored. Advisors see a note on this cell telling them to check the Playbook directly.',
    true),
   ('excel_copy_g29', 'excel_copy_discrepancy', 'recorded', 'Ditto''s Recommended Policies', 'G29',
    'The downloaded Excel copy (Product Playbook - Health.xlsx, re-saved 2026-10-29) has stray cell references typed after "50% to 100%" in G29. The live Google Sheet reads "50% to 100%" and is the source of truth. The Excel copy must not be used as a source.',

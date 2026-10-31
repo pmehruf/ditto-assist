@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { readCells, visiblePlans, type PublishedContext, type ReadCellRow, type ReadFeature, type ReadPlan } from "./readService.js";
+import { CHECK_PLAYBOOK_DIRECTLY, readCells, visiblePlans, type PublishedContext, type ReadCellRow, type ReadFeature, type ReadPlan } from "./readService.js";
 
 // Synthetic (D7). Column A holds a "QA guide" text; column S is hidden; row 13 is hidden.
 const ctx: PublishedContext = {
@@ -74,6 +74,14 @@ describe("readCells", () => {
     expect(run(["a", "b", "c", "d", "e"])).toEqual({ ok: false, error: "At most 4 plans at a time." });
     expect(run(["alpha"], ["nope"])).toEqual({ ok: false, error: "Unknown categories: nope." });
     expect(readCells({ ctx: null, plans, features, cells, planKeys: ["alpha"], featureKeys: [] })).toEqual({ ok: false, error: "Nothing has been published yet." });
+  });
+
+  it("tells advisors to check the Playbook directly on a recorded source gap (e.g. a picture), and only there", () => {
+    const r = readCells({ ctx, plans, features, cells, planKeys: ["alpha", "beta"], featureKeys: [], gapCells: ["E14"] });
+    if ("error" in r) throw new Error(r.error);
+    expect(r.cells.find((x) => x.planKey === "beta" && x.a1 === "E14")).toMatchObject({ isEmpty: true, warning: CHECK_PLAYBOOK_DIRECTLY });
+    expect(CHECK_PLAYBOOK_DIRECTLY).toMatch(/check the Playbook directly/);
+    expect(r.cells.filter((x) => x.warning).map((x) => x.a1)).toEqual(["E14"]);
   });
 
   it("filters by category when asked", () => {
