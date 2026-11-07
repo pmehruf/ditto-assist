@@ -87,7 +87,9 @@ export async function syncPlaybookMirror(deps: {
     const rawSha256 = createHash("sha256").update(envelope, "utf8").digest("hex");
 
     const latest = await snapshots.latest("Health");
-    if (latest && latest.rawSha256 === rawSha256 && latest.parserVersion === MIRROR_PARSER_VERSION) {
+    // Identical to the latest copy: nothing to do — unless that copy was held back (e.g. the
+    // layout changed and has since been accepted), in which case it's stored and checked again.
+    if (latest && latest.rawSha256 === rawSha256 && latest.parserVersion === MIRROR_PARSER_VERSION && latest.status !== "rejected") {
       await snapshots.recordSyncState("Health", { lastSuccessAt: now(), lastError: null, lastSnapshotId: latest.id });
       return { ok: true, skipped: true, snapshotId: latest.id, status: latest.status as "fetched" | "rejected", rawSha256 };
     }

@@ -13,8 +13,9 @@ import type { AnyDb } from "../db/client.js";
 import { playbookMirrorConnection, playbookPublished, playbookSnapshots, playbookSourceIssues } from "../db/schema.js";
 import { createRepositories } from "../db/repositories/index.js";
 import { MIRROR_TABS } from "./config.js";
-import { CHECK_PLAYBOOK_DIRECTLY, readCells, visiblePlans, type PublishedContext } from "./readService.js";
+import { CHECK_PLAYBOOK_DIRECTLY, readCells, resolveNoteCell, visiblePlans, type PublishedContext } from "./readService.js";
 import { displayableCells } from "./visibility.js";
+import { acceptChangedLayout } from "./structureService.js";
 
 export const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // D9
 
@@ -54,6 +55,17 @@ export async function overview(db: AnyDb, now: Date = new Date()) {
   // A new environment has no layout (which column is which plan, which row is which feature) until it's set up once.
   const layoutReady = (await repos.playbookMirrorStructure.accepted("Health")).plans.length > 0;
   const lastCheckedAt = syncState?.lastSuccessAt ?? null;
+  // When the latest update was held back because the sheet's layout changed: what accepting it would do
+  // (a preview only; nothing is saved). Headers in hidden columns are withheld.
+  const latestStruct = snapshots[0]?.structureReport as { state?: string } | null | undefined;
+  let layoutPreview: Awaited<ReturnType<typeof acceptChangedLayout>> | null = null;
+  if (layoutReady && snapshots[0] && latestStruct?.state === "failed" && snapshots[0].id !== published?.snapshotId) {
+    try {
+      layoutPreview = await acceptChangedLayout({ snapshots: repos.playbookMirrorSnapshots, structure: repos.playbookMirrorStructure }, snapshots[0].id, "", { dryRun: true });
+    } catch {
+      layoutPreview = null; // the page then falls back to "tell the tech team"
+    }
+  }
 
   return {
     connectedEmail: connection?.email ?? null,
@@ -73,7 +85,12 @@ export async function overview(db: AnyDb, now: Date = new Date()) {
         reason: s.rejectedReason,
       };
     }),
-    notes: issues.filter((i) => i.showWarning),
+    layoutPreview,
+    // Each note with the cell it sits on in the layout advisors see now.
+    notes: await (async () => {
+      const cols = (await publishedContext(db))?.planColumns ?? {};
+      return issues.filter((i) => i.showWarning).map((i) => ({ ...i, cell: resolveNoteCell(i.a1, cols) ?? i.a1 }));
+    })(),
   };
 }
 
@@ -140,11 +157,17 @@ export async function readMeta(db: AnyDb, now: Date = new Date()) {
   };
 }
 
-/** Cells on a tab where the sheet has something the mirror can't show and the warning is on. */
-async function openGapCells(db: AnyDb, tabTitle: string): Promise<string[]> {
+/**
+ * Cells on a tab where the sheet has something the mirror can't show and the warning is on.
+ * Notes anchored to a plan are placed in that plan's column in the given layout.
+ */
+async function openGapCells(db: AnyDb, tabTitle: string, planColumns: Record<string, string>): Promise<string[]> {
   const rows = await db.select({ a1: playbookSourceIssues.a1, tabTitle: playbookSourceIssues.tabTitle, kind: playbookSourceIssues.kind, showWarning: playbookSourceIssues.showWarning })
     .from(playbookSourceIssues).where(eq(playbookSourceIssues.domain, "Health"));
-  return rows.filter((r) => r.tabTitle === tabTitle && r.kind === "source_gap" && r.showWarning).map((r) => r.a1);
+  return rows
+    .filter((r) => r.tabTitle === tabTitle && r.kind === "source_gap" && r.showWarning)
+    .map((r) => resolveNoteCell(r.a1, planColumns))
+    .filter((a1): a1 is string => a1 !== null);
 }
 
 export async function readCellsFor(db: AnyDb, planKeys: string[], featureKeys: string[]) {
@@ -152,7 +175,7 @@ export async function readCellsFor(db: AnyDb, planKeys: string[], featureKeys: s
   const repos = createRepositories(db);
   const structure = await repos.playbookMirrorStructure.accepted("Health");
   const cells = ctx ? await repos.playbookMirrorSnapshots.cells(ctx.snapshotId, ctx.mainSheetGid) : [];
-  const gapCells = await openGapCells(db, MIRROR_TABS[0].title);
+  const gapCells = await openGapCells(db, MIRROR_TABS[0].title, ctx?.planColumns ?? {});
   const result = readCells({
     gapCells,
     ctx,
@@ -178,7 +201,7 @@ export async function readGrid(db: AnyDb, tabTitle: string) {
   const tab = (await repos.playbookMirrorSnapshots.tabs(pub.snapshotId)).find((t) => t.title === tabTitle);
   if (!tab) return { ok: false as const, error: "Unknown tab." };
   const cells = displayableCells(await repos.playbookMirrorSnapshots.cells(pub.snapshotId, Number(tab.sheetGid)), tab);
-  const gaps = new Set(await openGapCells(db, tab.title));
+  const gaps = new Set(await openGapCells(db, tab.title, (await publishedContext(db))?.planColumns ?? {}));
   return {
     ok: true as const,
     snapshotId: pub.snapshotId,

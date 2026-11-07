@@ -87,6 +87,18 @@ export interface ReadCell {
 /** What advisors see on a cell with a recorded source gap (e.g. a picture over AD46). */
 export const CHECK_PLAYBOOK_DIRECTLY = "This part of the Playbook can't be shown here (it's a picture in the sheet). Please check the Playbook directly.";
 
+/**
+ * Where a note (source issue) sits right now. A note is either a plain cell ("AD46") or,
+ * on the main tab, anchored to a plan and row ("plan:care_supreme_enhance:46") so it
+ * follows that plan when columns move. Returns null when the plan isn't in the layout.
+ */
+export function resolveNoteCell(a1: string, planColumns: Record<string, string>): string | null {
+  const anchored = /^plan:([^:]+):(\d+)$/.exec(a1);
+  if (!anchored) return a1;
+  const col = planColumns[anchored[1]];
+  return col ? `${col}${anchored[2]}` : null;
+}
+
 const colToNum = (col: string) => [...col].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
 const FIRST_PLAN_COLUMN = 4; // D. Columns A–C (rating guide, category labels) are never plan data.
 

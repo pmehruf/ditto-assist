@@ -203,7 +203,7 @@ CREATE TABLE "playbook_source_issues" (
 );
 --> statement-breakpoint
 INSERT INTO "playbook_source_issues" ("issue_key", "kind", "status", "tab_title", "a1", "description", "show_warning") VALUES
-  ('ad46_picture', 'source_gap', 'open', 'Ditto''s Recommended Policies', 'AD46',
+  ('ad46_picture', 'source_gap', 'open', 'Ditto''s Recommended Policies', 'plan:care_supreme_enhance:46',
    'Cover for Care Supreme Enhance: a picture floats over this cell and the cell itself is empty. The Google Sheets API cannot read pictures, so this information is not mirrored. Advisors see a note on this cell telling them to check the Playbook directly.',
    true),
   ('excel_copy_g29', 'excel_copy_discrepancy', 'recorded', 'Ditto''s Recommended Policies', 'G29',

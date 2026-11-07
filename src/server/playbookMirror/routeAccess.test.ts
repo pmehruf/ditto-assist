@@ -33,7 +33,7 @@ for (const m of src.matchAll(routeRe)) {
 
 describe("Playbook mirror API access review", () => {
   it("finds all mirror routes", () => {
-    expect(routes.length).toBe(19); // exact: a new route must be added to this review deliberately
+    expect(routes.length).toBe(20); // exact: a new route must be added to this review deliberately (20th: structure/accept-changes, admin Editor)
   });
 
   it.each(routes.map((r) => [`${r.method} ${r.path}`, r] as const))("%s is signed-in and checked server-side first", (_name, r) => {

@@ -112,7 +112,7 @@ import { assertReadOnlyScopes, fetchTokenInfo, getVerifiedMirrorClient, MirrorGr
 import { syncPlaybookMirror } from "./src/server/playbookMirror/sync.js";
 import { MIRROR_TABS } from "./src/server/playbookMirror/config.js";
 import { createVerifiedMirrorTextClient } from "./src/server/playbookMirror/client.js";
-import { proposalForDisplay, runStructureCheck, acceptProposalFromSnapshot } from "./src/server/playbookMirror/structureService.js";
+import { proposalForDisplay, runStructureCheck, acceptProposalFromSnapshot, acceptChangedLayout } from "./src/server/playbookMirror/structureService.js";
 import { verifySnapshot, diffFor } from "./src/server/playbookMirror/verifyService.js";
 import { publishSnapshot, rollBackTo, rejectSnapshot } from "./src/server/playbookMirror/publishService.js";
 import { overview as playbookMirrorOverview, snapshotGrid, readMeta, readCellsFor, readGrid } from "./src/server/playbookMirror/adminService.js";
@@ -7861,6 +7861,22 @@ app.post("/api/playbook-mirror/structure/accept", requireAuth, async (req, res) 
   } catch (err: any) {
     console.error("Playbook mirror: structure acceptance failed:", err);
     return res.status(400).json({ error: `Accepting the structure failed: ${err.message}` });
+  }
+});
+
+// The sheet's layout changed (plans added, removed, relabelled or moved): an admin
+// reviewed the listed changes and accepts them. The next update is checked against it.
+app.post("/api/playbook-mirror/structure/accept-changes", requireAuth, async (req, res) => {
+  try {
+    if (!(await requireFeatureAccess(req, res, "product_playbook_admin", "Editor", "Accepting a changed Playbook layout"))) return;
+    const id = parseSnapshotId(req.body?.snapshotId);
+    if (!id) return res.status(400).json({ error: "snapshotId is required." });
+    const repos = createRepositories(getDb());
+    const summary = await acceptChangedLayout({ snapshots: repos.playbookMirrorSnapshots, structure: repos.playbookMirrorStructure }, id, req.user!.email);
+    return res.json({ ok: true, summary });
+  } catch (err: any) {
+    console.error("Playbook mirror: accepting a changed layout failed:", err);
+    return res.status(400).json({ error: `Couldn't accept the new layout: ${err.message}` });
   }
 });
 

@@ -70,7 +70,7 @@ describe("manual publishing, roll back, reject, status confirmation, read API (s
     const a = await fetchVariant();
     const pa = await publishSnapshot(db, a.snapshotId!, "admin@joinditto.in");
     expect(pa).toMatchObject({ ok: true, previousSnapshotId: null });
-    expect(pa.warnings.join(" ")).toMatch(/AD46/); // open source issue surfaced at publish time
+    expect(pa.warnings.join(" ")).toMatch(/ad46_picture \(plan care_supreme_enhance, row 46\)/); // open source issue surfaced at publish time, by plan and row
     const b = await fetchVariant();
     const pb = await publishSnapshot(db, b.snapshotId!, "admin@joinditto.in");
     expect(pb).toMatchObject({ ok: true, previousSnapshotId: a.snapshotId });
