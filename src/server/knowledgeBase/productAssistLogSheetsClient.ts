@@ -104,17 +104,28 @@ export function getProductAssistLogExportHealth(): ProductAssistLogExportHealth 
   return { ...exportHealth };
 }
 
+// Google Sheets rejects any single cell over 50,000 characters, which fails
+// the whole append (and so the export). Stay under the cap and mark
+// truncation so it's visible in the sheet.
+const MAX_CELL_CHARS = 49000;
+const TRUNCATION_MARKER = "… [truncated]";
+
+function clampCell(value: string): string {
+  if (value.length <= MAX_CELL_CHARS) return value;
+  return value.slice(0, MAX_CELL_CHARS - TRUNCATION_MARKER.length) + TRUNCATION_MARKER;
+}
+
 function rowToValues(row: ProductAssistLogRow): (string | number | boolean)[] {
   return [
     row.id,
     row.createdAt.toISOString(),
     row.userEmail,
     row.categoryName ?? "",
-    row.planTags.join(", "),
-    row.question,
-    row.answer,
-    row.share ?? "",
-    JSON.stringify(row.sources ?? []),
+    clampCell(row.planTags.join(", ")),
+    clampCell(row.question),
+    clampCell(row.answer),
+    clampCell(row.share ?? ""),
+    clampCell(JSON.stringify(row.sources ?? [])),
     row.hadNoMatches,
     row.retrievedChunkCount,
     row.playbookFactCount,
