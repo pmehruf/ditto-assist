@@ -277,11 +277,11 @@ export function PlaybookPage({ theme }: Props) {
                   <col style={{ width: 200 }} />
                   {selectedPlans.map((k) => <col key={k} />)}
                 </colgroup>
-                <thead className="sticky top-0 z-10">
+                <thead>{/* each heading is frozen on its own (sticky top), "Feature" also on the left */}
                   <tr>
-                    <th className={`sticky left-0 z-20 border-b border-r px-2 py-2 text-left font-bold ${c.colHead}`}>Feature</th>
+                    <th className={`sticky top-0 left-0 z-30 border-b border-r px-2 py-2 text-left font-bold ${c.colHead}`}>Feature</th>
                     {selectedPlans.map((k) => (
-                      <th key={k} className={`border-b border-r px-2 py-2 text-left whitespace-pre-wrap break-words font-bold ${c.colHead}`}>{display(planByKey.get(k)?.header ?? k)}</th>
+                      <th key={k} className={`sticky top-0 z-20 border-b border-r px-2 py-2 text-left whitespace-pre-wrap break-words font-bold ${c.colHead}`}>{display(planByKey.get(k)?.header ?? k)}</th>
                     ))}
                   </tr>
                 </thead>
