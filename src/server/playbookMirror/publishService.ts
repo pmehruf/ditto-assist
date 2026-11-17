@@ -32,7 +32,9 @@ async function openWarnings(tx: AnyDb, domain: Domain): Promise<string[]> {
     .select({ key: playbookSourceIssues.issueKey, a1: playbookSourceIssues.a1, description: playbookSourceIssues.description })
     .from(playbookSourceIssues)
     .where(and(eq(playbookSourceIssues.domain, domain), eq(playbookSourceIssues.showWarning, true)));
-  return issues.map((i) => `Open source issue ${i.key} (${i.a1}): ${i.description}`);
+  // A note anchored to a plan ("plan:<key>:<row>") is described by plan and row; a plain cell as itself.
+  const where = (a1: string) => a1.replace(/^plan:([^:]+):(\d+)$/, "plan $1, row $2");
+  return issues.map((i) => `Open source issue ${i.key} (${where(i.a1)}): ${i.description}`);
 }
 
 async function lock(tx: AnyDb) {

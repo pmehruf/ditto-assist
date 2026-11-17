@@ -11,7 +11,7 @@
  * are never rendered — the server doesn't send them either.
  */
 
-import { useMemo, type CSSProperties } from "react";
+import { useLayoutEffect, useMemo, useRef, type CSSProperties } from "react";
 
 export interface Run { text: string; bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean; color: string | null; link: string | null }
 export interface GridCell {
@@ -93,6 +93,26 @@ const THEMES = {
 export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme: "light" | "dark" }) {
   const t = THEMES[theme];
   const byA1 = useMemo(() => new Map(grid.cells.map((c) => [c.a1, c])), [grid]);
+  // Frozen title rows sit just below the column letters and the title rows above them. Their
+  // positions are measured from the laid-out table and set directly on the cells, after every
+  // render and whenever the table changes size (e.g. the window is resized).
+  const tableRef = useRef<HTMLTableElement>(null);
+  const letterRowRef = useRef<HTMLTableRowElement>(null);
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    if (!table) return;
+    const place = () => {
+      const base = letterRowRef.current?.getBoundingClientRect().top ?? 0;
+      for (const tr of table.querySelectorAll<HTMLTableRowElement>("tr[data-head-row]")) {
+        const top = `${Math.round(tr.getBoundingClientRect().top - base)}px`;
+        for (const cell of tr.cells) cell.style.top = top;
+      }
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(table);
+    return () => ro.disconnect();
+  });
   // Columns whose values are all short (e.g. "Sl.no.") get a narrow width instead of the default.
   const narrowCols = useMemo(() => {
     const longest = new Map<number, number>();
@@ -128,9 +148,12 @@ export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme: "
   const headerEnd = Math.max(rows[0] ?? 0, ...grid.cells.filter((c) => c.rowNum === rows[0] && c.mergeRange).map((c) => Number(/\d+$/.exec(c.mergeRange!.split(":")[1])![0])));
   const headRows = rows.filter((r) => r <= headerEnd);
   const bodyRows = rows.filter((r) => r > headerEnd);
-  const renderRow = (r: number) => (
-    <tr key={r}>
-      <th className={`sticky left-0 z-10 border px-1 font-semibold ${t.gutter}`}>{r}</th>
+  // Every header cell is frozen on its own (its height is set by the effect above), so the
+  // row numbers and merged title cells stay put too — freezing the header block as a whole
+  // left cells that are also pinned to the left scrolling away.
+  const renderRow = (r: number, head = false) => (
+    <tr key={r} data-head-row={head ? "" : undefined}>
+      <th className={`sticky left-0 border-r border-b px-1 font-semibold ${t.gutter}`} style={{ zIndex: head ? 30 : 10 }}>{r}</th>
       {cols.map((c) => {
         const a1 = colLetters(c) + r;
         const cell = byA1.get(a1);
@@ -138,8 +161,8 @@ export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme: "
         const { rowSpan, colSpan } = span(cell?.mergeRange ?? null);
         return (
           <td key={a1} rowSpan={rowSpan} colSpan={colSpan} title={a1}
-            className={`align-top text-left font-normal border px-1.5 py-1 ${narrowCols.has(c) && colSpan === 1 ? "w-[56px] min-w-[48px]" : "min-w-[140px] max-w-[320px]"} ${t.cell}`}
-            style={{ backgroundColor: advisorBg(cell) }}>
+            className={`align-top text-left font-normal border-r border-b px-1.5 py-1 ${narrowCols.has(c) && colSpan === 1 ? "w-[56px] min-w-[48px]" : "min-w-[140px] max-w-[320px]"} ${t.cell}`}
+            style={{ backgroundColor: advisorBg(cell), ...(head ? { position: "sticky", zIndex: 20 } : {}) }}>
             {cell?.warning && <CheckPlaybook text={cell.warning} />}
             <div className="whitespace-pre-wrap break-words max-h-64 overflow-auto">{cell && <Runs cell={cell} />}</div>
             {cell?.note && (
@@ -156,17 +179,17 @@ export function PlaybookGrid({ grid, theme }: { grid: PlaybookGridData; theme: "
     <div className="space-y-2">
     {hiddenNote && <p className="text-[11px] text-content-muted">Hidden in the source sheet and not displayed: {hiddenNote}.</p>}
     <div className={`overflow-auto max-h-[70vh] border rounded-lg ${t.wrap}`}>
-      <table className="border-collapse text-[11px] leading-snug">
-        <thead className="sticky top-0 z-10">
-          <tr>
-            <th className={`sticky left-0 z-20 border px-1 ${t.gutter}`} />
+      <table ref={tableRef} className="border-separate border-spacing-0 text-[11px] leading-snug">
+        <thead>
+          <tr ref={letterRowRef}>
+            <th className={`sticky left-0 top-0 border-r border-b px-1 ${t.gutter}`} style={{ zIndex: 40 }} />
             {cols.map((c) => (
-              <th key={c} className={`border px-1 py-0.5 font-semibold ${t.gutter}`}>{colLetters(c)}</th>
+              <th key={c} className={`sticky top-0 border-r border-b px-1 py-0.5 font-semibold ${t.gutter}`} style={{ zIndex: 20 }}>{colLetters(c)}</th>
             ))}
           </tr>
-          {headRows.map(renderRow)}
+          {headRows.map((r) => renderRow(r, true))}
         </thead>
-        <tbody>{bodyRows.map(renderRow)}</tbody>
+        <tbody>{bodyRows.map((r) => renderRow(r))}</tbody>
       </table>
     </div>
     </div>

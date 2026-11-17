@@ -5,7 +5,7 @@
 
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import type { AnyDb } from "../client.js";
-import { playbookFeatures, playbookPlans, playbookSnapshots } from "../schema.js";
+import { playbookFeatures, playbookPlans, playbookSnapshots, playbookSourceIssues } from "../schema.js";
 
 type Domain = "Health" | "Term";
 
@@ -59,6 +59,46 @@ export class PlaybookMirrorStructureRepository {
         await tx.insert(playbookFeatures).values(features.map((f) => ({ ...f, domain, updatedBy: acceptedBy, updatedAt: now })));
       }
     });
+  }
+
+  /**
+   * Replaces the accepted structure when the sheet's layout has changed (an admin
+   * reviewed the listed changes and accepted them). All-or-nothing; refuses if
+   * nothing has been accepted yet (that's the first-time setup instead).
+   */
+  async replaceAccepted(domain: Domain, plans: AcceptPlanInput[], features: AcceptFeatureInput[], acceptedBy: string, noteMoves: { id: number; a1: string }[] = []): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const existing = await tx.select({ n: sql<number>`count(*)::int` }).from(playbookPlans).where(eq(playbookPlans.domain, domain));
+      if ((existing[0]?.n ?? 0) === 0) throw new Error("No layout has been set up yet. Use the first-time setup instead.");
+      await tx.delete(playbookPlans).where(eq(playbookPlans.domain, domain));
+      await tx.delete(playbookFeatures).where(eq(playbookFeatures.domain, domain));
+      const now = new Date();
+      if (plans.length) {
+        await tx.insert(playbookPlans).values(plans.map((p) => ({ ...p, domain, showToAdvisors: false, statusConfirmedBy: null, statusConfirmedAt: null, kbPlanName: null, updatedBy: acceptedBy, updatedAt: now })));
+      }
+      if (features.length) {
+        await tx.insert(playbookFeatures).values(features.map((f) => ({ ...f, domain, updatedBy: acceptedBy, updatedAt: now })));
+      }
+      for (const m of noteMoves) {
+        await tx.update(playbookSourceIssues).set({ a1: m.a1 }).where(and(eq(playbookSourceIssues.id, m.id), eq(playbookSourceIssues.domain, domain)));
+      }
+    });
+  }
+
+  /** Notes pinned to cells (e.g. a picture the copy can't show), for moving them with their plan. */
+  async sourceIssues(domain: Domain = "Health") {
+    return this.db.select({ id: playbookSourceIssues.id, tabTitle: playbookSourceIssues.tabTitle, a1: playbookSourceIssues.a1 }).from(playbookSourceIssues).where(eq(playbookSourceIssues.domain, domain));
+  }
+
+  /** Plan key → column letter in the most recent snapshot whose structure check passed. */
+  async lastPassedPlanColumns(domain: Domain = "Health"): Promise<Record<string, string>> {
+    const rows = await this.db
+      .select({ report: playbookSnapshots.structureReport })
+      .from(playbookSnapshots)
+      .where(and(eq(playbookSnapshots.domain, domain), sql`${playbookSnapshots.structureReport}->>'state' = 'passed'`))
+      .orderBy(desc(playbookSnapshots.fetchedAt))
+      .limit(1);
+    return (rows[0]?.report as { planColumns?: Record<string, string> } | undefined)?.planColumns ?? {};
   }
 
   /** Records a structure-check result. A failed check rejects a snapshot that is still only 'fetched'. */

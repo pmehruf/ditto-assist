@@ -98,3 +98,90 @@ export async function acceptProposalFromSnapshot(repos: Repos, snapshotId: numbe
   );
   return runStructureCheck(repos, snapshotId);
 }
+
+const firstLineOf = (t: string) => t.replace(/\r\n|\r/g, "\n").split("\n")[0].trim().toLowerCase();
+
+export interface LayoutChangeSummary {
+  added: string[];
+  removed: string[];
+  relabelled: { from: string; to: string }[];
+  /** Plans still in the sheet whose column is now hidden there (advisors stop seeing them). */
+  nowHidden: string[];
+  /** Notes pinned to a plan's cell (e.g. AD46's picture) that move with their plan. */
+  notesMoved: { from: string; to: string }[];
+  featuresChanged: boolean;
+}
+
+/** Shown instead of a header that sits in a column hidden in the sheet (hidden content is never displayed). */
+export const HIDDEN_PLAN_LABEL = "A plan in a column that's hidden in the sheet";
+
+/**
+ * Accepts a changed sheet layout (plans added, removed, relabelled or moved),
+ * after an admin has reviewed the listed changes. Plans keep their identity when
+ * their header is unchanged or only its first line still matches (e.g. a note
+ * like "(Not available with Ditto)" was added); new plans get a new identity and
+ * plans no longer in the sheet are dropped. The next update is then checked
+ * against this layout as usual, so nothing reaches advisors unchecked.
+ */
+export async function acceptChangedLayout(repos: Repos, snapshotId: number, acceptedBy: string, opts: { dryRun?: boolean } = {}): Promise<LayoutChangeSummary> {
+  const proposal = await proposeFromSnapshot(repos, snapshotId);
+  const current = await repos.structure.accepted("Health");
+  if (current.plans.length === 0) throw new Error("No layout has been set up yet. Use the first-time setup instead.");
+
+  const byHeader = new Map(current.plans.map((p) => [p.expectedHeader, p]));
+  const byFirstLine = new Map(current.plans.map((p) => [firstLineOf(p.expectedHeader), p]));
+  const used = new Set<string>();
+  const unique = (key: string) => {
+    let k = key;
+    for (let i = 2; used.has(k); i++) k = `${key}_${i}`;
+    used.add(k);
+    return k;
+  };
+  const summary: LayoutChangeSummary = { added: [], removed: [], relabelled: [], nowHidden: [], notesMoved: [], featuresChanged: false };
+  const shown = (header: string, hidden: boolean) => (hidden ? HIDDEN_PLAN_LABEL : header);
+  const plans = proposal.plans.map((p) => {
+    const same = byHeader.get(p.expectedHeader);
+    const similar = same ? undefined : byFirstLine.get(firstLineOf(p.expectedHeader));
+    const keep = same ?? (similar && !used.has(similar.planKey) ? similar : undefined);
+    const hidden = p.status === "hidden";
+    if (!same && keep) summary.relabelled.push({ from: shown(keep.expectedHeader, keep.status === "hidden"), to: shown(p.expectedHeader, hidden) });
+    if (!keep) summary.added.push(shown(p.expectedHeader, hidden));
+    if (keep && hidden && keep.status !== "hidden") summary.nowHidden.push(keep.expectedHeader);
+    const planKey = unique(keep ? keep.planKey : p.keyFromMap ? p.planKey : p.planKey.replace(/^new_/, ""));
+    return { planKey, insurer: keep?.insurer ?? p.insurer, displayName: p.displayName, expectedHeader: p.expectedHeader, status: p.status, sortOrder: p.sortOrder };
+  });
+  const keptKeys = new Set(plans.map((p) => p.planKey));
+  summary.removed = current.plans.filter((p) => !keptKeys.has(p.planKey)).map((p) => shown(p.expectedHeader, p.status === "hidden"));
+
+  const featureByLabel = new Map(current.features.map((f) => [`${f.expectedLabel}\u0000${f.expectedSubLabel ?? ""}`, f]));
+  const usedF = new Set<string>();
+  const features = proposal.features.map((f) => {
+    const keep = featureByLabel.get(`${f.expectedLabel}\u0000${f.expectedSubLabel ?? ""}`);
+    if (!keep) summary.featuresChanged = true;
+    let featureKey = keep?.featureKey ?? f.featureKey;
+    const subKey = keep?.subKey ?? f.subKey;
+    for (let i = 2; usedF.has(`${featureKey}.${subKey}`); i++) featureKey = `${keep?.featureKey ?? f.featureKey}_${i}`;
+    usedF.add(`${featureKey}.${subKey}`);
+    return { featureKey, subKey, expectedLabel: f.expectedLabel, expectedSubLabel: f.expectedSubLabel, sortOrder: f.sortOrder };
+  });
+  if (features.length !== current.features.length) summary.featuresChanged = true;
+
+  // Notes pinned to a plain cell in a plan's column on the main tab (written for the last
+  // layout that passed) are re-anchored to that plan and row, so from now on they follow the
+  // plan wherever its column moves. Notes already anchored to a plan need nothing.
+  const oldCols = await repos.structure.lastPassedPlanColumns("Health");
+  const keyByOldCol = new Map(Object.entries(oldCols).map(([key, col]) => [col, key]));
+  const newColByKey = new Map(plans.map((pl, i) => [pl.planKey, proposal.plans[i].column]));
+  const noteMoves: { id: number; a1: string }[] = [];
+  for (const issue of await repos.structure.sourceIssues("Health")) {
+    if (issue.tabTitle !== MIRROR_TABS[0].title) continue;
+    const m = /^([A-Z]+)(\d+)$/.exec(issue.a1);
+    const key = m ? keyByOldCol.get(m[1]) : undefined;
+    const col = key ? newColByKey.get(key) : undefined;
+    if (!m || !key || !col) continue;
+    noteMoves.push({ id: issue.id, a1: `plan:${key}:${m[2]}` });
+    if (col !== m[1]) summary.notesMoved.push({ from: issue.a1, to: `${col}${m[2]}` });
+  }
+  if (!opts.dryRun) await repos.structure.replaceAccepted("Health", plans, features, acceptedBy, noteMoves);
+  return summary;
+}

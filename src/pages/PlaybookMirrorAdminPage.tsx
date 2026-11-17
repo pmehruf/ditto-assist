@@ -33,11 +33,14 @@ interface Summary {
   connectedEmail: string | null;
   /** False on a new environment until the sheet's layout is set up once. */
   layoutReady: boolean;
+  /** What accepting the latest held-back layout change would do (preview only). */
+  layoutPreview: { added: string[]; removed: string[]; relabelled: { from: string; to: string }[]; nowHidden: string[]; notesMoved: { from: string; to: string }[]; featuresChanged: boolean } | null;
   lastCheckedAt: string | null;
   stale: boolean | null;
   live: { snapshotId: number; sheetAsOf: string | null; since: string } | null;
   updates: Update[];
-  notes: { id: number; tabTitle: string; a1: string; description: string }[];
+  /** `cell` is where the note sits in the layout advisors see now. */
+  notes: { id: number; tabTitle: string; a1: string; cell: string; description: string }[];
 }
 interface FetchResult {
   ok: boolean;
@@ -55,6 +58,8 @@ const when = (iso: string | null | undefined) => {
   return `${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}, ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
 };
 // "manual:name@x.in (any note)" → "name@x.in"; anything else was automatic.
+// Plan headers can span lines in the sheet; shown on one line in lists.
+const oneLine = (t: string) => t.replace(/\s*(\r\n|\r|\n)\s*/g, " ").trim();
 const who = (trigger: string) => (trigger.startsWith("manual:") ? trigger.slice("manual:".length).trim().split(/\s/)[0] : "Automatic");
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -150,6 +155,19 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
     });
   };
 
+  // The sheet's plans changed and an admin accepts the listed changes: save the new layout,
+  // then read the sheet again — that update goes through the usual checks before advisors see it.
+  const acceptChanges = (updateId: number) => {
+    if (!window.confirm("Accept these changes to the Playbook's plans and update now?")) return;
+    void run(async () => {
+      await api("/api/playbook-mirror/structure/accept-changes", { method: "POST", body: JSON.stringify({ snapshotId: updateId }) });
+      const r = await api<FetchResult>("/api/playbook-mirror/fetch", { method: "POST" }).catch((e: Error) => ({ ok: false, error: e.message }) as FetchResult);
+      if (!r.ok) return { tone: "warn", text: `The changes were accepted, but the Google Sheet couldn't be read just now. Click "Update now" in a few minutes. (${r.error ?? "no details"})` };
+      if (r.published) return { tone: "good", text: "Done. The changes are accepted and advisors now see the latest Playbook." };
+      return { tone: "warn", text: "The changes were accepted, but this update was still held back. See \"Needs attention\" below." };
+    });
+  };
+
   const showAgain = (u: Update) => {
     if (!window.confirm(`Show advisors the Playbook as it was at ${when(u.at)}?`)) return;
     const url = u.status === "verified" ? `/api/playbook-mirror/snapshots/${u.id}/publish` : `/api/playbook-mirror/snapshots/${u.id}/rollback`;
@@ -170,7 +188,7 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
   };
 
   // Things an admin should act on, most important first.
-  const attention: { text: string; details?: string[]; action?: ReactNode }[] = [];
+  const attention: { text: string; details?: string[]; changes?: string[]; action?: ReactNode }[] = [];
   const latest = data?.updates[0];
   const sinceText = data?.live?.sheetAsOf ? ` Advisors still see the version from ${when(data.live.sheetAsOf)}.` : "";
   if (data) {
@@ -195,13 +213,31 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
       });
     } else if (!data.live) attention.push({ text: "Advisors can't see the Playbook yet. Click \"Update now\" to load it." });
     if (latest && latest.id !== data.live?.snapshotId && latest.status === "rejected" && !latest.reason?.startsWith("Rejected by")) {
+      const p = data.layoutPreview;
       attention.push(
-        latest.layoutChanged
+        latest.layoutChanged && p
           ? {
-              text: `The Playbook sheet's layout has changed (for example, a plan was added, renamed or moved), so the latest update was held back.${sinceText} Ask the tech team to update the Playbook setup.`,
-              details: latest.layoutChanges,
+              text: `The plans in the Playbook sheet have changed, so the latest update was held back.${sinceText} Check the changes below. If they're expected, accept them and the Playbook updates straight away.`,
+              changes: [
+                ...p.added.map((h) => `Added: ${oneLine(h)}`),
+                ...p.removed.map((h) => `No longer in the sheet: ${oneLine(h)}`),
+                ...p.relabelled.map((r) => `Name changed: ${oneLine(r.from)} → ${oneLine(r.to)}`),
+                ...p.nowHidden.map((h) => `Now hidden in the sheet (advisors won't see it): ${oneLine(h)}`),
+                ...p.notesMoved.map((n) => `The picture note moves with its plan: cell ${n.from} → ${n.to}`),
+                ...(p.featuresChanged ? ["The feature rows (left-hand labels) changed too"] : []),
+              ],
+              action: canEdit ? (
+                <button disabled={busy} onClick={() => acceptChanges(latest.id)} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 ${c.primary}`}>
+                  <CheckCircle2 className="w-3.5 h-3.5" /> {busy ? "Updating…" : "Accept these changes and update"}
+                </button>
+              ) : undefined,
             }
-          : { text: `The latest update was held back because the copy didn't match the sheet exactly.${sinceText} Try "Update now" again. If it keeps happening, tell the tech team.` }
+          : latest.layoutChanged
+            ? {
+                text: `The Playbook sheet's layout has changed in a way that can't be accepted here, so the latest update was held back.${sinceText} Please tell the tech team.`,
+                details: latest.layoutChanges,
+              }
+            : { text: `The latest update was held back because the copy didn't match the sheet exactly.${sinceText} Try "Update now" again. If it keeps happening, tell the tech team.` }
       );
     }
     if (data.stale) attention.push({ text: "The Playbook hasn't been updated in the last 24 hours. Click \"Update now\" to bring it up to date." });
@@ -271,6 +307,9 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
                         <ul className="list-disc pl-4 mt-1 space-y-0.5 font-normal">{a.details.map((d, j) => <li key={j}>{d}</li>)}</ul>
                       </details>
                     )}
+                    {a.changes && a.changes.length > 0 && (
+                      <ul className="list-disc pl-10 space-y-0.5 font-normal">{a.changes.map((d, j) => <li key={j}>{d}</li>)}</ul>
+                    )}
                     {a.action && <div className="pl-6">{a.action}</div>}
                   </li>
                 ))}
@@ -284,7 +323,7 @@ export function PlaybookMirrorAdminPage({ theme, hasAccess }: Props) {
                 {data.notes.map((n) => (
                   <li key={n.id} className={`flex items-start gap-2 ${c.text}`}>
                     <Info className={`w-4 h-4 shrink-0 ${c.muted}`} />
-                    <span>Cell {n.a1} on "{n.tabTitle}" has a picture that can't be copied. Advisors see a note there asking them to check the Playbook directly.</span>
+                    <span>Cell {n.cell} on "{n.tabTitle}" has a picture that can't be copied. Advisors see a note there asking them to check the Playbook directly.</span>
                   </li>
                 ))}
               </ul>
