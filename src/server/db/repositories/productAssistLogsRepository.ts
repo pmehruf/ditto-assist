@@ -81,6 +81,14 @@ export class ProductAssistLogsRepository {
     return row?.value ?? 0;
   }
 
+  /** Rows still waiting for the export Sheet (exportedAt IS NULL) — what the
+   * Connections page's "queued" badge should show now that exported rows are
+   * kept permanently rather than deleted, so count() no longer means "queued". */
+  async countUnexported(): Promise<number> {
+    const [row] = await this.db.select({ value: count() }).from(productAssistLogs).where(isNull(productAssistLogs.exportedAt));
+    return row?.value ?? 0;
+  }
+
   /** Retained for potential future admin cleanup (e.g. a manual GDPR-style
    * deletion request) — no longer called by the export job now that rows
    * are kept permanently; see markExported() above. */

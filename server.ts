@@ -7127,7 +7127,7 @@ app.get("/api/product-assist-logs/connect-google", requireAuth, async (req, res)
 app.get("/api/product-assist-logs/connection-status", requireAuth, async (req, res) => {
   try {
     const { productAssistLogExportConnection, productAssistLogs } = createRepositories(getDb());
-    const [row, pendingCount] = await Promise.all([productAssistLogExportConnection.get(), productAssistLogs.count()]);
+    const [row, pendingCount] = await Promise.all([productAssistLogExportConnection.get(), productAssistLogs.countUnexported()]);
     // User-provided destination sheet (not a fixed workbook this app owns —
     // see productAssistLogSheetsClient.ts's doc comment), so there's no URL
     // to offer until the env var is actually set.
